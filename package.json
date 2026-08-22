@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "voice:voices": "vite-node --config vitest.config.ts scripts/voice.ts voices",
+    "voice:design": "vite-node --config vitest.config.ts scripts/voice.ts design",
+    "voice:audition": "vite-node --config vitest.config.ts scripts/voice.ts audition"
   },
   "dependencies": {
     "next": "15.5.4",
@@ -19,6 +22,7 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "typescript": "^5.7.2",
+    "vite-node": "^2.1.9",
     "vitest": "^2.1.8"
   }
 }

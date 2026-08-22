@@ -216,6 +216,12 @@ export interface SessionSummary {
   usage: SessionUsage | null
   /** Why the session ended. `cap` is the 8-minute hard stop (§05). */
   reason: 'user' | 'character' | 'cap' | 'error'
+  /**
+   * Per-stage latency and per-vendor cost, for adapters assembled out of
+   * separate STT, LLM and TTS calls. Null on a native speech-to-speech adapter,
+   * which has no stages to report.
+   */
+  pipeline?: PipelineTelemetry | null
 }
 
 /** One provider-reported response usage sample, normalised for cost auditing. */
@@ -245,6 +251,75 @@ export interface SessionUsage {
   /** Sum of priced samples; still requires dashboard reconciliation. */
   pricedCostUsd: number | null
   pricedCostPerMinuteUsd: number | null
+}
+
+/* ------------------------------------------------------------------ *
+ * Assembled-pipeline telemetry
+ * ------------------------------------------------------------------ */
+
+/**
+ * Per-stage latency, for adapters that are a pipeline rather than one model.
+ *
+ * Provider-neutral by construction: a native speech-to-speech adapter has no
+ * stages to report and leaves this null. The application layer folds it into
+ * the session JSON without knowing which adapter produced it.
+ */
+export interface StageStat {
+  median: number
+  p90: number
+  /** How many samples the two numbers above were computed from. */
+  count: number
+}
+
+export interface PipelineStages {
+  /** Silence the VAD insisted on before conceding the turn. Our own dial. */
+  vadSilenceMs: StageStat
+  /** Last audio frame sent -> final transcript in hand. */
+  sttMs: StageStat
+  /** Transcript sent -> first token back. */
+  llmFirstTokenMs: StageStat
+  /** Transcript sent -> last token. */
+  llmCompleteMs: StageStat
+  /** Text sent -> first audio byte. */
+  ttsFirstByteMs: StageStat
+  /** User stopped speaking -> her audio starts playing. What the ear feels. */
+  totalPerceivedMs: StageStat
+}
+
+/**
+ * Cost, in the units each vendor actually bills.
+ *
+ * ElevenLabs bills characters; OpenAI bills tokens. Mixing them into one
+ * "usage" number is how a pipeline's real cost gets lost, so both survive here
+ * in their own units and only the USD figures are summed.
+ */
+export interface PipelineUsage {
+  elevenlabs: {
+    characters: number
+    creditsUsed: number
+    /** From the vendor's own subscription counter. Null when it could not be read. */
+    creditsRemaining: number | null
+    costUsd: number
+  }
+  openai: {
+    sttTokens: number
+    llmTokens: number
+    costUsd: number
+  }
+  totalCostUsd: number
+  costPerMinuteUsd: number
+}
+
+export interface PipelineTelemetry {
+  ttsModel: string
+  sttModel: string
+  llmModel: string
+  stages: PipelineStages
+  /** Times the user spoke over her and playback was cut. */
+  bargeIns: number
+  /** Turns whose stored text was shortened to what actually reached the ear. */
+  truncatedTurns: number
+  usage: PipelineUsage
 }
 
 export interface Rate {

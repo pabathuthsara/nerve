@@ -7,14 +7,25 @@
  */
 
 import { mintOpenAISession } from './openai/mint'
-import { VoiceError, type Calibration, type Persona, type ProviderId } from './types'
+import { mintElevenLabsSession, type MintedPipelineSession } from './elevenlabs/mint'
+import { type Calibration, type Persona, type ProviderId } from './types'
 import type { MintedSession } from './openai'
 
-export type { MintedSession }
+export type { MintedSession, MintedPipelineSession }
+
+/** What the token route actually returns. The adapter on the other end knows
+ *  which arm it is, so it knows which member it is looking at. */
+export type MintedVoiceSession = MintedSession | MintedPipelineSession
 
 export interface MintEnvironment {
   apiKey: string | undefined
   model: string | undefined
+  /**
+   * Optional. The ElevenLabs mint falls back to `process.env` when this is
+   * absent, so the provider-neutral route does not have to learn a second
+   * vendor's variable name to stay neutral.
+   */
+  elevenLabsApiKey?: string | undefined
 }
 
 export async function mintSession(
@@ -22,15 +33,14 @@ export async function mintSession(
   persona: Persona,
   calibration: Calibration,
   env: MintEnvironment,
-): Promise<MintedSession> {
+): Promise<MintedVoiceSession> {
   switch (provider) {
     case 'openai':
       return mintOpenAISession(persona, calibration, env)
     case 'elevenlabs':
-      throw new VoiceError(
-        'not_implemented',
-        'elevenlabs',
-        'The ElevenLabs adapter is a stub at M0. Set VOICE_PROVIDER=openai.',
-      )
+      return mintElevenLabsSession(persona, calibration, {
+        elevenLabsApiKey: env.elevenLabsApiKey,
+        openAiApiKey: env.apiKey,
+      })
   }
 }

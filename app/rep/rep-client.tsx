@@ -20,6 +20,7 @@ import {
   VoiceError,
   type Calibration,
   type Persona,
+  type PipelineTelemetry,
   type ProviderId,
   type SessionUsage,
   type SessionSummary,
@@ -79,6 +80,13 @@ interface Report {
   stability: StabilityStats & { events: CharacterBreak[] }
   transport: { rttSamples: RttSample[]; medianRttMs: number | null; drift: RttDrift }
   usage: SessionUsage | null
+  /**
+   * Per-stage latency and per-vendor cost, for an adapter assembled out of
+   * separate STT, LLM and TTS calls. Null on a native speech-to-speech arm,
+   * which has no stages to report. Provider-neutral: this page still does not
+   * know which vendor produced it.
+   */
+  pipeline: PipelineTelemetry | null
   costTrend: CostTrend
   technical: { overlapResponses: number; toolSyntaxLeaks: number }
   warmth: (WarmthTelemetry & { steeringItemsSent: number }) | null
@@ -353,6 +361,7 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
           drift: analyseRttDrift(rtt),
         },
         usage: summary.usage,
+        pipeline: summary.pipeline ?? null,
         costTrend: analyseCostTrend(summary.usage),
         technical: {
           overlapResponses: overlapResponsesRef.current,
@@ -414,7 +423,6 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
     setBreaks((prev) => [...prev, entry])
   }, [elapsed])
 
-  const stub = provider !== 'openai'
 
   return (
     <main style={{ maxWidth: 860 }}>
@@ -441,11 +449,12 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
         </p>
       ) : null}
 
-      {stub && (
+      {provider === 'elevenlabs' && (
         <p style={{ ...box, borderColor: '#c60', background: '#fff8f0' }}>
-          VOICE_PROVIDER is set to <strong>{provider}</strong>, whose adapter is a stub at M0.
-          connect() will refuse. Everything else on this page is provider-agnostic and will
-          work unchanged once its transport lands — that is the point of the stub.
+          VOICE_PROVIDER is set to <strong>elevenlabs</strong>: an assembled pipeline —
+          our VAD, streaming transcription, a text model, then ElevenLabs for the voice
+          alone. Nothing on this page changed to support it. Per-stage latency and
+          per-character cost land in the report below and in the downloaded JSON.
         </p>
       )}
 
@@ -737,6 +746,68 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
             The character contract is the cached prefix. Steering is appended as a conversation
             item and never written back into instructions, so this should stay flat across the
             session. A bust here is the 2.9x response from round 5.
+          </p>
+        </section>
+      )}
+
+      {/* Only an assembled adapter fills this in. On a native speech-to-speech
+          arm there are no stages to break the round trip into, so the section
+          simply is not there. */}
+      {report?.pipeline && (
+        <section style={box}>
+          <h2 style={h2}>Pipeline</h2>
+          <Row label="voice model" value={report.pipeline.ttsModel} />
+          <Row label="transcription" value={report.pipeline.sttModel} />
+          <Row label="character model" value={report.pipeline.llmModel} />
+          <div style={{ height: 8 }} />
+          {(
+            [
+              ['vad silence', 'vadSilenceMs'],
+              ['transcription', 'sttMs'],
+              ['first token', 'llmFirstTokenMs'],
+              ['reply complete', 'llmCompleteMs'],
+              ['first audio byte', 'ttsFirstByteMs'],
+              ['perceived total', 'totalPerceivedMs'],
+            ] as const
+          ).map(([label, key]) => {
+            const stage = report.pipeline?.stages[key]
+            return (
+              <Row
+                key={key}
+                label={label}
+                value={
+                  stage && stage.count > 0
+                    ? `${stage.median}ms / ${stage.p90}ms  (n=${stage.count})`
+                    : '—'
+                }
+                {...(key === 'totalPerceivedMs' ? { highlight: '#070' } : {})}
+              />
+            )
+          })}
+          <div style={{ height: 8 }} />
+          <Row label="barge-ins" value={String(report.pipeline.bargeIns)} />
+          <Row label="turns truncated to what played" value={String(report.pipeline.truncatedTurns)} />
+          <div style={{ height: 8 }} />
+          <Row
+            label="voice characters"
+            value={`${report.pipeline.usage.elevenlabs.characters} (${report.pipeline.usage.elevenlabs.creditsUsed} credits)`}
+          />
+          <Row
+            label="credits remaining"
+            value={
+              report.pipeline.usage.elevenlabs.creditsRemaining === null
+                ? 'not reported'
+                : String(report.pipeline.usage.elevenlabs.creditsRemaining)
+            }
+          />
+          <Row label="voice cost" value={fmtUsd(report.pipeline.usage.elevenlabs.costUsd)} />
+          <Row label="text cost" value={fmtUsd(report.pipeline.usage.openai.costUsd)} />
+          <Row label="total" value={fmtUsd(report.pipeline.usage.totalCostUsd)} />
+          <Row label="cost per minute" value={fmtUsd(report.pipeline.usage.costPerMinuteUsd)} />
+          <p style={{ color: '#888', fontSize: 13, marginBottom: 0 }}>
+            Median / p90. The p90 matters more than it looks: one two-second turn in ten
+            breaks the illusion even when the median is fine. Perceived total is the number
+            to put next to gpt-realtime&rsquo;s 1368ms.
           </p>
         </section>
       )}

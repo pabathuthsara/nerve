@@ -11,10 +11,13 @@
  *   2. Provider, model and rate are stamped on every session summary, so
  *      historical cost and score data stays auditable rather than ambiguous.
  *
- * At M0 the ElevenLabs transport is a stub, so it is held to every part of the
- * contract that does not require a live connection — interface shape, persona
- * compilation, and a stamped summary. When its transport lands, the shared
- * cases below start exercising it for real without being rewritten.
+ * The ElevenLabs transport now exists: an assembled pipeline behind the same
+ * interface (lib/voice/elevenlabs/). It needs a microphone and an AudioContext
+ * to connect, so here it is held to every part of the contract that does not
+ * require hardware — interface shape, persona compilation, and a stamped
+ * summary. The parts that only exist on that arm, barge-in truncation and
+ * per-stage telemetry among them, have their own suite in
+ * lib/voice/elevenlabs/pipeline.test.ts.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -162,11 +165,13 @@ describe('persona compilation', () => {
     expect(config.audio.input.turn_detection.type).toBe('server_vad')
   })
 
-  it('maps the same number onto the ElevenLabs turn model, in its units', () => {
+  it('keeps the same number as our own dial on the pipeline arm', () => {
     const config = new ElevenLabsPersonaCompiler().compile(nadia, calibration)
-    // Their platform takes seconds. Same stored number, different idiom.
+    // No vendor turn model to translate into any more: raw text-to-speech was
+    // chosen over a managed agent precisely so this number stays ours (§05).
+    expect(config.turn.silenceMs).toBe(resolveSilenceMs(calibration))
     expect(config.turn.turn_timeout).toBe(1.3)
-    expect(config.turn.turn_timeout * 1000).toBe(resolveSilenceMs(calibration))
+    expect(config.turn.mode).toBe('silence')
   })
 
   it('never lets patience narrow the threshold', () => {
@@ -185,6 +190,10 @@ describe('persona compilation', () => {
     // Levels 1–4 never interrupt the user, ever (§05).
     expect(openai.compile(nadia, DEFAULT_CALIBRATION).audio.input.turn_detection.interrupt_response).toBe(false)
     expect(openai.compile(robin, DEFAULT_CALIBRATION).audio.input.turn_detection.interrupt_response).toBe(true)
+
+    const eleven = new ElevenLabsPersonaCompiler()
+    expect(eleven.compile(nadia, DEFAULT_CALIBRATION).turn.interrupts).toBe(false)
+    expect(eleven.compile(robin, DEFAULT_CALIBRATION).turn.interrupts).toBe(true)
   })
 
   it('realises delivery in each provider’s own idiom', () => {
@@ -193,6 +202,8 @@ describe('persona compilation', () => {
     expect(instructions.toLowerCase()).toContain('hard to read')
 
     // Tagged under TTS: forced independently of the text. This is the seam.
+    // Whether a given TTS model is *sent* the tags is the compiler's business;
+    // that they can be derived at all is what OpenAI cannot do.
     const tags = compileDeliveryTags(robin)
     expect(tags).toContain('[flat]')
     expect(tags).toContain('[disinterested]')
@@ -213,7 +224,7 @@ describe('persona compilation', () => {
 
   it('puts the banned assistant register into both prompts', () => {
     const openai = compileInstructions(nadia)
-    const eleven = new ElevenLabsPersonaCompiler().compile(nadia, DEFAULT_CALIBRATION).agent.prompt.prompt
+    const eleven = new ElevenLabsPersonaCompiler().compile(nadia, DEFAULT_CALIBRATION).llm.systemPrompt
     for (const text of [openai, eleven]) {
       expect(text).toMatch(/never acknowledge/i)
       expect(text).toMatch(/let me know if/i)
@@ -269,8 +280,11 @@ describe('persona compilation', () => {
   })
 
   it('never lets the character open the conversation', () => {
-    // The user speaking first is the entire exposure mechanism.
-    expect(new ElevenLabsPersonaCompiler().compile(nadia, DEFAULT_CALIBRATION).agent.first_message).toBe('')
+    // The user speaking first is the entire exposure mechanism. On the pipeline
+    // arm this is structural rather than configured: nothing synthesises until
+    // a user turn has been transcribed, so there is no opening line to suppress.
+    const compiled = new ElevenLabsPersonaCompiler().compile(nadia, DEFAULT_CALIBRATION)
+    expect(compiled.llm.systemPrompt).not.toMatch(/first_message/)
   })
 
   it('keeps event-driven reinforcement short', () => {
@@ -757,18 +771,26 @@ describe('provider-reported usage pricing', () => {
  * The stub's own contract
  * ------------------------------------------------------------------ */
 
-describe('elevenlabs stub', () => {
-  it('compiles the persona before refusing, so the compiler stays exercised', async () => {
-    const provider = new ElevenLabsVoiceProvider()
-    await expect(provider.connect(nadia, DEFAULT_CALIBRATION)).rejects.toMatchObject({
-      code: 'not_implemented',
-      provider: 'elevenlabs',
-    })
-    expect(provider.peekConfig()?.agent.prompt.prompt).toContain('Nadia')
+describe('the elevenlabs pipeline arm', () => {
+  it('reports no compiled config until a session has been minted', () => {
+    // The character contract is compiled server-side and never travels to the
+    // browser; the adapter only learns the parts it needs to make requests.
+    expect(new ElevenLabsVoiceProvider().peekConfig()).toBeNull()
   })
 
-  it('prices against $0.095/min, per the instruction to budget for it winning', () => {
-    expect(new ElevenLabsVoiceProvider().rate.perMinute).toBe(0.095)
+  it('prices against the assembled pipeline, not the managed agent', () => {
+    // §04 costs the DIY path at ≈$0.033/min against ≈$0.095 for ElevenAgents.
+    // The stamped rate is an estimate; `summary.pipeline.usage` carries the
+    // measured figure, computed from characters and tokens actually spent.
+    expect(new ElevenLabsVoiceProvider().rate.perMinute).toBe(0.033)
+  })
+
+  it('leaves the per-stage breakdown null until a session has run', async () => {
+    // The field exists on every summary so the JSON shape is stable; a native
+    // speech-to-speech arm simply has no stages to report.
+    await expect(new ElevenLabsVoiceProvider().end('user')).resolves.toMatchObject({
+      pipeline: null,
+    })
   })
 })
 
@@ -779,9 +801,11 @@ describe('elevenlabs stub', () => {
 describe('session minting', () => {
   const env = { apiKey: undefined, model: undefined }
 
-  it('refuses a stubbed provider by code, not by string matching', async () => {
+  it('distinguishes a missing voice key from a provider failure too', async () => {
+    // Same rule as the OpenAI arm below: our misconfiguration is a 500, so
+    // whoever is debugging it looks at their .env rather than a status page.
     await expect(mintSession('elevenlabs', nadia, DEFAULT_CALIBRATION, env)).rejects.toMatchObject({
-      code: 'not_implemented',
+      code: 'not_configured',
       provider: 'elevenlabs',
     })
   })

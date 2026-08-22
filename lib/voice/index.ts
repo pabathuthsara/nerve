@@ -9,7 +9,7 @@
  */
 
 import { OpenAIVoiceProvider, type OpenAIAdapterOptions } from './openai'
-import { ElevenLabsVoiceProvider } from './elevenlabs'
+import { ElevenLabsVoiceProvider, type ElevenLabsAdapterOptions } from './elevenlabs'
 import type { VoiceProvider } from './provider'
 import type { ProviderId } from './types'
 
@@ -67,6 +67,7 @@ function bucket(userId: string): number {
 
 export interface CreateVoiceProviderOptions extends ProviderResolution {
   openai?: OpenAIAdapterOptions
+  elevenlabs?: ElevenLabsAdapterOptions
 }
 
 export function createVoiceProvider(
@@ -75,7 +76,7 @@ export function createVoiceProvider(
   const id = resolveProviderId(options)
   switch (id) {
     case 'elevenlabs':
-      return new ElevenLabsVoiceProvider()
+      return new ElevenLabsVoiceProvider(options.elevenlabs)
     case 'openai':
       return new OpenAIVoiceProvider(options.openai)
   }
