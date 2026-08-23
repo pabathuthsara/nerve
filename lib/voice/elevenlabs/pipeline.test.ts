@@ -462,7 +462,9 @@ describe('the TTS model dial', () => {
     })
     expect(flash.compile(nadia, DEFAULT_CALIBRATION).delivery_tags).toEqual([])
     expect(v3.compile(nadia, DEFAULT_CALIBRATION).delivery_tags.length).toBeGreaterThan(0)
-    expect(compileDeliveryTags(nadia)).toContain('[neutral]')
+    // Layer 2 decides how she sounds; warmth decides how much she gives. Nadia
+    // is dry at every point on the meter.
+    expect(compileDeliveryTags(nadia)).toContain('[dry]')
   })
 
   it('lets the ear override the persona on the tuning dials', () => {
@@ -510,7 +512,7 @@ describe('voice design', () => {
   })
 
   it('derives a starting brief for a character nobody has cast', () => {
-    const prompt = renderDesignPrompt(briefFor({ ...nadia, id: 'uncast' }))
+    const prompt = renderDesignPrompt(briefFor({ ...nadia, slug: 'uncast' }))
     expect(prompt).toMatch(/^Native English\. Female, /)
     expect(prompt).toContain('| Persona:')
     expect(prompt).toContain('Emotion:')

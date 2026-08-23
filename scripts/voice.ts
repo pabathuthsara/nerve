@@ -194,7 +194,7 @@ async function design(personaId: string): Promise<void> {
   const previews = body.previews ?? []
   if (previews.length === 0) fail('Design returned no previews.')
 
-  const dir = join(OUT_ROOT, persona!.id, 'design')
+  const dir = join(OUT_ROOT, persona!.slug, 'design')
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, 'prompt.txt'), `${prompt}\n`, 'utf8')
 

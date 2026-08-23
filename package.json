@@ -5,22 +5,42 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:check": "NEXT_DIST_DIR=.next-check next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint app components lib --ext .ts,.tsx",
     "test": "vitest run",
     "voice:voices": "vite-node --config vitest.config.ts scripts/voice.ts voices",
     "voice:design": "vite-node --config vitest.config.ts scripts/voice.ts design",
-    "voice:audition": "vite-node --config vitest.config.ts scripts/voice.ts audition"
+    "voice:audition": "vite-node --config vitest.config.ts scripts/voice.ts audition",
+    "db:seed": "vite-node --config vitest.config.ts scripts/seed-personas.ts",
+    "db:content": "vite-node --config vitest.config.ts scripts/seed-content.ts",
+    "db:plan": "vite-node --config vitest.config.ts scripts/set-plan.ts",
+    "db:types": "npx supabase gen types typescript --project-id \"$SUPABASE_PROJECT_REF\" > lib/db/types.ts",
+    "db:verify": "vite-node --config vitest.config.ts scripts/verify-rls.ts",
+    "db:rep": "vite-node --config vitest.config.ts scripts/verify-rep.ts",
+    "db:field": "vite-node --config vitest.config.ts scripts/verify-field.ts",
+    "db:user": "vite-node --config vitest.config.ts scripts/dev-user.ts"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.3",
+    "framer-motion": "^12.43.0",
+    "lucide-react": "^0.468.0",
     "next": "15.5.4",
     "react": "19.1.1",
-    "react-dom": "19.1.1"
+    "react-dom": "19.1.1",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.5.4",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
     "vite-node": "^2.1.9",
     "vitest": "^2.1.8"

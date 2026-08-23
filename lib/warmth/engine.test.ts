@@ -10,16 +10,20 @@ import { describe, expect, it } from 'vitest'
 
 import { WarmthEngine } from './engine'
 import { bandFor, bandDirective, BANDS, WARMTH_MIN, WARMTH_MAX } from './bands'
-import { WARMTH_LEVELS, levelConfig, type WarmthLevelConfig } from './levels'
+import { levelTrajectory } from './levels'
+import { nadia } from '@/lib/personas/nadia'
+import { alex } from '@/lib/personas/alex'
+import type { Trajectory } from '@/lib/voice/types'
 import { scoreFast, isOpenQuestion, referencesAgent } from './fast'
 import { classifyOverreach, clampSlowScore } from './slow'
 import type { TranscriptTurn } from '@/lib/voice/types'
 
-const L1 = WARMTH_LEVELS[1] as WarmthLevelConfig
-const L8 = WARMTH_LEVELS[8] as WarmthLevelConfig
+/** Layer 1 now lives on the persona, so these read from the roster. */
+const L1 = nadia.trajectory
+const L8 = alex.trajectory
 
 /** No jitter, so a test asserts the mechanic rather than a dice roll. */
-const fixed = (config: WarmthLevelConfig, start = config.start): WarmthLevelConfig => ({
+const fixed = (config: Trajectory, start = config.start): Trajectory => ({
   ...config,
   start,
   startJitter: 0,
@@ -212,7 +216,7 @@ describe('the creepiness rule', () => {
 
 describe('WarmthEngine', () => {
   it('climbs steadily on a good conversation, but slowly (§4a-4c)', () => {
-    const engine = new WarmthEngine({ level: fixed(L1, 15) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 15) })
     expect(engine.band).toBe('CLOSED')
 
     const her = [agentSaid('Re-reading a Tana French. Third time.')]
@@ -231,22 +235,30 @@ describe('WarmthEngine', () => {
       }
     }
 
-    // A maximum-quality turn is +7 raw. Ten of them clear GUARDED into OPEN.
+    // A maximum-quality turn is +7 raw. Ten of them — roughly a three-minute
+    // rep — clear CLOSED and GUARDED and land in OPEN.
     climb(10)
     expect(engine.band).toBe('OPEN')
 
-    // ENGAGED is deliberately out of reach for a single short rep now. Round 6
-    // walked 41 -> 58 in under a minute, which is what gain 1.5 buys you.
+    // Still short of ENGAGED on a single good stretch. Round 6 walked 41 -> 58
+    // in under a minute, which is what gain 1.5 buys you; the retune raised the
+    // gain but kept the per-turn cap, so the climb is fast without being free.
     expect(engine.warmth).toBeLessThan(60)
 
+    // Twenty-five turns is past the eight-minute cap, so this is the shape of
+    // the curve rather than a reachable session. It keeps climbing and does not
+    // stall the way the pre-retune config did at 47.
     climb(15)
-    expect(engine.band).toBe('ENGAGED')
-    expect(engine.telemetry(at).bandsVisited).toEqual(['CLOSED', 'GUARDED', 'OPEN', 'ENGAGED'])
+    expect(engine.warmth).toBeGreaterThan(80)
+    expect(engine.band).toBe('INVESTED')
+    // Monotonic: no band is ever revisited on a conversation that only improves.
+    const visited = engine.telemetry(at).bandsVisited
+    expect(visited).toEqual(['CLOSED', 'GUARDED', 'OPEN', 'ENGAGED', 'INVESTED'])
   })
 
   it('applies diminishing returns — the same turn is worth less when warm', () => {
-    const cold = new WarmthEngine({ level: fixed(L1, 10) })
-    const warm = new WarmthEngine({ level: fixed(L1, 80) })
+    const cold = new WarmthEngine({ trajectory: fixed(L1, 10) })
+    const warm = new WarmthEngine({ trajectory: fixed(L1, 80) })
     const score = { raw: 7, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 }
 
     const coldGain = cold.applyFast(score, 10, 'x').delta
@@ -255,19 +267,21 @@ describe('WarmthEngine', () => {
   })
 
   it('caps any single turn at the configured maximum gain (§4b)', () => {
-    const engine = new WarmthEngine({ level: fixed(L1, 0) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 0) })
     // An absurd raw score cannot buy more than one turn's worth of ground.
     const event = engine.applyFast(
       { raw: 500, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 },
       10,
       'x',
     )
-    // maxGainPerTurn 4, less the 0.5 natural decay charged on the same turn.
-    expect(event.delta).toBe(3.5)
+    // The cap, less the natural decay charged on the same turn. Derived rather
+    // than frozen: round 9's retune moved both of these and the literal was
+    // asserting the old tuning rather than the mechanic.
+    expect(event.delta).toBeCloseTo(L1.maxGainPerTurn - L1.decayPerTurn, 5)
   })
 
   it('cannot exceed the session ceiling however good the rep is (§4c)', () => {
-    const engine = new WarmthEngine({ level: fixed(L1, 80) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 80) })
     for (let i = 0; i < 500; i += 1) {
       engine.applyFast(
         { raw: 50, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 },
@@ -276,22 +290,22 @@ describe('WarmthEngine', () => {
       )
     }
     expect(engine.warmth).toBe(L1.sessionCeiling)
-    expect(engine.warmth).toBeLessThan(L1.ceiling)
+    expect(engine.warmth).toBeLessThan(L1.hardCeiling)
   })
 
   it('charges natural decay on every turn, scored or not (§4d)', () => {
-    const engine = new WarmthEngine({ level: fixed(L1, 50) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 50) })
     const event = engine.applyFast(
       { raw: 0, reasons: [], wordCount: 5, deadEnd: false, fillerPerMinute: 0 },
       10,
       'Yeah, a lot of stuff.',
     )
-    expect(event.naturalDecay).toBe(0.5)
-    expect(engine.warmth).toBe(49.5)
+    expect(event.naturalDecay).toBe(L1.decayPerTurn)
+    expect(engine.warmth).toBeCloseTo(50 - L1.decayPerTurn, 5)
   })
 
   it('drops a full band on one boundary violation at low warmth', () => {
-    const engine = new WarmthEngine({ level: fixed(L1, 45) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 45) })
     expect(engine.band).toBe('OPEN')
 
     const event = engine.applySlow(
@@ -309,7 +323,7 @@ describe('WarmthEngine', () => {
   })
 
   it('lets the same question pass once it has been earned', () => {
-    const engine = new WarmthEngine({ level: fixed(L1, 75) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 75) })
     const event = engine.applySlow(
       { intent: 2, intimacy: 80, quote: '', reason: 'flirting' },
       engine.warmth,
@@ -323,7 +337,7 @@ describe('WarmthEngine', () => {
   })
 
   it('Alex cannot be taken past her ceiling no matter what the input', () => {
-    const engine = new WarmthEngine({ level: fixed(L8) })
+    const engine = new WarmthEngine({ trajectory: fixed(L8) })
     for (let i = 0; i < 200; i += 1) {
       engine.applyFast(
         { raw: 7, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 },
@@ -338,7 +352,7 @@ describe('WarmthEngine', () => {
   })
 
   it('decays warmth on dead-end replies', () => {
-    const engine = new WarmthEngine({ level: fixed(L1, 45) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 45) })
     const before = engine.warmth
     let at = 0
     for (let i = 0; i < 3; i += 1) {
@@ -349,34 +363,46 @@ describe('WarmthEngine', () => {
       engine.applyFast(score, at, 'Yeah.')
     }
     expect(engine.warmth).toBeLessThan(before)
-    // -3, -3, -7 raw => -6.5 after decay 0.5, plus 3 turns of natural decay.
-    expect(engine.warmth).toBe(before - 6.5 - 1.5)
+    // -3, -3, -7 raw => -6.5 after decay 0.5, plus three turns of natural decay.
+    expect(engine.warmth).toBeCloseTo(before - 6.5 - 3 * L1.decayPerTurn, 5)
   })
 
   it('rises slowly and falls fast', () => {
-    const up = new WarmthEngine({ level: fixed(L1, 45) })
+    const up = new WarmthEngine({ trajectory: fixed(L1, 45) })
     up.applyFast({ raw: 10, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 }, 5, 'x')
     const gained = up.warmth - 45
 
-    const down = new WarmthEngine({ level: fixed(L1, 45) })
+    const down = new WarmthEngine({ trajectory: fixed(L1, 45) })
     down.applyFast({ raw: -10, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0 }, 5, 'x')
     const lost = 45 - down.warmth
 
-    // 10 raw * gain 0.6 * falloff (100-44.5)/100, less 0.5 natural decay.
-    expect(gained).toBeCloseTo(2.83, 2)
-    expect(lost).toBe(5.5)  // 10 * decay 0.5, plus natural decay
+    // After the round-9 retune the cap is what holds a rise down, not the gain:
+    // 10 raw * 1.1 * falloff still exceeds maxGainPerTurn, so the turn is
+    // clipped to 4. A fall is neither capped nor damped by falloff.
+    expect(gained).toBeCloseTo(L1.maxGainPerTurn - L1.decayPerTurn, 5)
+    expect(lost).toBeCloseTo(10 * L1.decay + L1.decayPerTurn, 5)
+    // The asymmetry is the point, and it survived the retune.
+    expect(lost).toBeGreaterThan(gained)
 
     // Alex is the mirror image: effort barely counts, missteps cost quadruple.
-    const alexUp = new WarmthEngine({ level: fixed(L8) })
+    const alexUp = new WarmthEngine({ trajectory: fixed(L8) })
     alexUp.applyFast({ raw: 10, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 }, 5, 'x')
-    // Falloff is near 1.0 down at warmth 5, so gain 0.4 dominates.
-    expect(alexUp.warmth - L8.start).toBeCloseTo(3.32, 2)
+    // Even an excellent turn is clipped to her per-turn cap, then charged the
+    // same natural decay as any other turn. Derived, not frozen: the retune
+    // moved both numbers.
+    expect(alexUp.warmth - L8.start).toBeCloseTo(L8.maxGainPerTurn - L8.decayPerTurn, 5)
+
+    const alexDown = new WarmthEngine({ trajectory: fixed(L8) })
+    alexDown.applyFast({ raw: -10, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0 }, 5, 'x')
+    // A misstep costs her far more than a good turn earns. That ratio is what
+    // makes level 8 level 8.
+    expect(L8.start - alexDown.warmth).toBeGreaterThan((alexUp.warmth - L8.start) * 4)
   })
 
   it('rolls a different opener each session, within the jitter band', () => {
-    const lowest = new WarmthEngine({ level: L1, rng: () => 0 })
-    const highest = new WarmthEngine({ level: L1, rng: () => 1 })
-    const middle = new WarmthEngine({ level: L1, rng: () => 0.5 })
+    const lowest = new WarmthEngine({ trajectory: L1, rng: () => 0 })
+    const highest = new WarmthEngine({ trajectory: L1, rng: () => 1 })
+    const middle = new WarmthEngine({ trajectory: L1, rng: () => 0.5 })
 
     expect(lowest.warmth).toBe(L1.start - L1.startJitter)
     expect(highest.warmth).toBe(L1.start + L1.startJitter)
@@ -384,7 +410,7 @@ describe('WarmthEngine', () => {
   })
 
   it('never leaves the floor-ceiling range', () => {
-    const engine = new WarmthEngine({ level: fixed(L1) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1) })
     for (let i = 0; i < 100; i += 1) {
       engine.applyFast({ raw: -20, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0 }, i, 'x')
     }
@@ -394,7 +420,7 @@ describe('WarmthEngine', () => {
   })
 
   it('attributes time to the band that was actually occupied', () => {
-    const engine = new WarmthEngine({ level: fixed(L1, 45) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 45) })
     // 30s in OPEN, then a crash into GUARDED for the remaining 30s.
     engine.applyFast({ raw: -20, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0 }, 30, 'x')
     const telemetry = engine.telemetry(60)
@@ -404,7 +430,7 @@ describe('WarmthEngine', () => {
   })
 
   it('reports async score latency and how many were dropped', () => {
-    const engine = new WarmthEngine({ level: fixed(L1) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1) })
     engine.applySlow({ intent: 1, intimacy: 10, quote: '', reason: '' }, 45, 10, 'a', 200, 1)
     engine.applySlow({ intent: 1, intimacy: 10, quote: '', reason: '' }, 45, 20, 'b', 400, 2)
     engine.recordSkippedSlow()
@@ -415,7 +441,7 @@ describe('WarmthEngine', () => {
   })
 
   it('records peak and trough, not just where it ended', () => {
-    const engine = new WarmthEngine({ level: fixed(L1, 45) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 45) })
     engine.applyFast({ raw: 10, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 }, 10, 'up')
     engine.applyFast({ raw: -30, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0 }, 20, 'down')
     engine.applyFast({ raw: 4, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 }, 30, 'up')
@@ -429,14 +455,43 @@ describe('WarmthEngine', () => {
 })
 
 describe('level config', () => {
-  it('falls back to the one authored level rather than inventing a curve', () => {
-    expect(levelConfig(1)).toEqual(L1)
-    expect(levelConfig(8)).toEqual(L8)
-    expect(levelConfig(5)).toEqual(L1)
+  it('reads the authored trajectory for every rung of the ladder', () => {
+    expect(levelTrajectory(1)).toEqual(L1)
+    expect(levelTrajectory(8)).toEqual(L8)
+    // All eight are authored now (§06). A level's difficulty curve IS the
+    // trajectory of the character who holds that rung.
+    for (const level of [2, 3, 4, 5, 6, 7]) {
+      expect(levelTrajectory(level)).not.toEqual(L1)
+      expect(levelTrajectory(level)).not.toEqual(L8)
+    }
+  })
+
+  it('gets harder monotonically from rung to rung', () => {
+    // Not a stylistic preference: a ladder where level 5 is easier than level
+    // 4 makes every unlock meaningless and the progression a lie.
+    const rungs = [1, 2, 3, 4, 5, 6, 7, 8].map(levelTrajectory)
+    for (let i = 1; i < rungs.length; i += 1) {
+      const previous = rungs[i - 1]!
+      const current = rungs[i]!
+      expect(current.start).toBeLessThanOrEqual(previous.start)
+      expect(current.gain).toBeLessThanOrEqual(previous.gain)
+      expect(current.decay).toBeGreaterThanOrEqual(previous.decay)
+      expect(current.decayPerTurn).toBeGreaterThanOrEqual(previous.decayPerTurn)
+    }
+  })
+
+  it('leaves every level except the last one winnable', () => {
+    // The number is given at 65 (§07). A rung whose ceiling sits below that is
+    // a rung nobody can pass, and only Level 8 is meant to be that.
+    for (const level of [1, 2, 3, 4, 5, 6, 7]) {
+      const trajectory = levelTrajectory(level)
+      expect(Math.min(trajectory.hardCeiling, trajectory.sessionCeiling)).toBeGreaterThan(65)
+    }
+    expect(Math.min(L8.hardCeiling, L8.sessionCeiling)).toBeLessThan(65)
   })
 
   it('makes Alex unwinnable and Nadia forgiving, by construction', () => {
-    expect(L8.ceiling).toBeLessThan(60)   // cannot reach ENGAGED
+    expect(L8.hardCeiling).toBeLessThan(60)   // cannot reach ENGAGED
     expect(L8.decay).toBeGreaterThan(L8.gain)
     expect(L1.gain).toBeGreaterThan(L1.decay)
   })
@@ -446,7 +501,7 @@ describe('standing still', () => {
   it('loses ground on a turn that gives her nothing (§4d)', () => {
     // Round 6's middle stretch: not dead ends, but going nowhere. These scored
     // exactly zero, so the meter froze at 21.0 while the conversation died.
-    const engine = new WarmthEngine({ level: fixed(L1, 40) })
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 40) })
     const line = 'Yeah, a lot of stuff.'
     for (let i = 1; i <= 4; i += 1) {
       engine.applyFast(
@@ -457,11 +512,15 @@ describe('standing still', () => {
         line,
       )
     }
-    expect(engine.warmth).toBe(38)
+    expect(engine.warmth).toBeCloseTo(40 - 4 * L1.decayPerTurn, 5)
   })
 
-  it('lets a dying conversation actually reach hostility', () => {
-    const engine = new WarmthEngine({ level: fixed(L1, 15) })
+  it('lets a going-nowhere conversation cool, without punishing tedium as hostility', () => {
+    // The retune softened natural decay from 0.5 to 0.2 a turn, so tedium alone
+    // no longer walks a character into HOSTILE. That is deliberate: HOSTILE is
+    // for someone who has actually done something, and eighty turns of nothing
+    // is thirteen minutes — past the eight-minute cap in any case.
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 15) })
     const line = 'Yeah, a lot of stuff.'
     for (let i = 1; i <= 80; i += 1) {
       engine.applyFast(
@@ -472,7 +531,90 @@ describe('standing still', () => {
         line,
       )
     }
+    expect(engine.warmth).toBeLessThan(15)
+    // Eighty turns of nothing is thirteen minutes, well past the eight-minute
+    // cap, and it drains her to the floor.
     expect(engine.band).toBe('HOSTILE')
+  })
+
+  it('still reaches hostility when he is actually giving her nothing', () => {
+    // Dead ends score negative, which is a different thing from scoring zero.
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 15) })
+    for (let i = 1; i <= 12; i += 1) {
+      engine.applyFast(
+        scoreFast(turn('Yeah.', i * 10, i * 10 + 1), {
+          level: 1, agentTurns: [], precedingDeadEnds: i, gapSeconds: null,
+        }),
+        i * 10 + 1,
+        'Yeah.',
+      )
+    }
+    expect(engine.band).toBe('HOSTILE')
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * The round-9 retune, asserted end to end
+ * ------------------------------------------------------------------ */
+
+describe('the retuned trajectory', () => {
+  const her = [agentSaid('Re-reading a Tana French. Third time.')]
+
+  /** A scripted rep. `line` is what he says every turn. */
+  function play(trajectory: typeof L1, line: string, turns: number, agentTurns = her) {
+    const engine = new WarmthEngine({ trajectory: { ...trajectory, startJitter: 0 } })
+    let at = 0
+    for (let i = 0; i < turns; i += 1) {
+      at += 12
+      engine.applyFast(
+        scoreFast(turn(line, at, at + 4), {
+          level: 1, agentTurns, precedingDeadEnds: 0, gapSeconds: null,
+        }),
+        at,
+        line,
+      )
+    }
+    return engine
+  }
+
+  const GOOD = 'What made you pick that French one to read again'
+  const FLAT = 'Yeah, a lot of stuff.'
+
+  it('gets a good player into the warm bands inside a real rep', () => {
+    // Ten turns is roughly a three-to-four minute rep. Under the old config —
+    // gain 0.6, decayPerTurn 0.5, start 15 — five minutes of this reached 47,
+    // which taught a user doing everything right that nothing they did mattered.
+    const engine = play(nadia.trajectory, GOOD, 10)
+    expect(engine.warmth).toBeGreaterThanOrEqual(55)
+    expect(engine.warmth).toBeLessThanOrEqual(70)
+    expect(engine.band).toBe('ENGAGED')
+  })
+
+  it('leaves a flat player cold', () => {
+    // Turns that give her nothing score zero, and zero still loses ground.
+    const engine = play(nadia.trajectory, FLAT, 12, [])
+    expect(engine.warmth).toBeLessThan(30)
+  })
+
+  it('never lets Alex past her hard ceiling, however well the rep goes', () => {
+    // The whole point of level 8. ENGAGED starts at 60 and she stops at 45.
+    for (const turns of [10, 30, 80, 200]) {
+      const engine = play(alex.trajectory, GOOD, turns)
+      expect(engine.warmth).toBeLessThanOrEqual(alex.trajectory.hardCeiling)
+    }
+    expect(play(alex.trajectory, GOOD, 200).band).toBe('OPEN')
+  })
+
+  it('does not let a perfect score buy past the ceiling either', () => {
+    const engine = new WarmthEngine({ trajectory: { ...alex.trajectory, startJitter: 0 } })
+    for (let i = 0; i < 500; i += 1) {
+      engine.applyFast(
+        { raw: 100, reasons: [], wordCount: 20, deadEnd: false, fillerPerMinute: 0 },
+        i,
+        'x',
+      )
+    }
+    expect(engine.warmth).toBe(alex.trajectory.hardCeiling)
   })
 })
 
@@ -504,5 +646,56 @@ describe('filler detection', () => {
       level: 1, agentTurns: [], precedingDeadEnds: 0, gapSeconds: null,
     })
     expect(spiral.reasons.some((r) => r.code === 'filler-rate')).toBe(true)
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * Band selection
+ * ------------------------------------------------------------------ */
+
+describe('bandFor', () => {
+  it('covers the whole continuous range with no gaps', () => {
+    // THE ROUND-10 BUG. Selection used to test `value >= min && value <= max`
+    // against integer bounds and fall back to OPEN when nothing matched, so
+    // every fractional value in a seam — 19.5, 39.5, 59.5, 79.5, -0.5 — was
+    // reported as OPEN. Warmth is continuous, so this fired constantly, and
+    // `bandDirective` reads it: a character at 19.5 is CLOSED and was being
+    // handed the OPEN directive.
+    for (let value = WARMTH_MIN; value <= WARMTH_MAX; value += 0.25) {
+      const band = bandFor(value)
+      expect(BANDS.some((spec) => spec.band === band), `warmth ${value}`).toBe(true)
+    }
+  })
+
+  it('puts every seam value in the band below, not in OPEN', () => {
+    expect(bandFor(-0.5)).toBe('HOSTILE')
+    expect(bandFor(19.5)).toBe('CLOSED')
+    expect(bandFor(39.5)).toBe('GUARDED')
+    expect(bandFor(59.5)).toBe('OPEN')
+    expect(bandFor(79.5)).toBe('ENGAGED')
+  })
+
+  it('never reports a cold character as mid-warm', () => {
+    // The specific failure: -0.9999… is as cold as the meter goes and used to
+    // come back OPEN, which would have told her to volunteer something.
+    for (const value of [-20, -12.5, -1.0000001, -0.9999999999999982, -0.0001]) {
+      expect(bandFor(value), `warmth ${value}`).toBe('HOSTILE')
+    }
+  })
+
+  it('is monotonic — warmer input never yields a colder band', () => {
+    const order = BANDS.map((spec) => spec.band)
+    let previous = -1
+    for (let value = WARMTH_MIN; value <= WARMTH_MAX; value += 0.5) {
+      const index = order.indexOf(bandFor(value))
+      expect(index, `warmth ${value}`).toBeGreaterThanOrEqual(previous)
+      previous = index
+    }
+  })
+
+  it('hands a cold character a cold directive', () => {
+    // The consequence that made the bug worth finding.
+    expect(bandDirective(19.5)).toContain('One to four words')
+    expect(bandDirective(19.5)).not.toContain('volunteer')
   })
 })

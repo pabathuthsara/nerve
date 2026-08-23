@@ -14,6 +14,8 @@
  */
 
 import { NextResponse } from 'next/server'
+import { requireUser } from '@/lib/db/api-auth'
+import { mayOpenSession } from '@/lib/db/progress'
 import { getPersona } from '@/lib/personas'
 import { mintSession } from '@/lib/voice/mint'
 import { resolveProviderId } from '@/lib/voice'
@@ -50,6 +52,22 @@ function parseCalibration(input: unknown): Calibration {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  // The most expensive endpoint in the product. It hands back a credential that
+  // buys an eight-minute Realtime session on our account, and it shipped open —
+  // the only thing protecting it was that the path had not been guessed.
+  const auth = await requireUser(request)
+  if ('response' in auth) return auth.response
+
+  // The daily quota, at the point where money is actually committed. The rep
+  // itself spends the counter when the transport connects; this refuses to
+  // hand out a credential to somebody who has none left to spend (§14).
+  if (auth.userId !== 'internal') {
+    const allowed = await mayOpenSession(auth.userId)
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.message ?? 'No reps left today.' }, { status: 429 })
+    }
+  }
+
   let body: MintRequest
   try {
     body = (await request.json()) as MintRequest

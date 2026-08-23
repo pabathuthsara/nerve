@@ -13,6 +13,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { requireUser } from '@/lib/db/api-auth'
 import { composeScorecard, clampSubScores } from '@/lib/grade'
 import { buildGradeSystemPrompt, renderMetrics, renderTranscript } from '@/lib/grade/prompt'
 import { computeDeterministicMetrics } from '@/lib/grade/metrics'
@@ -55,6 +56,11 @@ function parseTranscript(raw: unknown): TranscriptTurn[] | null {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  // Before anything else, and before the key is even read. This route calls the
+  // strongest text model on the account with a caller-supplied transcript.
+  const auth = await requireUser(request)
+  if ('response' in auth) return auth.response
+
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'not configured' }, { status: 500 })
 

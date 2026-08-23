@@ -117,24 +117,190 @@ export function computeDeterministicMetrics(
   }
 }
 
-/** Scores a metric against its §07 target band, 0-100. */
-export function bandScore(
-  value: number | null,
-  target: { min?: number; max?: number },
-): number | null {
-  if (value === null) return null
-  const { min, max } = target
+/* ------------------------------------------------------------------ *
+ * Band scoring
+ * ------------------------------------------------------------------ */
+
+/**
+ * A §07 target band, and how far outside it is still worth partial credit.
+ *
+ * Round 9 scored 96 on a session with three metrics outside band, because the
+ * old scorer had no upper bounds and a falloff measured against the band's own
+ * width. Fourteen questions in three minutes read as "well above the minimum of
+ * three" and took full marks. Fourteen questions in three minutes is an
+ * interrogation.
+ */
+export interface MetricBand {
+  key: keyof DeterministicMetrics
+  label: string
+  /** Inclusive lower bound of the target. */
+  min?: number
+  /** Inclusive upper bound of the target. */
+  max?: number
+  /**
+   * Distance outside the band at which the metric scores zero.
+   *
+   * Explicit per metric rather than derived from the band width. A band's width
+   * says how tolerant the *target* is, not how bad it is to miss — those are
+   * different questions and conflating them is what produced the round-9 score.
+   */
+  tolerance: number
+  /** How the value is rendered in the audit line. */
+  format: (value: number) => string
+}
+
+/**
+ * Marks at the exact edge of the band.
+ *
+ * Not 100. "The band is the lesson" (§07) — the middle of the band is the
+ * target and its boundary is borderline by definition, so sitting on the line
+ * should not read as a perfect performance. It also keeps the curve continuous:
+ * without it a value one thousandth outside the band would fall off a cliff
+ * from 100.
+ */
+const EDGE_SCORE = 88
+
+export interface MetricScore {
+  key: string
+  label: string
+  /** The target, rendered for the audit line. */
+  band: string
+  value: number | null
+  /** 0-100, or null when the session gave nothing to measure. */
+  points: number | null
+  verdict: 'inside' | 'below' | 'above' | 'unmeasured'
+}
+
+/**
+ * Full marks in the middle, tapering to EDGE_SCORE at the boundary, then
+ * falling to zero across `tolerance`. Symmetric: overshooting a target is a
+ * miss in exactly the way undershooting is.
+ */
+export function bandScore(value: number | null, band: MetricBand): number | null {
+  if (value === null || !Number.isFinite(value)) return null
+  const { min, max, tolerance } = band
+
+  const below = min !== undefined && value < min
+  const above = max !== undefined && value > max
+  if (below) return falloff(min - value, tolerance)
+  if (above) return falloff(value - max, tolerance)
+
+  // Inside. Distance from the nearest edge, as a share of the room available
+  // to move away from it, decides how far above EDGE_SCORE it lands.
+  const headroom = insideHeadroom(value, band)
+  return Math.round(EDGE_SCORE + (100 - EDGE_SCORE) * headroom)
+}
+
+function falloff(distance: number, tolerance: number): number {
+  const span = Math.max(tolerance, 1e-6)
+  return Math.max(0, Math.round(EDGE_SCORE * (1 - distance / span)))
+}
+
+/** 0 at the boundary, 1 comfortably inside. */
+function insideHeadroom(value: number, band: MetricBand): number {
+  const { min, max, tolerance } = band
   if (min !== undefined && max !== undefined) {
-    if (value >= min && value <= max) return 100
-    const distance = value < min ? min - value : value - max
-    const span = Math.max(max - min, 1e-6)
-    return Math.max(0, Math.round(100 - (distance / span) * 100))
+    const half = (max - min) / 2
+    if (half <= 0) return 1
+    const centre = (min + max) / 2
+    return Math.max(0, Math.min(1, 1 - Math.abs(value - centre) / half))
   }
-  if (max !== undefined) {
-    return value <= max ? 100 : Math.max(0, Math.round(100 - ((value - max) / max) * 100))
-  }
-  if (min !== undefined) {
-    return value >= min ? 100 : Math.max(0, Math.round((value / min) * 100))
-  }
-  return null
+  // One-sided: full marks once clear of the boundary by the tolerance.
+  const edge = min !== undefined ? value - min : (max as number) - value
+  return Math.max(0, Math.min(1, edge / Math.max(tolerance, 1e-6)))
+}
+
+/**
+ * The §07 deterministic bands, in one place so the scorecard, the dev panel and
+ * any future calibration harness read the same numbers.
+ */
+export const METRIC_BANDS: readonly MetricBand[] = [
+  {
+    key: 'talkRatio',
+    label: 'talk ratio',
+    min: 0.4,
+    max: 0.55,
+    // Dominating and disappearing both fail; 15 points either side of the band
+    // is the difference between a conversation and a monologue.
+    tolerance: 0.12,
+    format: (value) => `${Math.round(value * 100)}%`,
+  },
+  {
+    key: 'questionsPer3Min',
+    label: 'questions / 3 min',
+    min: 3,
+    // THE ROUND-9 FIX. §07 only ever stated a floor, so an interrogation took
+    // full marks. Eight in three minutes is one roughly every twenty seconds,
+    // which is already brisk; past that he is running a survey.
+    max: 8,
+    tolerance: 3,
+    format: (value) => value.toFixed(1),
+  },
+  {
+    key: 'openClosedRatio',
+    label: 'open : closed',
+    min: 2,
+    tolerance: 1,
+    format: (value) => `${value.toFixed(2)}:1`,
+  },
+  {
+    key: 'fillerRate',
+    label: 'fillers / min',
+    max: 4,
+    tolerance: 4,
+    format: (value) => value.toFixed(1),
+  },
+  {
+    key: 'longestMonologue',
+    label: 'longest monologue',
+    max: 22,
+    tolerance: 15,
+    format: (value) => `${value.toFixed(1)}s`,
+  },
+  {
+    key: 'meanResponseLatency',
+    label: 'response latency',
+    max: 1.8,
+    tolerance: 1.5,
+    format: (value) => `${value.toFixed(2)}s`,
+  },
+]
+
+/** Human-readable target, for the audit line. */
+export function describeBand(band: MetricBand): string {
+  const { min, max, format } = band
+  if (min !== undefined && max !== undefined) return `${format(min)}–${format(max)}`
+  if (min !== undefined) return `≥ ${format(min)}`
+  if (max !== undefined) return `≤ ${format(max)}`
+  return '—'
+}
+
+/**
+ * Every metric scored against its band, with the working shown.
+ *
+ * Band, actual value and points awarded, per metric, so a composite can be
+ * audited instead of trusted. A 96 that nobody can take apart is worse than a
+ * 73 that anyone can.
+ */
+export function scoreMetrics(metrics: DeterministicMetrics): MetricScore[] {
+  return METRIC_BANDS.map((band) => {
+    const raw = metrics[band.key]
+    const value = typeof raw === 'number' ? raw : null
+    const points = bandScore(value, band)
+    return {
+      key: band.key,
+      label: band.label,
+      band: describeBand(band),
+      value,
+      points,
+      verdict:
+        value === null || points === null
+          ? ('unmeasured' as const)
+          : band.min !== undefined && value < band.min
+            ? ('below' as const)
+            : band.max !== undefined && value > band.max
+              ? ('above' as const)
+              : ('inside' as const),
+    }
+  })
 }

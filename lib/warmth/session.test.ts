@@ -9,12 +9,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { WarmthSession } from './session'
-import { WARMTH_LEVELS, type WarmthLevelConfig } from './levels'
+import { nadia as nadiaPersona } from '@/lib/personas/nadia'
 import type { SlowScore, SlowScorer } from './slow'
 import { nadia } from '@/lib/personas/nadia'
 import type { TranscriptTurn } from '@/lib/voice/types'
 
-const L1 = { ...(WARMTH_LEVELS[1] as WarmthLevelConfig), startJitter: 0 }
+const L1 = { ...nadiaPersona.trajectory, startJitter: 0 }
 
 function userTurn(text: string, tStart = 0, tEnd = 4): TranscriptTurn {
   return { speaker: 'user', text, t_start: tStart, t_end: tEnd }
@@ -43,7 +43,7 @@ function deferredScorer() {
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
 function makeSession(scorer: SlowScorer | null, nowSeconds = () => 100) {
-  return new WarmthSession({ persona: nadia, level: L1, scorer, nowSeconds })
+  return new WarmthSession({ persona: nadia, trajectory: L1, scorer, nowSeconds })
 }
 
 describe('WarmthSession', () => {

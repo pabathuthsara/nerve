@@ -1,0 +1,10 @@
+import Link from 'next/link'
+
+export function LegalScreen({ kind }: { kind: 'terms' | 'privacy' }) {
+  const privacy = kind === 'privacy'
+  return <main className="legal-page"><article className="legal-document"><Link href="/signup" className="wordmark">NERVE</Link><header><span className="label">Effective 22 August 2026</span><h1 className="display-lg">{privacy ? 'Privacy policy' : 'Terms of use'}</h1><p>{privacy ? 'What the training product needs, what it does not, and where your control begins.' : 'The compact agreement for using NERVE responsibly.'}</p></header>{privacy ? <><LegalSection title="Data we handle">Account details, setup choices, practice-session metadata, and audio only when a voice provider needs it to run the active rep.</LegalSection><LegalSection title="Audio and transcripts">Production retention is not enabled by this frontend preview. Before the live seam is connected, retention, deletion, and provider terms must be surfaced in-product.</LegalSection><LegalSection title="Your control">You can request access, correction, export, or deletion through the account support channel configured by the operator.</LegalSection></> : <><LegalSection title="Practice, not permission">NERVE trains conversation skills. It never overrides another person&apos;s boundaries, consent, safety, or right to leave.</LegalSection><LegalSection title="Use the product lawfully">Do not use a rep to plan harassment, deception, discrimination, or unsafe conduct. Stop when a real interaction is unwelcome.</LegalSection><LegalSection title="Preview limitations">Mock sessions are scripted demonstrations. Real authentication, billing, voice, retention, and support terms must be connected before commercial use.</LegalSection></>}<footer><Link className="arena-button arena-button--secondary" href="/signup">Back to signup</Link><span className="label">Plain language on purpose.</span></footer></article></main>
+}
+
+function LegalSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section><h2 className="display-md">{title}</h2><p>{children}</p></section>
+}

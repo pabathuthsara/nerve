@@ -5,3 +5,9 @@ node_modules
 *.tsbuildinfo
 next-env.d.ts
 voice-lab
+.next-check
+
+# Supabase CLI. `supabase/config.toml` and `supabase/migrations/` ARE committed;
+# these are local state and must not be.
+supabase/.temp
+supabase/.branches

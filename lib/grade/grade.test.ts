@@ -8,10 +8,12 @@ import {
   computeDeterministicMetrics,
   bandScore,
   deterministicScore,
+  scoreDeterministic,
   clampSubScores,
   weakestTwo,
   composeScorecard,
 } from './index'
+import type { DeterministicMetrics, MetricBand } from './metrics'
 import type { TranscriptTurn } from '@/lib/voice/types'
 
 function convo(lines: [speaker: 'user' | 'agent', text: string, start: number, end: number][]): TranscriptTurn[] {
@@ -94,25 +96,96 @@ describe('deterministic metrics', () => {
 })
 
 describe('band scoring', () => {
-  it('gives full marks inside the target band', () => {
-    expect(bandScore(0.45, { min: 0.4, max: 0.55 })).toBe(100)
-    expect(bandScore(3.5, { max: 4 })).toBe(100)
-    expect(bandScore(4, { min: 3 })).toBe(100)
+  const band = (over: Partial<MetricBand>): MetricBand => ({
+    key: 'talkRatio',
+    label: 'test',
+    tolerance: 1,
+    format: String,
+    ...over,
+  })
+
+  it('gives full marks in the middle of the target band', () => {
+    expect(bandScore(0.475, band({ min: 0.4, max: 0.55, tolerance: 0.12 }))).toBe(100)
+    expect(bandScore(0, band({ max: 4, tolerance: 4 }))).toBe(100)
+    expect(bandScore(10, band({ min: 3, tolerance: 1 }))).toBe(100)
+  })
+
+  it('does not give full marks for sitting exactly on the boundary', () => {
+    // The band is the lesson (§07): its edge is borderline by definition, and
+    // round 9 handed 100 to a talk ratio of exactly 0.55.
+    const edge = bandScore(0.55, band({ min: 0.4, max: 0.55, tolerance: 0.12 }))
+    expect(edge).toBeLessThan(100)
+    expect(edge).toBeGreaterThan(80)
   })
 
   it('falls off outside it, in both directions', () => {
-    // Dominating and disappearing both fail; the band is the lesson (§07).
-    expect(bandScore(0.9, { min: 0.4, max: 0.55 })!).toBeLessThan(100)
-    expect(bandScore(0.1, { min: 0.4, max: 0.55 })!).toBeLessThan(100)
+    const talk = band({ min: 0.4, max: 0.55, tolerance: 0.12 })
+    expect(bandScore(0.9, talk)!).toBeLessThan(50)
+    expect(bandScore(0.1, talk)!).toBeLessThan(50)
+  })
+
+  it('penalises an interrogation, which the old floor-only band did not', () => {
+    const questions = band({ key: 'questionsPer3Min', min: 3, max: 8, tolerance: 3 })
+    // Round 9's actual value. It used to score 100 against a bare "min: 3".
+    expect(bandScore(14.3, questions)).toBe(0)
+    expect(bandScore(5.5, questions)).toBe(100)
+    // Still penalised for asking too few.
+    expect(bandScore(1, questions)!).toBeLessThan(50)
   })
 
   it('never goes negative', () => {
-    expect(bandScore(500, { max: 4 })).toBe(0)
-    expect(bandScore(0, { min: 3 })).toBe(0)
+    expect(bandScore(500, band({ max: 4, tolerance: 4 }))).toBe(0)
+    expect(bandScore(0, band({ min: 3, tolerance: 1 }))).toBe(0)
   })
 
   it('returns null for a metric that could not be measured', () => {
-    expect(bandScore(null, { max: 4 })).toBeNull()
+    expect(bandScore(null, band({ max: 4 }))).toBeNull()
+  })
+})
+
+describe('the round-9 regression', () => {
+  /** The three metrics that were outside band while the score came back 96. */
+  const ROUND_9: DeterministicMetrics = {
+    talkRatio: 0.55,
+    questionsAsked: 14,
+    questionsPer3Min: 14.3,
+    openQuestions: 8,
+    closedQuestions: 5.13,
+    openClosedRatio: 1.56,
+    fillerRate: 1,
+    longestMonologue: 8,
+    meanResponseLatency: 1.0,
+    specificPlanOffered: false,
+    cleanExit: true,
+    userTurns: 14,
+    agentTurns: 14,
+    sessionSeconds: 176,
+  }
+
+  it('no longer scores that session in the nineties', () => {
+    const { score } = scoreDeterministic(ROUND_9)
+    expect(score).toBeLessThan(80)
+    expect(score).toBeGreaterThan(55)
+  })
+
+  it('shows its working, per metric', () => {
+    const { breakdown } = scoreDeterministic(ROUND_9)
+    const byKey = Object.fromEntries(breakdown.map((entry) => [entry.key, entry]))
+
+    expect(byKey['questionsPer3Min']).toMatchObject({
+      band: '3.0–8.0',
+      value: 14.3,
+      points: 0,
+      verdict: 'above',
+    })
+    expect(byKey['openClosedRatio']?.verdict).toBe('below')
+    expect(byKey['openClosedRatio']?.points).toBeLessThan(60)
+    // Every metric reports a band, a value and points, measured or not.
+    for (const entry of breakdown) {
+      expect(typeof entry.band).toBe('string')
+      expect(entry).toHaveProperty('value')
+      expect(entry).toHaveProperty('points')
+    }
   })
 })
 

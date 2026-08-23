@@ -11,6 +11,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { requireUser } from '@/lib/db/api-auth'
 import { clampSlowScore } from '@/lib/warmth/slow'
 import { buildSystemPrompt } from '@/lib/warmth/prompt'
 
@@ -32,6 +33,12 @@ function str(value: unknown, limit = 800): string | null {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  // This one fires several times per rep, so the auth round trip is real cost.
+  // It is still the right trade: the caller is fire-and-forget and already
+  // budgets ~1.5s median, and an open model endpoint is a standing invoice.
+  const auth = await requireUser(request)
+  if ('response' in auth) return auth.response
+
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'not configured' }, { status: 500 })
 

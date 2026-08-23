@@ -1,8 +1,8 @@
 <!--
 NERVE — BUILD SPECIFICATION v1.0
 Working document for implementation. Suggested use with Claude Code:
-  - keep this file at the repo root as NERVE-SPEC.md
-  - reference it from CLAUDE.md so it loads as standing context
+  - lives at docs/NERVE-SPEC.md, indexed by docs/README.md
+  - referenced from CLAUDE.md so it loads as standing context
   - build in the milestone order in section 17; do not skip M0
 -->
 

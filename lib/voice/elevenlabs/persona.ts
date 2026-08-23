@@ -19,7 +19,14 @@
  * Pure. No network, no SDK, no DOM.
  */
 
-import { clamp, resolveSilenceMs, type Calibration, type Persona } from '../types'
+import {
+  clamp,
+  effectiveSharpness,
+  mayInterrupt,
+  resolveSilenceMs,
+  type Calibration,
+  type Persona,
+} from '../types'
 import type { PersonaCompiler } from '../provider'
 import { BANNED_REGISTER, compileInstructions } from '../openai/persona'
 import {
@@ -101,23 +108,34 @@ export function isUncastVoice(voiceId: string): boolean {
  * Where the two providers genuinely diverge. Under tagged TTS we can state the
  * delivery directly rather than hoping it emerges.
  */
-export function compileDeliveryTags(persona: Persona): string[] {
+export function compileDeliveryTags(persona: Persona, warmth?: number): string[] {
   const tags: string[] = []
-  const { warmth, expansiveness } = persona.delivery
+  const p = persona.personality
 
-  if (warmth <= 33) tags.push('[flat]', '[disinterested]')
-  else if (warmth <= 66) tags.push('[neutral]')
-  else tags.push('[warm]')
+  // Expression is the constant; warmth only decides how much is being given,
+  // never how it sounds. That separation is the whole point of layer 2.
+  tags.push(EXPRESSION_TAG[p.expression])
 
-  if (expansiveness <= 33) tags.push('[clipped]')
-  if (persona.distraction >= 67) tags.push('[distracted]')
-  if (persona.signal_clarity <= 33) tags.push('[polite]')
+  // The sharpness curve, if a live warmth is supplied. A stranger who is
+  // already cold is sharper than a neutral one.
+  const sharp = warmth === undefined
+    ? p.sharpness
+    : effectiveSharpness(p, warmth)
+  if (sharp >= 67) tags.push('[cutting]')
 
-  for (const note of persona.delivery.notes) {
-    const tag = note.toLowerCase().match(/^\[(.+)\]$/)
-    if (tag) tags.push(note)
-  }
+  if (p.talkativeness <= 33) tags.push('[clipped]')
+  if (p.distraction >= 67) tags.push('[distracted]')
+  if (p.signalClarity <= 33) tags.push('[polite]')
+  if (p.humour >= 67) tags.push('[amused]')
+
   return tags
+}
+
+const EXPRESSION_TAG: Record<Persona['personality']['expression'], string> = {
+  playful: '[playful]',
+  dry: '[dry]',
+  earnest: '[earnest]',
+  flat: '[flat]',
 }
 
 /**
@@ -128,7 +146,17 @@ export function compileDeliveryTags(persona: Persona): string[] {
  * the model softens its voice softens with it.
  */
 export function stabilityFor(persona: Persona): number {
-  return persona.delivery.warmth <= 33 ? 0.85 : 0.5
+  // Expression, not warmth. A flat character must stay flat at every point on
+  // the meter; under OpenAI the voice softens as the model softens and there is
+  // nothing to be done about it, which is the argument §04 makes for this arm.
+  return STABILITY_BY_EXPRESSION[persona.personality.expression]
+}
+
+const STABILITY_BY_EXPRESSION: Record<Persona['personality']['expression'], number> = {
+  flat: 0.9,
+  dry: 0.75,
+  earnest: 0.55,
+  playful: 0.4,
 }
 
 export class ElevenLabsPersonaCompiler implements PersonaCompiler<ElevenLabsPipelineConfig> {
@@ -196,7 +224,7 @@ export class ElevenLabsPersonaCompiler implements PersonaCompiler<ElevenLabsPipe
         // so a log line reads the same on either arm.
         turn_timeout: silenceMs / 1000,
         mode: 'silence',
-        interrupts: persona.interrupts,
+        interrupts: mayInterrupt(persona),
       },
       delivery_tags: spec.supportsAudioTags ? compileDeliveryTags(persona) : [],
     }
@@ -211,7 +239,7 @@ export class ElevenLabsPersonaCompiler implements PersonaCompiler<ElevenLabsPipe
       similarity_boost: env.similarity_boost,
       speed: Number.isFinite(env.speed)
         ? clamp(env.speed, 0.7, 1.2)
-        : clamp(persona.delivery.pace, 0.7, 1.2),
+        : clamp(persona.voice.pace ?? 1, 0.7, 1.2),
     }
   }
 }

@@ -2,6 +2,7 @@
 
 import type { VoiceEmitter } from '../emitter'
 import { TurnAssembler } from '../transcript'
+import { classifyPhantom, isAgentEcho, type PhantomReason } from './noise'
 import {
   VoiceError,
   type ProviderId,
@@ -20,20 +21,45 @@ interface ResponsePayload {
   id?: unknown
   usage?: unknown
   output?: unknown
+  /** completed | cancelled | failed | incomplete */
+  status?: unknown
 }
 
 export interface OpenAIEventTranslatorCallbacks {
   /** A second response appeared while the first was generating/playing. */
   onOverlap?: (responseId: string | null) => void
   onUsage?: (usage: UsageSample) => void
-  /** Server VAD committed a user turn; the client may now create a response. */
-  onUserTurnCommitted?: () => void
+  /**
+   * Server VAD committed a user turn; the client may now create a response.
+   *
+   * Reports back whether a response was actually created or merely queued
+   * behind one already in flight. A turn that later proves to be echo or noise
+   * has to be undone, and those two states undo differently — see
+   * `OpenAIResponseGate.cancelPending`.
+   */
+  onUserTurnCommitted?: () => 'created' | 'queued'
   /** The active response has finished generation and playback. */
   onResponseSettled?: () => void
   /** The model called the explicit terminal scene action. */
   onCharacterExit?: (at: number) => void
   /** The model printed tool syntax instead of making a structured call. */
   onToolSyntaxLeak?: (at: number) => void
+  /**
+   * The transcriber returned words for something that was not speech.
+   *
+   * A reply to it is already in flight by the time we know — the response is
+   * created on `input_audio_buffer.committed`, which fires before transcription
+   * completes — so the adapter cancels it if she has not started speaking yet.
+   */
+  onPhantomTurn?: (at: number, reason: PhantomReason, responseId: string | null) => void
+  /**
+   * She spoke twice with no user turn between.
+   *
+   * Reported, not repaired. The audio has already reached the user's ears by
+   * the time this is knowable, so the turn is still committed — see
+   * `sealAgentTurn`.
+   */
+  onDoubleTurn?: (at: number) => void
 }
 
 function readString(event: ServerEvent, key: string): string | null {
@@ -141,6 +167,15 @@ function hasAudioOutput(event: ServerEvent): boolean {
   })
 }
 
+/**
+ * `completed` | `cancelled` | `failed` | `incomplete`, or null if absent.
+ * A response that did not complete may never reach the speakers at all.
+ */
+function responseStatus(event: ServerEvent): string | null {
+  const status = readResponse(event)?.status
+  return typeof status === 'string' ? status : null
+}
+
 export class OpenAIEventTranslator {
   private readonly userTurns = new TurnAssembler('user')
   private readonly agentTurns = new TurnAssembler('agent')
@@ -155,6 +190,22 @@ export class OpenAIEventTranslator {
   private characterExitRequested = false
   private characterExitSignalled = false
   private playbackFinishedForResponse = false
+  /** Did any audio for the CURRENT response reach the speakers? */
+  private playbackStartedForResponse = false
+  /** When the current user utterance began, for the phantom-turn duration rule. */
+  private userSpeechStartedAt: number | null = null
+  private lastUserSpeechSeconds: number | null = null
+  /** Did the whole current user segment fall inside her playback? */
+  private userSpeechDuringAgent = false
+  private lastUserSpeechDuringAgent = false
+  /** The last thing she actually said, for echo comparison. */
+  private lastAgentText: string | null = null
+  /** The response THIS user turn created, or null if it was queued instead. */
+  private userTurnResponseId: string | null = null
+  /** A response is on its way for this user turn but its id has not arrived. */
+  private userTurnAwaitingResponse = false
+  /** A phantom verdict that landed before the id it needs. Deferred, not lost. */
+  private deferredPhantom: { at: number; reason: PhantomReason } | null = null
 
   constructor(
     private readonly emitter: VoiceEmitter,
@@ -195,6 +246,22 @@ export class OpenAIEventTranslator {
         this.activeResponseId = eventResponseId ?? this.activeResponseId ?? 'unknown'
         this.responseGenerationDone = false
         this.playbackFinishedForResponse = false
+        this.playbackStartedForResponse = false
+
+        // Bind this response to the user turn that caused it. Cancelling a
+        // phantom means cancelling THIS id and no other; the round-12 fault
+        // was cancelling `activeResponseId`, which after a coalesced commit is
+        // the reply to a REAL turn that is currently playing.
+        if (this.userTurnAwaitingResponse) {
+          this.userTurnAwaitingResponse = false
+          this.userTurnResponseId = this.activeResponseId
+          // A phantom verdict that arrived before this id can now be acted on.
+          const deferred = this.deferredPhantom
+          if (deferred) {
+            this.deferredPhantom = null
+            this.callbacks.onPhantomTurn?.(deferred.at, deferred.reason, this.userTurnResponseId)
+          }
+        }
         break
       }
 
@@ -210,7 +277,44 @@ export class OpenAIEventTranslator {
         ) {
           this.signalCharacterExit(at)
         }
-        if (!this.speaking && this.playbackEndAt === null) this.clearActiveResponse()
+        // THE ROUND-10 RACE. This used to settle whenever she was not currently
+        // audible, which cannot tell "the audio has not started yet" apart from
+        // "the audio already finished". `response.done` routinely arrives
+        // BEFORE `output_audio_buffer.started`, so a reply that was about to
+        // speak released the response gate, a second response.create landed on
+        // top of it, and the overlap guard then cancelled one of the two.
+        //
+        // That single fault produced all three symptoms in round 10: she began
+        // a sentence and switched to another one, she spoke when nobody had
+        // said anything, and a user turn got no answer at all because the
+        // cancelled response WAS the answer.
+        //
+        // A response with audio now settles only once playback has actually
+        // ended. One without audio — a bare function call — settles here,
+        // because nothing else will ever settle it.
+        //
+        // THE ROUND-11 DEADLOCK, which is the mirror of the race above. Waiting
+        // for playback is right for a response that will play. It is fatal for
+        // one that never will: cancel a reply before its first audio frame
+        // reaches the speakers — a barge-in during the opening greeting does
+        // exactly this — and the server sends `response.done` with audio in the
+        // output but no `output_audio_buffer.started`, and therefore no
+        // `stopped` either. Nothing was ever going to settle it.
+        //
+        // The gate then stays in-flight forever. Every later user turn is
+        // coalesced into `pending` that never fires, so she goes permanently
+        // silent while VAD, warmth and steering all carry on as normal. The
+        // session looks alive and answers nothing.
+        //
+        // A response that ended in any state other than `completed`, without
+        // ever having reached the speakers, settles here.
+        const status = responseStatus(event)
+        const endedBeforePlayback =
+          status !== null && status !== 'completed' && !this.playbackStartedForResponse
+
+        if (!hasAudioOutput(event) || this.playbackFinishedForResponse || endedBeforePlayback) {
+          this.clearActiveResponse()
+        }
         break
       }
 
@@ -232,19 +336,39 @@ export class OpenAIEventTranslator {
 
       case 'input_audio_buffer.speech_started': {
         this.userSinceAgent = true
+        this.userSpeechStartedAt = at
+        // Speech that begins while she is audible is the first half of the
+        // echo test. It is not proof on its own — at levels 5+ a real barge-in
+        // looks identical — so it only lowers the similarity bar.
+        this.userSpeechDuringAgent = this.speaking
         this.userTurns.openAt(at)
         this.emitter.emit('user.speech.start', { at })
         break
       }
 
       case 'input_audio_buffer.speech_stopped': {
+        this.lastUserSpeechSeconds =
+          this.userSpeechStartedAt === null ? null : Math.max(0, at - this.userSpeechStartedAt)
+        this.userSpeechStartedAt = null
+        // Only a segment enclosed at BOTH ends by her playback counts. One that
+        // starts inside her turn and runs past the end of it is someone talking
+        // over her, which is a real turn and must survive.
+        this.lastUserSpeechDuringAgent = this.userSpeechDuringAgent && this.speaking
+        this.userSpeechDuringAgent = false
         this.userTurns.closeAt(at)
         this.emitter.emit('user.speech.stop', { at })
         break
       }
 
       case 'input_audio_buffer.committed': {
-        this.callbacks.onUserTurnCommitted?.()
+        this.userTurnResponseId = null
+        this.deferredPhantom = null
+        const outcome = this.callbacks.onUserTurnCommitted?.() ?? 'queued'
+        // 'queued' means the gate coalesced this commit behind a reply already
+        // in flight, so NOTHING of ours is generating for it. If this turn
+        // later proves to be echo, the undo is to drop the queue entry — never
+        // to cancel the response the user is currently listening to.
+        this.userTurnAwaitingResponse = outcome === 'created'
         break
       }
 
@@ -259,13 +383,51 @@ export class OpenAIEventTranslator {
 
       case 'conversation.item.input_audio_transcription.completed': {
         const turn = this.userTurns.commit(readString(event, 'transcript'), at)
-        if (turn) this.commitTurn(turn, 'user')
+        const speechSeconds = this.lastUserSpeechSeconds
+        const duringAgent = this.lastUserSpeechDuringAgent
+        this.lastUserSpeechSeconds = null
+        this.lastUserSpeechDuringAgent = false
+        if (!turn) break
+
+        // Noise the transcriber turned into words. Suppressed here rather than
+        // downstream so it never reaches the transcript, the warmth engine or
+        // the scorecard — see ./noise.ts for why all three matter.
+        const verdict = classifyPhantom({ text: turn.text, speechSeconds })
+
+        // Her own voice, back through the microphone. A separate test, because
+        // an echo of a real sentence passes every phantom rule there is: it is
+        // long enough, Latin enough and wordy enough. Compared against what she
+        // is saying RIGHT NOW as well as her last sealed turn, since the echo
+        // arrives while she is still mid-utterance.
+        const echo =
+          !verdict.phantom &&
+          isAgentEcho({
+            text: turn.text,
+            agentText: this.recentAgentSpeech(at),
+            duringAgentSpeech: duringAgent,
+          })
+
+        const reason: PhantomReason | null = verdict.reason ?? (echo ? 'agent-echo' : null)
+        if (reason) {
+          this.userSinceAgent = false
+          this.rejectUserTurn(at, reason)
+          break
+        }
+
+        this.commitTurn(turn, 'user')
         break
       }
 
       // This is the client playback boundary. response.done and transcript.done
       // only mean generation/transcription completed and must never set t_end.
       case 'output_audio_buffer.started': {
+        // ONLY here. This flag means "the audio buffer opened", which is the
+        // one condition under which a matching `stopped` or `cleared` is
+        // guaranteed to follow. `markSpeaking` is also reached from transcript
+        // deltas, and a response can emit transcript and then be cancelled
+        // without its buffer ever opening — setting the flag there made the
+        // round-11 fix miss exactly that case and deadlock again.
+        this.playbackStartedForResponse = true
         this.markSpeaking(at)
         break
       }
@@ -335,6 +497,37 @@ export class OpenAIEventTranslator {
     }
   }
 
+  /**
+   * What she is saying, or has just said.
+   *
+   * Prefers live material over history: the echo of a sentence reaches the
+   * microphone while she is still speaking it, so the sealed previous turn is
+   * the wrong thing to compare against and would miss every case.
+   */
+  private recentAgentSpeech(at: number): string | null {
+    return this.finalAgentTranscript ?? this.agentTurns.peek(at)?.text ?? this.lastAgentText
+  }
+
+  /**
+   * Discard a user turn that was not the user.
+   *
+   * The undo has to match what the commit actually did. A turn whose commit
+   * CREATED a response cancels that response by id. A turn that was queued
+   * behind an in-flight reply has no response of its own, and the correct undo
+   * is to drop it from the queue — cancelling by `activeResponseId` there is
+   * how a noise artefact came to truncate a real reply mid-word.
+   */
+  private rejectUserTurn(at: number, reason: PhantomReason): void {
+    if (this.userTurnAwaitingResponse) {
+      // The response exists but its id has not arrived. Act on `response.created`.
+      this.deferredPhantom = { at, reason }
+      return
+    }
+    const ownedResponse = this.userTurnResponseId
+    this.userTurnResponseId = null
+    this.callbacks.onPhantomTurn?.(at, reason, ownedResponse)
+  }
+
   private markSpeaking(at: number): void {
     if (this.speaking) return
     this.speaking = true
@@ -350,12 +543,24 @@ export class OpenAIEventTranslator {
     this.playbackEndAt = null
     if (!turn) return
 
-    // Local backstop: even if a provider ignores cancellation, never expose two
-    // agent turns without user speech between them.
+    // ROUND 12. This used to DELETE the turn — and deleting it was the bug.
+    //
+    // Sealing happens on `output_audio_buffer.stopped`, which is by definition
+    // after the audio has played. The user has already heard her say it. All
+    // dropping the turn achieved was to hide it from the transcript, the warmth
+    // engine and the scorecard, so the grader read a conversation the user did
+    // not have. One 160s rep lost 7.9 seconds of her speech this way, across
+    // four turns, while `agentTurns` and `userTurns` both read 19 and looked
+    // perfectly balanced.
+    //
+    // It was also redundant: `StabilityMeter` already carries a `double-turn`
+    // structural rule over the same committed turns. So this reports the
+    // incident and commits the turn, because a transcript's only job is to say
+    // what was said.
     if (this.committedAgentTurn && !this.userSinceAgent) {
-      this.callbacks.onOverlap?.(this.activeResponseId)
-      return
+      this.callbacks.onDoubleTurn?.(turn.t_start)
     }
+    this.lastAgentText = turn.text
     this.committedAgentTurn = true
     this.userSinceAgent = false
     this.commitTurn(turn, 'agent')
@@ -365,6 +570,26 @@ export class OpenAIEventTranslator {
     this.onTurn(turn)
     if (speaker === 'user') this.emitter.emit('user.transcript', { turn, final: true })
     else this.emitter.emit('agent.transcript', { turn, final: true })
+  }
+
+  /**
+   * Abandon the active response without waiting for events that are not
+   * coming. Called by the turn gate's stall watchdog.
+   *
+   * The gate releasing itself is not enough on its own: this translator would
+   * still be holding an `activeResponseId`, so the recovery `response.create`
+   * would arrive as an id it does not recognise, be reported as an overlap and
+   * be cancelled immediately. The rep would stay silent while looking, from
+   * the gate's side, perfectly healthy.
+   */
+  abandonActiveResponse(): void {
+    this.activeResponseId = null
+    this.responseGenerationDone = false
+    this.playbackStartedForResponse = false
+    this.playbackFinishedForResponse = false
+    this.userTurnResponseId = null
+    this.userTurnAwaitingResponse = false
+    this.deferredPhantom = null
   }
 
   private clearActiveResponse(): void {

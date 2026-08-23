@@ -9,10 +9,14 @@
  * Deliberately empty, for the same reason as its sibling.
  */
 
+import { requireUser } from '@/lib/db/api-auth'
 import { handleTtsRequest } from '@/lib/voice/elevenlabs/server'
 
 export const runtime = 'edge'
 
-export function POST(request: Request): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
+  const auth = await requireUser(request)
+  if ('response' in auth) return auth.response
+
   return handleTtsRequest(request)
 }

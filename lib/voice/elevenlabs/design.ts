@@ -1,3 +1,4 @@
+import { sceneId } from '@/lib/voice/types'
 /**
  * Voice design and audition.
  *
@@ -65,11 +66,11 @@ const GENDER_BY_TIMBRE: Record<Persona['voice']['timbre'], string> = {
 
 /** A brief for a persona nobody has cast yet, read off the dials. */
 export function deriveBrief(persona: Persona): VoiceDesignBrief {
-  const { warmth, expansiveness } = persona.delivery
+  const p = persona.personality
   const emotion = [
-    warmth <= 33 ? 'flat' : warmth <= 66 ? 'even' : 'warm',
-    persona.distraction >= 50 ? 'distracted' : 'attentive',
-    expansiveness <= 40 ? 'unhurried' : 'easy',
+    p.expression,
+    p.distraction >= 50 ? 'distracted' : 'attentive',
+    p.talkativeness <= 40 ? 'unhurried' : 'easy',
   ].join(', ')
 
   return {
@@ -77,13 +78,13 @@ export function deriveBrief(persona: Persona): VoiceDesignBrief {
     gender: GENDER_BY_TIMBRE[persona.voice.timbre],
     ageRange: 'late twenties',
     quality: 'High quality, clean recording',
-    persona: persona.room_tone.replace(/_/g, ' ') + ' regular',
+    persona: sceneId(persona.room).replace(/_/g, ' ') + ' regular',
     emotion,
   }
 }
 
 export function briefFor(persona: Persona): VoiceDesignBrief {
-  return VOICE_DESIGN_BRIEFS[persona.id] ?? deriveBrief(persona)
+  return VOICE_DESIGN_BRIEFS[persona.slug] ?? deriveBrief(persona)
 }
 
 export function renderDesignPrompt(brief: VoiceDesignBrief): string {

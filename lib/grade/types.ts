@@ -7,7 +7,7 @@
  * it in the user's permanent progression record.
  */
 
-import type { DeterministicMetrics } from './metrics'
+import type { DeterministicMetrics, MetricScore } from './metrics'
 
 /** The six the user actually sees (§07). */
 export interface SubScores {
@@ -47,6 +47,8 @@ export interface Scorecard {
   metrics: DeterministicMetrics
   /** Deterministic component of the composite, 0-100. */
   deterministicScore: number
+  /** Band, actual value and points awarded, per metric. The audit trail. */
+  metricScores: MetricScore[]
   /** Stamped so a stored grade stays auditable across model changes (§04). */
   model: string
   gradedAt: string

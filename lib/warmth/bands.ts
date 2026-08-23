@@ -29,7 +29,13 @@ export interface BandSpec {
   band: WarmthBand
   /** Inclusive lower bound. */
   min: number
-  /** Inclusive upper bound. */
+  /**
+   * Inclusive upper bound, for display only.
+   *
+   * NOT used to select a band. Warmth is a continuous value and these bounds
+   * are integers, so matching on `value <= max` leaves a gap in every seam —
+   * see `bandFor`.
+   */
   max: number
   directive: string
 }
@@ -38,7 +44,12 @@ export interface BandSpec {
 export const WARMTH_MIN = -20
 export const WARMTH_MAX = 100
 
-/** Ordered low to high. The whole range is covered with no gaps. */
+/**
+ * Ordered low to high, as contiguous half-open intervals `[min, nextMin)`.
+ *
+ * The `max` values are for display. Selection uses `min` alone, because that is
+ * the only formulation with no gaps — see `bandFor`.
+ */
 export const BANDS: readonly BandSpec[] = [
   {
     band: 'HOSTILE',
@@ -86,12 +97,32 @@ export const BANDS: readonly BandSpec[] = [
 
 export const BAND_NAMES: readonly WarmthBand[] = BANDS.map((spec) => spec.band)
 
+/**
+ * The band a warmth value sits in.
+ *
+ * ROUND 10 BUG FIX, and a bad one. This used to test `value >= min && value <=
+ * max` against integer bounds, then fall back to `'OPEN'` if nothing matched.
+ * Warmth is continuous, so EVERY fractional value in a seam missed all six
+ * bands and was reported as OPEN: 19.5, 39.5, 59.5, 79.5 and -0.5 all came back
+ * OPEN, and -0.5 is as cold as the meter goes.
+ *
+ * That was not a display problem. `bandDirective` reads this, so a character
+ * sitting at 19.5 — CLOSED, "one to four words" — was handed the OPEN
+ * directive: one sentence, twelve words, volunteer something. It is a strong
+ * candidate for the round-6 symptom where she gave 16.5 median words against a
+ * contract asking for four to ten.
+ *
+ * Bands are now half-open intervals selected on `min` alone, scanning downward,
+ * which covers the range with no gaps by construction and cannot fall through.
+ */
 export function bandFor(warmth: number): WarmthBand {
   const clamped = Math.max(WARMTH_MIN, Math.min(WARMTH_MAX, warmth))
-  for (const spec of BANDS) {
-    if (clamped >= spec.min && clamped <= spec.max) return spec.band
+  for (let i = BANDS.length - 1; i >= 0; i -= 1) {
+    const spec = BANDS[i]
+    if (spec && clamped >= spec.min) return spec.band
   }
-  return 'OPEN'
+  // Below the lowest band's floor. The coldest band, never an arbitrary one.
+  return BANDS[0]?.band ?? 'HOSTILE'
 }
 
 export function specFor(band: WarmthBand): BandSpec {
@@ -119,7 +150,17 @@ export interface DirectiveContext {
   suppressQuestion?: boolean
 }
 
-export function bandDirective(warmth: number, context: DirectiveContext = {}): string {
+/**
+ * The band's own clauses, unbracketed.
+ *
+ * Split out so `composeSteering` can add the personality and gate clauses to
+ * the same line rather than emitting a second bracketed block — two brackets in
+ * a row read as two competing directions.
+ */
+export function bandDirectiveParts(
+  warmth: number,
+  context: DirectiveContext = {},
+): string[] {
   const band = bandFor(warmth)
   const parts = [specFor(band).directive]
   // The low bands already forbid questions outright; saying it twice reads as
@@ -127,7 +168,11 @@ export function bandDirective(warmth: number, context: DirectiveContext = {}): s
   if (context.suppressQuestion && BANDS_ALLOWING_QUESTIONS.has(band)) {
     parts.push('Do not ask him anything this turn.')
   }
-  return `[${parts.join(' ')}]`
+  return parts
+}
+
+export function bandDirective(warmth: number, context: DirectiveContext = {}): string {
+  return `[${bandDirectiveParts(warmth, context).join(' ')}]`
 }
 
 /** Bands whose directive does not already forbid questions. */

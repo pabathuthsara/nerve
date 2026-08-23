@@ -4,10 +4,16 @@
  * trusted.
  */
 
+import { requireUser } from '@/lib/db/api-auth'
 import { handleCreditsRequest } from '@/lib/voice/elevenlabs/server'
 
 export const runtime = 'edge'
 
-export function GET(): Promise<Response> {
+// Reads the vendor's account balance. Not a spend, but it is our commercial
+// position and there is no reason for an anonymous caller to have it.
+export async function GET(request: Request): Promise<Response> {
+  const auth = await requireUser(request)
+  if ('response' in auth) return auth.response
+
   return handleCreditsRequest()
 }

@@ -25,22 +25,27 @@ export const BOOKSHOP: SceneAcoustics = {
   id: 'bookshop',
   label: 'Second-hand bookshop, Saturday afternoon',
   ambient: {
+    // RELATIVE to masterDb, which carries the absolute level. Two absolute dB
+    // values in series is what put this bed at -95 dBFS and made it inaudible.
     layers: [
       // Building services. Almost sub-audible; you notice it when it stops.
-      { kind: 'hvac-hum', levelDb: -44, lowCutHz: 40, highCutHz: 220 },
-      // Street through glass. The glass is why there is no high end.
-      { kind: 'traffic-through-glass', levelDb: -46, lowCutHz: 60, highCutHz: 700 },
+      { kind: 'hvac-hum', levelDb: 0, lowCutHz: 40, highCutHz: 220 },
+      // Street through glass. The glass is why there is no high end. Sits just
+      // under the hum so neither is separately identifiable.
+      { kind: 'traffic-through-glass', levelDb: -2, lowCutHz: 60, highCutHz: 700 },
     ],
-    // Everything with character lives here, never in the loop.
+    // Everything with character lives here, never in the loop. Above the floor,
+    // because an event at the same level as the bed is not an event.
     oneShots: [
-      { kind: 'page-turn', weight: 3, levelDb: -34 },
-      { kind: 'floorboard-creak', weight: 2, levelDb: -32 },
-      { kind: 'book-set-down', weight: 2, levelDb: -30 },
-      { kind: 'shelf-shift', weight: 1, levelDb: -36 },
-      { kind: 'distant-door', weight: 1, levelDb: -38 },
+      { kind: 'page-turn', weight: 3, levelDb: 10 },
+      { kind: 'floorboard-creak', weight: 2, levelDb: 12 },
+      { kind: 'book-set-down', weight: 2, levelDb: 14 },
+      { kind: 'shelf-shift', weight: 1, levelDb: 8 },
+      { kind: 'distant-door', weight: 1, levelDb: 6 },
     ],
     // Sparse. One every 20-40s, randomised, so no rhythm ever emerges.
     oneShotIntervalSeconds: [20, 40],
+    // The one absolute number. A quiet room, well below her voice.
     masterDb: -40,
   },
   reverb: {
@@ -69,15 +74,17 @@ export const BAR: SceneAcoustics = {
   label: 'Bar, late evening',
   ambient: {
     layers: [
-      { kind: 'crowd-wash', levelDb: -22, lowCutHz: 120, highCutHz: 5000 },
-      { kind: 'room-rumble', levelDb: -30, lowCutHz: 40, highCutHz: 250 },
+      { kind: 'crowd-wash', levelDb: 0, lowCutHz: 120, highCutHz: 5000 },
+      { kind: 'room-rumble', levelDb: -8, lowCutHz: 40, highCutHz: 250 },
     ],
     oneShots: [
-      { kind: 'glass-clink', weight: 3, levelDb: -24 },
-      { kind: 'chair-scrape', weight: 2, levelDb: -26 },
-      { kind: 'distant-door', weight: 1, levelDb: -28 },
+      { kind: 'glass-clink', weight: 3, levelDb: 4 },
+      { kind: 'chair-scrape', weight: 2, levelDb: 2 },
+      { kind: 'distant-door', weight: 1, levelDb: 0 },
     ],
     oneShotIntervalSeconds: [6, 15],
+    // Loud room. Twenty-four dB above the bookshop, which is about right for
+    // the difference between a bar and a shop with carpet.
     masterDb: -24,
   },
   reverb: {
@@ -96,4 +103,35 @@ export const SCENES: Record<string, SceneAcoustics> = {
 
 export function sceneFor(id: string): SceneAcoustics | null {
   return SCENES[id] ?? null
+}
+
+/**
+ * Procedural room acoustics are OFF.
+ *
+ * The convolution reverb placed her in a room, and on a lot of hardware what
+ * it actually did was make her harder to understand — a smeared, echoey voice
+ * over a laptop speaker, at the exact moment the user is straining to hear a
+ * stranger. Intelligibility beats atmosphere: a rep the user cannot follow is
+ * not a rep. Recorded room beds arrive as audio files later and are a
+ * different mechanism from this one.
+ *
+ * The scene presets and every persona's `room` layer are left exactly as
+ * authored. This is the one switch, read by both adapters, so turning the
+ * procedural room back on is a single flag rather than an archaeology
+ * exercise: set `NEXT_PUBLIC_ROOM_ACOUSTICS=on`.
+ */
+export function roomAcousticsEnabled(): boolean {
+  return process.env['NEXT_PUBLIC_ROOM_ACOUSTICS'] === 'on'
+}
+
+/**
+ * The scene an adapter should build for a persona, or null for a dry voice.
+ *
+ * Null is a supported answer everywhere: both adapters already route her
+ * straight to the sink when there is no room, exactly once, which is the path
+ * that plays now.
+ */
+export function sceneForRoom(reverbIr: string): SceneAcoustics | null {
+  if (!roomAcousticsEnabled()) return null
+  return sceneFor(reverbIr)
 }

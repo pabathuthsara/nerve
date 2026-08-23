@@ -12,7 +12,11 @@
  *      SKIPPED until the fixtures are hand-scored and a key is present, because
  *      a harness that grades a model against scores the model wrote is theatre.
  *
- * Enable the live half with:  RUN_CALIBRATION=1 npm test -- calibration
+ * Enable the live half with:
+ *   RUN_CALIBRATION=1 INTERNAL_API_SECRET=<the running server's> npm test -- calibration
+ *
+ * The secret is required because /api/warmth/score is authenticated and this
+ * harness has no session; it must match the value set on the server under test.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -164,6 +168,7 @@ const scored = scoredFixtures()
 const liveEnabled =
   process.env['RUN_CALIBRATION'] === '1' &&
   Boolean(process.env['OPENAI_API_KEY']) &&
+  Boolean(process.env['INTERNAL_API_SECRET']) &&
   scored.length > 0
 
 describe.skipIf(!liveEnabled)('live scorer accuracy', () => {
@@ -171,12 +176,20 @@ describe.skipIf(!liveEnabled)('live scorer accuracy', () => {
     `keeps intimacy MAE under ${MAX_INTIMACY_MAE} across the hand-scored fixtures`,
     async () => {
       const base = process.env['CALIBRATION_BASE_URL'] ?? 'http://localhost:3000'
+      // The route is authenticated and this harness has no session to present,
+      // so it authenticates as a machine. `INTERNAL_API_SECRET` must be set on
+      // the server being measured; without it the door does not exist and every
+      // fixture comes back 401. See lib/db/api-auth.ts.
+      const internal = process.env['INTERNAL_API_SECRET']
       const results: { fixture: ScoredFixture; score: SlowScore }[] = []
 
       for (const fixture of scored) {
         const response = await fetch(`${base}/api/warmth/score`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            ...(internal ? { authorization: `Bearer ${internal}` } : {}),
+          },
           body: JSON.stringify({
             userText: fixture.user,
             agentReply: fixture.agent,

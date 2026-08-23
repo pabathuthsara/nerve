@@ -1,0 +1,16 @@
+app/api/**
+app/auth/**
+app/rep/actions.ts
+app/rep/dev-panel.tsx
+app/rep/page.tsx
+app/rep/rep-client.tsx
+app/rep/warmth-indicator.tsx
+lib/audio/**
+lib/db/**
+lib/grade/**
+lib/metrics/**
+lib/personas/**
+lib/tuning/**
+lib/voice/**
+lib/warmth/**
+

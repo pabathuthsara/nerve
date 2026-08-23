@@ -7,10 +7,16 @@
  * Repointing at another vendor never touches this file.
  */
 
+import { requireUser } from '@/lib/db/api-auth'
 import { handleLlmRequest } from '@/lib/voice/elevenlabs/server'
 
 export const runtime = 'edge'
 
-export function POST(request: Request): Promise<Response> {
+// The guard is not provider vocabulary, so it does not break the rule above:
+// this proxies a standing vendor key and must know who is asking.
+export async function POST(request: Request): Promise<Response> {
+  const auth = await requireUser(request)
+  if ('response' in auth) return auth.response
+
   return handleLlmRequest(request)
 }

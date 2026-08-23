@@ -43,8 +43,8 @@ import {
 } from '../types'
 import { compileReinforcement } from '../reinforcement'
 import { Room } from '@/lib/audio/engine'
-import { sceneFor } from '@/lib/audio/scenes'
-import type { RoomControls } from '@/lib/audio/types'
+import { sceneForRoom } from '@/lib/audio/scenes'
+import { applyRoomConfig, type RoomControls } from '@/lib/audio/types'
 
 import { PCM_RATES } from './config'
 import { MicCapture } from './capture'
@@ -218,7 +218,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       response = await this.fetchImpl(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ personaId: persona.id, calibration }),
+        body: JSON.stringify({ personaId: persona.slug, calibration }),
       })
     } catch (cause) {
       throw new VoiceError('token_mint_failed', PROVIDER, 'Could not reach the token endpoint.', {
@@ -260,16 +260,24 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     this.agentBus = bus
     this.agentAnalyser = this.makeAnalyser(context, bus)
 
-    const scene = persona.acoustics ? sceneFor(persona.acoustics) : null
+    // Null while procedural acoustics are off — see `roomAcousticsEnabled`.
+    const scene = sceneForRoom(persona.room.reverbIr)
     if (!scene) {
       bus.connect(context.destination)
       return
     }
+
+    // The bed arms with the session and runs until it ends. Her voice goes into
+    // the room's input; the ambient chain reaches the speakers on its own path
+    // and is never gated by whether she is talking (§1).
     const room = new Room(context, { scene })
+    applyRoomConfig(room, persona.room)
     bus.connect(room.handles.input)
-    room.handles.output.connect(context.destination)
-    room.start()
+    room.arm()
     this.room = room
+
+    this.emitter.on('agent.speech.start', () => this.room?.duck(true))
+    this.emitter.on('agent.speech.stop', () => this.room?.duck(false))
   }
 
   private makeAnalyser(context: AudioContext, source: AudioNode): AnalyserNode {
@@ -380,7 +388,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     try {
       const result = await this.llmClient.stream(
         {
-          personaId: persona.id,
+          personaId: persona.slug,
           history: this.historyForModel(),
           steering,
         },
@@ -469,7 +477,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       try {
         await this.ttsClient.stream(
           {
-            personaId: persona.id,
+            personaId: persona.slug,
             text: clip,
             model: minted.pipeline.tts.model,
             outputFormat: minted.pipeline.tts.outputFormat,

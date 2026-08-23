@@ -11,10 +11,11 @@
 
 import type { Persona, TranscriptTurn } from '@/lib/voice/types'
 import { WarmthEngine, type WarmthTelemetry } from './engine'
-import type { WarmthLevelConfig } from './levels'
+import type { Trajectory } from '@/lib/voice/types'
 import { scoreFast, type FastScore } from './fast'
 import type { SlowScorer, SlowScoreRequest } from './slow'
 import { slowScoreTriggers, type SlowTriggerReason } from './triggers'
+import { composeSteering } from './steering'
 
 /** Recent agent turns considered when rationing her questions (§4e). */
 const QUESTION_WINDOW = 5
@@ -22,8 +23,13 @@ const QUESTION_WINDOW = 5
 const MAX_QUESTION_SHARE = 0.4
 
 export interface WarmthSessionOptions {
-  persona: Persona
-  level: WarmthLevelConfig
+  /** The persona, or a getter for it. A getter is what the dev panel needs. */
+  persona: Persona | (() => Persona)
+  /**
+   * Layer 1, or a getter for it. A getter lets the dev panel retune difficulty
+   * mid-session and have the next turn feel it.
+   */
+  trajectory: Trajectory | (() => Trajectory)
   /** Null disables slow scoring entirely — the fast layer still runs. */
   scorer?: SlowScorer | null
   /** Seconds since the session connected. */
@@ -72,7 +78,7 @@ export class WarmthSession {
   constructor(options: WarmthSessionOptions) {
     this.options = options
     this.engine = new WarmthEngine({
-      level: options.level,
+      trajectory: options.trajectory,
       ...(options.rng ? { rng: options.rng } : {}),
     })
   }
@@ -86,7 +92,21 @@ export class WarmthSession {
    */
   directive(): string {
     this.steeringSent += 1
-    return this.engine.directiveWith({ suppressQuestion: this.questionQuotaSpent() })
+    // Composed from all four layers, and read LIVE — the persona reference is
+    // whatever the tuning store currently holds, so a slider moved mid-rep
+    // changes her very next reply (§3).
+    return composeSteering({
+      persona: this.persona,
+      warmth: this.engine.warmth,
+      suppressQuestion: this.questionQuotaSpent(),
+    })
+  }
+
+  /** The persona as it stands right now, not as it stood at connect. */
+  private get persona(): Persona {
+    return typeof this.options.persona === 'function'
+      ? this.options.persona()
+      : this.options.persona
   }
 
   /**
@@ -125,7 +145,7 @@ export class WarmthSession {
     const gapSeconds = lastAgent ? Math.max(0, turn.t_start - lastAgent.t_end) : null
 
     const score = scoreFast(turn, {
-      level: this.options.persona.level,
+      level: this.persona.level,
       agentTurns: this.agentTurns,
       precedingDeadEnds: this.consecutiveDeadEnds,
       gapSeconds,
@@ -191,7 +211,7 @@ export class WarmthSession {
       agentPrior: awaiting.agentPrior,
       warmth: awaiting.warmthAtTurn,
       band: this.engine.band,
-      personaName: this.options.persona.name,
+      personaName: this.persona.name,
     }
 
     void scorer.score(request, controller.signal).then((score) => {

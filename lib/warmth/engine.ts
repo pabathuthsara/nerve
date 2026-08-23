@@ -19,7 +19,9 @@ import {
   type DirectiveContext,
   type WarmthBand,
 } from './bands'
-import { effectiveCeiling, type WarmthLevelConfig } from './levels'
+import { effectiveCeiling } from './levels'
+import { WARMTH_MIN } from './bands'
+import type { Trajectory } from '@/lib/voice/types'
 import { classifyOverreach, type OverreachVerdict, type SlowScore } from './slow'
 import type { FastReason, FastScore } from './fast'
 
@@ -62,17 +64,27 @@ export interface WarmthTelemetry {
   asyncScoreLatencyMs: AsyncScoreLatency
   /** The jittered opening value actually rolled for this session. */
   rolledStart: number
-  config: WarmthLevelConfig
+  /** The trajectory in force when the rep ended — which, with the dev panel
+   *  open, is not necessarily the one it started with. */
+  config: Trajectory
 }
 
 export interface WarmthEngineOptions {
-  level: WarmthLevelConfig
+  /**
+   * Layer 1 of the persona, or a getter for it.
+   *
+   * A getter is what makes the dev panel work: sliding `gain` mid-session has
+   * to affect the very next turn, so the engine reads the trajectory on every
+   * calculation rather than copying it once at construction. Passing a plain
+   * object is the same thing with a constant getter.
+   */
+  trajectory: Trajectory | (() => Trajectory)
   /** Injected for tests. Defaults to Math.random. */
   rng?: () => number
 }
 
 export class WarmthEngine {
-  private readonly config: WarmthLevelConfig
+  private readonly readTrajectory: () => Trajectory
   private readonly startValue: number
   private current: number
   private peakValue: number
@@ -89,13 +101,16 @@ export class WarmthEngine {
   private turnIndex = 0
 
   constructor(options: WarmthEngineOptions) {
-    this.config = options.level
+    const trajectory = options.trajectory
+    this.readTrajectory =
+      typeof trajectory === 'function' ? trajectory : () => trajectory
     const rng = options.rng ?? Math.random
 
     // Rolled, not fixed (§05). The same opener must not always work, or the
     // user learns a script instead of a skill.
-    const jitter = (rng() * 2 - 1) * this.config.startJitter
-    this.startValue = this.clamp(this.config.start + jitter)
+    const config = this.config
+    const jitter = (rng() * 2 - 1) * config.startJitter
+    this.startValue = this.clamp(config.start + jitter)
 
     this.current = this.startValue
     this.peakValue = this.startValue
@@ -107,12 +122,25 @@ export class WarmthEngine {
     this.bandSequence.push(bandFor(this.startValue))
   }
 
+  /** Read live, never cached. See `WarmthEngineOptions.trajectory`. */
+  private get config(): Trajectory {
+    return this.readTrajectory()
+  }
+
   get warmth(): number {
     return Math.round(this.current * 100) / 100
   }
 
+  /**
+   * Read off the same rounded value the UI displays, not the raw float.
+   *
+   * The training-wheels readout shows a number and a band name side by side and
+   * is teaching the user to associate them. Deriving the two from values that
+   * differ in the third decimal is how you get "20 · CLOSED" on screen, which
+   * reads as a bug to the person we are trying to teach.
+   */
   get band(): WarmthBand {
-    return bandFor(this.current)
+    return bandFor(this.warmth)
   }
 
   /** The line injected into the conversation. She never sees the number. */
@@ -129,8 +157,15 @@ export class WarmthEngine {
     return this.eventLog
   }
 
+  /**
+   * The floor is global; the ceiling is the character's.
+   *
+   * `hardCeiling` below 100 is what makes a level unwinnable by design — Alex
+   * sits at 45, which is inside OPEN and below ENGAGED, so no sequence of turns
+   * reaches the warm bands. That is the point of level 8 (§06).
+   */
   private clamp(value: number): number {
-    return Math.max(this.config.floor, Math.min(effectiveCeiling(this.config), value))
+    return Math.max(WARMTH_MIN, Math.min(effectiveCeiling(this.config), value))
   }
 
   /**
@@ -144,9 +179,10 @@ export class WarmthEngine {
    * exceptional turn doing the work of four.
    */
   private scale(raw: number): number {
-    if (raw <= 0) return raw * this.config.decay
+    const config = this.config
+    if (raw <= 0) return raw * config.decay
     const falloff = Math.max(0, (100 - this.current) / 100)
-    return Math.min(raw * this.config.gain * falloff, this.config.maxGainPerTurn)
+    return Math.min(raw * config.gain * falloff, config.maxGainPerTurn)
   }
 
   private accrueTime(at: number): void {
@@ -226,7 +262,7 @@ export class WarmthEngine {
     return this.apply({
       at,
       turnIndex: this.turnIndex,
-      naturalDecay: this.config.naturalDecayPerTurn,
+      naturalDecay: this.config.decayPerTurn,
       rawDelta: score.raw,
       source: 'fast',
       reason: score.reasons.length ? dominantReason(score.reasons) : 'no signal',

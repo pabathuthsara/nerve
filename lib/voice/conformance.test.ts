@@ -53,18 +53,23 @@ import { nadia } from '../personas/nadia'
  *  Nadia, so compilers are exercised across their whole range. */
 const robin: Persona = {
   ...nadia,
-  id: 'robin-fixture',
+  slug: 'robin-fixture',
   name: 'Robin',
   level: 7,
   scene: 'A gallery opening.',
-  receptiveness: 35,
-  effort: 35,
-  distraction: 30,
-  signal_clarity: 20,
-  interrupts: true,
-  delivery: { warmth: 20, expansiveness: 25, pace: 0.95, notes: ['[measured]'] },
-  voice: { timbre: 'feminine', ids: {} },
-  room_tone: 'gallery',
+  trajectory: { ...nadia.trajectory, start: 20, gain: 0.5, decay: 1.6 },
+  personality: {
+    sharpness: 70,
+    sharpnessLowWarmthBoost: 10,
+    humour: 30,
+    talkativeness: 25,
+    patience: 30,
+    expression: 'flat',
+    distraction: 70,
+    signalClarity: 20,
+  },
+  voice: { timbre: 'feminine', ids: {}, pace: 0.95 },
+  room: { ...nadia.room, bed: 'bar', reverbIr: 'bar' },
 }
 
 const ADAPTERS: { name: string; make: () => VoiceProvider }[] = [
@@ -205,14 +210,17 @@ describe('persona compilation', () => {
     // Whether a given TTS model is *sent* the tags is the compiler's business;
     // that they can be derived at all is what OpenAI cannot do.
     const tags = compileDeliveryTags(robin)
+    // Delivery is now read off layer 2, which is a constant — the tags say how
+    // she sounds, never how much she is giving. That separation is the fix.
     expect(tags).toContain('[flat]')
-    expect(tags).toContain('[disinterested]')
     expect(tags).toContain('[clipped]')
-    // Nadia is deliberately not a warm voice any more — she opens as a
-    // stranger, so an explicitly warm persona is needed to exercise the tag.
-    expect(compileDeliveryTags({ ...nadia, delivery: { ...nadia.delivery, warmth: 90 } }))
-      .toContain('[warm]')
-    expect(compileDeliveryTags(nadia)).toContain('[neutral]')
+    expect(tags).toContain('[distracted]')
+    expect(tags).toContain('[polite]')
+    expect(compileDeliveryTags(nadia)).toContain('[dry]')
+    expect(compileDeliveryTags({
+      ...nadia,
+      personality: { ...nadia.personality, expression: 'playful' },
+    })).toContain('[playful]')
   })
 
   it('forces flat voice stability for cold characters, which OpenAI cannot', () => {
@@ -415,6 +423,7 @@ describe('openai event translation', () => {
     let userCommits = 0
     const usage: import('./types').UsageSample[] = []
     let clock = 0
+    const doubleTurns: number[] = []
 
     for (const name of [
       'user.speech.start',
@@ -432,7 +441,11 @@ describe('openai event translation', () => {
       {
         onOverlap: (id) => overlaps.push(id),
         onUsage: (sample) => usage.push(sample),
-        onUserTurnCommitted: () => { userCommits += 1 },
+        onUserTurnCommitted: () => {
+          userCommits += 1
+          return 'created' as const
+        },
+        onDoubleTurn: (at) => doubleTurns.push(at),
         onCharacterExit: (at) => exits.push(at),
         onToolSyntaxLeak: (at) => toolLeaks.push(at),
       },
@@ -446,6 +459,7 @@ describe('openai event translation', () => {
       events,
       turns,
       overlaps,
+      doubleTurns,
       exits,
       toolLeaks,
       usage,
@@ -617,7 +631,11 @@ describe('openai event translation', () => {
     expect(h.overlaps).toEqual(['resp_2'])
   })
 
-  it('never emits consecutive agent turns without intervening user speech', () => {
+  it('reports consecutive agent turns without deleting the second one', () => {
+    // Sealing happens on `output_audio_buffer.stopped`, so by the time a double
+    // turn is knowable the user has already HEARD it. Dropping it only hid it
+    // from the transcript, the warmth engine and the grader, which then read a
+    // conversation that did not happen. Report, do not delete.
     const h = harness()
     h.at(1, { type: 'output_audio_buffer.started' })
     h.at(2, { type: 'response.output_audio_transcript.done', transcript: 'First.' })
@@ -625,8 +643,24 @@ describe('openai event translation', () => {
     h.at(3.1, { type: 'output_audio_buffer.started' })
     h.at(3.2, { type: 'response.output_audio_transcript.done', transcript: 'Second.' })
     h.at(4, { type: 'output_audio_buffer.stopped' })
-    expect(h.turns.map((turn) => turn.text)).toEqual(['First.'])
-    expect(h.overlaps).toHaveLength(1)
+    expect(h.turns.map((turn) => turn.text)).toEqual(['First.', 'Second.'])
+    expect(h.doubleTurns).toHaveLength(1)
+    // And it is NOT laundered through the overlap counter, which counts
+    // cancelled responses. Nothing was cancelled here; the audio already played.
+    expect(h.overlaps).toHaveLength(0)
+  })
+
+  it('keeps a genuine agent turn after intervening user speech', () => {
+    const h = harness()
+    h.at(1, { type: 'output_audio_buffer.started' })
+    h.at(2, { type: 'response.output_audio_transcript.done', transcript: 'First.' })
+    h.at(3, { type: 'output_audio_buffer.stopped' })
+    h.at(3.5, { type: 'input_audio_buffer.speech_started' })
+    h.at(4.5, { type: 'input_audio_buffer.speech_stopped' })
+    h.at(5, { type: 'output_audio_buffer.started' })
+    h.at(5.2, { type: 'response.output_audio_transcript.done', transcript: 'Second.' })
+    h.at(6, { type: 'output_audio_buffer.stopped' })
+    expect(h.doubleTurns).toHaveLength(0)
   })
 
   it('captures provider-reported response usage instead of inferring it from minutes', () => {

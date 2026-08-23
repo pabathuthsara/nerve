@@ -14,6 +14,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createVoiceProvider } from '@/lib/voice'
+import { RepRecorder } from '@/lib/audio/recorder'
+import { uploadRepAudio } from '@/lib/db/audio'
+import { attachAudio, finishSession, saveScore, startSession } from './actions'
 import type { VoiceProvider } from '@/lib/voice/provider'
 import {
   SESSION_CAP_SECONDS,
@@ -22,6 +25,7 @@ import {
   type Persona,
   type PipelineTelemetry,
   type ProviderId,
+  mayInterrupt,
   type SessionUsage,
   type SessionSummary,
   type TranscriptTurn,
@@ -30,7 +34,31 @@ import {
 import { compileReinforcement } from '@/lib/voice/reinforcement'
 import { WarmthSession } from '@/lib/warmth/session'
 import { HttpSlowScorer } from '@/lib/warmth/slow'
-import { levelConfig } from '@/lib/warmth/levels'
+import dynamic from 'next/dynamic'
+import { DEV_TOOLS, TuningStore, activePreset, type TuningPreset } from '@/lib/tuning/store'
+import type { DevReadout } from './dev-panel'
+
+/**
+ * Instrumentation, loaded only when the flag is on.
+ *
+ * `next/dynamic` puts the panel in its own chunk, so with the flag off a
+ * browser never downloads it — not merely never renders it. The chunk is still
+ * emitted to the build output; see the note on `DEV_TOOLS` for why that is as
+ * far as this goes.
+ */
+const DevPanel = DEV_TOOLS
+  ? dynamic(() => import('./dev-panel').then((m) => m.DevPanel), { ssr: false })
+  : null
+import {
+  GraduationModal,
+  MicOrb,
+  TrainingWheels,
+  TrainingWheelsToggle,
+  recordCompletedSession,
+  useTrainingWheels,
+} from './warmth-indicator'
+import { bandFor, type WarmthBand } from '@/lib/warmth/bands'
+import type { WarmthEvent } from '@/lib/warmth/engine'
 import type { WarmthTelemetry } from '@/lib/warmth/engine'
 import { analyseCacheHealth, type CacheHealth } from '@/lib/metrics/cache'
 import type { RoomControls } from '@/lib/audio/types'
@@ -54,12 +82,26 @@ import { analyseRttDrift, type RttDrift, type RttSample } from '@/lib/metrics/tr
 
 type Phase = 'idle' | 'connecting' | 'live' | 'ending' | 'ended' | 'failed'
 
+/** The character-model arms the dev panel may switch between. */
+const M0_MODELS = ['gpt-realtime-mini', 'gpt-realtime-2.1-mini', 'gpt-realtime'] as const
+
 interface Props {
   persona: Persona
   provider: ProviderId
   calibration: Calibration
   silenceMs: number
   model: string
+  /**
+   * The signed-in user. Not optional: the storage path for a recording is
+   * keyed to it, and RLS matches on that first path segment.
+   */
+  userId: string
+  /**
+   * Completed reps for this user, from the database. Null when the count could
+   * not be read — the hook then falls back to the local number rather than
+   * pretending this is someone's first rep.
+   */
+  completedSessions: number | null
 }
 
 interface CostTrend {
@@ -87,15 +129,35 @@ interface Report {
    * know which vendor produced it.
    */
   pipeline: PipelineTelemetry | null
+  /**
+   * The parameter set that produced this recording.
+   *
+   * Stamped on every session whether or not anything was saved, because six
+   * sessions into a tuning pass nobody remembers which one had decay at 0.5.
+   */
+  preset: TuningPreset
   costTrend: CostTrend
-  technical: { overlapResponses: number; toolSyntaxLeaks: number }
+  technical: {
+    overlapResponses: number
+    toolSyntaxLeaks: number
+    /** She spoke twice with no user turn between, and both reached the ear. */
+    audibleDoubleTurns: number
+  }
   warmth: (WarmthTelemetry & { steeringItemsSent: number }) | null
   scorecard: Scorecard | null
   cache: CacheHealth
   transcript: TranscriptTurn[]
 }
 
-export function RepClient({ persona, provider, calibration, silenceMs, model }: Props) {
+export function RepClient({
+  persona,
+  provider,
+  calibration,
+  silenceMs,
+  model,
+  userId,
+  completedSessions,
+}: Props) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string | null>(null)
   const [notices, setNotices] = useState<string[]>([])
@@ -107,6 +169,7 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
   const [breaks, setBreaks] = useState<CharacterBreak[]>([])
   const [overlapResponses, setOverlapResponses] = useState(0)
   const [toolSyntaxLeaks, setToolSyntaxLeaks] = useState(0)
+  const [doubleTurns, setDoubleTurns] = useState(0)
   const [transport, setTransport] = useState<TransportStats>({ rttMs: null, jitterMs: null, packetsLost: null })
   const [report, setReport] = useState<Report | null>(null)
   const [room, setRoom] = useState<RoomControls | null>(null)
@@ -115,21 +178,61 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
   const [oneShotMax, setOneShotMax] = useState(40)
   const [scorecard, setScorecard] = useState<Scorecard | null>(null)
   const [grading, setGrading] = useState(false)
+  // Warmth reaches the UI as a BAND, not a number. The number exists only for
+  // the training-wheels readout, which most users never see (§4).
+  const [warmth, setWarmth] = useState(0)
+  const [band, setBand] = useState<WarmthBand>('CLOSED')
+  const [lastEvent, setLastEvent] = useState<WarmthEvent | null>(null)
+
+  // The live parameter set. Created once and mutated in place, because the
+  // warmth engine reads it on every turn — a React snapshot captured in a
+  // callback is exactly what would stop a mid-session edit from landing.
+  const tuningRef = useRef<TuningStore | null>(null)
+  if (tuningRef.current === null) {
+    tuningRef.current = new TuningStore({ persona, silenceMs, model, voiceId: null })
+  }
+  const tuning = tuningRef.current
 
   const providerRef = useRef<VoiceProvider | null>(null)
+  /** The row this rep is being written into. Null until the insert lands. */
+  const sessionIdRef = useRef<string | null>(null)
+  /**
+   * The in-flight insert. A rep can end faster than a round trip to Postgres
+   * — a failed connect, or a user who changes their mind — and reading the id
+   * ref alone would drop that rep's transcript on the floor.
+   */
+  const sessionOpenRef = useRef<Promise<string | null> | null>(null)
+  const recorderRef = useRef<RepRecorder | null>(null)
   const latencyRef = useRef(new LatencyMeter(silenceMs))
-  const stabilityRef = useRef(new StabilityMeter({ nonStaff: persona.id === 'nadia' }))
+  const stabilityRef = useRef(new StabilityMeter({ nonStaff: persona.slug === 'nadia' }))
   const rttSamplesRef = useRef<RttSample[]>([])
   const turnsRef = useRef<TranscriptTurn[]>([])
   const warmthRef = useRef<WarmthSession | null>(null)
   const overlapResponsesRef = useRef(0)
   const toolSyntaxLeaksRef = useRef(0)
+  const doubleTurnsRef = useRef(0)
   const startedAtRef = useRef<string>('')
   const timersRef = useRef<ReturnType<typeof setInterval>[]>([])
 
   const clearTimers = useCallback(() => {
     timersRef.current.forEach(clearInterval)
     timersRef.current = []
+  }, [])
+
+  /**
+   * Push the engine's state to the view.
+   *
+   * Called after each turn rather than on a timer: the ring should move when
+   * something actually happened, and an interpolating ticker would read as a
+   * score counting up, which is the thing §4 exists to prevent.
+   */
+  const publishWarmth = useCallback(() => {
+    const engine = warmthRef.current?.engine
+    if (!engine) return
+    setWarmth(engine.warmth)
+    setBand(engine.band)
+    const events = engine.events
+    setLastEvent(events[events.length - 1] ?? null)
   }, [])
 
   const note = useCallback((message: string) => {
@@ -149,25 +252,32 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
     setBreaks([])
     setOverlapResponses(0)
     setToolSyntaxLeaks(0)
+    setDoubleTurns(0)
     setReport(null)
     setPartial({ user: '', agent: '' })
     latencyRef.current = new LatencyMeter(silenceMs)
-    stabilityRef.current = new StabilityMeter({ nonStaff: persona.id === 'nadia' })
+    stabilityRef.current = new StabilityMeter({ nonStaff: persona.slug === 'nadia' })
 
     // The mechanic. Opens at the level's jittered start and is never shown to
     // the user mid-rep — a visible meter turns a conversation into a game.
     const connectedAt = performance.now()
     warmthRef.current?.dispose()
     warmthRef.current = new WarmthSession({
-      persona,
-      level: levelConfig(persona.level),
+      // Getters, not values. Everything the dev panel can move is read fresh on
+      // each turn, so a slider changes her next reply without a restart (§3).
+      persona: () => tuning.persona,
+      trajectory: () => tuning.persona.trajectory,
       scorer: new HttpSlowScorer(),
       nowSeconds: () => (performance.now() - connectedAt) / 1000,
     })
+    setWarmth(warmthRef.current.engine.warmth)
+    setBand(warmthRef.current.engine.band)
+    setLastEvent(null)
     rttSamplesRef.current = []
     turnsRef.current = []
     overlapResponsesRef.current = 0
     toolSyntaxLeaksRef.current = 0
+    doubleTurnsRef.current = 0
     startedAtRef.current = new Date().toISOString()
 
     const voice = createVoiceProvider({ envDefault: provider, openai: { model } })
@@ -212,6 +322,14 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
       note(`overlap guard cancelled a response at ${at.toFixed(1)}s`)
     })
 
+    // Distinct from an overlap: this one was AUDIBLE. The turn stays in the
+    // transcript — the user heard it — and only the incident is counted.
+    voice.on('agent.double-turn', ({ at }) => {
+      doubleTurnsRef.current += 1
+      setDoubleTurns(doubleTurnsRef.current)
+      note(`she spoke twice with no user turn between, at ${at.toFixed(1)}s`)
+    })
+
     voice.on('agent.tool-leak', ({ at }) => {
       toolSyntaxLeaksRef.current += 1
       setToolSyntaxLeaks(toolSyntaxLeaksRef.current)
@@ -232,6 +350,7 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
         // Synchronous and local. Every third turn also fires the model scorer,
         // which is deliberately not awaited — see WarmthSession.fireSlow.
         warmthRef.current?.onUserTurn(turn)
+        publishWarmth()
       } else {
         setPartial((p) => ({ ...p, user: turn.text }))
       }
@@ -246,6 +365,7 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
       setTurns((prev) => [...prev, turn])
       setPartial((p) => ({ ...p, agent: '' }))
       warmthRef.current?.onAgentTurn(turn)
+      publishWarmth()
 
       // Countermeasure 3 (§05): reinforcement is event-driven. Blind timed
       // session updates damaged prompt-cache reuse in the five-minute run.
@@ -279,6 +399,32 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
     }
 
     setPhase('live')
+
+    // Persistence is best-effort and deliberately not awaited. A rep is a
+    // live conversation; it must not wait on Postgres to begin, and it must
+    // never end because a write failed. Failures become notices.
+    sessionIdRef.current = null
+    sessionOpenRef.current = startSession({
+      personaSlug: persona.slug,
+      provider: voice.id,
+      model: voice.model,
+    })
+      .then((result) => {
+        sessionIdRef.current = result.sessionId
+        if (!result.ok && result.message) note(result.message)
+        return result.sessionId
+      })
+      .catch(() => {
+        note('Not saved — could not reach the database.')
+        return null
+      })
+
+    // Taps the analysers the provider already exposes, so the recording is
+    // her voice as rendered — room and all — and the mic as the model heard it.
+    const recorder = RepRecorder.create(voice.getAnalyser())
+    recorderRef.current = recorder
+    if (recorder) recorder.start()
+    else note('Not recording — this browser cannot capture session audio.')
 
     // The room only exists once her track has arrived.
     const live = voice.getRoom()
@@ -343,7 +489,7 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
       setTurns(summary.turns)
       setSpeaking({ user: false, agent: false })
       setReport({
-        persona: persona.id,
+        persona: persona.slug,
         provider: summary.provider,
         model: summary.model,
         silenceMs,
@@ -362,15 +508,65 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
         },
         usage: summary.usage,
         pipeline: summary.pipeline ?? null,
+        preset: activePreset(tuning.get()),
         costTrend: analyseCostTrend(summary.usage),
         technical: {
           overlapResponses: overlapResponsesRef.current,
           toolSyntaxLeaks: toolSyntaxLeaksRef.current,
+          audibleDoubleTurns: doubleTurnsRef.current,
         },
         transcript: summary.turns,
       })
       setRoom(null)
       setPhase('ended')
+      // Only completed reps count towards the five that training wheels default
+      // on for. A connection that failed taught nobody anything.
+      if (summary.turns.length > 0) recordCompletedSession()
+
+      // Persist, transcript first. The upload is the slow half on a home
+      // connection, so a rep whose audio never lands still has everything
+      // scoring and progression read.
+      const sessionId = sessionIdRef.current ?? (await sessionOpenRef.current)
+      sessionOpenRef.current = null
+      const recorder = recorderRef.current
+      recorderRef.current = null
+      const recording = recorder ? await recorder.stop().catch(() => null) : null
+
+      if (sessionId) {
+        const saved = await finishSession({
+          sessionId,
+          seconds: summary.seconds,
+          reason: summary.reason,
+          turns: summary.turns,
+          usage: summary.usage,
+          rate: summary.rate,
+          provider: summary.provider,
+          model: summary.model,
+          // The meter, read before it was disposed above. Without it the
+          // session row knows the rep happened and nothing about how it went.
+          warmth,
+        }).catch(() => ({ ok: false, message: 'Not saved — could not reach the database.' }))
+        if (!saved.ok && saved.message) note(saved.message)
+
+        if (recording) {
+          const upload = await uploadRepAudio({
+            userId,
+            sessionId,
+            blob: recording.blob,
+            mimeType: recording.mimeType,
+          }).catch(() => ({ path: null, message: 'Audio not saved — the upload failed.' }))
+
+          if (upload.path) {
+            const linked = await attachAudio({ sessionId, path: upload.path })
+            if (!linked.ok && linked.message) note(linked.message)
+            else note(`audio saved · ${(recording.bytes / 1024).toFixed(0)} KB · deleted after 30 days`)
+          } else if (upload.message) {
+            note(upload.message)
+          }
+        }
+      } else if (recording) {
+        note('Audio discarded — this rep has no saved session to attach it to.')
+      }
 
       // GRADE runs once, after the session, on a separate path from the live
       // scorer (§Part 3). Live-scorer noise never enters a stored grade.
@@ -390,17 +586,31 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
             setScorecard(card)
             // Fold it into the downloadable report so runs stay diffable.
             setReport((prev) => (prev ? { ...prev, scorecard: card } : prev))
+            // A grade is written once, under the model that produced it (§13).
+            if (card && sessionIdRef.current) {
+              void saveScore({
+                sessionId: sessionIdRef.current,
+                scorecard: card,
+                provider: summary.provider,
+              })
+                .then((result) => {
+                  if (!result.ok && result.message) note(result.message)
+                })
+                .catch(() => note('Score not saved — could not reach the database.'))
+            }
           })
           .catch(() => setScorecard(null))
           .finally(() => setGrading(false))
       }
     },
-    [clearTimers, persona.id, silenceMs],
+    [clearTimers, note, persona.slug, silenceMs, userId],
   )
 
   useEffect(() => {
     return () => {
       clearTimers()
+      recorderRef.current?.dispose()
+      recorderRef.current = null
       warmthRef.current?.dispose()
       warmthRef.current = null
       void providerRef.current?.end('error')
@@ -411,6 +621,7 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
   /* ---------------------------------------------------------------- */
 
   const liveLatency = useMemo(() => latencyRef.current.stats(), [samples])
+  const wheels = useTrainingWheels(persona.level, completedSessions)
   const liveStability = useMemo(
     () => stabilityRef.current.stats(elapsed),
     [breaks, elapsed],
@@ -433,10 +644,11 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
         <Row label="provider" value={provider} />
         <Row label="model" value={model} />
         <Row label="silence threshold" value={`${silenceMs}ms`} />
-        <Row label="interrupts" value={persona.interrupts ? 'yes' : 'no (levels 1–4 never do)'} />
+        <Row label="interrupts" value={mayInterrupt(persona) ? 'yes' : 'no (levels 1–4 never do)'} />
         <Row label="cap" value={`${SESSION_CAP_SECONDS / 60} min`} />
         <Row label="overlap responses cancelled" value={String(overlapResponses)} />
         <Row label="tool syntax suppressed" value={String(toolSyntaxLeaks)} />
+        <Row label="audible double turns" value={String(doubleTurns)} />
       </section>
 
       {provider === 'openai' && phase !== 'live' && phase !== 'connecting' && phase !== 'ending' ? (
@@ -458,9 +670,14 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
         </p>
       )}
 
-      {/* -------- the rep itself: timer, mission, nothing else -------- */}
+      {/* -------- the rep itself: timer, mission, nothing else --------
+
+          No coaching, no hints, no encouragement (§05). The ring is the only
+          thing on this screen that reacts to how it is going, and it does so
+          without a number, a delta or a direction. */}
       <section style={{ ...box, background: '#fafafa' }}>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          <MicOrb band={band} speaking={speaking.user} live={phase === 'live'} />
           <strong style={{ fontSize: 28, fontVariantNumeric: 'tabular-nums' }}>
             {formatClock(elapsed)}
           </strong>
@@ -477,8 +694,22 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
             </>
           ) : null}
           {phase === 'connecting' ? <span>connecting…</span> : null}
+
+          {/* Levels 1-3 only, first five sessions by default. The crutch comes
+              off at level 4 and does not come back (§4b). */}
+          {wheels.visible && phase === 'live' && (
+            <TrainingWheels warmth={warmth} band={band} track={persona.track} />
+          )}
           {phase === 'ending' ? <span>closing…</span> : null}
         </div>
+
+        {/* Outside a live rep only. A control on screen mid-conversation is the
+            coaching furniture §05 keeps off this page. */}
+        {phase !== 'live' && phase !== 'ending' && (
+          <div style={{ marginTop: 12 }}>
+            <TrainingWheelsToggle wheels={wheels} level={persona.level} />
+          </div>
+        )}
 
         <p style={{ marginBottom: 0 }}>
           <strong>Mission.</strong> Start a conversation with her and keep it going. That is all.
@@ -848,6 +1079,10 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
             label="tool syntax suppressed"
             value={String(report.technical.toolSyntaxLeaks)}
           />
+          <Row
+            label="audible double turns"
+            value={String(report.technical.audibleDoubleTurns)}
+          />
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button style={btn} onClick={() => void navigator.clipboard.writeText(JSON.stringify(report, null, 2))}>
               Copy JSON
@@ -860,6 +1095,32 @@ export function RepClient({ persona, provider, calibration, silenceMs, model }: 
             one full eight-minute run; short sessions cannot show whether it plateaus.
           </p>
         </section>
+      )}
+      {/* The sentence this whole mechanic exists to earn. Shown once, ever. */}
+      {wheels.graduating && <GraduationModal onDismiss={wheels.acknowledgeGraduation} />}
+
+      {/* Instrumentation, not a feature. Renders nothing unless
+          NEXT_PUBLIC_DEV_TOOLS=true. */}
+      {DEV_TOOLS && DevPanel && (
+        <DevPanel
+          store={tuning}
+          room={room}
+          models={M0_MODELS}
+          voices={[]}
+          readout={{
+            warmth,
+            band,
+            lastEvent,
+            latency: liveLatency,
+            stages: report?.pipeline
+              ? Object.entries(report.pipeline.stages).map(([label, stat]) => ({
+                  label,
+                  median: stat.median,
+                  p90: stat.p90,
+                }))
+              : [],
+          }}
+        />
       )}
     </main>
   )

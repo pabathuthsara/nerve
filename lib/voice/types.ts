@@ -8,50 +8,176 @@
 
 export type ProviderId = 'openai' | 'elevenlabs'
 
-/** Every character is a config record, not code. (§05 — persona schema.) */
-export interface Persona {
-  id: string
-  /** Display name. Nadia, Priya, Maya... */
-  name: string
-  /** Level this persona sits at in the ladder, 1–8. */
-  level: number
-  /** One line of scene setting: "Bookshop, mid-afternoon, browsing fiction." */
-  scene: string
+/* ------------------------------------------------------------------ *
+ * The persona schema — four layers
+ * ------------------------------------------------------------------ */
 
-  /** 0–100. Starting warmth and how fast it moves. */
-  receptiveness: number
-  /** 0–100. How much the character carries the conversation vs making the user lead. */
-  effort: number
-  /** 0–100. Phone, friends, in a hurry, wearing headphones. */
-  distraction: number
-  /** 0–100. How plainly disinterest is expressed. Low is Level 7+ only. */
-  signal_clarity: number
-  /** Whether the model may cut across the user. Levels 1–4: never. */
-  interrupts: boolean
+/**
+ * Round 10 split what used to be one flat bag of dials into four layers,
+ * because they answer four different questions and were previously fighting.
+ *
+ *   1. TRAJECTORY   how warmth MOVES. This is what "level" means.
+ *   2. PERSONALITY  WHO she is. Constants. Never rise or fall with warmth.
+ *   3. GATED        what warmth UNLOCKS. Ceiling and threshold, no base value.
+ *   4. ROOM         where it happens.
+ *
+ * The rule that makes the split work: **there is no friendliness dial.**
+ * Friendliness IS warmth. A separate parameter for it creates two systems
+ * arguing over the same behaviour, which is how round 6 produced a character
+ * who obeyed neither.
+ *
+ * One engine serves every character, level and track because only layer 1
+ * changes with difficulty and only layer 2 changes with who she is.
+ */
 
-  /** Explicit triggers that end the scene. */
-  exit_conditions: string[]
-  /** Probability distribution over how this rep is allowed to go. */
-  outcome_weights: OutcomeWeights
-  /** Abstract delivery descriptor. Each adapter realises this in its own idiom. */
-  delivery: Delivery
-  /** Provider-neutral voice selection; adapters map to their own voice catalogue. */
-  voice: VoiceSelection
+/** LAYER 1 — how warmth moves. Difficulty lives here and nowhere else. */
+export interface Trajectory {
+  /** Opening warmth, before jitter. */
+  start: number
+  /** Plus or minus this much, rolled once per session (§05). */
+  startJitter: number
+  /** Multiplier on positive raw deltas. */
+  gain: number
+  /** Multiplier on negative raw deltas. Warmth rises slow and falls fast. */
+  decay: number
   /**
-   * Ambient audio bed keyed to the scenario.
-   *
-   * Retained as the human-readable label; the acoustics themselves live in
-   * `acoustics`, which is a per-scenario record rather than a global preset —
-   * a bar is loud and reflective, this bookshop is quiet and dead (§1c).
+   * Applied warmth lost on every user turn, before that turn is scored.
+   * Standing still has to lose ground or the meter only ratchets up.
    */
-  room_tone: string
-  /** Id into lib/audio/scenes.ts. Null leaves the scene dry. */
-  acoustics?: string
-  /** One line about the user's last attempt, injected on return visits. */
-  memory_summary?: string
+  decayPerTurn: number
+  /** Maximum applied gain from any single turn, after gain and falloff. */
+  maxGainPerTurn: number
+  /** Maximum reachable within a SINGLE session. */
+  sessionCeiling: number
+  /**
+   * Maximum reachable EVER, across every encounter. Below 100 this makes the
+   * character unwinnable by design — the point of the level, not a limitation
+   * of it. Alex sits at 45 and therefore never reaches ENGAGED.
+   */
+  hardCeiling: number
+}
 
-  /** The character contract itself. (§05 — countermeasure 1.) */
-  contract: CharacterContract
+/** How the words come out. Independent of how much she is giving. */
+export type Expression = 'playful' | 'dry' | 'earnest' | 'flat'
+
+/**
+ * LAYER 2 — who she is. Constants.
+ *
+ * These change HOW each warmth band is expressed, never where she sits on the
+ * scale. A sharp character at OPEN and a gentle one at OPEN give the same
+ * amount; they just sound nothing alike doing it.
+ */
+export interface Personality {
+  /** 0-100. How cutting when displeased. */
+  sharpness: number
+  /** Added to sharpness as warmth falls. See `effectiveSharpness`. */
+  sharpnessLowWarmthBoost: number
+  /** 0-100. Teasing versus earnest. */
+  humour: number
+  /**
+   * 0-100. Natural verbosity, independent of interest.
+   *
+   * Deliberately NOT part of the per-turn steering item: reply length belongs
+   * to the warmth band and nothing else may argue with it (§bands). This feeds
+   * the character contract instead, where it describes disposition rather than
+   * word count.
+   */
+  talkativeness: number
+  /** 0-100. Tolerance for fumbling and long pauses. */
+  patience: number
+  expression: Expression
+  /** 0-100. Phone, friends, in a hurry, wearing headphones. */
+  distraction: number
+  /** 0-100. How plainly disinterest is expressed. Low is Level 7+ only. */
+  signalClarity: number
+}
+
+/**
+ * The sharpness curve.
+ *
+ * A stranger who is already cold is sharper than a neutral one — the same
+ * clumsy line lands very differently at warmth 5 and at warmth 40. The boost
+ * fades linearly to zero at warmth 30 and contributes nothing above it, so a
+ * warm character is never retrospectively made cutting.
+ */
+export function effectiveSharpness(personality: Personality, warmth: number): number {
+  const boost = personality.sharpnessLowWarmthBoost * Math.max(0, (30 - warmth) / 30)
+  return clamp(personality.sharpness + boost, 0, 100)
+}
+
+/** A behaviour warmth unlocks, with a cap on how far it can go. */
+export interface GatedBehaviour {
+  /** 0-100. How far this behaviour may go once unlocked. */
+  ceiling: number
+  /** Warmth at which it becomes available at all. */
+  unlocksAt: number
+}
+
+/** A behaviour that is simply on or off. */
+export interface GateOnly {
+  unlocksAt: number
+}
+
+/**
+ * LAYER 3 — what warmth unlocks.
+ *
+ * Threshold and ceiling, never a base value. A base value would be a second
+ * warmth system, which is the thing this refactor exists to remove.
+ */
+export interface Gated {
+  flirtiness: GatedBehaviour
+  personalDisclosure: GatedBehaviour
+  initiatesTopics: GateOnly
+  usesYourName: GateOnly
+}
+
+export type GateName = keyof Gated
+
+export const GATE_NAMES: readonly GateName[] = [
+  'flirtiness',
+  'personalDisclosure',
+  'initiatesTopics',
+  'usesYourName',
+]
+
+/** Which gated behaviours are open at this warmth. */
+export function unlockedGates(gated: Gated, warmth: number): GateName[] {
+  return GATE_NAMES.filter((name) => warmth >= gated[name].unlocksAt)
+}
+
+/** LAYER 4 — the room. */
+export interface RoomConfig {
+  /**
+   * Scene id in lib/audio/scenes.ts, driving the ambient bed and its one-shots.
+   *
+   * **Null means no ambient bed at all** — no continuous layers, no scheduled
+   * one-shots. The reverb below is unaffected: acoustics are the shape of the
+   * space and are applied to her voice, while the bed is sound playing INTO
+   * the room, and only the second one can be mistaken for someone speaking.
+   *
+   * Synthesised beds are off while the room re-renders as recorded audio.
+   */
+  bed: string | null
+  /** dB trim on the whole bed. Bookshop sits near -40. */
+  bedDb: number
+  /** Scene id whose reverb profile is used. Usually the same as the bed. */
+  reverbIr: string
+  /** 0-1 wet share on her voice. Bookshop 0.08-0.12. */
+  reverbWet: number
+  /** Milliseconds, [min, max], between randomly scheduled one-shots. */
+  oneShotIntervalMs: [min: number, max: number]
+}
+
+/**
+ * The scene's name, for prose that has to say where this is happening.
+ *
+ * `bed` used to serve as both the ambient scene id and the word the persona
+ * compiler drops into "a stranger in a bookshop". Making the bed switchable
+ * separated those: turning the ambient off must not make her forget what room
+ * she is standing in.
+ */
+export function sceneId(room: RoomConfig): string {
+  return room.bed ?? room.reverbIr
 }
 
 export interface OutcomeWeights {
@@ -61,64 +187,86 @@ export interface OutcomeWeights {
 }
 
 /**
- * The leakiest seam in the abstraction, named honestly (§04).
+ * Per-provider voice selection.
  *
- * Under native speech-to-speech, flat delivery is *emergent* — it falls out of
- * the character contract. Under tagged TTS it is *forced* by explicit markers.
- * The schema carries the intent; each compiler realises it its own way.
+ * The brief sketched this as a single `voiceId`. It stays a per-provider record
+ * because the two arms have entirely different voice catalogues and flattening
+ * it would break whichever one did not own the string.
  */
-export interface Delivery {
-  /** 0–100. 0 is affectless, 100 is animated. */
-  warmth: number
-  /** 0–100. 0 is clipped, 100 is expansive. */
-  expansiveness: number
-  /** Relative speaking pace. 1.0 is the provider default. */
-  pace: number
-  /** Free-text delivery notes an adapter may use as tags or as instruction prose. */
-  notes: string[]
-}
-
 export interface VoiceSelection {
   /** Perceived gender of the voice, used when mapping across catalogues. */
   timbre: 'feminine' | 'masculine' | 'neutral'
-  /** Per-provider voice id overrides, keyed by provider. */
   ids: Partial<Record<ProviderId, string>>
+  /** Relative speaking rate. 1.0 is the provider default. */
+  pace?: number
 }
 
-export interface CharacterContract {
-  identity: string
-  situation: string
-  mood: string
+export interface Persona {
+  slug: string
+  name: string
+  /** One line of scene setting, shown to the user and given to the model. */
+  scene: string
+  /** Level in the ladder, 1-8. */
+  level: number
+  /** Which track this character belongs to. Decides the display label only. */
+  track: TrackId
+  voice: VoiceSelection
+
+  trajectory: Trajectory
+  personality: Personality
+  gated: Gated
+  room: RoomConfig
+
   /**
-   * How the words come out, as opposed to what they are.
+   * The character prompt. Hand-authored prose, one string.
    *
-   * Separate from `Delivery`, which is numeric and drives provider voice
-   * parameters. This is prose the model reads, and it exists because under
-   * native speech-to-speech prosody is emergent from the character contract —
-   * there is no tag to set (§04).
+   * It owns who she is: her history, her opinions, what she will not do. It
+   * must NOT specify reply length or question rate — those are the warmth
+   * band's, and having them in both places is what produced 16.5 median words
+   * against a contract asking for four to ten.
    */
-  delivery_notes?: string[]
-  /**
-   * Punctuation constraints.
-   *
-   * Punctuation is prosody under speech-to-speech: the model performs what it
-   * writes. Em-dashes in particular produce an unnatural clipped pause.
-   */
-  punctuation?: string[]
-  /** What the character is trying to do independently of the user. */
-  agenda?: string
-  /** Concrete spoken-language constraints that keep the character human. */
-  speech?: string[]
-  /** How the character preserves facts and state across a live conversation. */
-  continuity?: string[]
-  /** How this person responds when a stranger asks something personal. */
-  personal_questions?: string
-  /** How this person responds to rudeness or attempts to test the prompt. */
-  rude_or_testing?: string
-  /** Persona-specific negative constraints, in addition to the global register. */
-  never?: string[]
-  earns_warmth: string[]
-  loses_warmth: string[]
+  contract: string
+
+  /** Explicit triggers that end the scene. */
+  exitConditions: string[]
+  /** Probability distribution over how this rep is allowed to go. */
+  outcomeWeights: OutcomeWeights
+  /** One line about the user's last attempt, injected on return visits. */
+  memorySummary?: string
+}
+
+/* ------------------------------------------------------------------ *
+ * Tracks
+ * ------------------------------------------------------------------ */
+
+/**
+ * The engine variable is always `warmth`. Only the label changes.
+ *
+ * Renaming the variable per track would mean three engines; renaming only the
+ * label means one engine and a lookup. The UI reads the label, the engine reads
+ * the variable, and they never meet.
+ */
+export type TrackId = 'dating' | 'interview' | 'language'
+
+export const TRACK_LABELS: Record<TrackId, string> = {
+  dating: 'Warmth',
+  interview: 'Impression',
+  language: 'Engagement',
+}
+
+/**
+ * The Level 5 dial, derived rather than stored.
+ *
+ * §05: levels 1-4 never interrupt the user, ever. That is a property of the
+ * level, so keeping a separate `interrupts` boolean on every persona was a
+ * second place for the same rule to be written down and disagreed with.
+ */
+export function mayInterrupt(persona: Persona): boolean {
+  return persona.level >= 5
+}
+
+export function trackLabel(track: TrackId): string {
+  return TRACK_LABELS[track] ?? TRACK_LABELS.dating
 }
 
 /**
@@ -184,6 +332,14 @@ export interface VoiceEventMap {
   'agent.overlap': { at: number }
   /** Tool-call syntax was suppressed from a spoken transcript. */
   'agent.tool-leak': { at: number }
+  /**
+   * She spoke twice with no user turn between, and both were audible.
+   *
+   * Distinct from `agent.overlap`, which counts responses that were cancelled
+   * BEFORE reaching the speakers. This one already reached them, so the turn
+   * stays in the transcript and only the incident is reported.
+   */
+  'agent.double-turn': { at: number }
   /** The character chose a genuine exit and the live scene must now close. */
   'character.exit': { at: number }
   'agent.transcript': { turn: TranscriptTurn; final: boolean }

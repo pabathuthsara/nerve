@@ -6,9 +6,10 @@
  */
 
 import {
-  bandScore,
   computeDeterministicMetrics,
+  scoreMetrics,
   type DeterministicMetrics,
+  type MetricScore,
 } from './metrics'
 import {
   DETERMINISTIC_WEIGHT,
@@ -23,21 +24,31 @@ export * from './types'
 export * from './metrics'
 
 /**
- * The §07 target bands, in one place so the scorecard and any future
- * calibration harness read the same numbers.
+ * The deterministic 60%, and the working behind it.
+ *
+ * Returns the per-metric breakdown as well as the mean, because a composite
+ * nobody can take apart is worse than a lower one anybody can. Round 9 returned
+ * 96 for a session with three metrics outside band and there was no way to see
+ * which line was lying.
  */
+export function scoreDeterministic(metrics: DeterministicMetrics): {
+  score: number
+  breakdown: MetricScore[]
+} {
+  const breakdown = scoreMetrics(metrics)
+  const scored = breakdown
+    .map((entry) => entry.points)
+    .filter((points): points is number => points !== null)
+  return {
+    score: scored.length === 0
+      ? 0
+      : Math.round(scored.reduce((sum, points) => sum + points, 0) / scored.length),
+    breakdown,
+  }
+}
+
 export function deterministicScore(metrics: DeterministicMetrics): number {
-  const parts: (number | null)[] = [
-    bandScore(metrics.talkRatio, { min: 0.4, max: 0.55 }),
-    bandScore(metrics.questionsPer3Min, { min: 3 }),
-    bandScore(metrics.openClosedRatio, { min: 2 }),
-    bandScore(metrics.fillerRate, { max: 4 }),
-    bandScore(metrics.longestMonologue, { max: 22 }),
-    bandScore(metrics.meanResponseLatency, { max: 1.8 }),
-  ]
-  const scored = parts.filter((part): part is number => part !== null)
-  if (scored.length === 0) return 0
-  return Math.round(scored.reduce((sum, part) => sum + part, 0) / scored.length)
+  return scoreDeterministic(metrics).score
 }
 
 export function clampSubScores(raw: unknown): SubScores | null {
@@ -67,7 +78,7 @@ export function composeScorecard(params: {
   model: string
 }): Scorecard {
   const metrics = computeDeterministicMetrics(params.transcript, params.sessionSeconds)
-  const deterministic = deterministicScore(metrics)
+  const { score: deterministic, breakdown } = scoreDeterministic(metrics)
 
   const judgementMean =
     SUB_SCORE_KEYS.reduce((sum, key) => sum + params.judgement.scores[key], 0) /
@@ -83,6 +94,7 @@ export function composeScorecard(params: {
     evidence: params.judgement.evidence,
     metrics,
     deterministicScore: deterministic,
+    metricScores: breakdown,
     model: params.model,
     gradedAt: new Date().toISOString(),
     outcome: params.outcome,

@@ -34,8 +34,8 @@ import { OpenAIEventTranslator } from './translate'
 import { OpenAIResponseGate } from './response-gate'
 import { buildSteeringItem } from './messages'
 import { Room } from '@/lib/audio/engine'
-import { sceneFor } from '@/lib/audio/scenes'
-import type { RoomControls } from '@/lib/audio/types'
+import { sceneForRoom } from '@/lib/audio/scenes'
+import { applyRoomConfig, type RoomControls } from '@/lib/audio/types'
 
 const CALLS_ENDPOINT = 'https://api.openai.com/v1/realtime/calls'
 const PROVIDER: ProviderId = 'openai'
@@ -77,8 +77,17 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   private dc: RTCDataChannel | null = null
   private micStream: MediaStream | null = null
   private audioEl: HTMLAudioElement | null = null
+  /** Holds the remote track open for WebAudio. Muted; never the playback path. */
+  private keepAliveEl: HTMLAudioElement | null = null
   private room: Room | null = null
   private audioCtx: AudioContext | null = null
+  /**
+   * Everything audible, gathered onto one stream before it reaches a speaker.
+   *
+   * See `armAudio` for why this exists rather than the graph talking to
+   * `ctx.destination` directly.
+   */
+  private playbackSink: MediaStreamAudioDestinationNode | null = null
   private userAnalyser: AnalyserNode | null = null
   private agentAnalyser: AnalyserNode | null = null
   private capTimer: ReturnType<typeof setTimeout> | null = null
@@ -94,7 +103,24 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis)
     this.clock = options.clock ?? (() => performance.now())
     this.requestedModel = options.model
-    this.responseGate = new OpenAIResponseGate(() => this.send({ type: 'response.create' }))
+    this.responseGate = new OpenAIResponseGate(
+      () => this.send({ type: 'response.create' }),
+      {
+        onStall: () => {
+          // Clear the translator's side too, or the recovery response is
+          // cancelled as an overlap the moment it is created.
+          this.translator.abandonActiveResponse()
+          this.emitter.emit('error', {
+            error: new VoiceError(
+              'transport_failed',
+              PROVIDER,
+              'A reply never settled and the turn gate was released to recover.',
+              { fatal: false },
+            ),
+          })
+        },
+      },
+    )
     this.translator = new OpenAIEventTranslator(
       this.emitter,
       () => this.now(),
@@ -106,6 +132,8 @@ export class OpenAIVoiceProvider implements VoiceProvider {
         onResponseSettled: () => this.responseGate.responseSettled(),
         onCharacterExit: (at) => this.emitter.emit('character.exit', { at }),
         onToolSyntaxLeak: (at) => this.emitter.emit('agent.tool-leak', { at }),
+        onPhantomTurn: (at, reason, id) => this.cancelPhantomResponse(at, reason, id),
+        onDoubleTurn: (at) => this.emitter.emit('agent.double-turn', { at }),
       },
     )
   }
@@ -133,6 +161,11 @@ export class OpenAIVoiceProvider implements VoiceProvider {
 
     const mic = await this.openMicrophone()
     this.micStream = mic
+
+    // The bed arms HERE — with the session, not with her first word. It plays
+    // through the WebRTC handshake, through every silence, and through the end
+    // of the rep. Nothing below is allowed to start or stop it (§1).
+    this.armAudio()
 
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -189,6 +222,12 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     this.t0 = this.clock()
     this.buildUserAnalyser(mic)
 
+    // The bed ducks under her voice and swells back afterwards. Subscribed
+    // rather than called from the translator, so the ambient chain has exactly
+    // one point of contact with agent speech and it is a gain ramp.
+    this.emitter.on('agent.speech.start', () => this.room?.duck(true))
+    this.emitter.on('agent.speech.stop', () => this.room?.duck(false))
+
     // Backstop for the 8-minute hard cap (§05), enforced here as well as in the
     // UI so no code path can run a session past it.
     this.capTimer = setTimeout(() => {
@@ -202,7 +241,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
       response = await this.fetchImpl(this.tokenEndpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ personaId: persona.id, calibration, model: this.requestedModel }),
+        body: JSON.stringify({ personaId: persona.slug, calibration, model: this.requestedModel }),
       })
     } catch (cause) {
       throw new VoiceError('token_mint_failed', PROVIDER, 'Could not reach the token endpoint.', { cause })
@@ -254,22 +293,78 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     return await response.text()
   }
 
-  private attachRemote(stream: MediaStream): void {
-    const scene = this.persona?.acoustics ? sceneFor(this.persona.acoustics) : null
+  /**
+   * Build the playback path, then the room on top of it.
+   *
+   * ROUND 12 — THE ECHO FIX. The graph no longer reaches `ctx.destination`. It
+   * ends at a `MediaStreamAudioDestinationNode`, and one unmuted `<audio>`
+   * element plays that stream.
+   *
+   * The old wiring muted the media element whenever a room existed and played
+   * her through WebAudio instead. **The browser's echo canceller only cancels
+   * against audio the media pipeline rendered**, so `echoCancellation: true` on
+   * the microphone had nothing to match and was blind to her. Her voice went
+   * speakers -> microphone -> server VAD -> committed as a user turn, and she
+   * answered herself. `docs/M0.md`'s fifth finding measured six of those in one
+   * 42.3s rep; the 160s rep that prompted this round showed 24 VAD triggers
+   * against 19 real user turns.
+   *
+   * Routing back through a media element puts the mix where the canceller can
+   * see it, and keeps the room: reverb, bed and one-shots all render into the
+   * same sink. It also removes a quieter fault — with no room, the OLD code
+   * left the element unmuted AND connected the source to `ctx.destination`, so
+   * her voice played twice.
+   *
+   * This is a browser behaviour we do not own, so it is a mitigation and not a
+   * guarantee. `isAgentEcho` in ./noise.ts is the transcript-level backstop for
+   * the hardware and platforms where it is not enough.
+   */
+  private armAudio(): void {
+    const ctx = this.ensureAudioContext()
+    const sink = ctx.createMediaStreamDestination()
+    this.playbackSink = sink
 
-    // Chrome will not deliver a remote WebRTC track to WebAudio unless the
-    // stream is also attached to a media element. Muted, because playback goes
-    // through the graph when there is a room; unmuted when there is not.
     const el = new Audio()
     el.autoplay = true
-    el.srcObject = stream
-    el.muted = scene !== null
+    // NOT muted. That is the entire point of this indirection.
+    el.muted = false
+    el.srcObject = sink.stream
     void el.play().catch(() => {
       /* Autoplay is fine here — connect() is downstream of a user gesture. */
     })
     this.audioEl = el
 
+    // Null while procedural acoustics are off — see `roomAcousticsEnabled`.
+    // Her voice then reaches the sink dry, through `attachRemote`.
+    const scene = this.persona ? sceneForRoom(this.persona.room.reverbIr) : null
+    if (!scene) return
+
+    const room = new Room(ctx, {
+      scene,
+      destination: sink,
+      ambient: this.persona?.room.bed !== null,
+    })
+    if (this.persona) applyRoomConfig(room, this.persona.room)
+    room.arm()
+    this.room = room
+  }
+
+  private attachRemote(stream: MediaStream): void {
     const ctx = this.ensureAudioContext()
+
+    // Chrome will not pump a remote WebRTC track into WebAudio unless the
+    // stream is also attached to a media element. This one is a keep-alive and
+    // nothing else: it is muted and it is never the playback path. What the
+    // user hears comes off `playbackSink`, wired in `armAudio`.
+    const keepAlive = new Audio()
+    keepAlive.autoplay = true
+    keepAlive.muted = true
+    keepAlive.srcObject = stream
+    void keepAlive.play().catch(() => {
+      /* Silent by design; failing to start it is not an error worth surfacing. */
+    })
+    this.keepAliveEl = keepAlive
+
     const source = ctx.createMediaStreamSource(stream)
 
     // The analyser taps her DRY voice. The waveform should track what she said,
@@ -280,15 +375,13 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     source.connect(analyser)
     this.agentAnalyser = analyser
 
-    if (!scene) return
-
-    // Put her in the room. In a quiet scene there is no background masking a
-    // dry voice, so this matters more here than it would in a loud one.
-    const room = new Room(ctx, { scene })
-    source.connect(room.handles.input)
-    room.handles.output.connect(ctx.destination)
-    room.start()
-    this.room = room
+    // Into the room, which is already running. In a quiet scene there is no
+    // background masking a dry voice, so this matters more here, not less.
+    // With no room she goes straight to the sink — exactly once, which the old
+    // wiring did not manage.
+    if (this.room) source.connect(this.room.handles.input)
+    else if (this.playbackSink) source.connect(this.playbackSink)
+    else source.connect(ctx.destination)
   }
 
   private buildUserAnalyser(stream: MediaStream): void {
@@ -316,17 +409,79 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     this.dc.send(JSON.stringify(payload))
   }
 
+  /**
+   * A second response appeared while the first was still generating or playing.
+   *
+   * Cancels the NEWCOMER, by id, and never bare. A `response.cancel` with no
+   * `response_id` cancels whatever the server happens to be generating — which
+   * in this path is the reply the user is currently listening to. That is a
+   * cure strictly worse than the disease, so a cancel with no id is not sent
+   * at all: the overlap guard in the translator has already stopped the second
+   * response reaching the transcript, and the incident is still reported.
+   *
+   * The output audio buffer is deliberately NOT cleared here. It holds the
+   * FIRST response's audio — the legitimate one — and clearing it would cut
+   * off the very reply this guard exists to protect.
+   */
   private cancelOverlappingResponse(responseId: string | null): void {
-    this.send({
-      type: 'response.cancel',
-      ...(responseId ? { response_id: responseId } : {}),
-    })
+    if (responseId) this.send({ type: 'response.cancel', response_id: responseId })
     this.emitter.emit('agent.overlap', { at: this.now() })
     this.emitter.emit('error', {
       error: new VoiceError(
         'provider_error',
         PROVIDER,
         `Dropped an overlapping response${responseId ? ` (${responseId})` : ''}.`,
+        { fatal: false },
+      ),
+    })
+  }
+
+  /**
+   * The transcriber invented words from noise, and a reply to them is already
+   * in flight.
+   *
+   * The response is created on `input_audio_buffer.committed`, which fires
+   * before transcription completes, so by the time the text can be inspected
+   * she may already be answering. Cancel it if she has not started speaking —
+   * transcription typically lands a few hundred milliseconds ahead of audio, so
+   * this usually wins. If it does not, she says one odd thing and the turn is
+   * still kept out of the transcript, the warmth engine and the scorecard.
+   */
+  private cancelPhantomResponse(
+    at: number,
+    reason: string,
+    responseId: string | null,
+  ): void {
+    if (responseId) {
+      // This phantom created that response. Cancel it, clear the audio it has
+      // already buffered, and clear the translator's side too — otherwise the
+      // next legitimate `response.create` arrives as an unrecognised id, is
+      // reported as an overlap and is cancelled on the spot.
+      this.send({ type: 'response.cancel', response_id: responseId })
+      this.send({ type: 'output_audio_buffer.clear' })
+      this.translator.abandonActiveResponse()
+      this.responseGate.reset()
+    } else {
+      // ROUND 12. The commit was coalesced into the gate's pending slot, so
+      // this phantom owns NOTHING that is generating. The old code cancelled
+      // `activeResponseId` here, which in exactly this case is the reply to a
+      // REAL user turn, mid-playback. That single line produced both live
+      // symptoms: she stopped mid-word, and the recovery response that landed
+      // afterwards read as her switching to a different sentence. It also wiped
+      // the queue with `reset()`, so the real turn behind it went unanswered.
+      //
+      // The correct undo is narrow: drop the queue entry, touch nothing else.
+      this.responseGate.cancelPending()
+    }
+
+    this.emitter.emit('agent.overlap', { at })
+    this.emitter.emit('error', {
+      error: new VoiceError(
+        'provider_error',
+        PROVIDER,
+        responseId
+          ? `Dropped a phantom user turn (${reason}) and the reply it triggered.`
+          : `Dropped a phantom user turn (${reason}) before it was answered.`,
         { fatal: false },
       ),
     })
@@ -428,10 +583,14 @@ export class OpenAIVoiceProvider implements VoiceProvider {
       this.dc?.close()
       this.pc?.close()
       this.micStream?.getTracks().forEach((t) => t.stop())
-      if (this.audioEl) {
-        this.audioEl.srcObject = null
-        this.audioEl = null
+      for (const el of [this.audioEl, this.keepAliveEl]) {
+        if (!el) continue
+        el.pause()
+        el.srcObject = null
       }
+      this.audioEl = null
+      this.keepAliveEl = null
+      this.playbackSink = null
       await this.audioCtx?.close()
     } catch {
       /* Teardown is best-effort. The summary is what matters. */
