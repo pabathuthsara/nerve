@@ -340,11 +340,37 @@ arrived and nothing rendered → a browser graph fault, ours to fix. Packets did
 not arrive → the audio left the model and not the network, and the recovery is a
 product decision rather than a patch. Not sized past that on purpose.
 
+### B12 · The Sunday letter has no scheduler  ·  ~0 days on Pro, ~0.5 days on Actions  ·  `deferred 24 Aug`
+
+`/api/cron/weekly-review` is written hourly on purpose: Vercel crons run in UTC
+and "Sunday morning" is the user's Sunday, so the route asks each user's own
+clock and leans on the `(user_id, week_start)` unique constraint to write the
+letter once. Vercel's Hobby plan refuses any cron more frequent than daily, and
+the first production deploy failed on exactly that expression.
+
+Rather than make it daily — which reintroduces the timezone bug the route was
+written to avoid, posting a Sunday letter into somebody's Monday — the cron was
+removed from `vercel.json` and the deploy shipped without it. `purge-audio`
+stays, daily at 03:20 UTC, because the 30-day audio retention in §05 is an
+obligation and its schedule is Hobby-legal.
+
+**What this costs right now.** No weekly review is generated for anybody. The
+route, `generateWeeklyReviews` and the letter itself are all built and tested;
+nothing is calling them. §11's Sunday letter is silently absent rather than
+broken, which is the worse of the two failure modes to leave undocumented.
+
+**The three ways out**, in the order they were considered: a GitHub Actions
+workflow curling the endpoint hourly with `CRON_SECRET` as a bearer token —
+free, preserves the design, adds a second place that has to hold the secret; a
+Pro upgrade, which unlocks the expression as authored; or a daily cron and an
+accepted drift. Deferred rather than decided.
+
 **Blocker total: roughly 14 working days**, down from 21 after the database
 pass, 16 with B8 cleared, 15 with B9 and 14 with B10, and back up by the half
 day B11 needs to be root-caused — plus merchant-of-record review time, which
-runs in parallel and can fail. **Eight of the eleven blockers remain**, one of
-them (B11) measured but not yet explained.
+runs in parallel and can fail. **Nine of the twelve blockers remain**, one of
+them (B11) measured but not yet explained and one (B12) deferred rather than
+decided.
 
 > **B9 was the one to take next, and it is done (24 Aug).** The grader,
 > the live scorer, both pipeline hops and the Realtime token now sit behind
