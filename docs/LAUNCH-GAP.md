@@ -74,6 +74,13 @@ onboarding — "if the landing page leads with getting her number, we are
 declined by every provider on this list". Right now there is no landing page to
 review, which is its own kind of decline.
 
+**Hosting is no longer the missing part (24 Aug).** The app is deployed to
+production at `https://nerve-henna.vercel.app` — Vercel project `nerve`, linked
+to the GitHub repo, Hobby plan, no deployment protection. What B1 still needs is
+entirely content: the six §11 routes do not exist, and a merchant-of-record
+reviewer landing on that URL today is bounced to `/login` with nothing to read.
+Deploying moved this from "no site and no host" to "a host serving no site".
+
 ### B2 · No billing exists  ·  ~4 days + review lead time  ·  `DB done`
 **Spec:** §14, and §10 G.
 **Built (database):** `entitlements` with plan, quota and renewal date, plus
