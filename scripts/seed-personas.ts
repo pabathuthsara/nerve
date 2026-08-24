@@ -15,10 +15,11 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { PERSONAS, getPersona } from '@/lib/personas'
+import { PERSONAS, RETIRED_PERSONAS, getPersona } from '@/lib/personas'
 import { presentationFor } from '@/lib/personas/presentation'
 import type { Persona } from '@/lib/voice/types'
-import { asJson, type Database } from '@/lib/db/types'
+import { asJson } from '@/lib/db/json'
+import type { Database } from '@/lib/db/types'
 import { loadEnvLocal } from './env'
 
 function row(persona: Persona) {
@@ -107,6 +108,36 @@ async function main(): Promise<void> {
     console.log(`  L${persona.level}  ${persona.slug.padEnd(10)} ${persona.name}`)
   }
   console.log(`\n${data?.length ?? 0} persona(s) seeded.`)
+
+  // Retire whoever is no longer on the roster.
+  //
+  // Unpublished, never deleted. `sessions.persona_id` references this table and
+  // `sessions.persona_slug` is denormalised alongside it for exactly this case,
+  // so a rep somebody ran against a retired character stays a complete, readable
+  // record. Deleting the row would blank a history the user can still open, and
+  // it would throw away tuning work that is expensive to redo.
+  //
+  // Runs only on a full seed: `npm run db:seed nadia` is a targeted re-seed and
+  // must not decide roster membership as a side effect.
+  if (!requested.length) {
+    const retiring = Object.keys(RETIRED_PERSONAS)
+    const { data: retired, error: retireError } = await supabase
+      .from('personas')
+      .update({ published: false })
+      .in('slug', retiring)
+      .eq('published', true)
+      .select('slug, name')
+
+    if (retireError) {
+      console.error(`Retiring failed: ${retireError.message}`)
+      process.exit(1)
+    }
+
+    if (retired?.length) {
+      console.log('\nRetired (unpublished, rows kept):')
+      for (const persona of retired) console.log(`  ${persona.slug.padEnd(10)} ${persona.name}`)
+    }
+  }
 }
 
 void main()

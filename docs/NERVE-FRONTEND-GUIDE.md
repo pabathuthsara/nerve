@@ -313,7 +313,8 @@ Build these in `components/`. Every one needs a mobile and desktop behavior.
 | `Skeleton` | Shimmering `--surface-2` blocks. The ONLY loading affordance. |
 | `EmptyState` | Icon (32px, `--text-mute`), display-md title, body-sm dim description, optional CTA |
 | `LockOverlay` | Semi-opaque `--ground` at 72%, centered lock icon + requirement text. Wraps locked cards. |
-| `Avatar` | Circle, sizes 32/48/64/96. Falls back to initial on `--surface-2`. |
+| `Avatar` | Account avatar only: circle, sizes 32/48/64/96. Falls back to an initial on `--surface-2`. |
+| `FluidPersona` | Persona identity at every scale. Three.js ribbon form with a sharp HTML initial and a CSS fallback when WebGL is unavailable. |
 
 ### 4.2 Composites (`components/`)
 
@@ -333,8 +334,7 @@ Build these in `components/`. Every one needs a mobile and desktop behavior.
 | `MomentCard` | Scorecard: a quoted turn with its delta and why |
 | `TranscriptTurn` | Transcript: speaker, text, delta badge, warmth gutter |
 | `WarmthSparkline` | Transcript header: warmth over the whole session, 40px tall |
-| `Orb` | **The rep screen centerpiece — see §9** |
-| `WarmthRing` | Ring around the orb |
+| `FluidPersona` | **The rep screen centerpiece — see §9** |
 | `TimeArc` | Depleting time indicator |
 | `MicLevelMeter` | Mic check: 12-segment horizontal level meter |
 | `OnboardingProgress` | 5 dots, volt = done, line = pending |
@@ -732,7 +732,7 @@ Three screens: brief → live → result. All chrome-free, all full-bleed, all `
 
 Identical structure to `/onboarding/ready` (§7.5) but for any persona. Scene-setter, ~5 seconds of reading.
 
-- Portrait 96px, name display-lg, setting label, hook body-lg
+- Fluid persona 132px, name display-lg, setting label, hook body-lg
 - The 3-row rule block (TIME / GOAL / SHE LEAVES)
 - If the user has faced her before, a single dim line: `YOUR BEST: WARMTH 54, NO NUMBER`
 - Primary `START` (full width mobile, 280px centered desktop)
@@ -749,70 +749,72 @@ Absolute focus. Nothing on this screen that isn't the conversation.
 │ ‹                          ⌒ 1:47 │  ← top row, both fade to 30% after 4s
 │                                   │
 │                                   │
-│              ╭───╮                │
-│            (  ORB  )              │  ← centered, with WarmthRing around it
-│              ╰───╯                │
+│          ╭── unfolding ──╮        │
+│          │   fluid form  │        │  ← the persona's 3D identity
+│          ╰───────────────╯        │
 │                                   │
 │              GUARDED              │  ← band label, Plex Mono, only L1–L3
-│                 41                │  ← numeric warmth, only if trainingWheels
+│          WARMTH  41 / 65           │  ← exact progress, only if trainingWheels
 │                                   │
 │                                   │
 │           ● listening             │  ← mic state, 12px dim
 └───────────────────────────────────┘
 ```
 
-**Desktop:** identical, orb scaled up (280px vs 200px), everything centered in the viewport. Do not add sidebars, transcripts, or panels. Same screen, bigger.
+**Desktop:** identical, fluid form scaled up (430px vs 330px stage), everything centered in the viewport. Do not add sidebars, transcripts, or panels. Same screen, bigger.
 
 **Top-left:** back chevron → opens `EndRepModal` (§10.1). Never exits directly.
 **Top-right:** `TimeArc` — a small ring (28px) that depletes clockwise, with `1:47` in Plex Mono beside it. **Not a digital countdown alone** — the arc does the emotional work. Under 20s remaining: arc and digits shift to `--amber`. **No beeping, ever.**
 
-**Persona name/setting** appear as a caption under the orb for the first 3 seconds, then fade out. She's a person, not a UI label.
+**Persona name/setting** appear as a caption above the form for the first 3 seconds, then fade out. She's a person, not a UI label.
 
-### 9.3 The Orb — specification
+### 9.3 The Fluid Persona — specification
 
-A single glowing sphere, centered. It is the entire visual representation of the conversation. Four states, all continuous (never cuts between them — always interpolate over ~300ms).
+A layered ribbon form, centered. It is both the character's identity and the visual representation of the conversation. Warmth is a physical progression — **closed → unfolding → responsive → resonant** — rather than a ring being painted progressively greener.
 
-**Construction** (CSS + rAF, no WebGL — it's not worth it):
-- Base: a `div` with `border-radius: 50%`, sized 200px (mobile) / 280px (desktop)
-- Fill: layered `radial-gradient`s — a bright core at 30% offset, mid tone, dark rim
-- Glow: a duplicate element behind at `scale(1.4)`, `filter: blur(40px)`, opacity driven by amplitude
-- A second inner layer counter-rotating slowly (20s) with a slight `blur(8px)` to give the surface life
-- All animation driven by a single `requestAnimationFrame` loop writing CSS custom properties (`--amp`, `--glow`), **not** React state. Re-rendering React at 60fps will tank the page.
+**Construction** (`components/fluid-persona.tsx`):
+- Three.js `0.180.0` with `TorusGeometry` as the ribbon surface.
+- A custom vertex shader drives openness, curl, breathing, voice amplitude, the persona-specific deformation and the traveling warmth pulse.
+- A custom fragment shader layers each character's guarded/warm/light palette with transparency and Fresnel edge lighting.
+- Two to four translucent skins use additive blending to create inner depth; three line orbits and deterministic particles sit around them.
+- The central initial remains HTML so it stays sharp at profile-card and live-stage sizes.
+- Rendering is capped to a modest pixel ratio, pauses off-screen, and uses lower geometry density for card-size instances. WebGL failure falls back to a CSS ribbon mark.
 
 **Amplitude pipeline:**
 ```
 MediaStream → AudioContext → AnalyserNode (fftSize 256, smoothingTimeConstant 0.7)
   → getByteFrequencyData → RMS → normalize 0..1
-  → exponential smoothing (alpha 0.25) → clamp → write to --amp
+  → exponential smoothing → shader amplitude uniform
 ```
-Two analysers: one on the local mic stream, one on the remote persona stream. Never let raw values through unsmoothed — it looks like a cheap visualizer.
+Two analysers feed the local and remote speaking levels already exposed by the session. The frame loop smooths them again before deformation. Never let raw values through unsmoothed — it looks like a cheap visualizer.
 
 **The four states:**
 
-| State | Color | Scale | Glow | Motion |
-|---|---|---|---|---|
-| `idle` (nobody speaking) | band color, 50% saturation | 1.0 + slow ±0.02 breathe (4s cycle) | low, steady | gentle drift |
-| `user` (you're speaking) | `--cool` rim over band core | 1.0 + amp×0.06 | rim brightens with amp | tight, responsive |
-| `persona` (she's speaking) | band color, full | 1.0 + amp×0.14 | strong, amp-driven | alive, the primary state |
-| `thinking` (gap between) | band color, desaturating | contracts to 0.94 | dims to 40% | ring shimmers, orb still |
+| State | Form | Response | Motion |
+|---|---|---|---|
+| `idle` (nobody speaking) | Current warmth shape | Warm forms track the pointer; guarded forms turn away slightly | 0.4Hz breathe and slow orbit |
+| `user` (you're speaking) | Current warmth shape | Pointer response remains warmth-driven | Tight amplitude displacement |
+| `persona` (she's speaking) | Current warmth shape with lit inner folds | Pointer response remains warmth-driven | Deeper amplitude displacement |
+| `thinking` (gap between) | Slightly contracted and restrained | Holds rather than chasing the pointer | Slow, low-energy drift |
 
-**On `thinking`:** this is the API latency gap (~500–800ms) and it is the single most dangerous moment for immersion. **Do not put a spinner, dots, or "thinking…" text here.** The orb contracting slightly and the ring shimmering reads as *she's considering what you said* — it converts a technical delay into characterization. If the gap exceeds 2.5s, add a very subtle additional dim; if it exceeds 6s, treat as a connection problem (§9.7).
+**On `thinking`:** this is the API latency gap (~500–800ms) and it is the single most dangerous moment for immersion. **Do not put a spinner, dots, or "thinking…" text here.** The form quieting reads as *she's considering what you said* — it converts a technical delay into characterization. If the gap exceeds 2.5s, add a very subtle additional dim; if it exceeds 6s, treat as a connection problem (§9.7).
 
-**Orb color = current warmth band color**, interpolated over 400ms whenever the band changes. This means the orb literally warms up as she does — cold grey-green at CLOSED, bright volt at INVESTED. The user feels progress without reading a number.
+**Warmth drives several properties together.** Openness interpolates from 0.35→1, curl from 1→0.25, orbit coherence and luminance rise, and pointer response crosses from slight avoidance to following between 30–80 warmth. Color supports that change but never carries it alone.
 
-### 9.4 The Warmth Ring
+Each persona shares that grammar but has its own authored signature: Nadia unfolds in three petal-like folds; Priya's turbulent vortex coordinates; Maya's offset ripples gain depth; Jules's split ribbons bridge. Erin, Sam, Robin and Alex use orbital, woven, ambiguous and faceted variants respectively. Unknown future identities receive a deterministic fallback, so adding a person never produces a duplicate by accident.
 
-An SVG ring around the orb, 4px stroke, radius = orb radius + 16px.
+### 9.4 Warmth feedback
 
-- Track: `--line`. Fill: current band color. `stroke-dasharray` progress = warmth 0–100. Rotate -90° so it starts at top.
-- Transitions 400ms on value change.
-- **On a positive delta:** a brief outward pulse (scale 1→1.04→1, 300ms) and a momentary brightness lift.
-- **On a negative delta:** a short inward contraction and a desaturation flash. Never red — it's coldness, not error.
-- **Threshold marker:** a 2px tick at the win threshold position (e.g. 65). Present at all levels. When warmth crosses it, the ring does a single full-circumference sweep of light. This is the moment the user learns the number is now possible — and it's the most satisfying beat in the product. Get it right.
+There is no outer warmth ring. The form itself is the feedback.
+
+- **On a positive delta:** a bright pulse enters at one point, travels through a fold, expands it briefly, then settles at the new openness.
+- **On a negative delta:** the same system contracts inward and loses energy without turning red or shaking.
+- **The arm threshold stays silent.** No sweep, marker or special event fires at 65; the outcome rule requires that moment to stay invisible.
+- The exact value remains below the form as `WARMTH 41 / 65` while training wheels are active. Shape communicates emotion; the number communicates gameplay progress.
 
 **Training wheels by level:**
-- L1–L3: ring is band-colored, band name shown, numeric warmth shown (if `trainingWheels`)
-- L4: ring present but rendered in a **single neutral color** (`--text-dim`), no band name, no number. The `TrainingWheelsOffModal` (§10.5) fires once, before the user's first L4 rep.
+- L1–L3: persona form, band name, and exact warmth are shown while `trainingWheels` is active.
+- L4: the persona form remains, but the band name and number disappear. The `TrainingWheelsOffModal` (§10.5) fires once, before the user's first L4 rep.
 
 ### 9.5 Mic / connection status line
 
@@ -829,17 +831,16 @@ At ~15 seconds remaining, **she begins wrapping naturally** — the engine emits
 At 0:00 the rep ends one of two ways:
 
 **WIN** (`warmth >= threshold` at any point where she chooses to offer):
-1. She delivers the number line. Orb goes full volt, ring completes.
-2. A `PhoneNumberCard` slides up from the orb — a 2px-radius `--surface` card, 1px volt border, containing the number in Plex Mono display-lg with a subtle character-by-character reveal (40ms/char).
+1. She delivers the number line. Her form opens fully and settles into a bright, calm resonance.
+2. A `PhoneNumberCard` slides up from the form — a 2px-radius `--surface` card, 1px volt border, containing the number in Plex Mono display-lg with a subtle character-by-character reveal (40ms/char).
 3. Hold 2.5s.
 4. Auto-navigate → `/session/[id]/result`.
 
 **LOSS:**
-1. She delivers her exit line (shown as text under the orb, since it's the last thing she says).
-2. Orb desaturates to `--band-closed`, contracts to 0.7, glow dies, fades out over 900ms.
-3. Ring drains counter-clockwise to 0 over the same 900ms.
-4. Hold 800ms on empty ground.
-5. Auto-navigate → `/session/[id]/result`.
+1. She delivers her exit line (shown as text under the form, since it's the last thing she says).
+2. The form closes, contracts to 0.7, loses light and fades out over 900ms.
+3. Hold 800ms on empty ground.
+4. Auto-navigate → `/session/[id]/result`.
 
 The loss animation must be *quiet and unhumiliating*. No red, no shake, no buzzer, no "FAILED". She just left. That's the whole point of the product.
 
@@ -847,11 +848,11 @@ The loss animation must be *quiet and unhumiliating*. No red, no shake, no buzze
 
 | State | Treatment |
 |---|---|
-| Connecting (first 1–3s) | Orb at `idle` in `--band-closed`, dim. Caption: `CONNECTING`. If >5s → connection error. |
+| Connecting (first 1–3s) | Fluid persona at guarded idle, dim. Caption: `CONNECTING`. If >5s → connection error. |
 | Mic permission lost mid-rep | Pause the clock. `MicLostModal` — "We can't hear you." Resume or end. |
 | Connection dropped | Pause clock. `ConnectionLostModal` — auto-retry 3× with the attempt count visible, then offer `END REP`. Session is saved as partial, not lost. |
-| User backgrounds the tab | Pause clock and mute mic. Resume on focus with a 3-2-1 countdown over the orb. |
-| Persona audio fails but data flows | Fall back to showing her text under the orb. Toast: `AUDIO ISSUE — SHOWING TEXT`. |
+| User backgrounds the tab | Pause clock and mute mic. Resume on focus with a 3-2-1 countdown over the form. |
+| Persona audio fails but data flows | Fall back to showing her text under the form. Toast: `AUDIO ISSUE — SHOWING TEXT`. |
 | User says nothing for 25s | She prompts once, in character. At 45s of silence she leaves early. Not an error state — a real consequence. |
 
 ### 9.8 `/session/[sessionId]/result`
@@ -859,7 +860,7 @@ The loss animation must be *quiet and unhumiliating*. No red, no shake, no buzze
 The emotional payoff. Chrome-free, full-bleed, deliberately sparse. **This is NOT the scorecard** — resist the urge to put metrics here.
 
 **WIN:**
-- Portrait 80px, dimmed
+- Fluid persona 148px, dimmed on loss
 - `SHE GAVE YOU HER NUMBER` — display-xl, volt, centered
 - Time taken, Plex Mono data-xl: `1:42`
 - Final band chip
@@ -867,7 +868,7 @@ The emotional payoff. Chrome-free, full-bleed, deliberately sparse. **This is NO
 - Ghost `RUN IT BACK` → same persona's brief
 
 **LOSS:**
-- Portrait 80px, heavily dimmed
+- Fluid persona 148px, heavily dimmed
 - `SHE LEFT` — display-xl, `--text` (not red)
 - Final warmth reached + the threshold, as a small ring: `54 / 65`
 - One dim line of context, chosen by how close they got:
@@ -939,7 +940,7 @@ All use the responsive `Sheet` (bottom sheet mobile / centered dialog desktop) u
 |---|---|---|---|
 | 10.1 | `EndRepModal` | Back chevron during a live rep | **Modal.** "End this rep? It counts as an attempt." `END REP` (danger) / `KEEP GOING` (primary). Clock keeps running behind it — no free thinking time. |
 | 10.2 | `PaywallSheet` | Out of reps, or a locked Pro feature | Reason line, plan comparison (compact 2-col), `UPGRADE` primary → `/profile/subscription`, `MAYBE LATER` ghost. If out of reps, show the reset countdown in Plex Mono. |
-| 10.3 | `HowItWorksSheet` | Ghost link on any brief screen | 4 short numbered points: talk out loud · three minutes · the ring shows how she's feeling · she decides at the end whether you get her number. One illustration of the ring. |
+| 10.3 | `HowItWorksSheet` | Ghost link on any brief screen | 4 short numbered points: talk out loud · three minutes · her form shows how she feels · she decides at the end whether you get her number. One fluid-form illustration. |
 | 10.4 | `LevelUnlockedSheet` | Win that unlocks a level | Level name display-lg, its description, the 2 newly available personas as mini-cards, `SEE THEM` / `NOT NOW`. Restrained — one volt sweep, no confetti. |
 | 10.5 | `TrainingWheelsOffModal` | Before first L4 rep | **Modal.** "From here, no numbers. Read her, not the meter." Explains the ring goes neutral. `UNDERSTOOD`. Fires once ever. |
 | 10.6 | `FirstWinSheet` | First ever win | "That's the loop. Do it again tomorrow." Streak explanation. Fires once ever. |
@@ -1055,7 +1056,7 @@ Do it in this sequence. Each phase should be visually reviewable before moving o
 3. **Shell** — `AppShell`, `BottomTabBar`, `SidebarRail`, `TrackSwitcher`, route groups, guards.
 4. **Auth screens** — all 6, all states. Stub the actual auth calls.
 5. **Onboarding** — all 5, including the real mic check (this one must genuinely work; it's the only non-mocked piece in this phase).
-6. **The rep screen** — with `MOCK_VOICE=true`. Orb, ring, time arc, all four states, both exit beats. **Spend the most time here.** This screen is the product.
+6. **The rep screen** — with `MOCK_VOICE=true`. Fluid persona, time arc, all four states, both exit beats. **Spend the most time here.** This screen is the product.
 7. **Result + scorecard + transcript** — the whole post-rep flow.
 8. **Train / Roster / Persona detail** — the core loop's navigation.
 9. **Field / Profile / History / Settings / Subscription**.

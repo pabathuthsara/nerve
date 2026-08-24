@@ -22,7 +22,7 @@ eleventh anything.
 | `sessions` | rep | Provider and model stamped, so a provider switch keeps history comparable |
 | `transcripts` | rep | The normalised turns both adapters emit |
 | `scores` | graded rep | Six sub-scores plus the deterministic audit trail |
-| `persona_memory` | user × character | The one-line callback on return |
+| `persona_memory` | user × character | The one-line callback on return, filtered before it is stored |
 | `usage_ledger` | charge | Append-only. The source of truth for metering |
 | `entitlements` | user | Plan and daily quota. **Read policy and nothing else** |
 | `streaks` | user | Days trained in a row. A rep counts; so does a logged ask |
@@ -30,15 +30,65 @@ eleventh anything.
 | `field_assignments` | user × day | The one challenge a day, and the anxiety predicted before it |
 | `field_logs` | ask | The log. **No UPDATE policy, for anyone** |
 | `techniques` | library card | Techniques, openers, ladders, recoveries, exits |
-| `unlocks` | user × unlock | When we first told them. What is unlocked stays derived |
+| `unlocks` | user × unlock | When we first told them. What is unlocked stays derived. Kinds: level, tier, persona, technique, milestone |
+| `difficulty_offsets` | user × level | Per-user difficulty adjustment. Read-only to its owner; the downward direction is never announced (§08, §12) |
+| `share_cards` | user × card | Shareable artefacts. One owner-read policy and **no anonymous policy** — the public page resolves the token with the service role |
 | `subscriptions` | user | Mirror of the merchant of record. Webhooks write it |
 | `weekly_reviews` | user × week | Generated Sunday, stored because it is about that week |
 | `safety_events` | incident | Boundary hits, distress flags, moderation, user reports |
 | `interview_setups` | user | Role, JD, CV pointer, custom questions (M4) |
+| `rate_limits` | user × bucket | The spend ceiling's counter. **No policies at all** — see below |
 
 Every table §13 names now exists. The two that differ from the spec's list do so
 on purpose: `streaks` counts training days rather than only asks, and there is
 no separate `unlocks` source of truth — see below.
+
+## The spend ceiling (B9, §14, §18)
+
+`requireUser` answers "is this somebody?". Until 24 August nothing answered
+"should we spend more on them?", so a signed-in user could post transcripts to
+`/api/grade` in a loop and a leaked cookie could do it faster.
+
+Five routes now go through `maySpend` (`lib/db/spend.ts`): `/api/grade`,
+`/api/warmth/score`, `/api/voice/llm`, `/api/voice/tts` and `/api/voice/token`.
+`/api/voice/credits` deliberately does not — it reads the vendor's own balance
+and buys nothing.
+
+**One round trip, not three.** `spend_allowance(user, bucket, limit, window,
+cap)` checks the kill switch, then the daily cap, then the rate limit, and
+returns one verdict. `/api/voice/tts` is on the critical path of every reply she
+speaks, so three sequential checks would be three hops added to
+`ttsFirstByteMs`.
+
+**The order is the design.** Kill switch, then cap, then rate limit — so a
+halted account never has its allowance consumed. Being switched off must not
+also cost you the allowance you need when you are switched back on.
+
+| Gate | Where | Reset |
+|---|---|---|
+| Project-wide halt | `NERVE_SPEND_HALT` env var | By hand |
+| Account halt | `entitlements.spend_halted_at` | By hand, service role only |
+| Daily cap | Summed off `usage_ledger` | Midnight in the user's own timezone |
+| Rate limit | `rate_limits` | When the window rolls |
+
+`rate_limits` has **RLS on and no policies whatsoever**. Not readable and not
+writable by any user token: a rate limit somebody can read is one they can pace
+themselves against, and one they can write is not a limit. `spend_allowance` is
+`security definer` and revoked from `public`, `anon` and `authenticated` — a
+user who could call it could burn their own allowance, or read another account's
+spend by passing a different uuid.
+
+**It fails open on an unreachable database, on purpose.** If the allowance
+cannot be read, refusing every paid route turns a database blip into a total
+outage and ends live reps mid-sentence. What is still standing in that case: the
+session check, the rep quota at `/api/voice/token`, and the project-wide switch,
+which needs no database at all and is checked first.
+
+The per-bucket limits are several times what a real three-minute rep does. §05
+says nothing may interrupt a live rep, so a limit a real session can reach is a
+limit that will eventually cut somebody off mid-sentence.
+
+`npm run db:spend` proves all of it against the real database.
 
 ## Personas are seeded, not read
 
@@ -52,6 +102,32 @@ compared against the registry for a few reps.
 `personality`, `gated`, `room` — not §05's flat record. The flat shape was
 replaced because a separate friendliness dial and the warmth band argued over
 the same behaviour, and the spec table has not caught up.
+
+### Retiring a character unpublishes her, and never deletes her
+
+The roster went from eight characters to three on 24 August (`LAUNCH-GAP.md`
+D10a). The five who left are **unpublished, not removed**, and `npm run db:seed`
+is what performs it: anything in `RETIRED_PERSONAS` and still published gets
+`published = false`.
+
+Deleting the row was never an option. `sessions.persona_id` references this
+table and `sessions.persona_slug` is denormalised beside it for exactly this
+case, so a rep somebody ran against Priya a month ago stays a complete,
+readable record with a name on it. The roster query already filtered on
+`published`, so nothing else had to change — the retirement path was built into
+the schema from M1 and this is the first time it has been used.
+
+Two details worth knowing before running it:
+
+- **It only fires on a full seed.** `npm run db:seed -- nadia` is a targeted
+  re-seed and must not decide roster membership as a side effect.
+- **It is reversible.** Put the character back in `PERSONAS`, re-seed, and the
+  upsert republishes her. Nothing about retirement is destructive.
+
+`field_challenges` has no equivalent: `npm run db:content` upserts by slug and
+does **not** unpublish a challenge that disappears from the registry, so
+removing one there leaves a live row behind. That is why the retired
+`ask-alex` challenge kept its slug and had only its copy rewritten.
 
 ## The rules the schema enforces
 
@@ -289,6 +365,20 @@ and written by the service role. A user who can write their own streak has a
 number that means nothing on the home screen; a user who can write their own
 subscription has a free product.
 
+**Character memory is the user's, and that is why they can delete it.**
+`persona_memory` grants its owner all four verbs, unlike almost everything else
+on this page. The test is not "is it progression" but "would anybody pay to
+change it": plan, quota, streak and the ladder position all fail that test and
+are service-role write, and what Nadia remembers about a bookshop passes it.
+The reset in Settings needs the DELETE, and nothing is lost by granting it.
+
+What protects this table is not a policy, it is `lib/grade/memory.ts`. The line
+is generated by the grader and then checked before it is stored — second
+person, affection and anticipation, and judgement about how he did are all
+rejected, and a line that fails is simply dropped. That is a §14 constraint
+rather than a style preference: a character who is pleased to see you is a
+companion app, and every merchant of record on the shortlist bans those by name.
+
 **The log cannot be rewritten, including by the person who wrote it.**
 `field_logs` grants insert, select and delete — and no update, at any level.
 Predicted-versus-actual is the one chart that carries the therapeutic claim
@@ -299,6 +389,16 @@ stored copy of a derived fact is a stored copy that can disagree with it, and
 an unlock lost to a failed write is an unlock somebody earned and cannot see.
 The table exists so the level-unlocked moment fires once rather than on every
 visit to the scorecard, and so a cohort's time-to-Level-3 is answerable later.
+
+Since `m4_milestone_unlocks` the `kind` check also accepts `'milestone'`, and
+rejection milestones at 10 / 25 / 50 / 100 are the first thing that actually
+writes this table (`ref` is `rejections:10`). They belong here rather than on
+`profiles.ui_flags` for the reason the whole table exists: `unlocks` is
+service-role write and read-only to its owner, so a user cannot re-fire or
+suppress a moment they did not earn. The count behind it is read off
+`field_logs`, which nobody can rewrite. `announced_at` is stamped when the sheet
+is *dismissed* rather than when it renders, so closing the tab on the tenth ask
+means the moment lands next time instead of being lost.
 
 ## Content is authored in the repo, seeded downstream
 
@@ -318,17 +418,77 @@ anybody else's rows to begin with. Both are revoked from `anon` and granted to
 `authenticated` — Postgres grants EXECUTE to PUBLIC on every new function, and
 PUBLIC includes anon.
 
+## Two tables a user would genuinely benefit from writing
+
+`entitlements` is the obvious one and it has no write path. Two more joined it:
+
+**`difficulty_offsets`** is the strongest case in the product. Turning your own
+difficulty down is precisely the thing that would make every score afterwards
+meaningless, so it is service-role write and read-only to its owner — and the
+clamps (±6 on start, ±0.25 on gain) are CHECK constraints as well as code. A bug
+that wrote -40 would turn Level 6 into Level 2 permanently *and silently*, and
+silence is exactly what §12 requires of the downward path, so the database
+refuses the value rather than trusting the caller to.
+
+**`share_cards`** has one policy: its owner may read their own, in order to
+revoke them. Creation is a Server Action, so a user cannot mint a card claiming
+a number they never earned. There is deliberately **no anonymous policy** — the
+public page resolves the 32-hex token with the service role, which keeps the
+table un-enumerable. Revocation sets a timestamp rather than deleting the row,
+because "I revoked that" is information the user is entitled to keep.
+
+## `sessions.pipeline_incidents` — evidence that the transcript is evidence
+
+A transcript is only worth grading if it is what the user actually heard. Until
+24 Aug there was no way to tell a rep the user played badly from a rep where the
+transport misbehaved — she was cut off on most replies, or real user turns were
+deleted as echo — because every one of those incidents was emitted as an event
+and listened to by nothing outside the M0 harness.
+
+`sessions.pipeline_incidents` is a nullable jsonb counting the seven things that
+can go wrong in a live rep: `overlaps`, `doubleTurns`, `unheard`, `truncated`,
+`echoRejected`, `toolLeaks`, `providerErrors`. Service-role written like the
+rest of the row, read-only to its owner under the existing policies.
+
+Nullable **and** always written on a healthy rep, which is the point: an all-zero
+record and a null mean different things, and "no incidents" has to stay
+distinguishable from "not measured". Rows written before the counters existed
+are null and stay null.
+
+`incidentsAreAlarming` in `lib/voice/incidents.ts` reads it as rates rather than
+counts — a handful of anything across three minutes is a conversation with some
+barge-in in it, not a fault.
+
+## A rule change that invalidated stored rows
+
+`sessions.won` is decided by the meter — armed at `ARM_THRESHOLD`, still willing
+at `KEEP_THRESHOLD` — and by nothing else. It briefly was not: `wonFromRep`
+short-circuited on the grader's outcome, so a pleasant conversation whose meter
+never armed could be stored as a win after the fact, contradicting the result
+screen the user had already seen.
+
+`npm run db:repair-wins` corrects rows written under the old rule. It is
+idempotent, and it only undoes the half that is unambiguous: a peak below
+`ARM_THRESHOLD` can never have been armed, whereas a final below
+`KEEP_THRESHOLD` may be a legitimate win whose closing line drifted — `won` is
+decided from the warmth at the *wind-down*, and no column stores that moment.
+Rows with no meter at all are never touched.
+
 ## Commands
 
 ```bash
-npm run db:seed          # mirror the persona registry into the table
+npm run db:seed          # mirror the persona registry; unpublish anyone retired
 npm run db:seed -- nadia # just one
 npm run db:content       # mirror the challenge and technique libraries
 npm run db:verify        # prove RLS holds, with two real users
 npm run db:rep           # drive a whole rep lifecycle, without a microphone
-npm run db:field         # drive the field loop: assign, accept, log, streak
+npm run db:field         # the field loop: assign, accept, log, streak, counters, milestones, the T4 gate
+npm run db:spend         # the spend ceiling: rate limit, daily cap, both kill switches
 npm run db:types         # regenerate lib/db/types.ts from the live schema
 npm run db:plan -- you@example.com pro   # grant a plan (free 1/day, pro 3, elite 6)
+npm run db:repair-wins -- --dry          # wins the old outcome rule invented; drop --dry to fix
+npm run grade:collect                   # stored transcripts, in calibration-fixture shape
+npm run grade:calibrate                 # the §17 gate: drift on the deployed /api/grade
 ```
 
 `db:plan` exists because `entitlements` has no write path a user can reach, and
@@ -363,5 +523,7 @@ and they are committed on purpose.
   been through rounds of measurement; Priya, Maya, Jules, Erin, Sam and Robin
   were written against the §06 table and have not yet been run enough times to
   know whether their curves are right.
-- **`persona_memory` has no writer.** The table is there; the one-line callback
-  on return (§08) is not.
+- **The middle six have not been re-measured since the cap retune.** The
+  three-minute format change brought `maxGainPerTurn` down on every rung; the
+  ladder is asserted at three turn counts by a test, but only Nadia and Alex
+  have been watched behaving under it.

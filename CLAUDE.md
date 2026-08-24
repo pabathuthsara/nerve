@@ -7,11 +7,13 @@ the real world and log the outcome.
 ## Start every session here
 
 1. **Read `docs/README.md`.** It is the index and it says which doc answers what.
-2. **`docs/M2-PLAN.md` is what to do next.** Items are in dependency order with
-   sizes and acceptance criteria; shipped ones are marked, so the first
-   unmarked item is the job.
+2. **`docs/M3-PLAN.md` is what to do next.** The work between here and the
+   premium layer, in dependency order with sizes and acceptance criteria. It
+   opens with the two §17 gates that never passed — M0's blind provider A/B and
+   M2's twenty hand-scored transcripts — because neither is code and both were
+   walked past. `docs/M2-PLAN.md` is now history: all nine of its items shipped.
 3. **`docs/LAUNCH-GAP.md` is what is blocking launch.** Ten numbered blockers,
-   the product-promise gaps, and eight pieces of spec drift that need a
+   the product-promise gaps, and nine pieces of spec drift that need a
    decision rather than a ticket.
 4. **`docs/NERVE-SPEC.md` is the specification.** Section numbers (§04, §07,
    §14…) are cited throughout the code and the docs; when a rule here says
@@ -29,11 +31,13 @@ future sessions read those markers to decide what to do.
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint
-npm test              # vitest, ~410 assertions
+npm test              # vitest, ~645 assertions
 npm run build:check   # production build into .next-check, never .next
 npm run db:verify     # RLS from a second real account, 51 checks
 npm run db:rep        # the whole rep lifecycle, without a microphone
-npm run db:field      # the field loop: assign, accept, log, streak
+npm run db:field      # the field loop: assign, accept, log, streak, milestones
+npm run db:spend      # the spend ceiling: rate limit, daily cap, both kill switches
+npm run grade:calibrate  # the §17 gate: grade drift on the deployed route
 ```
 
 `db:*` scripts run against the real project and clean up after themselves.
@@ -64,17 +68,26 @@ Never run `next build` into `.next` while a dev server is up — see the note in
 4. **No spinners.** Skeletons that match the shape of the arriving content. (§02)
 5. **Never announce a downward difficulty adjustment.** Silent. (§08, §12)
 6. **No coaching during a live rep.** Timer, waveform, mission. Nothing else. (§05)
-7. **Content is authored in the repo and seeded, never generated at runtime.**
+7. **Anything published is checked in code, not in a style note.** Share cards
+   run through `assertPublishable` (`lib/share/cards.ts`) and a character's
+   memory line runs through `lib/grade/memory.ts`. Both refuse rather than
+   sanitise, because the failure mode is a public artefact or a companion-app
+   framing, and §14 says either one is a payment account waiting to be closed.
+8. **Content is authored in the repo and seeded, never generated at runtime.**
    Personas, field challenges and library cards live in `lib/`, are reviewed in
    a pull request, and reach the database through `npm run db:seed` and
    `npm run db:content`. For field challenges this is a safety rule, not a
    preference: the worst realistic outcome of any challenge is a polite no. (§09, §16)
-8. **Anything a user could pay to change has no user write path.** Plan, quota,
-   streak, unlocks and subscriptions are read-only to their owner and written
-   by the service role. The ledger is append-only and the field log cannot be
-   rewritten by anybody, including the person who wrote it. (§14, §09)
-9. **No clinical claims anywhere.** "Confidence training", never "treatment". (§16)
-10. **PG-13, enforced by moderation on both streams.** Payment-processor survival. (§16)
+9. **Anything a user could pay to change has no user write path.** Plan, quota,
+   streak, unlocks, difficulty offsets and subscriptions are read-only to their
+   owner and written by the service role. The ledger is append-only and the
+   field log cannot be rewritten by anybody, including the person who wrote it.
+   (§14, §09)
+   **Every route that spends money goes through `maySpend`** (`lib/db/spend.ts`)
+   as well as `requireUser` — a session says who is asking, never how much they
+   may spend. Adding a paid route means adding a bucket. `npm run db:spend`.
+10. **No clinical claims anywhere.** "Confidence training", never "treatment". (§16)
+11. **PG-13, enforced by moderation on both streams.** Payment-processor survival. (§16)
     Moderation is specified and **not yet built** — `LAUNCH-GAP.md` B3.
 
 ## Design system — Arena
@@ -89,6 +102,16 @@ Dark only, no light mode. Athletic performance aesthetic: data is the hero.
 - Ink `#EDEFE8` · Ink-2 `#9DA396` · Ink-3 `#6A7062`
 - Type: Barlow Condensed 700 (display, uppercase) / IBM Plex Sans (body) / IBM Plex Mono (data)
 - **Border radius max 2px.** Hairlines, never shadows. `tabular-nums` on all digits.
+
+**The one carve-out: persona avatars.** Characters have to be told apart at a
+glance, so each carries a hue — on a constrained material ramp authored in
+`lib/personas/visual.ts`, never as an accent. The bounds are enforced by
+`visual.test.ts`, not by this note: hues avoid the 60–115° band where Volt
+lives, no avatar colour comes within an RGB distance of 60 of Volt, Cool, Amber
+or Red, and chroma runs from a 0.34 floor to a 0.86 ceiling so an avatar can
+never reach the saturation of an accent. Chroma rises with warmth, which is why
+the colour is allowed to exist at all: it is the meter, not decoration.
+Recorded as D9 in `LAUNCH-GAP.md` §4; the audit is `docs/AVATAR-AUDIT.md`.
 
 ## Conventions
 

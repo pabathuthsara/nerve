@@ -2,7 +2,8 @@
 
 import type { VoiceEmitter } from '../emitter'
 import { TurnAssembler } from '../transcript'
-import { classifyPhantom, isAgentEcho, type PhantomReason } from './noise'
+import { clipToPlayed } from '../truncate'
+import { classifyPhantom, classifyEcho, type PhantomReason } from './noise'
 import {
   VoiceError,
   type ProviderId,
@@ -55,11 +56,37 @@ export interface OpenAIEventTranslatorCallbacks {
   /**
    * She spoke twice with no user turn between.
    *
-   * Reported, not repaired. The audio has already reached the user's ears by
-   * the time this is knowable, so the turn is still committed — see
-   * `sealAgentTurn`.
+   * Reported, not repaired: the audio has already reached the user's ears by
+   * the time this is knowable, so the turn is still committed. A second reply
+   * that never reached them is a different thing and is dropped — see
+   * `onUnheardReply` and `sealAgentTurn`.
    */
   onDoubleTurn?: (at: number) => void
+  /** A reply whose audio never opened, dropped rather than committed. */
+  onUnheardReply?: (at: number) => void
+  /**
+   * She was cut off part-way through a line the user could hear.
+   *
+   * Carries the milliseconds of her audio that actually played, so the adapter
+   * can tell the server to cut her own history back to the same point. Without
+   * that second half she "remembers" saying a sentence the user received one
+   * word of, and every later turn continues from a conversation that did not
+   * happen — which is what reads, live, as her switching to another sentence.
+   */
+  onTruncatedTurn?: (input: {
+    at: number
+    playedMs: number
+    heard: string
+    generated: string
+  }) => void
+  /**
+   * A user turn was discarded as her own voice returning through the mic.
+   *
+   * Reported because the alternative is what shipped: a real turn could vanish
+   * with no transcript entry, no warmth event and no reply, and nothing
+   * anywhere said so.
+   */
+  onEchoRejected?: (at: number, overlap: number) => void
 }
 
 function readString(event: ServerEvent, key: string): string | null {
@@ -192,6 +219,19 @@ export class OpenAIEventTranslator {
   private playbackFinishedForResponse = false
   /** Did any audio for the CURRENT response reach the speakers? */
   private playbackStartedForResponse = false
+  /** When her audio actually opened. The left edge of what the user heard. */
+  private playbackStartedAt: number | null = null
+  /**
+   * Her audio was CLEARED rather than allowed to finish.
+   *
+   * `stopped` means she reached the end of the line. `cleared` means somebody —
+   * server VAD honouring a barge-in, or our own phantom cancel — threw away the
+   * rest of it. Only the second one means the transcript is longer than what
+   * the user heard.
+   */
+  private playbackCleared = false
+  /** The conversation item her current audio belongs to, for `item.truncate`. */
+  private audioItemId: string | null = null
   /** When the current user utterance began, for the phantom-turn duration rule. */
   private userSpeechStartedAt: number | null = null
   private lastUserSpeechSeconds: number | null = null
@@ -212,6 +252,11 @@ export class OpenAIEventTranslator {
     private readonly now: () => number,
     private readonly onTurn: (turn: TranscriptTurn) => void,
     private readonly callbacks: OpenAIEventTranslatorCallbacks = {},
+    /**
+     * Her speaking rate, read lazily — the persona is not known when the
+     * translator is built, only when `connect` runs.
+     */
+    private readonly options: { paceOf?: () => number } = {},
   ) {}
 
   get agentSpeaking(): boolean {
@@ -243,10 +288,20 @@ export class OpenAIEventTranslator {
           this.callbacks.onOverlap?.(eventResponseId)
           break
         }
+        // A previous response whose playback ended and which was never sealed
+        // has left its open boundary and its accumulated text in the assembler.
+        // `openAt` only assigns when the slot is null, so THIS response would
+        // inherit the previous one's start time, and its own final transcript
+        // would silently overwrite text she really did say. Cleared here, at
+        // the one place that is unambiguously a new turn.
+        this.discardStaleAgentTurn()
         this.activeResponseId = eventResponseId ?? this.activeResponseId ?? 'unknown'
         this.responseGenerationDone = false
         this.playbackFinishedForResponse = false
         this.playbackStartedForResponse = false
+        this.playbackStartedAt = null
+        this.playbackCleared = false
+        this.audioItemId = null
 
         // Bind this response to the user turn that caused it. Cancelling a
         // phantom means cancelling THIS id and no other; the round-12 fault
@@ -399,17 +454,19 @@ export class OpenAIEventTranslator {
         // long enough, Latin enough and wordy enough. Compared against what she
         // is saying RIGHT NOW as well as her last sealed turn, since the echo
         // arrives while she is still mid-utterance.
-        const echo =
-          !verdict.phantom &&
-          isAgentEcho({
-            text: turn.text,
-            agentText: this.recentAgentSpeech(at),
-            duringAgentSpeech: duringAgent,
-          })
+        const echo = verdict.phantom
+          ? null
+          : classifyEcho({
+              text: turn.text,
+              agentText: this.recentAgentSpeech(at),
+              duringAgentSpeech: duringAgent,
+            })
 
-        const reason: PhantomReason | null = verdict.reason ?? (echo ? 'agent-echo' : null)
+        const reason: PhantomReason | null =
+          verdict.reason ?? (echo?.echo ? 'agent-echo' : null)
         if (reason) {
           this.userSinceAgent = false
+          if (echo?.echo) this.callbacks.onEchoRejected?.(at, echo.overlap)
           this.rejectUserTurn(at, reason)
           break
         }
@@ -428,6 +485,8 @@ export class OpenAIEventTranslator {
         // without its buffer ever opening — setting the flag there made the
         // round-11 fix miss exactly that case and deadlock again.
         this.playbackStartedForResponse = true
+        this.playbackStartedAt = at
+        this.audioItemId = readString(event, 'item_id') ?? this.audioItemId
         this.markSpeaking(at)
         break
       }
@@ -436,6 +495,10 @@ export class OpenAIEventTranslator {
       case 'output_audio_buffer.cleared': {
         this.playbackEndAt = at
         this.playbackFinishedForResponse = true
+        // `stopped` means she finished the line. `cleared` means the rest of it
+        // was thrown away — a barge-in, or our own phantom cancel — and the
+        // words she generated after this instant never reached anybody.
+        if (event.type === 'output_audio_buffer.cleared') this.playbackCleared = true
         this.agentTurns.closeAt(at)
         if (this.speaking) {
           this.speaking = false
@@ -453,9 +516,20 @@ export class OpenAIEventTranslator {
       case 'response.audio_transcript.delta': {
         const delta = readString(event, 'delta')
         if (!delta) break
-        // Compatibility fallback only; WebRTC normally supplies the real
-        // playback-start event above.
-        this.markSpeaking(at)
+        // The item her audio belongs to. Needed to cut her own history back to
+        // what played; these deltas are the earliest event that carries it.
+        this.audioItemId = readString(event, 'item_id') ?? this.audioItemId
+        // **Text is not audibility.** This used to call `markSpeaking`, which
+        // opens the turn boundary and emits `agent.speech.start`. Transcript
+        // deltas arrive over the data channel well before the audio has
+        // traversed the media path, so the turn started earlier than she did —
+        // and, worse, a response cancelled before it ever reached the speakers
+        // still opened a turn, accumulated its full text and was sealed as
+        // something she said. That is how "Catching my breath between sets
+        // right now." came to be recorded as seven words in 0.22 seconds.
+        //
+        // The boundary now comes from `output_audio_buffer.started` alone. Text
+        // still accumulates here, and the partial still drives live display.
         this.agentTurns.append(delta)
         const partial = this.agentTurns.peek(at)
         if (partial) this.emitter.emit('agent.transcript', { turn: partial, final: false })
@@ -538,9 +612,56 @@ export class OpenAIEventTranslator {
 
   private sealAgentTurn(): void {
     if (this.playbackEndAt === null || this.finalAgentTranscript === null) return
-    const turn = this.agentTurns.commit(this.finalAgentTranscript, this.playbackEndAt)
+
+    // **A response that never reached the speakers is not a turn.** She may
+    // have generated the words, but the user did not hear them, and a line in
+    // the transcript the user never heard is worse than a gap: the scorer
+    // reads these turns, so a phantom reply distorts talk ratio and response
+    // latency, and the user reads them too and finds a conversation they were
+    // not part of. Dropped rather than committed short.
+    if (!this.playbackStartedForResponse) {
+      const at = this.playbackEndAt
+      this.agentTurns.reset()
+      this.finalAgentTranscript = null
+      this.playbackEndAt = null
+      this.callbacks.onUnheardReply?.(at)
+      return
+    }
+
+    // THE BARGE-IN LIE, and it was the loudest defect in the pipeline.
+    //
+    // Reaching here means her audio buffer opened, which used to be the whole
+    // test — so a reply the user heard two hundred milliseconds of was
+    // committed IN FULL. The debrief showed sentences nobody had heard, and
+    // §07 graded a conversation that did not happen. At level 5+ server VAD
+    // honours a barge-in, and the threshold is deliberately low for a nervous
+    // speaker, so a breath was enough to trigger it.
+    //
+    // The Realtime arm has no alignment to ask, so the cut is proportional
+    // against an estimate of how long the whole line would have taken, and
+    // `snapToWordBoundary` guarantees it never lands mid-word.
+    const generated = this.finalAgentTranscript
+    let text = generated
+    if (this.playbackCleared && generated !== null && this.playbackStartedAt !== null) {
+      const played = Math.max(0, this.playbackEndAt - this.playbackStartedAt)
+      const clip = clipToPlayed(generated, played, this.options.paceOf?.() ?? 1)
+      if (clip.truncated) {
+        text = clip.text
+        this.callbacks.onTruncatedTurn?.({
+          at: this.playbackEndAt,
+          playedMs: clip.playedMs,
+          heard: clip.text,
+          generated,
+        })
+        this.emitter.emit('agent.truncated', { at: this.playbackEndAt })
+      }
+    }
+
+    const turn = this.agentTurns.commit(text, this.playbackEndAt)
     this.finalAgentTranscript = null
     this.playbackEndAt = null
+    this.playbackCleared = false
+    this.playbackStartedAt = null
     if (!turn) return
 
     // ROUND 12. This used to DELETE the turn — and deleting it was the bug.
@@ -587,9 +708,37 @@ export class OpenAIEventTranslator {
     this.responseGenerationDone = false
     this.playbackStartedForResponse = false
     this.playbackFinishedForResponse = false
+    this.playbackStartedAt = null
+    this.playbackCleared = false
+    this.audioItemId = null
     this.userTurnResponseId = null
     this.userTurnAwaitingResponse = false
     this.deferredPhantom = null
+  }
+
+  /** The conversation item her current audio belongs to, or null. */
+  get currentAudioItemId(): string | null {
+    return this.audioItemId
+  }
+
+  /**
+   * Throw away a turn whose playback ended and which was never sealed.
+   *
+   * `sealAgentTurn` bails out when the final transcript never arrived — a
+   * response cancelled between its last audio frame and its transcript-done
+   * event does exactly that — and it used to bail without clearing the
+   * assembler. `TurnAssembler.openAt` only assigns when the start is null, so
+   * the next response inherited the abandoned start time, and its own final
+   * transcript then overwrote the abandoned text. Timestamps drifted and a
+   * partially played line disappeared into the following one.
+   */
+  private discardStaleAgentTurn(): void {
+    if (this.playbackEndAt === null) return
+    this.agentTurns.reset()
+    this.finalAgentTranscript = null
+    this.playbackEndAt = null
+    this.playbackCleared = false
+    this.playbackStartedAt = null
   }
 
   private clearActiveResponse(): void {

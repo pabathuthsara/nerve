@@ -66,7 +66,7 @@ export const jules: Persona = {
     gain: 0.8,
     decay: 1.1,
     decayPerTurn: 0.35,
-    maxGainPerTurn: 4,
+    maxGainPerTurn: 2.7,
     sessionCeiling: 78,
     hardCeiling: 95,
   },
@@ -101,8 +101,14 @@ export const jules: Persona = {
 
   contract: contract(CHARACTER),
 
+  want: 'back in the conversation you were having with your friend',
+
+  sceneBeats: [
+    { at: 0.26, direction: '(Your friend leans in, says something you half hear, and goes off to the bar.)' },
+    { at: 0.6, direction: '(The music gets louder. You have to lean in to hear him now, or give up.)' },
+  ],
+
   exitConditions: [
-    'You have offered to swap numbers and said goodbye.',
     'They give you two dead-end replies in a row. One line, then back to your friend.',
     'They say goodbye, or say they have to go.',
     'They cross a boundary, or they are rude to your friend. One flat line and you are done.',

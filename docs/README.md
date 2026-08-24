@@ -2,7 +2,7 @@
 
 Everything written down about Nerve, and the order to read it in.
 
-**If you are picking up work:** read this page, then `M2-PLAN.md` for what is
+**If you are picking up work:** read this page, then `M3-PLAN.md` for what is
 next and `LAUNCH-GAP.md` for what is blocking launch. Both carry status
 markers, and both are meant to be updated by whoever does the work.
 
@@ -19,19 +19,21 @@ markers, and both are meant to be updated by whoever does the work.
 
 | Doc | What it answers |
 |---|---|
-| [`M2-PLAN.md`](M2-PLAN.md) | **The current plan.** The remaining M2 work, in dependency order, with sizes, acceptance criteria and what has already shipped |
-| [`LAUNCH-GAP.md`](LAUNCH-GAP.md) | The build measured against the spec: what is done, the ten launch blockers, the product-promise gaps, and eight pieces of spec drift that need a decision |
+| [`M3-PLAN.md`](M3-PLAN.md) | **The current plan.** Everything owed between here and the premium layer, in the order it has to happen — the two milestone gates that never passed, the MVP scope §17 forgot, and M3 itself |
+| [`M2-PLAN.md`](M2-PLAN.md) | The record of M2's nine items, all shipped. Superseded by `M3-PLAN.md` as "what to do next", kept as history |
+| [`LAUNCH-GAP.md`](LAUNCH-GAP.md) | The build measured against the spec: what is done, the ten launch blockers, the product-promise gaps, and nine pieces of spec drift that need a decision |
 | [`INTEGRATION-GAPS.md`](INTEGRATION-GAPS.md) | The frontend seam specifically — which screens read real data and which are still fixtures |
 
 ## How the parts work
 
 | Doc | What it answers |
 |---|---|
-| [`DATA.md`](DATA.md) | The eighteen tables, the rules they enforce, why plan and quota have no user write path, and every `db:*` command |
+| [`DATA.md`](DATA.md) | The twenty-one tables, the rules they enforce, why plan and quota have no user write path, the spend ceiling, and every `db:*` command |
 | [`PERSONA.md`](PERSONA.md) | The four-layer persona schema — trajectory, personality, gated, room — and why it replaced §05's flat record |
 | [`AUDIO.md`](AUDIO.md) | The room: ambient beds, reverb, the graph. Currently switched off for intelligibility; the note at the top says why and how to bring it back |
 | [`PIPELINE.md`](PIPELINE.md) | The ElevenLabs adapter — the assembled STT → LLM → TTS path behind the same `VoiceProvider` interface |
 | [`NERVE-FRONTEND-GUIDE.md`](NERVE-FRONTEND-GUIDE.md) | The Arena frontend brief every screen was built from. Long, and the reference for visual detail |
+| [`AVATAR-AUDIT.md`](AVATAR-AUDIT.md) | The WebGL persona avatar: how one shared context draws every avatar on the page, the nineteen numbered defects that rebuild answered, the one that was declined and why, and the palette carve-out it forced (D9) |
 
 ## History
 
@@ -49,12 +51,14 @@ what to touch when:
 | If you changed | Update |
 |---|---|
 | A plan item | `M2-PLAN.md` — mark it shipped, say what actually landed and what is still owed by hand |
+| The grading rubric or the grade route | Re-run `npm run grade:calibrate`. A rubric change is a calibration change, and the golden set has to be re-scored rather than quietly drifting past the threshold |
 | Anything on the blocker list | `LAUNCH-GAP.md` — the entry, its size, and the totals at the top |
 | A screen from fixture to real data | `INTEGRATION-GAPS.md` |
 | The schema, a policy, or a `db:*` script | `DATA.md` |
 | A product rule — rep length, thresholds, what a section is for | `PRODUCT.md`, and record the drift in `LAUNCH-GAP.md` §4 if it now disagrees with the spec |
 | A persona dial or contract | `PERSONA.md` |
 | The audio graph | `AUDIO.md` |
+| A persona's avatar — its form, its motion, or its place on the colour ramp | `AVATAR-AUDIT.md`, and run `npx vitest run lib/personas/visual.test.ts`: the palette bounds are assertions, not a style note |
 
 `NERVE-SPEC.md` is **not** edited as the build moves. It is v1.0 and it is the
 thing we are measuring against; where the build has deliberately diverged, that

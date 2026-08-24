@@ -10,6 +10,7 @@
  */
 
 import { requireUser } from '@/lib/db/api-auth'
+import { maySpend } from '@/lib/db/spend'
 import { handleTtsRequest } from '@/lib/voice/elevenlabs/server'
 
 export const runtime = 'edge'
@@ -17,6 +18,11 @@ export const runtime = 'edge'
 export async function POST(request: Request): Promise<Response> {
   const auth = await requireUser(request)
   if ('response' in auth) return auth.response
+
+  // Synthesis is charged per character. One hop, on the critical path — see
+  // the note in `maySpend` about why the whole gate is a single round trip.
+  const allowed = await maySpend(auth.userId, 'tts')
+  if (!allowed.ok) return allowed.response
 
   return handleTtsRequest(request)
 }

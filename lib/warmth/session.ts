@@ -17,6 +17,15 @@ import type { SlowScorer, SlowScoreRequest } from './slow'
 import { slowScoreTriggers, type SlowTriggerReason } from './triggers'
 import { composeSteering } from './steering'
 
+/**
+ * Re-send an unchanged direction at least this often.
+ *
+ * The countermeasure against drift, kept as a floor under the change detector.
+ * Four turns is roughly forty seconds — long enough that she is not being
+ * drilled, short enough that she cannot wander away from the band unnoticed.
+ */
+export const STEER_HEARTBEAT_TURNS = 4
+
 /** Recent agent turns considered when rationing her questions (§4e). */
 const QUESTION_WINDOW = 5
 /** At most this share of that window may end in a question. */
@@ -74,11 +83,18 @@ export class WarmthSession {
   private awaiting: AwaitingReply | null = null
   private disposed = false
   private steeringSent = 0
+  /** The last line she was actually given, for change detection. */
+  private lastDirective: string | null = null
+  private turnsSinceSteer = 0
 
   constructor(options: WarmthSessionOptions) {
     this.options = options
     this.engine = new WarmthEngine({
       trajectory: options.trajectory,
+      // LAYER 2 reaches the meter through here and nowhere else. A getter, for
+      // the same reason the trajectory is one: the dev panel can retune a
+      // character mid-rep and the next turn has to feel it.
+      personality: () => this.persona.personality,
       ...(options.rng ? { rng: options.rng } : {}),
     })
   }
@@ -95,11 +111,52 @@ export class WarmthSession {
     // Composed from all four layers, and read LIVE — the persona reference is
     // whatever the tuning store currently holds, so a slider moved mid-rep
     // changes her very next reply (§3).
-    return composeSteering({
+    const line = composeSteering({
       persona: this.persona,
       warmth: this.engine.warmth,
       suppressQuestion: this.questionQuotaSpent(),
+      // The other two axes reach her as a posture, never as numbers — the same
+      // rule warmth has always followed. Silent when the three agree.
+      posture: this.engine.posture,
+      repairOpen: this.engine.repairOpen,
     })
+    this.lastDirective = line
+    this.turnsSinceSteer = 0
+    return line
+  }
+
+  /**
+   * The direction, or null when she has already been told this.
+   *
+   * THE DRILLING FIX. Steering used to be injected on every VAD speech start —
+   * including bursts of noise and turns that were deleted milliseconds later as
+   * echo — and the composed line is deterministic within a band. So a rep
+   * accumulated fifteen near-identical copies of
+   * "[Flat. Half your attention is elsewhere. Four to ten words…]".
+   *
+   * Repeating an instruction fifteen times is how you make a model MORE
+   * mechanical, not less: it converges hard on the repeated text and her replies
+   * flatten out as the conversation goes on, which is the exact opposite of
+   * warming up. Every copy is also re-charged as context on every later turn.
+   *
+   * So the line is sent when it CHANGES, plus a heartbeat often enough that she
+   * cannot drift far from it. A rep now carries a handful of directions instead
+   * of one per breath, and each one means something because it is different from
+   * the last.
+   */
+  directiveIfChanged(): string | null {
+    const next = composeSteering({
+      persona: this.persona,
+      warmth: this.engine.warmth,
+      suppressQuestion: this.questionQuotaSpent(),
+      posture: this.engine.posture,
+      repairOpen: this.engine.repairOpen,
+    })
+    this.turnsSinceSteer += 1
+    if (next === this.lastDirective && this.turnsSinceSteer < STEER_HEARTBEAT_TURNS) {
+      return null
+    }
+    return this.directive()
   }
 
   /** The persona as it stands right now, not as it stood at connect. */
@@ -146,6 +203,9 @@ export class WarmthSession {
 
     const score = scoreFast(turn, {
       level: this.persona.level,
+      // LAYER 2 reaches the scorer here. Without it every character on the
+      // ladder is moved by identical arithmetic — see ./temperament.ts.
+      personality: this.persona.personality,
       agentTurns: this.agentTurns,
       precedingDeadEnds: this.consecutiveDeadEnds,
       gapSeconds,

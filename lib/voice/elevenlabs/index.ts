@@ -42,6 +42,7 @@ import {
   type VoiceEventName,
 } from '../types'
 import { compileReinforcement } from '../reinforcement'
+import { interruptsAt, replyDelayMs } from '../../warmth/timing'
 import { Room } from '@/lib/audio/engine'
 import { sceneForRoom } from '@/lib/audio/scenes'
 import { applyRoomConfig, type RoomControls } from '@/lib/audio/types'
@@ -107,6 +108,8 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   /** Warmth-band directives waiting for the next reply. */
   private pendingSteering: string[] = []
   private interruptible = false
+  /** Reported by the application. Never computed here. See `setWarmth`. */
+  private warmth = 0
 
   private t0: number | null = null
   private userStartedAtMs: number | null = null
@@ -372,6 +375,19 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     this.responding = true
     const llmAbort = new AbortController()
     this.llmAbort = llmAbort
+
+    // She looks up before she answers, and looks up faster as she warms (§H6).
+    // Taken with `responding` already true, so a turn arriving during the pause
+    // is coalesced exactly as one arriving mid-generation would be — the pause
+    // can never produce two replies. Skipped once she is actually engaged.
+    const beat = replyDelayMs(this.warmth)
+    if (beat > 0) {
+      await new Promise((resolve) => setTimeout(resolve, beat))
+      if (this.ended || llmAbort.signal.aborted) {
+        this.responding = false
+        return
+      }
+    }
 
     const spoken = new SpokenTurn()
     this.spoken = spoken
@@ -657,6 +673,20 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     // hold — a quiet "mm" should not stop her mid-sentence. A character who is
     // never allowed to talk over anyone yields at the first sign of speech.
     this.vad?.setDuckedActivationRatio(interruptible ? 6 : 4.5)
+  }
+
+  /**
+   * Where the meter stands, for the transport-level consequences of interest.
+   *
+   * This arm assembles the reply itself, so the pause lives in front of the
+   * text call rather than in front of a `response.create` — same rule, same
+   * numbers, different seam. Interruption still obeys §05 as a ceiling: the
+   * level decides whether she MAY, and warmth decides whether she DOES.
+   */
+  setWarmth(warmth: number): void {
+    this.warmth = warmth
+    const allowed = this.minted?.pipeline.turn.interrupts ?? false
+    this.setInterruptible(interruptsAt(warmth, allowed))
   }
 
   /** Exposed so the compiled config can be inspected without a live session. */

@@ -1,13 +1,20 @@
 /**
- * Maya — Level 3, coffee shop (§06).
+ * Maya — Level 2, coffee shop (§06).
  *
  * The skill this level trains is **not running dry at ninety seconds**. She
- * gives less than Priya and expects the conversation to have somewhere to go.
+ * gives less than Nadia and expects the conversation to have somewhere to go.
  * The classic failure here is a strong opening followed by nothing: two good
  * exchanges, then a question about work, then silence.
  *
  * She is friendly and slightly guarded, which is the ordinary state of a
  * person who is out alone and not looking for company.
+ *
+ * **She moved from rung 3 to rung 2 when the roster went to three characters.**
+ * Difficulty is layer 1 and layer 1 alone, so what moved is the trajectory
+ * below — the authored rung-2 curve, which is the one a three-minute rep can
+ * actually arm against. Everything that makes her Maya is layer 2 and is
+ * untouched: she still gives less than the rung under her and still runs a
+ * conversation dry if it is not fed. See docs/PERSONA.md.
  */
 
 import type { Persona } from '@/lib/voice/types'
@@ -47,23 +54,32 @@ export const maya: Persona = {
   slug: 'maya',
   name: 'Maya',
   scene: 'A coffee shop on a Sunday morning, at a table by the window.',
-  level: 3,
+  level: 2,
   track: 'dating',
 
+  // `cedar` and `marin` are the two voices that shipped with `gpt-realtime`;
+  // the rest of the roster is on the older set carried over from the previous
+  // model. Maya was on `coral` and was reported as sounding distorted, so she
+  // moves to the newer one. Worth a listen against Priya and Erin, who are
+  // still on legacy voices and would sound the same way if the voice is the
+  // cause rather than the cancelled-audio bug fixed alongside this.
   voice: {
     timbre: 'feminine',
-    ids: { openai: 'coral' },
+    ids: { openai: 'cedar' },
     pace: 1.0,
   },
 
+  // The authored rung-2 curve. Hand-tuned and asserted at that rung: it is the
+  // hardest one a good three-minute rep can still arm against (`engine.test.ts`,
+  // "the ladder a good player can actually arm").
   trajectory: {
-    start: 24,
+    start: 28,
     startJitter: 6,
-    gain: 0.9,
-    decay: 0.9,
-    decayPerTurn: 0.3,
-    maxGainPerTurn: 4,
-    sessionCeiling: 80,
+    gain: 1.0,
+    decay: 0.7,
+    decayPerTurn: 0.25,
+    maxGainPerTurn: 3.2,
+    sessionCeiling: 82,
     hardCeiling: 100,
   },
 
@@ -95,8 +111,14 @@ export const maya: Persona = {
 
   contract: contract(CHARACTER),
 
+  want: 'back inside the notebook you were happy in before he arrived',
+
+  sceneBeats: [
+    { at: 0.32, direction: '(Your coffee arrives. It is too hot to drink yet and you hold it anyway.)' },
+    { at: 0.68, direction: '(Your phone lights up face-up on the table. You glance at it and leave it.)' },
+  ],
+
   exitConditions: [
-    'You have offered to swap numbers and said goodbye.',
     'They give you two genuinely dead-end replies in a row. One warm goodbye, then back to your notebook.',
     'They say goodbye, or say they have to go.',
     'They cross a real boundary. Be briefly unimpressed and leave.',

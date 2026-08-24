@@ -62,7 +62,7 @@ export const erin: Persona = {
     gain: 0.7,
     decay: 1.3,
     decayPerTurn: 0.4,
-    maxGainPerTurn: 3.5,
+    maxGainPerTurn: 2.6,
     sessionCeiling: 76,
     hardCeiling: 92,
   },
@@ -96,8 +96,16 @@ export const erin: Persona = {
 
   contract: contract(CHARACTER),
 
+  // Ungated. She wants this at warmth 5 and at warmth 80; only whether she
+  // pursues it away from him or lets him into it changes.
+  want: 'back in the text argument with your brother about the car',
+
+  sceneBeats: [
+    { at: 0.25, direction: '(Your brother replies. It is worse than the last one.)' },
+    { at: 0.55, direction: '(The board changes. Your train is delayed — you have longer than you thought.)' },
+  ],
+
   exitConditions: [
-    'You have offered to swap numbers and said goodbye.',
     'Two dead-end replies in a row. Back to your phone.',
     'They say goodbye, or say they have to go.',
     'They cross a boundary. One flat line and you move down the platform.',

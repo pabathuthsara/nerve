@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest'
 import { VoiceEmitter } from '../emitter'
 import { OpenAIEventTranslator } from './translate'
 import { OpenAIResponseGate } from './response-gate'
-import { echoOverlap, isAgentEcho } from './noise'
+import { classifyEcho, echoOverlap, isAgentEcho } from './noise'
 import type { PhantomReason } from './noise'
 import type { TranscriptTurn } from '../types'
 
@@ -37,6 +37,8 @@ function harness(options: { gateBusy?: boolean } = {}) {
   const rejections: Rejection[] = []
   const overlaps: (string | null)[] = []
   const doubleTurns: number[] = []
+  const truncations: { playedMs: number; heard: string; generated: string }[] = []
+  const unheard: number[] = []
   let clock = 0
   let commits = 0
   let busy = options.gateBusy ?? false
@@ -53,6 +55,9 @@ function harness(options: { gateBusy?: boolean } = {}) {
         return busy ? ('queued' as const) : ('created' as const)
       },
       onPhantomTurn: (at, reason, responseId) => rejections.push({ at, reason, responseId }),
+      onTruncatedTurn: ({ playedMs, heard, generated }) =>
+        truncations.push({ playedMs, heard, generated }),
+      onUnheardReply: (at) => unheard.push(at),
     },
   )
 
@@ -61,6 +66,8 @@ function harness(options: { gateBusy?: boolean } = {}) {
     rejections,
     overlaps,
     doubleTurns,
+    truncations,
+    unheard,
     commits: () => commits,
     setBusy: (value: boolean) => { busy = value },
     at(t: number, payload: Record<string, unknown>) {
@@ -246,5 +253,148 @@ describe('the response gate undo', () => {
     gate.userTurnCommitted()
     gate.responseSettled()
     expect(created).toHaveLength(2)
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * The evidence floor, and the turns that used to vanish because of it
+ * ------------------------------------------------------------------ */
+
+describe('the echo rule refuses to judge on one word', () => {
+  const hers = 'The board says four minutes'
+
+  it('keeps a one-word reply that happens to share a word with hers', () => {
+    // THE DEFECT. "Awesome." against a line containing "awesome" scored 1.00
+    // and was deleted outright — no transcript entry, no warmth event, no
+    // reply. From the user's seat she simply ignored them.
+    expect(isAgentEcho({
+      text: 'Awesome.',
+      agentText: 'That is awesome',
+      duringAgentSpeech: false,
+    })).toBe(false)
+    expect(classifyEcho({
+      text: 'Awesome.',
+      agentText: 'That is awesome',
+      duringAgentSpeech: false,
+    }).reason).toBe('too-few-tokens')
+  })
+
+  it('keeps a callback, which is the highest-value move in the game', () => {
+    // `scoreFast` pays for picking up her exact words and §07 grades on it, so
+    // high overlap IS the behaviour the product is trying to teach.
+    const verdict = classifyEcho({
+      text: 'Four minutes?',
+      agentText: hers,
+      duringAgentSpeech: true,
+    })
+    expect(verdict.echo).toBe(false)
+    expect(verdict.reason).toBe('too-few-tokens')
+  })
+
+  it('keeps a longer callback that shares only one content word', () => {
+    expect(classifyEcho({
+      text: 'The board is always wrong on this platform anyway',
+      agentText: hers,
+      duringAgentSpeech: true,
+    }).reason).toBe('too-few-shared')
+  })
+
+  it('still catches a real echo of a whole sentence', () => {
+    // What the rule exists for: her own voice back through the microphone,
+    // which is long enough, Latin enough and wordy enough to pass every
+    // phantom rule there is.
+    expect(isAgentEcho({
+      text: 'the board says four minutes',
+      agentText: hers,
+      duringAgentSpeech: true,
+    })).toBe(true)
+  })
+
+  it('needs near-identity outside her playback window', () => {
+    expect(isAgentEcho({
+      text: 'the board says four minutes or so I thought anyway',
+      agentText: hers,
+      duringAgentSpeech: false,
+    })).toBe(false)
+  })
+})
+
+describe('a reply she was cut off through', () => {
+  /** Play a response that opens its audio and is then cleared part-way. */
+  function interrupted(text: string, playedSeconds: number) {
+    const h = harness()
+    h.at(0, { type: 'response.created', response: { id: 'resp_1' } })
+    h.at(0.1, { type: 'output_audio_buffer.started', response_id: 'resp_1', item_id: 'item_1' })
+    h.at(0.1 + playedSeconds, {
+      type: 'response.output_audio_transcript.done',
+      response_id: 'resp_1',
+      transcript: text,
+    })
+    h.at(0.1 + playedSeconds, { type: 'output_audio_buffer.cleared', response_id: 'resp_1' })
+    return h
+  }
+
+  const LINE = 'The board says four minutes and the platform is absolutely freezing'
+
+  it('records only the words that reached the ear', () => {
+    // Before this, the whole sentence was committed however little of it
+    // played — so the debrief showed lines the user never heard and §07
+    // graded a conversation that did not happen.
+    const h = interrupted(LINE, 0.5)
+    expect(h.turns).toHaveLength(1)
+    const said = h.turns[0]?.text ?? ''
+    expect(said.length).toBeGreaterThan(0)
+    expect(said.length).toBeLessThan(LINE.length)
+    expect(LINE.startsWith(said)).toBe(true)
+  })
+
+  it('reports the cut, with the milliseconds she was actually audible for', () => {
+    const h = interrupted(LINE, 0.5)
+    expect(h.truncations).toHaveLength(1)
+    expect(h.truncations[0]?.playedMs).toBe(500)
+    expect(h.truncations[0]?.generated).toBe(LINE)
+  })
+
+  it('leaves a line she finished alone', () => {
+    const h = harness()
+    h.at(0, { type: 'response.created', response: { id: 'resp_1' } })
+    h.at(0.1, { type: 'output_audio_buffer.started', response_id: 'resp_1', item_id: 'item_1' })
+    h.at(9, { type: 'response.output_audio_transcript.done', response_id: 'resp_1', transcript: LINE })
+    h.at(9, { type: 'output_audio_buffer.stopped', response_id: 'resp_1' })
+    expect(h.turns[0]?.text).toBe(LINE)
+    expect(h.truncations).toHaveLength(0)
+  })
+
+  it('drops a reply whose audio never opened at all', () => {
+    const h = harness()
+    h.at(0, { type: 'response.created', response: { id: 'resp_1' } })
+    h.at(1, { type: 'response.output_audio_transcript.done', response_id: 'resp_1', transcript: LINE })
+    h.at(1, { type: 'output_audio_buffer.cleared', response_id: 'resp_1' })
+    expect(h.turns).toHaveLength(0)
+    expect(h.unheard).toHaveLength(1)
+  })
+})
+
+describe('an abandoned turn does not leak into the next one', () => {
+  it('starts the following reply on its own clock and its own words', () => {
+    // The assembler bailed out without resetting when a final transcript never
+    // arrived, and `openAt` only assigns when the slot is null — so the next
+    // response inherited the abandoned start time and overwrote its text.
+    const h = harness()
+    h.at(0, { type: 'response.created', response: { id: 'resp_1' } })
+    h.at(0.1, { type: 'output_audio_buffer.started', response_id: 'resp_1', item_id: 'item_1' })
+    // Cleared before any transcript arrives: nothing to seal, turn abandoned.
+    h.at(0.4, { type: 'output_audio_buffer.cleared', response_id: 'resp_1' })
+    h.at(0.4, { type: 'response.done', response: { id: 'resp_1', status: 'cancelled' } })
+
+    h.at(5, { type: 'response.created', response: { id: 'resp_2' } })
+    h.at(5.1, { type: 'output_audio_buffer.started', response_id: 'resp_2', item_id: 'item_2' })
+    h.at(7, { type: 'response.output_audio_transcript.done', response_id: 'resp_2', transcript: 'Yeah, hi.' })
+    h.at(7, { type: 'output_audio_buffer.stopped', response_id: 'resp_2' })
+
+    expect(h.turns).toHaveLength(1)
+    expect(h.turns[0]?.text).toBe('Yeah, hi.')
+    // Her second reply started when her second reply started.
+    expect(h.turns[0]?.t_start).toBeGreaterThanOrEqual(5)
   })
 })

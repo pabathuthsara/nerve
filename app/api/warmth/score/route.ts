@@ -12,6 +12,7 @@
 
 import { NextResponse } from 'next/server'
 import { requireUser } from '@/lib/db/api-auth'
+import { maySpend } from '@/lib/db/spend'
 import { clampSlowScore } from '@/lib/warmth/slow'
 import { buildSystemPrompt } from '@/lib/warmth/prompt'
 
@@ -38,6 +39,10 @@ export async function POST(request: Request): Promise<Response> {
   // budgets ~1.5s median, and an open model endpoint is a standing invoice.
   const auth = await requireUser(request)
   if ('response' in auth) return auth.response
+
+  // Fires once per user turn, so a stuck client is a standing invoice.
+  const allowed = await maySpend(auth.userId, 'warmth')
+  if (!allowed.ok) return allowed.response
 
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'not configured' }, { status: 500 })

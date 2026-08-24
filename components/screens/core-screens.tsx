@@ -2,14 +2,21 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Check, ChevronDown, ChevronLeft, LockKeyhole, ShieldCheck, X } from 'lucide-react'
-import { useState } from 'react'
-import { useFieldLog, useFieldStats, useFieldToday, usePersona, usePersonaProgress, usePersonas, useSessionHistory, useUserState } from '@/lib/data'
-import type { FieldLogEntry, Level, Persona, PersonaProgress } from '@/lib/data/types'
+import { Check, ChevronDown, ChevronLeft, LockKeyhole, RotateCcw, ShieldCheck, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { useFieldLog, useFieldStats, useFieldToday, usePendingMilestone, usePersona, usePersonaMemory, usePersonaProgress, usePersonas, useSessionHistory, useUserState } from '@/lib/data'
+import { forgetPersona } from '@/app/profile/actions'
+import type { FieldLogEntry, Level, Persona, PersonaMemory, PersonaProgress } from '@/lib/data/types'
 import { FieldActions, FieldLogged, FieldSheets, useFieldFlow } from '@/components/field/flow'
+import { AnxietyChart } from '@/components/field/anxiety-chart'
+import { MilestoneSheet } from '@/components/field/milestone-sheet'
+import { anxietySeries } from '@/lib/field/anxiety'
+import { unlockRequirement } from '@/lib/data/progression'
+import { REJECTION_MILESTONES, type Milestone } from '@/lib/field/milestones'
 import { TIER_NAMES } from '@/lib/field/assignment'
 import { AppShell } from '@/components/app-shell'
-import { Avatar, Card, Chip, EmptyState, LockOverlay, Sheet, Skeleton, Stat } from '@/components/ui'
+import { Card, Chip, EmptyState, LockOverlay, Sheet, Skeleton, Stat, useToast } from '@/components/ui'
+import { FluidPersona } from '@/components/fluid-persona'
 import { SessionRow } from './train-screen'
 import { useProduct } from '@/components/product-provider'
 import { InterviewerPicker } from './interview-screens'
@@ -17,9 +24,10 @@ import { useBreakpoint } from '@/lib/hooks/use-breakpoint'
 
 const levels: { level: Level; name: string; description: string; requirement: string }[] = [
   { level: 1, name: 'Receptive', description: "She'll meet you halfway.", requirement: '' },
-  { level: 2, name: 'Neutral', description: "She'll give you nothing for free.", requirement: '' },
-  { level: 3, name: 'Resistant', description: 'You are an interruption.', requirement: 'Win 2 reps at Level 2' },
-  { level: 4, name: 'Hostile', description: 'She wants you to leave.', requirement: 'Win 3 reps at Level 3' },
+  { level: 2, name: 'Neutral', description: "She won't carry it for you.", requirement: '' },
+  // Requirement copy comes from `unlockRequirement` so the collapsed rail and
+  // the lock overlay on a card cannot disagree about what a tier costs.
+  { level: 3, name: 'Ambiguous', description: "You can't tell how it's going.", requirement: unlockRequirement(3) ?? '' },
 ]
 
 export function RosterScreen() {
@@ -28,7 +36,7 @@ export function RosterScreen() {
   const { data: progressRaw } = usePersonaProgress()
   const progress = Array.isArray(progressRaw) ? progressRaw : []
   if (track === 'interview') return <InterviewerPicker />
-  return <AppShell title="Roster"><div className="screen-heading"><span className="label">Progression map</span><h1 className="display-lg">Roster</h1><p>Read the room. Then earn a harder one.</p></div>{!loading && personas.length === 0 ? <EmptyState title="The roster is empty" description="New training partners will appear here." /> : <div className="level-list">{loading ? [1, 2, 3, 4].map((item) => <RosterSkeleton key={item} />) : levels.map((level) => <LevelSection key={level.level} config={level} personas={personas.filter((persona) => persona.level === level.level)} progress={progress} />)}</div>}</AppShell>
+  return <AppShell title="Roster"><div className="screen-heading"><span className="label">Progression map</span><h1 className="display-lg">Roster</h1><p>Read the room. Then earn a harder one.</p></div>{!loading && personas.length === 0 ? <EmptyState title="The roster is empty" description="New training partners will appear here." /> : <div className="level-list">{loading ? [1, 2, 3].map((item) => <RosterSkeleton key={item} />) : levels.map((level) => <LevelSection key={level.level} config={level} personas={personas.filter((persona) => persona.level === level.level)} progress={progress} />)}</div>}</AppShell>
 }
 
 function RosterSkeleton() { return <section className="level-section"><div className="level-head"><div style={{ flex: 1 }}><Skeleton width={220} height={24} /><Skeleton width={180} height={14} style={{ marginTop: 8 }} /></div><Skeleton width={68} height={16} /></div><div className="persona-grid"><Skeleton height={220} /><Skeleton height={220} /></div></section> }
@@ -43,7 +51,7 @@ function LevelSection({ config, personas, progress }: { config: typeof levels[nu
 
 function PersonaCard({ persona, progress }: { persona: Persona; progress?: PersonaProgress }) {
   const record = !progress || progress.attempts === 0 ? 'NOT ATTEMPTED' : progress.wins > 0 && progress.bestTimeMs ? `WON — ${formatTime(progress.bestTimeMs)} BEST` : `0/${progress.attempts} — BEST WARMTH ${progress.bestWarmth}`
-  const content = <article className="persona-card"><div className="persona-card__portrait"><Avatar name={persona.name} src={persona.portraitUrl} size={96} /><span className="persona-card__index data">0{persona.level}</span></div><div className="persona-card__copy"><div><h3 className="display-md">{persona.name}</h3><span className="label">{persona.settingShort}</span></div><span className={`persona-card__record${progress?.wins ? ' volt' : ''}`}>{record}</span></div></article>
+  const content = <article className="persona-card"><div className="persona-card__portrait"><FluidPersona name={persona.name} personaId={persona.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} fill /><span className="persona-card__index data">0{persona.level}</span></div><div className="persona-card__copy"><div><h3 className="display-md">{persona.name}</h3><span className="label">{persona.settingShort}</span></div><span className={`persona-card__record${progress?.wins ? ' volt' : ''}`}>{record}</span></div></article>
   return <Link href={`/roster/${persona.id}`} className="persona-card-link">{persona.locked && persona.unlockRequirement ? <LockOverlay requirement={persona.unlockRequirement}>{content}</LockOverlay> : content}</Link>
 }
 
@@ -56,28 +64,58 @@ export function PersonaDetailScreen({ personaId }: { personaId: string }) {
   const { data: progressRaw } = usePersonaProgress(personaId)
   const { data: sessions } = useSessionHistory()
   const { data: user } = useUserState()
+  const memory = usePersonaMemory(personaId)
   const progress = !Array.isArray(progressRaw) ? progressRaw : null
   if (loading) return <AppShell title="Roster"><div className="persona-detail"><Skeleton height={560} /></div></AppShell>
   if (!persona) return <AppShell title="Roster"><EmptyState title="Nothing here" description="That person is not on the roster." action={<Link className="arena-button arena-button--primary" href="/roster">Back to roster</Link>} /></AppShell>
   const recent = sessions.filter((session) => session.personaId === persona.id).slice(0, 3)
   const canStart = !persona.locked && (user?.repsRemainingToday ?? 0) > 0
-  const content = <article className={`persona-detail${isDesktop ? '' : ' persona-detail--sheet'}`}><Link className="detail-back" href="/roster"><ChevronLeft size={18} strokeWidth={1.5} /> Roster</Link><div className="persona-detail__grid"><aside className="persona-detail__hero"><Avatar name={persona.name} src={persona.portraitUrl} size={128} /><div><Chip tone="band" band={persona.level >= 3 ? 'CLOSED' : 'GUARDED'}>Level {String(persona.level).padStart(2, '0')}</Chip><h1 className="display-xl">{persona.name}</h1><span className="label">{persona.setting}</span></div></aside><div className="persona-detail__body"><p className="persona-blurb">{persona.blurb}</p><DetailChips label="She responds to" items={persona.respondsTo} tone="volt" /><DetailChips label="She shuts down on" items={persona.shutsDownOn} /><section><span className="label">Your record</span><div className="record-grid"><Stat label="Attempts" value={progress?.attempts ?? 0} /><Stat label="Wins" value={progress?.wins ?? 0} /><Stat label="Best time" value={progress?.bestTimeMs ? formatTime(progress.bestTimeMs) : '—'} /><Stat label="Best warmth" value={progress?.bestWarmth || '—'} /></div></section><section><span className="label">Recent sessions</span><div>{recent.length ? recent.map((session) => <SessionRow key={session.id} session={session} />) : <p className="muted">Not faced yet.</p>}</div></section></div></div><div className="detail-action">{canStart ? <Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href={`/rep/${persona.id}/brief`}>Start rep</Link> : <div className="locked-action"><LockKeyhole size={18} strokeWidth={1.5} /><span>{persona.locked ? persona.unlockRequirement : 'Your reps reset tonight'}</span></div>}</div></article>
+  const content = <article className={`persona-detail${isDesktop ? '' : ' persona-detail--sheet'}`}><Link className="detail-back" href="/roster"><ChevronLeft size={18} strokeWidth={1.5} /> Roster</Link><div className="persona-detail__grid"><aside className="persona-detail__hero"><FluidPersona name={persona.name} personaId={persona.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={180} interactive /><div><Chip tone="band" band={persona.level >= 3 ? 'CLOSED' : 'GUARDED'}>Level {String(persona.level).padStart(2, '0')}</Chip><h1 className="display-xl">{persona.name}</h1><span className="label">{persona.setting}</span></div></aside><div className="persona-detail__body"><p className="persona-blurb">{persona.blurb}</p><DetailChips label="She responds to" items={persona.respondsTo} tone="volt" /><DetailChips label="She shuts down on" items={persona.shutsDownOn} /><section><span className="label">Your record</span><div className="record-grid"><Stat label="Attempts" value={progress?.attempts ?? 0} /><Stat label="Wins" value={progress?.wins ?? 0} /><Stat label="Best time" value={progress?.bestTimeMs ? formatTime(progress.bestTimeMs) : '—'} /><Stat label="Best warmth" value={progress?.bestWarmth || '—'} /></div></section><PersonaMemorySection personaId={personaId} name={persona.name} memory={memory.data} onForgotten={memory.reload} /><section><span className="label">Recent sessions</span><div>{recent.length ? recent.map((session) => <SessionRow key={session.id} session={session} />) : <p className="muted">Not faced yet.</p>}</div></section></div></div><div className="detail-action">{canStart ? <Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href={`/rep/${persona.id}/brief`}>Start rep</Link> : <div className="locked-action"><LockKeyhole size={18} strokeWidth={1.5} /><span>{persona.locked ? persona.unlockRequirement : 'Your reps reset tonight'}</span></div>}</div></article>
   if (isDesktop) return <AppShell title={persona.name}>{content}</AppShell>
   return <AppShell title="Roster"><Sheet open onClose={() => router.push('/roster')} title={persona.name}>{content}</Sheet></AppShell>
 }
 
 function DetailChips({ label, items, tone = 'neutral' }: { label: string; items: string[]; tone?: 'neutral' | 'volt' }) { return <section><span className="label">{label}</span><div className="chip-row" style={{ marginTop: 10 }}>{items.map((item) => <Chip key={item} tone={tone}>{item}</Chip>)}</div></section> }
 
+/**
+ * What she remembers, on her own sheet (§08).
+ *
+ * The second of the three places the reset lives. Unlike the brief screen this
+ * one says something when there is nothing to say — on the character's own
+ * page, silence would read as a feature that is missing rather than a memory
+ * that does not exist yet.
+ */
+function PersonaMemorySection({ personaId, name, memory, onForgotten }: { personaId: string; name: string; memory: PersonaMemory | null; onForgotten: () => void }) {
+  const toast = useToast()
+  const [cleared, setCleared] = useState(false)
+  const gone = cleared || !memory
+  const forget = () => {
+    setCleared(true)
+    void forgetPersona(personaId)
+      .then((result) => {
+        if (result.ok) { toast.push(`${name} has forgotten it.`, 'volt'); onForgotten(); return }
+        setCleared(false)
+        toast.push(result.message ?? 'That did not clear.', 'red')
+      })
+      .catch(() => { setCleared(false); toast.push('That did not clear — you may be offline.', 'red') })
+  }
+  return <section><span className="label">What she remembers</span>{gone ? <p className="muted" style={{ margin: '10px 0 0' }}>Nothing yet. She keeps one line about the encounter after a rep worth remembering — never about how you did.</p> : <div className="memory-line memory-line--detail"><p>{memory.line}</p><button type="button" className="memory-line__reset label" onClick={forget}><RotateCcw size={13} strokeWidth={1.5} /> Start fresh</button></div>}</section>
+}
+
 export function FieldScreen() {
   const today = useFieldToday()
   const log = useFieldLog()
   const stats = useFieldStats()
-  // A write changes the counters and the log as well as the card, so all three
-  // reads are asked again once it lands.
-  const flow = useFieldFlow(today.data, () => {
-    today.reload()
-    log.reload()
-    stats.reload()
+  const pending = usePendingMilestone()
+  // A milestone earned but never seen — the tab was closed before the sheet
+  // rendered — is picked up on mount and shown now.
+  const [milestone, setMilestone] = useState<Milestone | null>(null)
+  const shown = milestone ?? pending.data
+  // A write changes the counters, the chart and the log as well as the card,
+  // so all three reads are asked again once it lands.
+  const flow = useFieldFlow(today.data, {
+    onChanged: () => { today.reload(); log.reload(); stats.reload() },
+    onMilestone: (at) => setMilestone(REJECTION_MILESTONES.find((entry) => entry.at === at) ?? null),
   })
 
   const assignment = today.data
@@ -86,8 +124,23 @@ export function FieldScreen() {
 
   const challenge = assignment?.challenge
   const resolved = flow.status === 'done' || flow.status === 'skipped'
+  // Built from the log the screen already has, through the same function the
+  // profile figure uses, so the two cannot disagree about the gap.
+  const series = useMemo(() => anxietySeries(log.data), [log.data])
 
-  return <AppShell title="Field"><div className="screen-heading"><span className="label">Outside the app</span><h1 className="display-lg">Field</h1><p>Small real-world moves. No performance, no audience.</p></div><div className="field-layout"><section>{loading ? <Skeleton height={390} /> : challenge ? <Card className="today-field">{resolved ? <FieldLogged status={flow.status} /> : <><div className="today-field__top"><Chip>Tier {challenge.tier} · {TIER_NAMES[challenge.tier]}</Chip><span className="label">Today</span></div><div><h2 className="display-lg">{challenge.title}</h2><p>{challenge.brief}</p><p className="today-field__done"><span className="label">Done when</span> {challenge.doneWhen}</p>{challenge.safetyNote ? <p className="today-field__safety"><ShieldCheck size={15} strokeWidth={1.5} /> {challenge.safetyNote}</p> : null}</div><FieldActions flow={flow} size="lg" /></>}</Card> : <EmptyState title="No field rep today" description="Your next real-world prompt will appear here." />}</section><aside className="field-side"><Card><span className="label">Rejections collected</span><Stat label="Asks made" value={stats.data?.asksMade ?? 0} /><div className="field-counters"><span className="composite data">{stats.data?.rejectionsCollected ?? 0}</span><p className="muted">Every one of them is a rep. Nobody keeps score of the yeses.</p></div></Card><Card><span className="label">Tier progress</span><div className="tier-track">{[1, 2, 3, 4].map((tier) => <i key={tier} className={tier <= (stats.data?.tier ?? 1) ? 'active' : ''} />)}</div><div className="tier-copy"><strong>Tier {stats.data?.tier ?? 1} — {TIER_NAMES[stats.data?.tier ?? 1]}</strong><span>{stats.data?.tierDone ?? 0} of {stats.data?.tierTotal ?? 0} logged</span></div>{stats.data?.nextTierAt ? <p className="label mute" style={{ marginTop: 10 }}>{stats.data.nextTierAt}</p> : null}</Card><Card><span className="label">History</span>{logLoading ? <Skeleton height={180} style={{ marginTop: 14 }} /> : log.data.length ? <div className="field-history">{log.data.slice(0, 8).map((entry) => <FieldHistoryRow key={entry.id} entry={entry} />)}</div> : <EmptyState title="Nothing logged yet" description="Your first field rep will land here." />}</Card></aside></div><footer className="safety-note"><ShieldCheck size={16} strokeWidth={1.5} /> Never do anything illegal, unsafe, or that harasses someone. Walk away means walk away.</footer><FieldSheets flow={flow} title={challenge?.title ?? ''} /></AppShell>
+  return <AppShell title="Field"><div className="screen-heading"><span className="label">Outside the app</span><h1 className="display-lg">Field</h1><p>Small real-world moves. No performance, no audience.</p></div><div className="field-layout"><section className="field-main">{loading ? <Skeleton height={390} /> : challenge ? <Card className="today-field">{resolved ? <FieldLogged status={flow.status} /> : <><div className="today-field__top"><Chip>Tier {challenge.tier} · {TIER_NAMES[challenge.tier]}</Chip><span className="label">Today</span></div><div><h2 className="display-lg">{challenge.title}</h2><p>{challenge.brief}</p><p className="today-field__done"><span className="label">Done when</span> {challenge.doneWhen}</p>{challenge.safetyNote ? <p className="today-field__safety"><ShieldCheck size={15} strokeWidth={1.5} /> {challenge.safetyNote}</p> : null}</div><FieldActions flow={flow} size="lg" /></>}</Card> : <EmptyState title="No field rep today" description="Your next real-world prompt will appear here." />}<Card className="anxiety-card"><div className="card-heading"><div><span className="label">What you expected · what it cost</span><h2 className="display-md">Predicted vs actual</h2></div></div>{logLoading ? <Skeleton height={150} /> : <AnxietyChart series={series} />}</Card></section><aside className="field-side"><Card><span className="label">Rejections collected</span><div className="field-counters"><span className="composite data">{stats.data?.rejectionsCollected ?? 0}</span><p className="muted">Every one of them is a rep. Nobody keeps score of the yeses.</p>{nextMilestone(stats.data?.rejectionsCollected ?? 0)}</div><div className="field-counters__secondary"><Stat label="Asks made" value={stats.data?.asksMade ?? 0} /></div></Card><Card><span className="label">Tier progress</span><div className="tier-track">{[1, 2, 3, 4].map((tier) => <i key={tier} className={tier <= (stats.data?.tier ?? 1) ? 'active' : ''} />)}</div><div className="tier-copy"><strong>Tier {stats.data?.tier ?? 1} — {TIER_NAMES[stats.data?.tier ?? 1]}</strong><span>{stats.data?.tierDone ?? 0} of {stats.data?.tierTotal ?? 0} logged</span></div>{stats.data?.nextTierAt ? <p className="label mute" style={{ marginTop: 10 }}>{stats.data.nextTierAt}</p> : null}</Card><Card><span className="label">History</span>{logLoading ? <Skeleton height={180} style={{ marginTop: 14 }} /> : log.data.length ? <div className="field-history">{log.data.slice(0, 8).map((entry) => <FieldHistoryRow key={entry.id} entry={entry} />)}</div> : <EmptyState title="Nothing logged yet" description="Your first field rep will land here." />}</Card></aside></div><footer className="safety-note"><ShieldCheck size={16} strokeWidth={1.5} /> Never do anything illegal, unsafe, or that harasses someone. Walk away means walk away.</footer><FieldSheets flow={flow} title={challenge?.title ?? ''} /><MilestoneSheet milestone={shown} onClose={() => { setMilestone(null); pending.reload() }} /></AppShell>
+}
+
+/**
+ * How far to the next one. Counts refusals, never asks accepted (§09).
+ *
+ * Silent once every milestone is behind them — a bar that says "0 to go"
+ * forever is a bar that has stopped meaning anything.
+ */
+function nextMilestone(collected: number) {
+  const next = REJECTION_MILESTONES.find((milestone) => milestone.at > collected)
+  if (!next) return null
+  return <p className="label mute" style={{ marginTop: 12 }}>{next.at - collected} more to {next.at}</p>
 }
 
 function FieldHistoryRow({ entry }: { entry: FieldLogEntry }) {

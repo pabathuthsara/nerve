@@ -5,8 +5,11 @@ import { Check, ChevronLeft, Mic, MicOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { usePersona } from '@/lib/data'
-import { finishOnboarding, saveOnboardingChoice } from '@/app/profile/actions'
-import { Avatar, Button, Chip, Sheet } from '@/components/ui'
+import { finishOnboarding, saveOnboardingChoice, saveVadOffset } from '@/app/profile/actions'
+import { PauseMeter, offsetFromPause } from '@/lib/voice/calibration'
+import { DEFAULT_CALIBRATION } from '@/lib/voice/types'
+import { Button, Chip, Sheet } from '@/components/ui'
+import { FluidPersona } from '@/components/fluid-persona'
 
 type OnboardingRoute = '/onboarding/track' | '/onboarding/focus' | '/onboarding/experience' | '/onboarding/mic' | '/onboarding/ready'
 
@@ -93,6 +96,8 @@ function MicStep() {
   const [deviceId, setDeviceId] = useState('')
   const streamRef = useRef<MediaStream | null>(null)
   const frameRef = useRef<number | null>(null)
+  /** §05 turn-taking calibration, measured off the level meter. */
+  const pauseRef = useRef<PauseMeter | null>(null)
 
   const stop = () => {
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
@@ -101,6 +106,20 @@ function MicStep() {
   }
 
   useEffect(() => stop, [])
+
+  /**
+   * Write the measured turn-taking offset, once, on the way out.
+   *
+   * Best-effort by rule: a calibration that fails to save costs the user a
+   * slightly wrong silence window, and must never cost them the ability to
+   * finish onboarding. No measurement means no write, and the default stands.
+   */
+  const persistCalibration = async () => {
+    const measured = pauseRef.current?.measuredPauseMs() ?? null
+    if (measured === null) return
+    const offset = offsetFromPause(measured, DEFAULT_CALIBRATION.silenceMs)
+    await saveVadOffset(offset).catch(() => undefined)
+  }
 
   const request = async () => {
     stop()
@@ -117,15 +136,37 @@ function MicStep() {
       context.createMediaStreamSource(stream).connect(analyser)
       const values = new Uint8Array(analyser.frequencyBinCount)
       let aboveSince = 0
+      // §05's turn-taking calibration, measured off the same meter that is
+      // already running. The phrase has three clauses in it precisely so that
+      // saying it produces the gaps this needs — it was always the right test
+      // sentence, it simply was never timed. See lib/voice/calibration.ts.
+      const pauses = new PauseMeter()
+      pauseRef.current = pauses
       const tick = () => {
         analyser.getByteFrequencyData(values)
         let sum = 0
         for (const value of values) sum += value * value
         const next = Math.min(1, Math.sqrt(sum / values.length) / 90)
         setLevel(next)
-        if (next > .12) {
+        const speaking = next > .12
+        pauses.sample(performance.now(), speaking)
+        if (speaking) {
           if (aboveSince === 0) aboveSince = performance.now()
-          if (performance.now() - aboveSince > 800) { setState('confirmed'); void context.close(); return }
+          // Wait for the whole phrase rather than the first syllable, so there
+          // are gaps to take a median of. Confirms early only if they have
+          // already given us enough.
+          const heldLongEnough = performance.now() - aboveSince > 800
+          if (heldLongEnough && pauses.sampleCount >= 2) {
+            setState('confirmed')
+            void context.close()
+            return
+          }
+          // Never leave them stuck because they spoke in one unbroken breath.
+          if (performance.now() - aboveSince > 3500) {
+            setState('confirmed')
+            void context.close()
+            return
+          }
         } else aboveSince = 0
         frameRef.current = requestAnimationFrame(tick)
       }
@@ -133,7 +174,7 @@ function MicStep() {
     } catch { setState('denied') }
   }
 
-  return <section className="mic-check">{state === 'request' ? <><Mic size={52} strokeWidth={1.25} className="volt" /><h1 className="display-lg">We need your microphone</h1><p>Reps are spoken out loud. Nothing is recorded to disk.</p><Button size="lg" fullWidth onClick={() => void request()}>Allow microphone</Button></> : null}{state === 'denied' ? <><MicOff size={52} strokeWidth={1.25} className="danger" /><h1 className="display-lg">We can&apos;t hear you</h1><p>Click the lock in your address bar, open Site settings, set Microphone to Allow, then try again.</p><Button variant="secondary" size="lg" fullWidth onClick={() => void request()}>Try again</Button></> : null}{state === 'testing' ? <><span className="label">Mic level</span><MicLevelMeter level={level} /><h1 className="display-md">Say: “testing, one two three”</h1><p>Headphones recommended — she&apos;ll hear herself otherwise.</p><DevicePicker devices={devices} value={deviceId} onChange={(value) => { setDeviceId(value); void request() }} /></> : null}{state === 'confirmed' ? <><Check size={52} strokeWidth={1.25} className="volt" /><h1 className="display-lg">We can hear you</h1><div className="mic-transcript data">“testing, one two three”</div><DevicePicker devices={devices} value={deviceId} onChange={setDeviceId} /><Button size="lg" fullWidth onClick={() => { stop(); router.push('/onboarding/ready') }}>Continue</Button></> : null}</section>
+  return <section className="mic-check">{state === 'request' ? <><Mic size={52} strokeWidth={1.25} className="volt" /><h1 className="display-lg">We need your microphone</h1><p>Reps are spoken out loud. Nothing is recorded to disk.</p><Button size="lg" fullWidth onClick={() => void request()}>Allow microphone</Button></> : null}{state === 'denied' ? <><MicOff size={52} strokeWidth={1.25} className="danger" /><h1 className="display-lg">We can&apos;t hear you</h1><p>Click the lock in your address bar, open Site settings, set Microphone to Allow, then try again.</p><Button variant="secondary" size="lg" fullWidth onClick={() => void request()}>Try again</Button></> : null}{state === 'testing' ? <><span className="label">Mic level</span><MicLevelMeter level={level} /><h1 className="display-md">Say: “testing, one two three”</h1><p>Headphones recommended — she&apos;ll hear herself otherwise.</p><DevicePicker devices={devices} value={deviceId} onChange={(value) => { setDeviceId(value); void request() }} /></> : null}{state === 'confirmed' ? <><Check size={52} strokeWidth={1.25} className="volt" /><h1 className="display-lg">We can hear you</h1><div className="mic-transcript data">“testing, one two three”</div><DevicePicker devices={devices} value={deviceId} onChange={setDeviceId} /><Button size="lg" fullWidth onClick={() => { void persistCalibration(); stop(); router.push('/onboarding/ready') }}>Continue</Button></> : null}</section>
 }
 
 function MicLevelMeter({ level }: { level: number }) {
@@ -159,7 +200,7 @@ function ReadyStep() {
     await finishOnboarding()
     router.push('/rep/nadia/brief?calibration=1')
   }
-  return <section className="brief-shell"><Avatar name={persona.name} src={persona.portraitUrl} size={96} /><h1 className="display-lg">{persona.name}</h1><span className="label">{persona.setting}</span><p className="brief-hook">{persona.hook}</p><RuleBlock interview={false} /><Button size="lg" fullWidth loading={starting} onClick={() => void start()}>Start</Button><Button variant="ghost" fullWidth onClick={() => setOpen(true)}>How does this work?</Button><HowItWorks open={open} onClose={() => setOpen(false)} /></section>
+  return <section className="brief-shell"><FluidPersona name={persona.name} personaId={persona.id} warmth={18} size={132} /><h1 className="display-lg">{persona.name}</h1><span className="label">{persona.setting}</span><p className="brief-hook">{persona.hook}</p><RuleBlock interview={false} /><Button size="lg" fullWidth loading={starting} onClick={() => void start()}>Start</Button><Button variant="ghost" fullWidth onClick={() => setOpen(true)}>How does this work?</Button><HowItWorks open={open} onClose={() => setOpen(false)} /></section>
 }
 
 export function RuleBlock({ interview }: { interview: boolean }) {
@@ -168,7 +209,7 @@ export function RuleBlock({ interview }: { interview: boolean }) {
 }
 
 export function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return <Sheet open={open} onClose={onClose} title="How a rep works"><div className="how-list">{['Talk out loud.', 'You have three minutes.', 'The ring shows how she feels.', 'She decides at the end whether you get her number.'].map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet>
+  return <Sheet open={open} onClose={onClose} title="How a rep works"><div className="how-list">{['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end whether you get her number.'].map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet>
 }
 
 export type { OnboardingRoute }

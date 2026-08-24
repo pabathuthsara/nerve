@@ -106,13 +106,20 @@ export const nadia: Persona = {
   // point back before it was scored, and the gain was too low to outrun it.
   // Level 1 must be nearly impossible to fail, and a meter that will not move
   // for a user doing everything right teaches the wrong lesson.
+  //
+  // `maxGainPerTurn` came down from 4 when the rep went to three minutes. The
+  // cap clips every strong turn below warmth ~48 here, so the extra five turns
+  // were worth a flat +10 on every rung at once and the 65 line stopped
+  // separating them: a strong player armed three rungs where they used to arm
+  // one. Only the cap moved — gain, decay and decayPerTurn are who she is, and
+  // the cap is a function of how long the rep is.
   trajectory: {
     start: 32,
     startJitter: 6,
     gain: 1.1,
     decay: 0.5,
     decayPerTurn: 0.2,
-    maxGainPerTurn: 4,
+    maxGainPerTurn: 3.5,
     sessionCeiling: 85,
     hardCeiling: 100,
   },
@@ -153,12 +160,20 @@ export const nadia: Persona = {
 
   contract: CONTRACT,
 
+  // Ungated. She wants this at warmth 5 and at warmth 80; only whether she
+  // pursues it away from him or lets him into it changes.
+  want: 'left alone with the shelf you are halfway through',
+
+  sceneBeats: [
+    { at: 0.28, direction: '(You find the book you came in for. You are pleased, and you are holding it now.)' },
+    { at: 0.62, direction: '(Somebody squeezes past behind you and you have to step in towards him for a second.)' },
+  ],
+
   exitConditions: [
     // The win condition (§05). She is only ever told to offer her number when
     // the meter has crossed, so this line cannot fire on its own — it is here
     // so that when the direction does arrive, ending afterwards is already
     // part of who she is rather than a new instruction fighting the contract.
-    'You have offered to swap numbers and said goodbye.',
     'They give you three genuinely dead-end replies in a row. Say one warm goodbye, then leave.',
     'They say goodbye, or say they have to go.',
     'They cross a real boundary. Be briefly unimpressed and leave.',

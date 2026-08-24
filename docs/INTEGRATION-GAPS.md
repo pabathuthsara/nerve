@@ -14,9 +14,11 @@ change, which was the point of building them against a seam.
       it ends however it ends. The rules are pure functions in
       `lib/data/rep-rules.ts` with tests; the whole lifecycle behind the
       transport is covered by `npm run db:rep`.
-- [x] Eight characters, one per level (§06), seeded with their presentation
-      copy. The trajectory table is read from the roster rather than kept
-      beside it.
+- [x] Three characters, one per rung, seeded with their presentation copy —
+      §06 authors eight and five are retired rather than deleted, unpublished
+      by `npm run db:seed` so their old sessions stay readable (D10a in
+      `LAUNCH-GAP.md`). The trajectory table is read from the roster rather
+      than kept beside it, so the shipped roster IS the ladder.
 - [x] The daily quota is checked where money is committed — `/api/voice/token`
       refuses a caller with none left, and a rep in flight may reconnect on the
       one it already spent.
@@ -51,13 +53,46 @@ change, which was the point of building them against a seam.
       the score (§07).
 - [x] Quota spent when a rep opens, streak written when one ends, ladder
       position recomputed when the grade lands — all service-role writes.
+- [x] **The field, in full.** Assignment, accept with the prediction, the log,
+      the tier gate and the streak were already bound; the predicted-versus-actual
+      chart and the rejection milestones now are too. The chart on `/field` and
+      the summary figure on `/profile` are both computed by `anxietySeries` in
+      `lib/field/anxiety.ts`, so the line and the number cannot disagree.
+      Milestones at 10 / 25 / 50 / 100 are recorded in `unlocks` as
+      `kind = 'milestone'`, which is what makes each fire once and never again.
+      `npm run db:field` covers all of it in 27 checks.
+- [x] **Character memory (§08).** The grade returns a `memoryLine`,
+      `lib/grade/memory.ts` decides whether it may be stored — second person,
+      affection and performance judgement are all rejected — and the live page
+      injects the survivor into the character contract through the shared
+      `compileInstructions`, so the OpenAI arm and the pipeline arm cannot
+      disagree. Reset is one tap on the brief screen or the persona sheet, or
+      all of them at once from Settings, and it clears the line and nothing
+      else. `profiles.ui_flags` carries the first-time beat. `npm run db:rep`
+      covers the write, the read, the replacement and the reset.
+
+- [x] **Progression (§08), end to end.** A tier opens on two reps scoring 70+
+      at the tier below — the gate reads `scores`, not wins — and `syncLevel`
+      and `fetchPersonas` share one piece of arithmetic so the stored ladder
+      position and the roster's locked state cannot disagree. Opening a tier
+      records an `unlocks` row and the scorecard celebrates it once, off the row
+      rather than off the `useState(false)` that nothing set.
+- [x] **Adaptive difficulty (§08, §12).** `difficulty_offsets`, per user and
+      per level, applied where the live page builds the persona config — the
+      seam the engine's trajectory getter exists for, so no engine change. The
+      downward adjustment returns nothing displayable by construction.
+- [x] **The baseline and the week-four re-test (§08).** Written once by the
+      first graded rep, offered at day 28 in the user's own timezone, compared
+      at `/progress/baseline` sub-score by sub-score.
+- [x] **The Sunday review (§09, §11).** Hourly cron reading each user's own
+      clock, stored rather than recomputed, copy assembled from hand-written
+      sentences and never from a model.
+- [x] **Share cards (§18).** Five kinds, all opt-in, none automatic. Rendered as
+      PNG by an unguessable token through the service role, so `share_cards`
+      needs no anonymous policy. Revocable from Settings → Data.
 
 ## Still open
 
-- [ ] Field: the predicted-versus-actual chart and the rejection milestones.
-      The rest of the loop is bound — assignment, accept with the prediction,
-      the log, the tier gate and the streak — and `lib/data/mock/field.ts` is
-      gone. `npm run db:field` covers it.
 - [ ] The interview track (M4) in full: interviewers, interview metrics and the
       question index. `interview_setups` and a private `cv` bucket now exist for
       the role, JD, questions and CV; nothing writes them yet.
@@ -79,9 +114,8 @@ change, which was the point of building them against a seam.
       policy and no write path on purpose.
 - [ ] Account deletion and data export from Settings. Both controls are
       disabled and say so rather than pretending.
-- [ ] Persona memory (§08) is a table with nothing writing to it. So are
-      `unlocks`, `weekly_reviews` and `subscriptions` — schema and policies are
-      proven, the writers are the next phase.
+- [ ] `subscriptions` is a table with nothing writing to it — schema and
+      policies are proven, the merchant of record is the next phase (B2).
 - [ ] The technique library is seeded (14 cards) and unread: no `/library`
       route, and the scorecard does not yet link the two weakest sub-scores to
       the cards that target them.

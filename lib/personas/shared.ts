@@ -49,7 +49,7 @@ export const CONTINUITY_RULES = `# Conversation continuity
 - Before every reply, silently recall what they most recently told you, what you last said, any correction they made, and whether you have already said goodbye.
 - Never ask for information they already gave you. If they correct you, use the corrected fact in your next reply and move forward.
 - Show memory indirectly through the next relevant opinion or choice. Do not announce memory with a template such as "you said" or "as you mentioned".
-- If a name or exact word is unclear, repeat only what you heard with questioning intonation. Never invent a likely name or silently replace it.`
+- If a name or exact word is unclear, say back the part you did catch and question the part you did not. Never answer with "what?" alone, never invent a likely name, and never silently replace it.`
 
 /** The lines nobody crosses, in either direction. */
 export const BOUNDARY_RULES = `# If they are rude or test you

@@ -24,7 +24,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { OpenAIVoiceProvider } from './openai'
 import { OpenAIEventTranslator } from './openai/translate'
-import { OpenAIPersonaCompiler, compileInstructions } from './openai/persona'
+import { OpenAIPersonaCompiler, compileInstructions, resolveVoice } from './openai/persona'
 import { OpenAIResponseGate } from './openai/response-gate'
 import { compileReinforcement } from './reinforcement'
 import { priceUsageSample, summarizeUsage } from './rates'
@@ -44,6 +44,7 @@ import {
   type TranscriptTurn,
 } from './types'
 import { nadia } from '../personas/nadia'
+import { PERSONAS } from '../personas'
 
 /* ------------------------------------------------------------------ *
  * Fixtures
@@ -179,8 +180,14 @@ describe('persona compilation', () => {
     expect(config.turn.mode).toBe('silence')
   })
 
-  it('never lets patience narrow the threshold', () => {
-    expect(resolveSilenceMs({ silenceMs: 900, patienceOffsetMs: -500 })).toBe(900)
+  it('lets the calibration move the threshold in both directions', () => {
+    // This used to floor the offset at zero — "patience never narrows it" —
+    // which made the negative half of the stored range unreachable and meant a
+    // fluent, confident speaker got the same long window as a hesitant one. A
+    // window that is too wide is not free: it is dead air after every sentence,
+    // and it reads as her being slow rather than as her being patient. The
+    // column has always permitted -400; now the resolver does too.
+    expect(resolveSilenceMs({ silenceMs: 900, patienceOffsetMs: -300 })).toBe(600)
     expect(resolveSilenceMs({ silenceMs: 900 })).toBe(900)
     expect(resolveSilenceMs({ silenceMs: 900, patienceOffsetMs: 400 })).toBe(1300)
   })
@@ -228,6 +235,86 @@ describe('persona compilation', () => {
     expect(compiler.compile(robin, DEFAULT_CALIBRATION).tts.stability).toBeGreaterThan(
       compiler.compile(nadia, DEFAULT_CALIBRATION).tts.stability,
     )
+  })
+
+  it('casts every character explicitly, and never twice', () => {
+    // Alex carried no voice id at all and fell silently through the timbre
+    // fallback onto `coral` — Maya's voice, by accident rather than by casting.
+    // Robin and Nadia were both `marin`, so Level 1 and Level 7 sounded
+    // identical. Eight characters that share voices are not eight characters.
+    const seen = new Map<string, string>()
+    for (const persona of Object.values(PERSONAS)) {
+      const named = persona.voice.ids.openai
+      expect(named, `${persona.slug} names no OpenAI voice`).toBeTruthy()
+
+      const voice = resolveVoice(persona)
+      expect(voice, `${persona.slug} fell through to the timbre default`).toBe(named)
+
+      const already = seen.get(voice)
+      expect(already, `${persona.slug} shares "${voice}" with ${already}`).toBeUndefined()
+      seen.set(voice, persona.slug)
+    }
+    expect(seen.size).toBe(Object.keys(PERSONAS).length)
+  })
+
+  it('never lets being asked for a number end the scene', () => {
+    // THE REGRESSION. Seven personas carried the exit condition "You have
+    // offered to swap numbers and said goodbye." A user asked Priya for her
+    // number at 2:17 — thirteen seconds before the wind-down would have fired,
+    // so she had never been told what to do about it. She answered politely,
+    // that tripped her own exit, and the rep ended 38 seconds early with the
+    // meter at 60. She said "sure, we can swap numbers"; the card said she
+    // left. `M2-PLAN.md` claimed the condition was "only ever reachable in the
+    // last thirty seconds", and it was reachable whenever the user asked.
+    // "phone" on its own is allowed and deliberately so — Erin's exit is "Back
+    // to your phone", which is the object in her hand, not contact details.
+    for (const persona of Object.values(PERSONAS)) {
+      for (const condition of persona.exitConditions) {
+        expect(condition.toLowerCase(), `${persona.slug}: ${condition}`)
+          .not.toMatch(/number|contact details|phone number/)
+      }
+    }
+  })
+
+  it('tells every dating character not to hand over a number early', () => {
+    // Removing the exit condition stops the scene ending; this stops her
+    // agreeing in the first place, which is what made the card contradict her.
+    // The rule is the rep format, not a character trait, so it is compiled in
+    // for all eight rather than written into eight contracts — Nadia's and
+    // Alex's hand-tuned prose is not reopened for it.
+    for (const persona of Object.values(PERSONAS)) {
+      const prompt = compileInstructions(persona)
+      if (persona.track !== 'dating') continue
+      expect(prompt, persona.slug).toMatch(/if they ask for your number/i)
+      expect(prompt, persona.slug).toMatch(/do not agree/i)
+      // It must yield to the wind-down, or it argues with the one directive
+      // that is allowed to hand the number over.
+      expect(prompt, persona.slug).toMatch(/direction in brackets will tell you/i)
+      // And being asked is never a reason to leave.
+      expect(prompt, persona.slug).toMatch(/never treat being asked as a reason to leave/i)
+    }
+  })
+
+  it('carries a memory line into the contract, and carries nothing when there is none', () => {
+    // §08. The line is injected on the persona and read by the shared
+    // `compileInstructions`, which is why the OpenAI arm — the live one — and
+    // the pipeline arm cannot disagree about whether she remembers anything.
+    const line = 'Still looking for the blue one. Sister\'s birthday is Thursday.'
+    const remembering = { ...nadia, memorySummary: line }
+
+    const openai = compileInstructions(remembering)
+    const eleven = new ElevenLabsPersonaCompiler()
+      .compile(remembering, DEFAULT_CALIBRATION).llm.systemPrompt
+    for (const text of [openai, eleven]) {
+      expect(text).toContain(line)
+      expect(text).toMatch(/you have met before/i)
+    }
+
+    // A character with no memory must not be told she has one — "you have met
+    // before" with nothing after it invents a history she does not have.
+    const cold = compileInstructions(nadia)
+    expect(cold).not.toMatch(/you have met before/i)
+    expect(cold).not.toContain(line)
   })
 
   it('puts the banned assistant register into both prompts', () => {
@@ -512,13 +599,47 @@ describe('openai event translation', () => {
     expect(h.events.filter((e) => e.name === 'agent.speech.start')).toHaveLength(1)
   })
 
-  it('marks speech start from transcript deltas when the audio-buffer event is absent', () => {
-    // Protects the latency measurement against a transport that omits the
-    // WebRTC-only event: a missing start would silently drop samples.
+  it('never claims she is speaking on transcript alone', () => {
+    // THE REGRESSION. Transcript deltas arrive over the data channel well
+    // before the audio has crossed the media path, so marking speech from them
+    // started the turn earlier than she did — and a reply cancelled before it
+    // reached the speakers still opened a turn and accumulated its whole text.
+    // `agent.speech.start` drives the orb and the latency samples: it has to
+    // mean "she is audible", not "the words exist".
     const h = harness()
     h.at(2, { type: 'response.audio_transcript.delta', delta: 'Oh —' })
+    expect(h.events.filter((e) => e.name === 'agent.speech.start')).toHaveLength(0)
+
+    h.at(2.4, { type: 'output_audio_buffer.started' })
     const start = h.events.find((e) => e.name === 'agent.speech.start')
-    expect(start?.at).toBe(2)
+    expect(start?.at).toBe(2.4)
+  })
+
+  it('drops a reply that was cancelled before it ever reached the speakers', () => {
+    // A real Priya rep recorded "Catching my breath between sets right now." —
+    // seven words — as 0.22 seconds. It had been cancelled as an overlap after
+    // its transcript arrived and before its audio buffer opened. The user never
+    // heard it, the scorer read it as a spoken turn, and it distorted both talk
+    // ratio and response latency.
+    const h = harness()
+    h.at(1, { type: 'response.output_audio_transcript.delta', delta: 'Catching my breath ' })
+    h.at(1.1, { type: 'response.output_audio_transcript.done', transcript: 'Catching my breath between sets right now.' })
+    h.at(1.22, { type: 'output_audio_buffer.cleared' })
+    expect(h.turns).toHaveLength(0)
+  })
+
+  it('keeps a reply that did reach the speakers, boundary and all', () => {
+    // The mirror: audio opened, so it happened, and the turn starts where the
+    // sound started rather than where the text did.
+    const h = harness()
+    h.at(1, { type: 'response.output_audio_transcript.delta', delta: 'Catching my breath ' })
+    h.at(1.4, { type: 'output_audio_buffer.started' })
+    h.at(3.9, { type: 'response.output_audio_transcript.done', transcript: 'Catching my breath between sets right now.' })
+    h.at(4.0, { type: 'output_audio_buffer.stopped' })
+    expect(h.turns).toHaveLength(1)
+    expect(h.turns[0]?.text).toBe('Catching my breath between sets right now.')
+    expect(h.turns[0]?.t_start).toBe(1.4)
+    expect(h.turns[0]?.t_end).toBe(4.0)
   })
 
   it('accepts both the GA and the legacy transcript event names', () => {

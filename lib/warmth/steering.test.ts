@@ -12,6 +12,8 @@ import { describe, expect, it } from 'vitest'
 import { composeSteering, personalityClauses, gateClauses, STEERING_BUDGET } from './steering'
 import { nadia } from '@/lib/personas/nadia'
 import { alex } from '@/lib/personas/alex'
+import { erin } from '@/lib/personas/erin'
+import { PERSONAS } from '@/lib/personas'
 import { effectiveSharpness, unlockedGates, type Persona } from '@/lib/voice/types'
 
 const at = (persona: Persona, warmth: number) => composeSteering({ persona, warmth })
@@ -20,7 +22,7 @@ describe('composition across the four layers', () => {
   it('always carries the band directive', () => {
     // Layer 1 reaches the character as a band and never as a number. She is
     // never told her difficulty, her trajectory, or that a meter exists.
-    expect(at(nadia, 10)).toContain('One to four words')
+    expect(at(nadia, 10)).toContain('Four to ten words')
     expect(at(nadia, 45)).toContain('One sentence')
     expect(at(nadia, 70)).toContain('Ask about him')
   })
@@ -116,16 +118,57 @@ describe('composition across the four layers', () => {
   })
 
   it('stays inside its budget, in every state, for every character', () => {
-    // This is appended on every user turn and re-charged as context on every
-    // turn after that. A directive that grows with the persona is a directive
-    // that quietly doubles the cost of a long rep.
-    for (const persona of [nadia, alex]) {
+    // This is re-charged as context on every turn after it is sent. A directive
+    // that grows with the persona is a directive that quietly doubles the cost
+    // of a long rep.
+    //
+    // The state space grew with the posture and repair clauses, so this now
+    // sweeps every combination against every character on the roster rather
+    // than the two ends of the ladder. The worst line in the product before
+    // `assemble` existed was 595 characters of stacked imperatives.
+    const postures = ['wary', 'at-ease', 'taken', 'polite', 'level'] as const
+    for (const persona of Object.values(PERSONAS)) {
       for (let warmth = -20; warmth <= 100; warmth += 1) {
         for (const suppressQuestion of [true, false]) {
-          const line = composeSteering({ persona, warmth, suppressQuestion })
-          expect(line.length, `${persona.name} @ ${warmth}`).toBeLessThanOrEqual(STEERING_BUDGET)
+          for (const repairOpen of [true, false]) {
+            for (const posture of postures) {
+              const line = composeSteering({
+                persona, warmth, suppressQuestion, repairOpen, posture,
+              })
+              expect(
+                line.length,
+                `${persona.name} @ ${warmth} ${posture}${repairOpen ? ' repairing' : ''}`,
+              ).toBeLessThanOrEqual(STEERING_BUDGET)
+            }
+          }
         }
       }
+    }
+  })
+
+  it('drops the lowest-priority clause rather than truncating the line', () => {
+    // Budget pressure must never produce a sentence cut in half, and must never
+    // cost the band directive — nothing else owns reply length, and a turn with
+    // no length rule is the round-6 failure.
+    const crowded = composeSteering({
+      persona: erin, warmth: 60, suppressQuestion: true, repairOpen: true, posture: 'taken',
+    })
+    expect(crowded.startsWith('[')).toBe(true)
+    expect(crowded.endsWith(']')).toBe(true)
+    expect(crowded).toContain('Under fifteen words')
+    // Every clause that survived is a whole sentence.
+    const body = crowded.slice(1, -1)
+    expect(body.trim().endsWith('.')).toBe(true)
+  })
+
+  it('gives her something she wants at every band, including the coldest', () => {
+    // THE PERSONHOOD RULE. `initiatesTopics` unlocks at 70 and is unreachable
+    // on most of the ladder inside a rep, so without this she is a pure
+    // responder for the whole session — which is the most recognisable tell
+    // there is. The want is not a reward and is not gated.
+    for (const warmth of [-20, 0, 10, 30, 50, 70, 90]) {
+      expect(composeSteering({ persona: erin, warmth }), `@${warmth}`)
+        .toContain('rather be')
     }
   })
 

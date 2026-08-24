@@ -25,7 +25,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createVoiceProvider } from '@/lib/voice'
 import type { VoiceProvider } from '@/lib/voice/provider'
 import {
-  mayInterrupt,
   VoiceError,
   type Analysers,
   type Calibration,
@@ -36,12 +35,21 @@ import {
 } from '@/lib/voice/types'
 import { WarmthSession } from '@/lib/warmth/session'
 import { HttpSlowScorer } from '@/lib/warmth/slow'
+import {
+  countIncidents,
+  emptyIncidents,
+  incidentsAreAlarming,
+  type RepIncidents,
+} from '@/lib/voice/incidents'
+import { compileReinforcement } from '@/lib/voice/reinforcement'
+import { StabilityMeter } from '@/lib/metrics/stability'
 import { RepRecorder } from '@/lib/audio/recorder'
 import { uploadRepAudio } from '@/lib/db/audio'
 import { attachAudio, finishSession, saveScore, startSession } from '@/app/rep/actions'
 import type { Scorecard } from '@/lib/grade/types'
 import { uiBand, uiWarmth } from './progression'
 import {
+  dueSceneBeat,
   givesNumber,
   inventNumber,
   isClosingOver,
@@ -188,6 +196,10 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
    */
   const armedRef = useRef(false)
   const wrappedRef = useRef(false)
+  /** How many authored scene beats have fired this rep. */
+  const beatsFiredRef = useRef(0)
+  /** §05 countermeasure 3. Detects a character break so it can be repaired. */
+  const stabilityRef = useRef(new StabilityMeter({ nonStaff: personaId === 'nadia' }))
   const numberRef = useRef<string>('')
   /**
    * What she was told at the wind-down, and therefore what she has already
@@ -197,8 +209,21 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
    * appear after she said "give me your phone" is worse than any rule.
    */
   const closingDecisionRef = useRef<'number' | 'leave' | null>(null)
+  /**
+   * The warmth the ending was decided on, kept because it is not `final_warmth`.
+   *
+   * The decision is made once, at the wind-down, and cannot change afterwards
+   * — so the meter can keep climbing for the last thirty seconds and finish
+   * well above the threshold on a rep she had already been told to leave. That
+   * is correct, and it is unreadable unless the screen shows the number the
+   * decision actually turned on. A real rep finished 71 / 65 and said "She
+   * left": at the wind-down it had been 63.68.
+   */
+  const decisionWarmthRef = useRef<number | null>(null)
   /** When the clock hit zero. Null while the rep is still running. */
   const timeUpAtRef = useRef<number | null>(null)
+  const incidentsRef = useRef<RepIncidents>(emptyIncidents())
+  const incidentsStopRef = useRef<(() => void) | null>(null)
   const agentSpeakingRef = useRef(false)
   const startedAtRef = useRef(0)
   const pausedRef = useRef(false)
@@ -236,9 +261,28 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       warmthRef.current?.dispose()
       warmthRef.current = null
 
+      incidentsStopRef.current?.()
+      incidentsStopRef.current = null
+      const incidents = incidentsRef.current
+      const agentTurns = summary.turns.filter((turn) => turn.speaker === 'agent').length
+
+      // A rep whose transport misbehaved this badly produced a transcript that
+      // is not what the user heard, and §07 is about to grade it. Recorded on
+      // the row rather than hidden, so a bad grade can be explained instead of
+      // being quietly attributed to the user.
+      if (incidentsAreAlarming(incidents, agentTurns)) {
+        console.warn('[nerve] rep pipeline incidents', { ...incidents, agentTurns })
+      }
+
       // The decision, once. If the wind-down already fired she has committed
       // out loud and that stands; a rep cut short before it is judged here on
       // the same rule — armed, and still warm enough to mean it.
+      // A rep that ended before the wind-down is judged here, so this is the
+      // moment its decision was made and the warmth to remember.
+      if (closingDecisionRef.current === null) {
+        decisionWarmthRef.current = telemetry?.end ?? 0
+      }
+
       const won = closingDecisionRef.current === 'number'
         || (closingDecisionRef.current === null
           && givesNumber({
@@ -279,6 +323,8 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         model: summary.model,
         warmth: telemetry,
         won,
+        incidents,
+        ...(decisionWarmthRef.current === null ? {} : { decisionWarmth: decisionWarmthRef.current }),
       }).catch(() => undefined)
 
       if (recording && config) {
@@ -307,7 +353,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
           .then(async (response) => (response.ok ? ((await response.json()) as Scorecard) : null))
           .catch(() => null)
 
-        if (card) await saveScore({ sessionId: id, scorecard: card, provider: summary.provider }).catch(() => undefined)
+        if (card) await saveScore({ sessionId: id, scorecard: card, provider: summary.provider, ...(config ? { personaLevel: config.persona.level } : {}) }).catch(() => undefined)
       }
     },
     [clearLoops, config, interview, personaId],
@@ -337,7 +383,11 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       if (shouldArm({ warmth: engine.warmth, armed: armedRef.current, interview })) {
         armedRef.current = true
       }
-      void voice
+
+      // The two consequences of interest that live below the application: how
+      // long she sits on a reply, and whether she takes the turn when he talks
+      // over her. She is still never told a number (§H6).
+      voice.setWarmth(engine.warmth)
     },
     [interview],
   )
@@ -348,7 +398,10 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     finishedRef.current = false
     armedRef.current = false
     wrappedRef.current = false
+    beatsFiredRef.current = 0
+    stabilityRef.current = new StabilityMeter({ nonStaff: personaId === 'nadia' })
     closingDecisionRef.current = null
+    decisionWarmthRef.current = null
     timeUpAtRef.current = null
     agentSpeakingRef.current = false
     numberRef.current = ''
@@ -373,10 +426,14 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
 
       voice.on('user.speech.start', () => {
         setSpeaking('user')
-        // Steering goes in while he is still talking, so the item is already
-        // in the conversation when the response is created.
+        // Steering used to go in HERE, on every speech start — including noise
+        // bursts and turns deleted milliseconds later as echo, and always with
+        // the same text. See `directiveIfChanged`. It now rides the committed
+        // turn instead, which is the last moment before the response is created
+        // and the first moment we know the turn was real.
         const warmthSession = warmthRef.current
-        if (warmthSession) voice.reinforce(warmthSession.directive())
+        const line = warmthSession?.directiveIfChanged()
+        if (line) voice.reinforce(line)
       })
       voice.on('user.speech.stop', () => setSpeaking('thinking'))
       voice.on('agent.speech.start', () => {
@@ -406,7 +463,27 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         turnsRef.current.push(turn)
         warmthRef.current?.onAgentTurn(turn)
         publish(voice)
+
+        // §05 countermeasure 3, which until now ran only in the M0 harness.
+        // A character break in production was never detected and never
+        // repaired — she drifted into assistant register and stayed there for
+        // the rest of the rep. Event-driven rather than timed, because blind
+        // periodic session updates damaged prompt-cache reuse.
+        const hits = stabilityRef.current.observe(turn.text, turn.t_end)
+        if (hits.some((hit) => hit.severity === 'break')) {
+          voice.reinforce(compileReinforcement(config.persona, turnsRef.current))
+        }
       })
+
+      // Every non-fatal incident the pipeline can report, counted. Until this
+      // existed the product path listened for fatal errors and nothing else, so
+      // truncated replies, deleted user turns and unheard responses were all
+      // invisible in production — see lib/voice/incidents.ts.
+      const counter = countIncidents(voice, (next) => {
+        incidentsRef.current = next
+      })
+      incidentsStopRef.current = counter.stop
+      incidentsRef.current = counter.incidents
 
       voice.on('error', ({ error: err }) => {
         if (!err.fatal) return
@@ -488,9 +565,25 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
             warmth: engine?.warmth ?? 0,
             interview,
           })
+          decisionWarmthRef.current = engine?.warmth ?? 0
           closingDecisionRef.current = offering ? 'number' : 'leave'
           if (offering) numberRef.current = inventNumber()
           providerRef.current?.reinforce(offering ? NUMBER_DIRECTIVE : WRAP_UP_DIRECTIVE)
+        }
+
+        // The scene, on its own clock. Fired before the wind-down check so a
+        // beat can never land on top of the closing direction, and never after
+        // the wrap-up has been sent.
+        if (!wrappedRef.current) {
+          const beat = dueSceneBeat({
+            beats: config.persona.sceneBeats,
+            elapsedFraction: 1 - remaining / durationMs,
+            fired: beatsFiredRef.current,
+          })
+          if (beat) {
+            beatsFiredRef.current += 1
+            providerRef.current?.reinforce(beat.direction)
+          }
         }
 
         if (isTimeUp(remaining)) {
@@ -504,7 +597,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         }
       }, 200)
     })()
-  }, [config, durationMs, interview, publish])
+  }, [config, durationMs, interview, personaId, publish])
 
   const end = useCallback(() => { void stopRef.current?.('user') }, [])
 
@@ -529,8 +622,13 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     if (!pausedRef.current) return
     pausedRef.current = false
     setPaused(false)
-    if (config) providerRef.current?.setInterruptible(mayInterrupt(config.persona))
-  }, [config])
+    // Restored through the meter rather than from the level alone. The level is
+    // still the ceiling (§05), but whether she actually takes the turn depends
+    // on how the rep is going — and going back to the raw level rule here would
+    // let a bored character cut across him for the one turn before the next
+    // `publish` corrected it.
+    providerRef.current?.setWarmth(warmthRef.current?.engine.warmth ?? 0)
+  }, [])
 
   const retry = useCallback(() => {
     setRetryAttempt((value) => Math.min(3, value + 1))

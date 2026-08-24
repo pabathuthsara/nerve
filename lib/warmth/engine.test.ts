@@ -8,12 +8,14 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { WarmthEngine } from './engine'
+import { fastAuthority, FAST_AUTHORITY_FLOOR, FAST_AUTHORITY_SPAN, WarmthEngine } from './engine'
 import { bandFor, bandDirective, BANDS, WARMTH_MIN, WARMTH_MAX } from './bands'
 import { levelTrajectory } from './levels'
+import { ARM_THRESHOLD } from '@/lib/data/rep-rules'
 import { nadia } from '@/lib/personas/nadia'
 import { alex } from '@/lib/personas/alex'
-import type { Trajectory } from '@/lib/voice/types'
+import { PERSONAS } from '@/lib/personas'
+import type { Personality, Trajectory } from '@/lib/voice/types'
 import { scoreFast, isOpenQuestion, referencesAgent } from './fast'
 import { classifyOverreach, clampSlowScore } from './slow'
 import type { TranscriptTurn } from '@/lib/voice/types'
@@ -61,7 +63,7 @@ describe('bands', () => {
     // Bracketed so it reads as stage direction, not as dialogue.
     expect(directive.startsWith('[')).toBe(true)
     expect(directive.endsWith(']')).toBe(true)
-    expect(directive.toLowerCase()).toContain('three to eight words')
+    expect(directive.toLowerCase()).toContain('twelve words at most')
   })
 
   it('forbids questions outright at low warmth rather than rationing them', () => {
@@ -78,7 +80,7 @@ describe('bands', () => {
     expect(bandFor(-1)).toBe('HOSTILE')
     expect(bandFor(-20)).toBe('HOSTILE')
     expect(bandFor(0)).toBe('CLOSED')
-    expect(bandDirective(-10).toLowerCase()).toContain('want this to end')
+    expect(bandDirective(-10).toLowerCase()).toContain('want this over')
   })
 
   it('keeps the directive short — it is re-charged as context every turn', () => {
@@ -123,9 +125,36 @@ describe('fast scoring', () => {
 
   it('detects a genuine callback, not incidental shared words', () => {
     const her = [agentSaid('Re-reading a Tana French. Third time.')]
-    expect(referencesAgent('Which French is it?', her)).toBe('french')
+    expect(referencesAgent('Which French is it?', her)).toEqual({
+      word: 'french',
+      distance: 1,
+    })
     // "the" and "it" are shared but carry nothing.
     expect(referencesAgent('Is it the one?', her)).toBeNull()
+  })
+
+  it('reaches back past the last few turns, and pays more when it does', () => {
+    // The window used to be her last three turns, so coming back to something
+    // she said two minutes ago — the thing that actually makes a person feel
+    // listened to — scored exactly nothing.
+    const her = [
+      agentSaid('Re-reading a Tana French. Third time.'),
+      agentSaid('Mostly at the weekend.'),
+      agentSaid('It is quiet in here.'),
+      agentSaid('Not really.'),
+      agentSaid('Sometimes.'),
+    ]
+    const found = referencesAgent('Did you finish the French one', her)
+    expect(found?.word).toBe('french')
+    expect(found?.distance).toBe(5)
+
+    const longRange = scoreFast(turn('Did you finish the French one in the end'), {
+      level: 1, agentTurns: her, precedingDeadEnds: 0, gapSeconds: null,
+    })
+    const immediate = scoreFast(turn('Did you finish the French one in the end'), {
+      level: 1, agentTurns: [her[0]!], precedingDeadEnds: 0, gapSeconds: null,
+    })
+    expect(longRange.raw).toBeGreaterThan(immediate.raw)
   })
 
   it('rewards an engaged turn and punishes a dead end', () => {
@@ -249,11 +278,21 @@ describe('WarmthEngine', () => {
     // the curve rather than a reachable session. It keeps climbing and does not
     // stall the way the pre-retune config did at 47.
     climb(15)
-    expect(engine.warmth).toBeGreaterThan(80)
-    expect(engine.band).toBe('INVESTED')
+    expect(engine.warmth).toBeGreaterThan(70)
+    expect(engine.band).toBe('ENGAGED')
+
+    // And it does NOT walk into INVESTED, which is the anti-farming taper
+    // doing its job. Every turn in this climb is the same sentence — an open
+    // question, the right length, echoing one of her words — which is exactly
+    // the pattern a user works out and then repeats. Form is worth full price
+    // early, when a stranger really is judging you on how you open, and less
+    // as the conversation goes on. Reaching the top band has to take more than
+    // knowing the shape of a good sentence.
+    expect(engine.warmth).toBeLessThan(80)
+
     // Monotonic: no band is ever revisited on a conversation that only improves.
     const visited = engine.telemetry(at).bandsVisited
-    expect(visited).toEqual(['CLOSED', 'GUARDED', 'OPEN', 'ENGAGED', 'INVESTED'])
+    expect(visited).toEqual(['CLOSED', 'GUARDED', 'OPEN', 'ENGAGED'])
   })
 
   it('applies diminishing returns — the same turn is worth less when warm', () => {
@@ -455,13 +494,36 @@ describe('WarmthEngine', () => {
 })
 
 describe('level config', () => {
-  it('reads the authored trajectory for every rung of the ladder', () => {
+  it('reads the authored trajectory for every rung the roster holds', () => {
+    // A level's difficulty curve IS the trajectory of the character who holds
+    // that rung. The roster holds three of them — 1, 2 and 4 — so those three
+    // are the ladder, and each has to read back exactly what its character was
+    // authored with.
+    for (const persona of Object.values(PERSONAS)) {
+      expect(levelTrajectory(persona.level)).toEqual(persona.trajectory)
+    }
     expect(levelTrajectory(1)).toEqual(L1)
-    expect(levelTrajectory(8)).toEqual(L8)
-    // All eight are authored now (§06). A level's difficulty curve IS the
-    // trajectory of the character who holds that rung.
-    for (const level of [2, 3, 4, 5, 6, 7]) {
-      expect(levelTrajectory(level)).not.toEqual(L1)
+  })
+
+  it('falls an unheld rung back to a neighbour rather than inventing one', () => {
+    // Rungs 3 and 5-8 have nobody standing on them since the roster went to
+    // three. Interpolating would manufacture a difficulty curve no one designed
+    // and no one has run a rep against, so the nearest authored rung is used.
+    // Nothing routes a user here — it exists so a stored level from an older
+    // session, or an interview rung, still resolves to something real.
+    const authored = Object.values(PERSONAS).map((persona) => persona.trajectory)
+    for (const level of [3, 5, 6, 7, 8]) {
+      expect(authored).toContainEqual(levelTrajectory(level))
+    }
+  })
+
+  it('keeps Alex authored and off the ladder', () => {
+    // She is retired, not deleted: her hard ceiling of 45 is what exercises
+    // every clamp in this engine and the tests below still drive her directly.
+    // What must NOT happen is her curve leaking back onto a rung a user can be
+    // routed to, which is what would silently reintroduce an unwinnable level.
+    expect(Object.values(PERSONAS)).not.toContain(alex)
+    for (const level of [1, 2, 3, 4, 5, 6, 7, 8]) {
       expect(levelTrajectory(level)).not.toEqual(L8)
     }
   })
@@ -477,6 +539,10 @@ describe('level config', () => {
       expect(current.gain).toBeLessThanOrEqual(previous.gain)
       expect(current.decay).toBeGreaterThanOrEqual(previous.decay)
       expect(current.decayPerTurn).toBeGreaterThanOrEqual(previous.decayPerTurn)
+      // The cap belongs in this list. It clips every strong turn for most of a
+      // rep, so a rung whose cap sits above the one below it is a rung that is
+      // easier for a good player however the other four dials read.
+      expect(current.maxGainPerTurn).toBeLessThanOrEqual(previous.maxGainPerTurn)
     }
   })
 
@@ -554,21 +620,52 @@ describe('standing still', () => {
 })
 
 /* ------------------------------------------------------------------ *
- * The round-9 retune, asserted end to end
+ * The trajectory, asserted end to end against the three-minute rep
  * ------------------------------------------------------------------ */
 
 describe('the retuned trajectory', () => {
   const her = [agentSaid('Re-reading a Tana French. Third time.')]
 
+  /**
+   * Turns in a rep, at roughly twelve seconds a turn.
+   *
+   * A model, not a measurement — M0's one clean rep recorded 19 user turns in
+   * 160s, but five of those were echo the transcript later disowned. Twelve
+   * seconds for her turn, his turn and the gaps between them puts a
+   * three-minute rep at fifteen. The ladder is checked either side of it in
+   * `separates the rungs` below, so nothing here is fitted to exactly fifteen.
+   */
+  const TURNS_IN_A_REP = 15
+
   /** A scripted rep. `line` is what he says every turn. */
-  function play(trajectory: typeof L1, line: string, turns: number, agentTurns = her) {
-    const engine = new WarmthEngine({ trajectory: { ...trajectory, startJitter: 0 } })
+  /**
+   * A scripted rep. `line` is what he says every turn.
+   *
+   * `personality` is passed through exactly as a live rep passes it, so this
+   * measures the ladder as it actually behaves rather than a neutral version of
+   * it. That matters: the temperament layer weights what each character is
+   * moved by, and a separation check that skipped it would be asserting a
+   * difficulty curve nobody ever plays.
+   */
+  function play(
+    trajectory: typeof L1,
+    line: string,
+    turns: number,
+    agentTurns = her,
+    level = 1,
+    personality?: Personality,
+  ) {
+    const engine = new WarmthEngine({
+      trajectory: { ...trajectory, startJitter: 0 },
+      ...(personality ? { personality } : {}),
+    })
     let at = 0
     for (let i = 0; i < turns; i += 1) {
       at += 12
       engine.applyFast(
         scoreFast(turn(line, at, at + 4), {
-          level: 1, agentTurns, precedingDeadEnds: 0, gapSeconds: null,
+          level, agentTurns, precedingDeadEnds: 0, gapSeconds: null,
+          ...(personality ? { personality } : {}),
         }),
         at,
         line,
@@ -577,17 +674,63 @@ describe('the retuned trajectory', () => {
     return engine
   }
 
+  /** The roster, by rung, so a ladder check uses the real characters. */
+  const RUNG = Object.fromEntries(
+    Object.values(PERSONAS)
+      .filter((persona) => persona.track === 'dating')
+      .map((persona) => [persona.level, persona]),
+  ) as Record<number, (typeof nadia)>
+
+  const rungPersonality = (level: number) => RUNG[level]?.personality
+
   const GOOD = 'What made you pick that French one to read again'
   const FLAT = 'Yeah, a lot of stuff.'
 
   it('gets a good player into the warm bands inside a real rep', () => {
-    // Ten turns is roughly a three-to-four minute rep. Under the old config —
-    // gain 0.6, decayPerTurn 0.5, start 15 — five minutes of this reached 47,
-    // which taught a user doing everything right that nothing they did mattered.
-    const engine = play(nadia.trajectory, GOOD, 10)
-    expect(engine.warmth).toBeGreaterThanOrEqual(55)
-    expect(engine.warmth).toBeLessThanOrEqual(70)
+    // Under the old config — gain 0.6, decayPerTurn 0.5, start 15 — five
+    // minutes of this reached 47, which taught a user doing everything right
+    // that nothing they did mattered.
+    const engine = play(nadia.trajectory, GOOD, TURNS_IN_A_REP)
+    expect(engine.warmth).toBeGreaterThanOrEqual(70)
+    expect(engine.warmth).toBeLessThanOrEqual(80)
     expect(engine.band).toBe('ENGAGED')
+  })
+
+  it('separates the rungs at the 65 line, at any plausible rep length', () => {
+    // THE FORMAT-CHANGE REGRESSION. Three minutes is five more turns than two,
+    // the cap clips every strong turn for most of a rep, and the extra turns
+    // were therefore worth a flat +10 on every rung at once — which moved the
+    // fixed 65 line from just above Level 1 to below Level 3. The dials stayed
+    // monotonic the whole time; what stopped being true is that clearing a
+    // rung meant anything. Re-check this after any change to rep length.
+    // The shipped rungs, and only those. An unheld rung resolves to a
+    // neighbour's curve, so including 3 or 5-8 here would assert against a
+    // duplicate rather than against a character anybody can be matched with.
+    const SHIPPED = Object.values(PERSONAS).map((persona) => persona.level).sort((a, b) => a - b)
+    const armedRungs = (turns: number) =>
+      SHIPPED.filter((level) =>
+        play(levelTrajectory(level), GOOD, turns, her, level, rungPersonality(level))
+          .warmth >= ARM_THRESHOLD)
+
+    // A terse rep, the model rep, and a talkative one. More conversation earns
+    // more ground — that is honest — but never the whole ladder at once.
+    expect(armedRungs(12)).toEqual([1])
+    expect(armedRungs(TURNS_IN_A_REP)).toEqual([1, 2])
+    expect(armedRungs(18)).toEqual([1, 2])
+  })
+
+  it('leaves the top rung hard and not sealed', () => {
+    // Robin is the ladder's ceiling now, and the line between "hard" and
+    // "impossible" is the whole reason she took rung 4 rather than keeping the
+    // rung-7 curve. A merely competent rep never arms her — 18 turns of good
+    // play lands short. Sustained perfect play does, eventually, which is what
+    // makes her a rung rather than a wall. Alex was the wall, on purpose, and
+    // she is not on the roster any more.
+    const robinWarmth = (turns: number) =>
+      play(levelTrajectory(4), GOOD, turns, her, 4, rungPersonality(4)).warmth
+
+    expect(robinWarmth(18)).toBeLessThan(ARM_THRESHOLD)
+    expect(robinWarmth(24)).toBeGreaterThanOrEqual(ARM_THRESHOLD)
   })
 
   it('leaves a flat player cold', () => {
@@ -694,8 +837,222 @@ describe('bandFor', () => {
   })
 
   it('hands a cold character a cold directive', () => {
-    // The consequence that made the bug worth finding.
-    expect(bandDirective(19.5)).toContain('One to four words')
-    expect(bandDirective(19.5)).not.toContain('volunteer')
+    // The consequence that made the bug worth finding. 19.5 is CLOSED, and the
+    // discriminator is the PERMISSION the OPEN directive grants — "You may
+    // volunteer one small thing". CLOSED now names volunteering too, in order
+    // to forbid it, so the bare word no longer separates the two bands.
+    expect(bandDirective(19.5)).toContain('Four to ten words')
+    expect(bandDirective(19.5)).not.toContain('You may volunteer')
+    expect(bandDirective(19.5)).toContain('do not volunteer anything')
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * Three axes, repair, and the moment allowed past the cap
+ * ------------------------------------------------------------------ */
+
+describe('the second and third axes', () => {
+  const L1 = nadia.trajectory
+  const fixed = (t: Trajectory, start: number) => ({ ...t, start, startJitter: 0 })
+  const mkTurn = (text: string, start: number, end: number): TranscriptTurn => ({
+    speaker: 'user', text, t_start: start, t_end: end,
+  })
+
+  const engineAt = (start: number) =>
+    new WarmthEngine({ trajectory: fixed(L1, start), personality: nadia.personality })
+
+  it('opens with comfort ahead of a cold interest', () => {
+    const engine = engineAt(10)
+    expect(engine.comfort).toBeGreaterThan(engine.warmth)
+    expect(engine.liking).toBeLessThan(engine.warmth)
+  })
+
+  it('charges an overreach mostly to comfort, not to interest', () => {
+    // Somebody who misjudges the distance does not make you LESS CURIOUS about
+    // them. They make you less at ease. Splitting those is what lets a rep
+    // recover from one clumsy line without pretending it did not happen.
+    const engine = engineAt(40)
+    const comfortBefore = engine.comfort
+    const warmthBefore = engine.warmth
+    engine.applySlow(
+      { intimacy: 90, intent: 2, quote: 'get down my number', reason: 'boundary' },
+      40, 30, 'maybe you should get down my number', 800, 1,
+    )
+    const comfortDrop = comfortBefore - engine.comfort
+    const warmthDrop = warmthBefore - engine.warmth
+    expect(comfortDrop).toBeGreaterThan(warmthDrop)
+  })
+
+  it('lets a callback move liking further than it moves interest', () => {
+    const engine = engineAt(40)
+    const her = [{ speaker: 'agent' as const, text: 'Re-reading a Tana French.', t_start: 0, t_end: 3 }]
+    const before = { warmth: engine.warmth, liking: engine.liking }
+    const line = 'Which French did you pick this time then'
+    engine.applyFast(
+      scoreFast(mkTurn(line, 10, 14), {
+        level: 1, personality: nadia.personality, agentTurns: her,
+        precedingDeadEnds: 0, gapSeconds: null,
+      }),
+      14, line,
+    )
+    const likingGain = engine.liking - before.liking
+    expect(likingGain).toBeGreaterThan(0)
+    expect(engine.liking).toBeGreaterThan(before.liking)
+  })
+
+  it('reports a posture in every event, so telemetry shows the shape', () => {
+    const engine = engineAt(30)
+    const line = 'Yeah.'
+    engine.applyFast(
+      scoreFast(mkTurn(line, 10, 11), {
+        level: 1, agentTurns: [], precedingDeadEnds: 0, gapSeconds: null,
+      }),
+      11, line,
+    )
+    const event = engine.events[engine.events.length - 1]
+    expect(event?.posture).toBeDefined()
+    expect(typeof event?.comfortAfter).toBe('number')
+    expect(typeof event?.likingAfter).toBe('number')
+  })
+
+  it('never lets a session ceiling cap how at ease she can be', () => {
+    // Alex is capped at 45 interest for the whole rep and can still be
+    // perfectly comfortable. That is exactly what level 8 should feel like:
+    // pleasant, relaxed, and going nowhere.
+    const engine = new WarmthEngine({
+      trajectory: { ...alex.trajectory, startJitter: 0 },
+      personality: alex.personality,
+    })
+    expect(engine.comfort).toBeGreaterThan(alex.trajectory.hardCeiling - 10)
+  })
+})
+
+describe('the repair window', () => {
+  const fixed = (t: Trajectory, start: number) => ({ ...t, start, startJitter: 0 })
+  const mkTurn = (text: string, start: number, end: number): TranscriptTurn => ({
+    speaker: 'user', text, t_start: start, t_end: end,
+  })
+  const GOOD = 'What made you pick that one to read again'
+
+  const scored = (line: string) =>
+    scoreFast(mkTurn(line, 10, 14), {
+      level: 1, agentTurns: [], precedingDeadEnds: 0, gapSeconds: null,
+    })
+
+  it('is shut until she actually cools', () => {
+    const engine = new WarmthEngine({ trajectory: fixed(nadia.trajectory, 40) })
+    expect(engine.repairOpen).toBe(false)
+    engine.applyFast(scored(GOOD), 14, GOOD)
+    expect(engine.repairOpen).toBe(false)
+  })
+
+  it('opens on a real fall and pays a recovering turn more', () => {
+    // A misstep handled well leaves you better off than never having missed.
+    // It was worth nothing before this: a bad turn cost its points and the
+    // conversation carried on as though it had not happened, which teaches
+    // avoidance rather than recovery.
+    const repairing = new WarmthEngine({ trajectory: fixed(nadia.trajectory, 40) })
+    repairing.applySlow(
+      { intimacy: 95, intent: 0, quote: 'q', reason: 'boundary' },
+      40, 20, 'clumsy', 500, 1,
+    )
+    expect(repairing.repairOpen).toBe(true)
+    const beforeRepair = repairing.warmth
+    repairing.applyFast(scored(GOOD), 30, GOOD)
+    const repaired = repairing.warmth - beforeRepair
+
+    const plain = new WarmthEngine({ trajectory: fixed(nadia.trajectory, repairing.warmth) })
+    const beforePlain = plain.warmth
+    plain.applyFast(scored(GOOD), 30, GOOD)
+    const ordinary = plain.warmth - beforePlain
+
+    expect(repaired).toBeGreaterThan(ordinary)
+    expect(repairing.events[repairing.events.length - 1]?.repaired).toBe(true)
+  })
+
+  it('closes once he has used it, and does not stay open forever', () => {
+    const engine = new WarmthEngine({ trajectory: fixed(nadia.trajectory, 40) })
+    engine.applySlow(
+      { intimacy: 95, intent: 0, quote: 'q', reason: 'boundary' },
+      40, 20, 'clumsy', 500, 1,
+    )
+    engine.applyFast(scored(GOOD), 30, GOOD)
+    expect(engine.repairOpen).toBe(false)
+  })
+
+  it('is not opened by ordinary per-turn decay', () => {
+    // Tedium is not a misstep and must not arm a bonus.
+    const engine = new WarmthEngine({ trajectory: fixed(nadia.trajectory, 40) })
+    const flat = 'Yeah, a lot of stuff.'
+    engine.applyFast(scored(flat), 14, flat)
+    expect(engine.repairOpen).toBe(false)
+  })
+})
+
+describe('breakthrough turns', () => {
+  const fixed = (t: Trajectory, start: number) => ({ ...t, start, startJitter: 0 })
+
+  it('lets the best moment in a rep exceed the per-turn cap', () => {
+    // Real liking is not a curve, it is an instant. Capping the one turn that
+    // should feel like a change is what made the meter read as arithmetic.
+    const engine = new WarmthEngine({ trajectory: fixed(nadia.trajectory, 40) })
+    const before = engine.warmth
+    engine.applySlow(
+      { intimacy: 40, intent: 10, quote: 'that landed', reason: 'genuinely funny' },
+      40, 30, 'a good line', 700, 1,
+    )
+    expect(engine.warmth - before).toBeGreaterThan(nadia.trajectory.maxGainPerTurn)
+    expect(engine.events[engine.events.length - 1]?.breakthrough).toBe(true)
+  })
+
+  it('is rationed, so it stays a moment rather than a slot machine', () => {
+    const engine = new WarmthEngine({ trajectory: fixed(nadia.trajectory, 40) })
+    for (let i = 1; i <= 4; i += 1) {
+      // Intimacy kept level with earned warmth: this is about the cap, not
+      // about overreach, and an overreach verdict replaces the model's delta.
+      engine.applySlow(
+        { intimacy: 40, intent: 10, quote: 'q', reason: 'landed' },
+        40, i * 10, 'good', 700, i,
+      )
+    }
+    const used = engine.events.filter((event) => event.breakthrough).length
+    expect(used).toBe(2)
+    expect(engine.telemetry(60).breakthroughs).toBe(2)
+  })
+
+  it('does not fire on an ordinary good judgement', () => {
+    const engine = new WarmthEngine({ trajectory: fixed(nadia.trajectory, 40) })
+    engine.applySlow(
+      { intimacy: 40, intent: 5, quote: 'q', reason: 'fine' },
+      40, 30, 'ok', 700, 1,
+    )
+    expect(engine.events[engine.events.length - 1]?.breakthrough).toBe(false)
+  })
+})
+
+describe('the anti-farming taper', () => {
+  it('pays full price for form early and less for it later', () => {
+    expect(fastAuthority(1)).toBe(1)
+    expect(fastAuthority(FAST_AUTHORITY_SPAN)).toBeCloseTo(FAST_AUTHORITY_FLOOR, 5)
+    expect(fastAuthority(8)).toBeLessThan(fastAuthority(2))
+  })
+
+  it('never falls below its floor, however long the rep runs', () => {
+    expect(fastAuthority(200)).toBeCloseTo(FAST_AUTHORITY_FLOOR, 5)
+  })
+
+  it('does not make a late dead end cheaper than an early one', () => {
+    // Tapering penalties would make the last minute of a bad rep free.
+    const early = new WarmthEngine({ trajectory: fixed(L1, 40) })
+    const late = new WarmthEngine({ trajectory: fixed(L1, 40) })
+    const flat = 'Yeah.'
+    const score = () => scoreFast(turn(flat, 0, 1), {
+      level: 1, agentTurns: [], precedingDeadEnds: 0, gapSeconds: null,
+    })
+    early.applyFast(score(), 1, flat)
+    for (let i = 0; i < 14; i += 1) late.applyFast(score(), i, flat)
+    const earlyCost = early.events[0]?.rawDelta ?? 0
+    const lateCost = late.events[late.events.length - 1]?.rawDelta ?? 0
+    expect(lateCost).toBeLessThanOrEqual(earlyCost)
   })
 })

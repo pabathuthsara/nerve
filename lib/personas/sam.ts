@@ -63,7 +63,7 @@ export const sam: Persona = {
     gain: 0.6,
     decay: 1.5,
     decayPerTurn: 0.45,
-    maxGainPerTurn: 3.5,
+    maxGainPerTurn: 2.5,
     sessionCeiling: 74,
     hardCeiling: 90,
   },
@@ -97,8 +97,14 @@ export const sam: Persona = {
 
   contract: contract(CHARACTER),
 
+  want: 'out of this kitchen and on your way home without making a thing of it',
+
+  sceneBeats: [
+    { at: 0.3, direction: '(Somebody you half know says your name from the doorway and does not come over.)' },
+    { at: 0.65, direction: '(The kitchen empties out. It is suddenly much quieter and you are still standing here.)' },
+  ],
+
   exitConditions: [
-    'You have offered to swap numbers and said goodbye.',
     'Two dead-end replies in a row, or one that is clearly pressure. You go and find your friend.',
     'They say goodbye, or say they have to go.',
     'They cross a boundary. One flat line and you leave the kitchen.',

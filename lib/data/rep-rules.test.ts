@@ -12,6 +12,8 @@ import { describe, expect, it } from 'vitest'
 import {
   ARM_THRESHOLD,
   CLOSING_GRACE_MS,
+  dueSceneBeat,
+  LAST_BEAT_FRACTION,
   CLOSING_IDLE_MS,
   DATING_DURATION_MS,
   givesNumber,
@@ -25,7 +27,10 @@ import {
   shouldArm,
   shouldWrapUp,
   WRAP_UP_MS,
+  resultReading,
+  INTERVIEW_THRESHOLD,
 } from './rep-rules'
+import { PERSONAS } from '@/lib/personas'
 
 describe('the three-minute rule', () => {
   it('gives a dating rep exactly three minutes', () => {
@@ -147,5 +152,102 @@ describe('the closing grace', () => {
   it('is long enough to land a goodbye and short enough not to be dead air', () => {
     expect(CLOSING_IDLE_MS).toBeLessThan(CLOSING_GRACE_MS)
     expect(CLOSING_GRACE_MS).toBeLessThanOrEqual(20_000)
+  })
+})
+
+describe('which reading explains the outcome', () => {
+  it('shows the wind-down number, not where the meter finished', () => {
+    // THE REGRESSION, with the numbers off a real Nadia rep. Warmth was 63.68
+    // at the wind-down — under the bar, so she was told to leave — then
+    // climbed to 71.25 in the last thirty seconds because the decision may not
+    // change once it is made. The screen showed 71 / 65 under the words "She
+    // left", captioned "You were close": three statements contradicting each
+    // other, and a comparison nothing had ever made.
+    const reading = resultReading({ decisionWarmth: 64, finalWarmth: 71, interview: false, won: false })
+    expect(reading.warmth).toBe(64)
+    expect(reading.threshold).toBe(ARM_THRESHOLD)
+    expect(reading.lateSurge).toBe(true)
+    expect(reading.fallback).toBe(false)
+  })
+
+  it('does not call it a late surge when she simply earned it', () => {
+    const won = resultReading({ decisionWarmth: 70, finalWarmth: 74, interview: false, won: true })
+    expect(won.lateSurge).toBe(false)
+    expect(won.warmth).toBe(70)
+  })
+
+  it('does not call it a late surge when the meter never got there at all', () => {
+    const cold = resultReading({ decisionWarmth: 40, finalWarmth: 44, interview: false, won: false })
+    expect(cold.lateSurge).toBe(false)
+  })
+
+  it('falls back to the final reading for a rep recorded before this was kept', () => {
+    const old = resultReading({ decisionWarmth: null, finalWarmth: 71, interview: false, won: false })
+    expect(old.warmth).toBe(71)
+    expect(old.fallback).toBe(true)
+    // Finishing above the bar and not getting it is proof the decision was
+    // taken on a lower number, so an older rep still reads correctly.
+    expect(old.lateSurge).toBe(true)
+
+    // A rep that finished below the bar tells us nothing extra, and the
+    // reading does not invent anything.
+    const belowBar = resultReading({ decisionWarmth: null, finalWarmth: 50, interview: false, won: false })
+    expect(belowBar.lateSurge).toBe(false)
+    // Nor does one she actually gave it on.
+    const givenIt = resultReading({ decisionWarmth: null, finalWarmth: 80, interview: false, won: true })
+    expect(givenIt.lateSurge).toBe(false)
+  })
+
+  it('uses the interview threshold on the interview track', () => {
+    expect(resultReading({ decisionWarmth: 60, finalWarmth: 60, interview: true, won: false }).threshold)
+      .toBe(INTERVIEW_THRESHOLD)
+  })
+})
+
+describe('scene beats', () => {
+  const beats = [
+    { at: 0.25, direction: '(Your brother replies. It is worse than the last one.)' },
+    { at: 0.55, direction: '(The board changes. Your train is delayed.)' },
+  ]
+
+  it('waits until its moment', () => {
+    expect(dueSceneBeat({ beats, elapsedFraction: 0.1, fired: 0 })).toBeNull()
+    expect(dueSceneBeat({ beats, elapsedFraction: 0.25, fired: 0 })).toBe(beats[0])
+  })
+
+  it('fires them in authored order, once each', () => {
+    // Well past both, having already fired the first: the second is next, and
+    // the first does not come round again.
+    expect(dueSceneBeat({ beats, elapsedFraction: 0.9, fired: 1 })).toBe(beats[1])
+    expect(dueSceneBeat({ beats, elapsedFraction: 0.9, fired: 2 })).toBeNull()
+  })
+
+  it('does nothing for a character whose scene has no interruptions', () => {
+    expect(dueSceneBeat({ beats: undefined, elapsedFraction: 0.5, fired: 0 })).toBeNull()
+    expect(dueSceneBeat({ beats: [], elapsedFraction: 0.5, fired: 0 })).toBeNull()
+  })
+
+  it('refuses to fire into the wind-down, however it was authored', () => {
+    // The last thirty seconds belong to the closing direction. Two different
+    // instructions arriving at once is an argument this codebase already had.
+    const late = [{ at: 0.95, direction: '(Too late to matter.)' }]
+    expect(dueSceneBeat({ beats: late, elapsedFraction: 1, fired: 0 })).toBeNull()
+  })
+
+  it('keeps every authored beat clear of the wind-down', () => {
+    for (const persona of Object.values(PERSONAS)) {
+      for (const beat of persona.sceneBeats ?? []) {
+        expect(beat.at, `${persona.name}`).toBeLessThanOrEqual(LAST_BEAT_FRACTION)
+        expect(beat.at, `${persona.name}`).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('gives every character on the roster something to want', () => {
+    // The personhood field. Ungated, and a character without one is a search
+    // box with a voice.
+    for (const persona of Object.values(PERSONAS)) {
+      expect(persona.want.trim().length, persona.name).toBeGreaterThan(0)
+    }
   })
 })

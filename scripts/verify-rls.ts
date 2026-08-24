@@ -264,6 +264,46 @@ async function main(): Promise<void> {
       .insert({ user_id: aId, week_start: today, copy: 'forged' })
     check(!!reviewForgery, 'a user cannot write their own weekly review')
 
+    // The strongest case for a read-only table in the whole product: turning
+    // your own difficulty down is exactly the thing that would make every
+    // score after it meaningless (§08, §14).
+    const { error: difficultyForgery } = await a
+      .from('difficulty_offsets')
+      .insert({ user_id: aId, level: 8, start_bonus: 6, gain_bonus: 0.25 })
+    check(!!difficultyForgery, 'a user cannot make a character easier for themselves')
+
+    const { data: ownOffsets } = await a.from('difficulty_offsets').select('level').eq('user_id', aId)
+    check(Array.isArray(ownOffsets), 'but they can read what their own difficulty is set to')
+
+    const { data: bOffsets } = await b.from('difficulty_offsets').select('level').eq('user_id', aId)
+    check((bOffsets?.length ?? 0) === 0, "and B cannot read A's")
+
+    // Share cards (§18). The token is the capability and the public page
+    // resolves it with the service role, which is exactly why this table has
+    // one owner-read policy and no anonymous policy at all.
+    const token = 'a'.repeat(32)
+    const { error: cardForgery } = await a
+      .from('share_cards')
+      .insert({ user_id: aId, token, kind: 'rejections', payload: {} })
+    check(!!cardForgery, 'a user cannot mint their own share card')
+
+    const { data: adminCard } = await admin
+      .from('share_cards')
+      .insert({ user_id: aId, token, kind: 'rejections', payload: { headline: '25' } })
+      .select('token')
+      .single()
+    check(!!adminCard, 'the service role can, because it assembles the payload')
+
+    const { data: aCards } = await a.from('share_cards').select('token')
+    check((aCards ?? []).length === 1, 'A can list what she has published, in order to revoke it')
+    const { data: bCards } = await b.from('share_cards').select('token')
+    check((bCards ?? []).length === 0, "B cannot enumerate A's cards")
+
+    const { error: badToken } = await admin
+      .from('share_cards')
+      .insert({ user_id: aId, token: 'not-32-hex', kind: 'streak', payload: {} })
+    check(!!badToken, 'a token that is not 32 hex characters is refused by the column itself')
+
     console.log('\nsafety (§16)')
     const { error: reportError } = await a
       .from('safety_events')

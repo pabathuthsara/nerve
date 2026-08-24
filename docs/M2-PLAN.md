@@ -1,11 +1,21 @@
 # M2 — implementation plan
 
+> **Superseded as "what to do next" by [`M3-PLAN.md`](M3-PLAN.md) on 24 August.**
+> All nine items below shipped. What this doc could not say — because it was
+> written before the gates were audited — is that building them does not close
+> M2: §17 gates the milestone on twenty hand-scored transcripts, and M0 never
+> passed its own gate either. Both live in `M3-PLAN.md` now. This page stays as
+> the record of what M2 was and what actually landed.
+
 What is left of milestone two (§17), plus the four things decided in
 conversation on 23 August: the rep format (three minutes, and the number
 arriving at the end from her), character memory with a reset, the week-four
 baseline re-test, and shareable cards.
 
-**Roughly 13.5 working days**, of which items 0 and 1 are done — **10 left**.
+**All nine items are built.** What is left of M2 is not code: twenty
+transcripts have to be read and hand-scored before the calibration gate (§17)
+can go green, and ten of them are already collected and waiting.
+
 The order below is dependency order, not size order. Every item ends in
 something you can check.
 
@@ -106,8 +116,9 @@ the entire point of Level 8 (§06). No exception, no pity path.
   the `numberStage` machine and its fallback timer, about thirty lines lighter.
 - `lib/data/progression.ts` — `wonFromRep` reads the pair off `peak_warmth`
   and `final_warmth`; `app/rep/actions.ts` passes both.
-- The seven personas that carry "You have offered to swap numbers and said
-  goodbye" keep it; it is now only ever reachable in the last thirty seconds.
+- ~~The seven personas that carry "You have offered to swap numbers and said
+  goodbye" keep it; it is now only ever reachable in the last thirty seconds.~~
+  **Wrong, and corrected 23 Aug — see the fix note at the end of this item.**
 - Copy: the brief `RuleBlock` ("Time 3:00"), the how-it-works sheet in both
   places it lives, the wrap cue (now reading `WRAP_UP_MS` rather than a
   hardcoded 30s, and gone once the clock reads zero), `PRODUCT.md`,
@@ -128,6 +139,54 @@ against a $24 price **at full usage**, which almost nobody reaches. §04 already
 says to re-measure before launch; this is the change that makes it necessary
 rather than prudent.
 
+**Two defects found in a live rep, 23 Aug, and fixed.** A real Priya rep: the
+user asked for her number at 2:17, she said *"Sure, we can swap numbers if you
+want"*, and the screen said **She left**. Both halves of that were bugs.
+
+*The exit condition was reachable at any moment.* Seven personas carried "You
+have offered to swap numbers and said goodbye", and the note above claimed it
+was "only ever reachable in the last thirty seconds". It was reachable whenever
+the **user** asked, because it is a condition on HER behaviour and her behaviour
+is free-form. She answered a direct question politely at 2:17 — thirteen seconds
+before the wind-down would have fired, so she had never been told what to do
+about numbers — that tripped her own exit, and the rep ended 38 seconds early
+with the meter at 60.16. The last thirty seconds, the only window in which the
+number can legitimately be given, never happened.
+
+The condition is now gone from all seven; the rep ends on the timer, which is
+what "the rep runs its full length either way" meant. Removing it stops the
+scene ending, so a second rule stops her agreeing in the first place: a
+`# If they ask for your number` block compiled into every dating contract by
+`compileInstructions`. It lives there rather than in eight persona files
+because it is the rep format and not a character trait — which also means
+Nadia's and Alex's hand-tuned prose did not have to be reopened for it. It
+yields explicitly to the bracketed direction, so it cannot argue with the
+wind-down.
+
+*The grade was inventing wins.* `wonFromRep` opened with
+`if (outcome === 'receptive') return true`, before the meter was consulted at
+all. So the rep above — shown to the user as "She left", correctly — was
+rewritten as a **win** the moment the grade landed, because the conversation had
+gone pleasantly. The stored record contradicted the screen, and the invented win
+counted toward the next unlock. `saveScore`'s guard only protected the opposite
+direction (`won === true ? true : recompute`), so a grader could hand out a win
+but not take one away.
+
+`wonFromRep` no longer accepts an outcome at all — the bug is now
+unrepresentable — and `saveScore` falls back to it only when there is no stored
+answer (`session?.won ?? …`). A third instance of the same class was found while
+fixing it: `fetchPersonas` selected `outcome` and never `won`, so the roster's
+**locked state** was computed from the grade alone. That is the one place this
+gated content.
+
+Four regression tests, each verified to fail against the pre-fix code:
+two in `lib/data/progression.test.ts` (new) and two in the conformance suite.
+One row on the real account was already wrong; `npm run db:repair-wins` corrected
+it and is idempotent. It deliberately only undoes the unambiguous half — a peak
+below `ARM_THRESHOLD` can never have been armed, whereas a final below
+`KEEP_THRESHOLD` may be a legitimate win whose closing line drifted, because
+`won` is decided from the warmth at the wind-down and no column stores that.
+
 *Done when:* a rep runs the full three minutes whether or not it is going well;
 arming produces no visible or audible change; a rep armed at 1:40 and finishing
 at 58 still gets the number; one finishing at 51 does not; her closing line is
@@ -138,8 +197,52 @@ never cut off; and Alex still cannot arm.
 arming path in `lib/data/rep.ts` is silent and the ending is one decision plus a
 bounded closing phase; `wonFromRep` reads the pair off `peak_warmth` and
 `final_warmth`; copy updated on the brief, the how-it-works sheet and the wrap
-cue. **Still to do by hand:** re-tune the ladder for the longer rep, and
-re-measure cost per rep against §04.
+cue.
+
+**The ladder retune — done.** The two knock-ons above were both worked and both
+are closed.
+
+The dial that moved was not one of the four the note predicted. `maxGainPerTurn`
+clips every strong turn below warmth ~48 at Level 1, so most of a rep is
+cap-limited and the total a good run can bank is `cap × turns`: five more turns
+was worth a flat **+10.5 on every rung at once**. The ladder stayed monotonic in
+`start`, `gain`, `decay` and `decayPerTurn` throughout — what broke is that the
+fixed 65 line moved from just above Level 1 to below Level 3, so a strong player
+armed **three rungs where they used to arm one**. The dials were still ordered;
+clearing a rung had stopped meaning anything.
+
+The cap is a function of rep length, not of who she is, so only the cap moved —
+4 / 4 / 4 / 4 / 3.5 / 3.5 / 3 / 3 became **3.5 / 3.2 / 2.9 / 2.7 / 2.6 / 2.5 /
+2.4 / 2.4**. It is the right lever twice over: it binds only on strong play, so
+a decent, an average and a flat player are all numerically untouched by the
+change. A strong player now arms Nadia and Priya and nothing above them — one
+more rung than the two-minute format, which is honest, since three minutes of
+good conversation should get further than two.
+
+Asserted in `lib/warmth/engine.test.ts`: `maxGainPerTurn` joined the monotonic
+ladder check, and `separates the rungs at the 65 line` pins the armed set at 12,
+15 and 18 turns so the ladder is not fitted to one turn count. Personas
+reseeded.
+
+**Cost — measured, and the fear was the wrong way round.** §18 assumed
+$0.05–0.08/min and $0.21 a rep. M0 priced four real `gpt-realtime-mini` runs at
+**$0.0192–$0.0293/min**, so a three-minute rep is **$0.058–0.088** — a third of
+the budgeted figure. Context growth is not compounding either: 305.8s against
+117.8s is +2.8% per minute, because removing blind scheduled reinforcement
+turned the within-session cost curve from +46.5% to −7.4% (M0, fourth finding).
+The note above worried that a Pro user at three reps a day would cost $18–32 a
+month against $24; at the measured rate it is **$7.91**.
+
+`npm run cost:model` is the arithmetic, sourced line by line to `docs/M0.md`,
+and `lib/voice/rates.ts` no longer claims to be an unmeasured estimate — its
+$0.065 is now documented as a deliberately conservative *ceiling* for the one
+case that uses it, a rep whose provider reported no usage at all. **Still owed:**
+the live ten-rep run M0.md specifies, from the Colombo home connection at 7–9pm.
+That is a measurement nobody can do at a desk, and this projection exists to
+give it something to be checked against. One real finding fell out of it and is
+recorded in `LAUNCH-GAP.md` D2: at the app's own pricing, Elite at $39 for six
+reps a day is 59% margin at full usage — the exact number §14 rejected 200
+minutes for.
 
 ---
 
@@ -200,7 +303,7 @@ verified by types, lint, build and the harness rather than by eye.
 
 ---
 
-### 2 · Predicted versus actual, and the counters · 1 day
+### 2 · Predicted versus actual, and the counters · 1 day · **shipped 23 Aug**
 
 The chart §09 calls the most screenshot-able thing in the app, and the one that
 carries the therapeutic claim: predicted anxiety against actual discomfort,
@@ -219,9 +322,63 @@ your own data prove it beats any amount of encouragement.
 *Done when:* the chart renders from real logs, the counter matches a hand
 count, and the tenth logged ask fires the milestone sheet exactly once.
 
+**Shipped.** `lib/field/anxiety.ts` builds the series and writes the verdict
+line; `lib/field/milestones.ts` holds the four thresholds and their hand-written
+copy; 13 tests over both. The chart is `components/field/anxiety-chart.tsx` on
+`/field` beside the log, and the same `anxietySeries` feeds the summary figure on
+`/profile`, so the line and the number cannot disagree. Rejections collected was
+already the headline counter but the card read as though its label belonged to
+asks made — the big number now sits directly under its own label with asks made
+below the rule, and a "15 more to 25" line under it.
+
+**Announce-once** reuses `unlocks` (`m4_milestone_unlocks` extends the `kind`
+check) rather than `profiles.ui_flags`. `unlocks` already answers exactly the
+question a milestone asks — *when did we first tell them* — and it is
+service-role write, so a user cannot re-fire or suppress their own. `ui_flags`
+is still owed for item 3's first-time beat. The moment fires from the row and not
+from the response, so closing the tab on the tenth ask means it lands next time
+instead of being lost.
+
+Two things the chart does that are worth not undoing. It **never flatters**: when
+actual comes in above predicted the fill turns amber and the copy says to ease
+back a tier, because §09's own warning is that going too hard too early
+sensitises rather than habituates, and a chart that only curves the flattering
+way is one nobody should believe. And the axes are drawn before there is anything
+to plot (§15), counting down honestly — "Three more asks and this becomes a
+line".
+
+`npm run db:field` grew from 16 checks to 27, covering the hand count (ten
+rejections out of twelve rows, eleven asks), the series, and the milestone firing
+once — including that logging it twice leaves one row and that the eleventh
+rejection fires nothing.
+
+**Verified by eye**, which item 1 could not be: the chart, both empty and with
+data, the counter card, the profile figure, and the milestone sheet firing on a
+real tenth ask and not returning after a reload. **Found and fixed in the
+browser:** `anxietySeries` trusted the caller's order, and `fetchFieldLog` sorts
+on `logged_at`, which ties for rows written in the same instant — the chart came
+back newest-first and read as a fear that was *climbing*. It now sorts on the day
+itself, with a test for it.
+
+**Still owed:** the milestone is a sheet, not yet a share card — that is item 8,
+which is where §09's "each firing a share card" lands.
+
 ---
 
-### 3 · Character memory, with a reset · 1 day
+### 3 · Character memory, with a reset · 1 day · **shipped 23 Aug** · **reached the model 24 Aug**
+
+> **It did not work until 24 Aug, and everything except one hop was correct.**
+> The grade produced the line, the filter refused anything about him, the write
+> landed under the user's own context, the brief screen showed it, and "start
+> fresh" deleted it. The live page then read it back, attached it to the persona
+> handed to the browser — and the browser sent the token route `persona.slug`
+> and nothing else, so the contract was recompiled from the bare roster record.
+> `compileInstructions`' "You have met before" block was never once reached in
+> production. The read now lives in `app/api/voice/token/route.ts`, derived from
+> the authenticated user rather than travelling through the client, which is
+> also the only version that keeps the "a client that can post its own
+> instructions can post its own character" rule intact. Both adapters compile
+> from a persona id, so this was the same gap on both arms.
 
 **Generation.** No extra model call: add `memoryLine` to the grade response
 schema in `lib/grade/prompt.ts`. Grading already runs once per rep on the full
@@ -259,9 +416,74 @@ column, not one per beat).
 cold, and the filter's unit tests reject every example in the "rejected" list
 above.
 
+**Shipped.** `memoryLine` rides on the grade response — no extra model call, so
+one place produces the line and one place can audit it. `lib/grade/memory.ts`
+is that audit: 15 tests, and it rejects both of the "rejected" examples above
+plus the categories they belong to.
+
+**The filter is biased hard towards dropping**, and that is the design rather
+than a limitation. A false positive costs one memory, which is what happens
+between strangers most of the time anyway. A false negative puts affection in a
+character's mouth and moves the product into the category §14 says every
+merchant of record declines. Three reject lists, in order: **second person** in
+any form (the bluntest rule and the one that catches both named examples —
+`\b` sits between the `u` and the apostrophe, so it catches "you'd" without
+listing it), **affection and anticipation** (which hides in "hoping", "next
+time", "again soon" far more often than in obvious words), and **performance
+judgement** — §07 keeps outcome out of the score, and this keeps the grade out
+of her mouth.
+
+**One deviation from the rule as written above.** It says "fourteen words or
+fewer, one sentence"; the good example directly under it is two sentences.
+`MAX_MEMORY_SENTENCES` is 2, because the example is the more specific statement
+of intent and the word cap already does the real work. Noted in the code.
+
+`persona_memory` is written in the **user's own context**, not the service role:
+unlike plan, quota and the ladder position, nobody would pay to change what
+Nadia remembers, the table already grants its owner all four verbs, and the
+reset needs the delete. **A dropped line leaves the previous one standing** —
+one forgettable rep should not erase the blue book.
+
+Injection is one line on the live page. Both compilers read `memorySummary`
+through the shared `compileInstructions`, so the OpenAI arm — the live one —
+and the pipeline arm cannot disagree; asserted in the conformance suite, along
+with the case that matters more: a character with **no** memory is never told
+"you have met before".
+
+Reset in all three places the plan asks for — the brief line, the persona sheet,
+Settings → Data. The first two are one tap and optimistic; Settings is
+confirmed, because clearing one line is a small correction and clearing all of
+them is not recoverable by running a single rep. Every piece of copy states
+that it clears the line only.
+
+The first-time beat fires off `profiles.ui_flags` (`m4_ui_flags`), stamped with
+a timestamp rather than `true` so it answers "when" later, and stamped when the
+sheet is dismissed so an explainer that flashed past during a navigation is not
+burned. `markUiFlag` is idempotent, so a failed stamp costs one repeat.
+
+Whether it fires is **derived from the fetch, never seeded into state** — worth
+naming because the first version got it wrong. `useState(() => memory?.firstEver)`
+latches on mount, and this component mounts before its own fetch resolves, so
+the beat would have been dead. It passed in the browser only because that fetch
+won a race it is not guaranteed to win, which is exactly the kind of bug a
+screenshot cannot be trusted to catch.
+
+`npm run db:rep` grew 9 checks covering the write, the read the live page makes,
+replacement rather than accumulation, the reset, and — the one worth having —
+that forgetting takes the line and leaves the rep, the score and the ladder
+alone, which is exactly what the copy beside the control promises.
+
+**Verified by eye:** the line and the beat on the brief, the beat not returning
+after a reload, Start fresh clearing the row, the persona sheet, and Settings →
+Data. **Owed by hand:** nobody has yet seen a memory line the *model* wrote —
+every line tested was hand-supplied, because generating one costs a real rep
+against a live microphone. The filter is what makes that safe to defer, but the
+prompt's hit rate is unmeasured, and it is worth reading the first few that
+land.
+
 ---
 
-### 4 · Unlocks: the rule, the write, the moment · 1 day
+### 4 · Unlocks: the rule, the write, the moment · 1 day · **shipped 23 Aug**
 
 Three faults in one place. The gate is wrong, nothing writes `unlocks`, and the
 celebration is wired to a `useState(false)` that nothing sets.
@@ -278,9 +500,44 @@ celebration is wired to a `useState(false)` that nothing sets.
 *Done when:* two 70+ reps at level 1 open level 2 and write exactly one row, a
 third does not write a second, and the sheet never appears twice.
 
+**Shipped.** All three faults were real and all three are closed.
+
+*The rule.* `UNLOCK_RULES` counts qualifying SCORES rather than wins, at
+`UNLOCK_SCORE = 70` and `UNLOCK_REPS = 2` — uniformly two, per §08, where tier
+4 used to want three. `qualifyingByLevel` is shared by `syncLevel` and
+`fetchPersonas` so the stored ladder position and the roster's locked state are
+computed by one piece of arithmetic; they read different tables under different
+credentials, and two implementations of one rule is exactly how they come to
+disagree. **The shape of `unlockedLevels` did not change, only its meaning** —
+typecheck stayed green through the rule change, which is why both callers were
+rewritten rather than trusted.
+
+This retires the second half of the outcome-scoring bug found the same day: the
+gate was reading `sessions.won`, which the grader could invent outright, so it
+was scoring outcome twice over. `LAUNCH-GAP` D8 and D8a are both closed.
+
+*The write.* `lib/db/milestones.ts` became `lib/db/unlocks.ts` and generalised —
+one `recordUnlocks` / `announceUnlock` pair now serves levels, field tiers and
+rejection milestones, because "fires exactly once, ever" is the part that is
+easy to get subtly wrong and one implementation of it is enough. Roster tiers 1
+and 2 are never recorded: telling somebody they have unlocked what they were
+given is worse than saying nothing.
+
+*The moment.* The scorecard reads the oldest unannounced unlock and fires
+`LevelUnlockedSheet`, stamping `announced_at` on dismissal. The sheet's copy was
+hardcoded to "Jules and Samara" for every level including the ones they are not
+on; it is now hand-written per tier and handles field tiers as well as roster
+ones.
+
+**One thing worth knowing:** a fresh account reaches engine level 4 the moment
+its first rep is graded, because UI tiers 1 and 2 are free — so §09's Tier 2
+field challenges open on rep one and the sheet fires for them. That is correct
+per §09 and slightly odd as product; `db:rep` asserts it deliberately rather
+than by accident.
+
 ---
 
-### 5 · Adaptive difficulty, silent · 1.5 days
+### 5 · Adaptive difficulty, silent · 1.5 days · **shipped 23 Aug**
 
 Two strong reps nudge the dials up within a level; two weak ones ease them
 back. **The downward adjustment renders nothing** — no toast, no sheet, no
@@ -303,9 +560,34 @@ who is struggling that you made it easier is the fastest way to lose them.
 clamps, and — the important one — that the downward path emits no event of any
 kind.
 
+**Shipped.** `difficulty_offsets` is read-only to its owner and service-role
+write — the strongest case for that rule in the product, since turning your own
+difficulty down is precisely what would make every score after it meaningless.
+The clamps are enforced by CHECK constraints as well as in code: a bug writing
+-40 to `start_bonus` would turn Level 6 into Level 2 permanently *and silently*,
+and silence is exactly what §12 requires of the downward path.
+
+**The sign is the thing that was easy to get wrong, and I got it wrong first.**
+"Bump" means bump the DIFFICULTY up, which is a *lower* start and gain — a
+harder character opens colder and warms slower. The first version added on a
+bump, which would have quietly rewarded struggling and punished improving, and
+because the downward path is silent nobody would ever have been told. It is
+named in the code now and asserted in both directions.
+
+*The silence* is structural rather than requested. `nextDifficulty` returns
+`announce`, and it is false for every ease by construction — the downward path
+is never handed anything to display, so a caller cannot leak it by reading the
+wrong field. A test walks the offset all the way to its clamp and checks
+`announce` at every step.
+
+Applied where the live page builds the config, which is the seam the engine's
+trajectory getter exists for — no engine change. Ceilings are deliberately
+untouched: an offset that could lift `hardCeiling` would hand Alex to anybody
+with two good nights, which is the exact lesson Level 8 refuses to teach.
+
 ---
 
-### 6 · The calibration harness · 2 days · **this is the M2 gate**
+### 6 · The calibration harness · 2 days · **built 23 Aug — the gate is open, the scoring is owed**
 
 §17 does not let M2 close without it, and §19 lists scoring drift as a high
 risk: models update, scores rot silently, and progression stops meaning
@@ -324,9 +606,31 @@ anything.
 *Done when:* the suite is green across all twenty, and deliberately corrupting
 one fixture's expected score turns it red.
 
+**Built, and honest about what is left.** The runner, the drift check, the
+fixture structure and the collector all exist; `npm run grade:calibrate` drives
+the **deployed** `/api/grade` over HTTP with `INTERNAL_API_SECRET`, exactly as
+the warmth harness drives the live scorer, so it measures the route rather than
+a re-implementation of it.
+
+**It refuses to report success it has not earned.** Empty fixtures fail. Fewer
+than twenty hand-scored fail. `MAX_DRIFT` is 5 on every sub-score *and* on the
+composite — the composite is 60/40 and can drift while all six hold, and missing
+it would let the number the user actually sees rot unobserved.
+
+`npm run grade:collect` has already pulled **ten real transcripts** from reps run
+under the three-minute format, across four characters. They live in
+`transcripts.ts`, generated and never hand-edited; the expectations live in
+`fixtures.ts` keyed by id, so re-collecting can never clobber scoring work.
+
+**Owed, and not code:** read the ten, hand-score all six sub-scores and the
+composite on each, run ten more reps and collect those. §07's own acceptance
+criterion — that corrupting a fixture turns the suite red — is asserted at a
+desk in `calibration.test.ts`. The last test in that file is written to be
+*deleted* rather than updated on the day the twentieth is scored.
+
 ---
 
-### 7 · Baseline rep and the week-four re-test · 1.5 days
+### 7 · Baseline rep and the week-four re-test · 1.5 days · **shipped 23 Aug**
 
 The retention hook the spec plants on day one and cashes on day 28, currently a
 `baseline_score` column nothing writes.
@@ -342,9 +646,25 @@ The retention hook the spec plants on day one and cashes on day 28, currently a
 *Done when:* the baseline is written exactly once, the offer appears on day 28
 and not before, and the comparison renders from two real sessions.
 
+**Shipped.** `profiles.baseline_session_id` joins the score to the whole
+scorecard, which is what the side-by-side needs; the score stays denormalised
+beside it so deleting the first rep under §16.7 costs the comparison rather than
+the number. The write is filtered on `baseline_session_id is null`, so it lands
+exactly once however the timing falls — a baseline that moves is not a baseline.
+
+Which rep counts as the re-test is **derived, not stored**: the first graded rep
+against the baseline character on or after day 28. First rather than best,
+deliberately — a re-test you can re-roll until the number flatters you is not a
+measurement.
+
+`/progress/baseline` shows both, sub-score by sub-score, matched by key so
+reordering the six can never compare curiosity against composure. The verdict
+copy has a branch for going *down* and uses it; a measurement with copy for only
+one direction is one nobody should believe.
+
 ---
 
-### 8 · Share cards · 2 days
+### 8 · Share cards · 2 days · **shipped 23 Aug**
 
 One component, five triggers. `next/og` renders a PNG in Arena styling — dark
 ground, Barlow Condensed number, one hand-written line, no chrome.
@@ -380,9 +700,34 @@ publish. The card ships, framed so that what a reviewer finds is training:
 page, no image contains an email or a display name, and the rep-win template
 passes a read-through as a training product rather than a dating one.
 
+**Shipped, guardrails first.** This is the one item in the plan carrying real
+positioning risk, so §14's rules are **code, not a style note**:
+`assertPublishable` refuses anything matching a phone number, "her number",
+dating-product vocabulary, an email address, or relationship framing — checked
+on every visible field, not just the line, because a headline is as public as
+anything else. A card that fails does not get made. Throwing is right here and
+wrong nearly everywhere else in this codebase: the failure mode is a public
+artefact, and not publishing is always recoverable.
+
+The rep-win card reads as **Level 02 cleared** with the composite as the hero
+figure and a process sub-score beside it. Verified by rendering it: no number,
+no "her number", first name only, product line attached, one volt accent.
+
+`share_cards` has one owner-read policy and **no anonymous policy at all** — the
+public route resolves the token with the service role, so the table is never
+enumerable. 128-bit token, `^[0-9a-f]{32}$` enforced by the column. Revocation
+is a timestamp rather than a delete, so a revoked card stops resolving while
+staying visible in Settings → Data as revoked. Unknown and malformed tokens both
+404.
+
+All five triggers are wired — rejections on the milestone sheet, weekly on the
+Sunday card, streak on the profile at 7+ days, baseline on the comparison, and
+rep_win on a won scorecard. **Every one is opt-in and none fires automatically**
+(§08): the moment happens on its own, the artefact only exists if somebody asks.
+
 ---
 
-### 9 · The Sunday review · 1 day
+### 9 · The Sunday review · 1 day · **shipped 23 Aug**
 
 The fourth reason to come back, and the table is already there.
 
@@ -400,6 +745,22 @@ The fourth reason to come back, and the table is already there.
 run the same week writes nothing, and the copy reads as written rather than
 assembled.
 
+**Shipped.** An **hourly** cron, not a weekly one, and that is the whole point:
+Vercel crons run in UTC and "Sunday morning" is the user's Sunday. Sunday 19:00
+UTC is already Monday half past midnight in Colombo, so a job trusting the
+server's weekday would post a Sunday letter into somebody's Monday. The job asks
+each profile's own timezone; a test pins both the hour case and the day case.
+
+Idempotent by `(user_id, week_start)`, so the twenty-odd runs inside one user's
+Sunday write once and skip the rest. Stored rather than recomputed, because it
+is a letter about one specific week and has to keep saying seven in October.
+
+The copy is assembled from hand-written sentences chosen by what actually
+happened — never a model, which would be writing "turned down seven times"
+without knowing whether it was seven. It reports a fall as readily as a rise, it
+declines to invent a trend from one week, and a test asserts it never
+congratulates a yes.
+
 ---
 
 ## Schema still needed
@@ -410,10 +771,11 @@ billing and safety.
 
 | Migration | Adds |
 |---|---|
-| `m4_ui_flags` | `profiles.ui_flags jsonb` — one column for one-time beats |
-| `m4_baseline` | `profiles.baseline_session_id uuid` |
-| `m4_difficulty` | `difficulty_offsets`, read-only to its owner |
-| `m4_share_cards` | `share_cards` with token and revocation |
+| ~~`m4_milestone_unlocks`~~ | **Applied 23 Aug.** `unlocks.kind` accepts `'milestone'`, so a rejection milestone fires once out of the same table and the same `announced_at` the level unlock uses |
+| ~~`m4_ui_flags`~~ | **Applied 23 Aug.** `profiles.ui_flags jsonb` — one column for one-time beats, `{flag: iso-timestamp}`. User-writable on purpose: a beat is a note about what has been *displayed*, so the worst a user can do is see an explainer twice. The rejection milestones deliberately do not use it — they record something *earned*, which belongs in `unlocks` |
+| ~~`m4_baseline`~~ | **Applied 23 Aug.** `profiles.baseline_session_id uuid`, `on delete set null` so deleting your first rep costs the comparison and not your profile |
+| ~~`m4_difficulty`~~ | **Applied 23 Aug.** `difficulty_offsets`, read-only to its owner, with the clamps as CHECK constraints so a bug cannot silently turn Level 6 into Level 2 |
+| ~~`m4_share_cards`~~ | **Applied 23 Aug.** `share_cards`, one owner-read policy and **no anonymous policy** — the public page resolves the token with the service role |
 
 Everything else — the field, memory, unlocks, weekly reviews — is already in
 place and proven by `npm run db:verify`.
@@ -425,15 +787,16 @@ place and proven by `npm run db:verify`.
 ```
 Day  1      The rep format (0)                          ✔ done
 Days 2-4    Field end to end (1)                        ✔ done
-Day  5      Predicted vs actual, counters, milestones (2)
-Day  6      Character memory + reset (3)
-Day  7      Unlocks: rule, write, moment (4)
-Days 8-9    Baseline + week-four re-test (7)
-Days 10-11  Adaptive difficulty (5)
-Days 12-13  Share cards (8)
-Day  14     Sunday review (9)
+Day  5      Predicted vs actual, counters, milestones (2)  ✔ done
+Day  6      Character memory + reset (3)                 ✔ done
+Day  7      Unlocks: rule, write, moment (4)             ✔ done
+Days 8-9    Baseline + week-four re-test (7)             ✔ done
+Days 10-11  Adaptive difficulty (5)                      ✔ done
+Days 12-13  Share cards (8)                              ✔ done
+Day  14     Sunday review (9)                            ✔ done
 
-Alongside from day 2: collect and hand-score transcripts → harness (6)
+Alongside: the harness (6) is built and the collector has pulled ten
+transcripts. Hand-scoring twenty is the one thing left, and it is not code.
 ```
 
 The format goes first because every transcript collected after it is a
@@ -450,14 +813,40 @@ while building the rest.
 
 0. ✔ A rep is three minutes, she offers the number at the end when the meter
    earned it, and nothing about arming is visible while it happens.
-1. `npm run grade:calibrate` green across all twenty transcripts — the §17 gate.
-2. ◐ The field loop works end to end: assigned, accepted with a prediction,
-   logged with an actual, and carrying the streak on a day with no rep. The
-   chart is item 2.
-3. Two 70+ reps open a level, write one unlock row, and celebrate once.
-4. A character remembers you, and one tap makes her forget.
-5. Difficulty moves both ways, and only one direction is ever visible.
-6. The baseline exists on day one and is re-offered on day 28.
+1. ◐ `npm run grade:calibrate` green across all twenty transcripts — the §17
+   gate, and **the only thing still open**. The harness is built and refuses to
+   report success it has not earned; ten transcripts are collected and none are
+   scored yet. This is reading, not building.
+2. ✔ The field loop works end to end: assigned, accepted with a prediction,
+   logged with an actual, carrying the streak on a day with no rep, and the
+   predicted-versus-actual chart drawn from it with milestones at 10 / 25 / 50 /
+   100 firing once each.
+3. ✔ Two 70+ reps open a level, write one unlock row, and celebrate once.
+4. ✔ A character remembers you, and one tap makes her forget.
+5. ✔ Difficulty moves both ways, and only one direction is ever visible.
+6. ✔ The baseline exists on day one and is re-offered on day 28.
 
 Items 2 and 8 also clear blocker **B8** in `LAUNCH-GAP.md`, which is the piece
 of the beta that lets it answer its own question.
+
+---
+
+## Ready for M3?
+
+Every M2 item is built and the schema M2 needed is applied. What M3 inherits:
+
+- **A closed training loop.** Rep → grade → memory → unlock → adaptive
+  difficulty → baseline comparison, with the field loop and the Sunday review
+  wrapped around it.
+- **Nineteen tables, RLS proven from a second account**, and three harnesses
+  (`db:verify`, `db:rep`, `db:field`) that cover the lifecycle without a
+  microphone.
+- **The M2 gate half-open.** §17 does not let M2 close until twenty transcripts
+  are hand-scored. The harness cannot be made green by writing more code, and
+  it is deliberately built to refuse to pretend otherwise.
+
+What M3 is (§17) — sound kit, haptics, PWA, score choreography — touches none of
+the above. The blockers in `LAUNCH-GAP.md` are the harder question, and **B9
+(no spend ceiling on `/api/grade` and `/api/warmth/score`) is the one that
+should go before any more feature work**: everything added in M2 leans on an
+unrated grader endpoint.

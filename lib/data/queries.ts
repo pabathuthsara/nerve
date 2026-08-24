@@ -15,17 +15,26 @@
  */
 
 import { supabaseBrowser } from '@/lib/db/client'
+import { anxietySeries } from '@/lib/field/anxiety'
+import { daysSinceBaseline, findRetest, retestDue, type BaselineRep } from './baseline'
+import { EMPTY_WEEK, type WeekStats } from './weekly'
 import { nextTierRequirement, unlockedTier } from '@/lib/field/assignment'
+import { milestoneFor, type Milestone } from '@/lib/field/milestones'
+import { MEMORY_BEAT_FLAG } from './ui-flags'
 import { localDay, nextLocalMidnight } from './day'
-import { uiBand, uiLevel, uiWarmth, unlockRequirement, unlockedLevels, wonFromOutcome } from './progression'
+import { qualifyingByLevel, uiBand, uiLevel, uiWarmth, unlockRequirement, unlockedLevels, wonFromOutcome } from './progression'
 import { toScorecard, type StoredWarmthEvent } from './scorecard'
 import type {
+  BaselineState,
+  WeeklyReview,
   FieldLogEntry,
   FieldOutcome,
   FieldStats,
   LifetimeStats,
   Level,
+  PendingUnlock,
   Persona,
+  PersonaMemory,
   PersonaProgress,
   Plan,
   Scorecard,
@@ -141,22 +150,27 @@ const PERSONA_COLUMNS =
  */
 export async function fetchPersonas(): Promise<Persona[]> {
   const supabase = supabaseBrowser()
-  const [{ data: rows }, { data: sessions }] = await Promise.all([
+  const [{ data: rows }, { data: sessions }, { data: scoreRows }] = await Promise.all([
     supabase.from('personas').select(PERSONA_COLUMNS).eq('track', 'dating').eq('published', true).order('level'),
-    supabase.from('sessions').select('persona_slug, outcome').not('ended_at', 'is', null),
+    supabase.from('sessions').select('id, persona_slug').not('ended_at', 'is', null),
+    supabase.from('scores').select('session_id, composite'),
   ])
 
   const personas = (rows ?? []) as PersonaRow[]
   const levelBySlug = new Map(personas.map((row) => [row.slug, uiLevel(row.level)]))
+  const compositeBySession = new Map((scoreRows ?? []).map((row) => [row.session_id, row.composite]))
 
-  const winsByLevel: Record<number, number> = {}
-  for (const session of sessions ?? []) {
-    if (!wonFromOutcome(session.outcome)) continue
-    const level = levelBySlug.get(session.persona_slug)
-    if (!level) continue
-    winsByLevel[level] = (winsByLevel[level] ?? 0) + 1
-  }
-  const open = unlockedLevels(winsByLevel)
+  // The same arithmetic `syncLevel` runs on the server. Two implementations of
+  // one rule is how the roster and the stored ladder position come to disagree
+  // — and this read used to count wins off `outcome`, so the locked state was
+  // decided by the grader's opinion of the conversation rather than by anything
+  // the user demonstrated (§07, §08).
+  const open = unlockedLevels(qualifyingByLevel(
+    (sessions ?? []).flatMap((session) => {
+      const level = levelBySlug.get(session.persona_slug)
+      return level ? [{ level, composite: compositeBySession.get(session.id) ?? null }] : []
+    }),
+  ))
 
   return personas.map((row) => toPersona(row, open))
 }
@@ -193,6 +207,7 @@ interface SessionRow {
   outcome: string | null
   won: boolean | null
   final_warmth: number | null
+  decision_warmth: number | null
   final_band: string | null
 }
 
@@ -207,7 +222,7 @@ export async function fetchSessions(limit = 50): Promise<SessionSummary[]> {
   const supabase = supabaseBrowser()
   const { data: rows } = await supabase
     .from('sessions')
-    .select('id, persona_slug, started_at, duration_s, outcome, won, final_warmth, final_band')
+    .select('id, persona_slug, started_at, duration_s, outcome, won, final_warmth, decision_warmth, final_band')
     .not('ended_at', 'is', null)
     .order('started_at', { ascending: false })
     .limit(limit)
@@ -237,6 +252,7 @@ export async function fetchSessions(limit = 50): Promise<SessionSummary[]> {
       durationMs: (row.duration_s ?? 0) * 1000,
       won: row.won ?? wonFromOutcome(row.outcome),
       finalWarmth: uiWarmth(row.final_warmth),
+      decisionWarmth: row.decision_warmth === null ? null : uiWarmth(row.decision_warmth),
       finalBand: uiBand(row.final_band),
       compositeScore: composites.get(row.id) ?? null,
     }
@@ -437,6 +453,10 @@ export async function fetchFieldLog(limit = 100): Promise<FieldLogEntry[]> {
     .from('field_logs')
     .select('id, challenge_title, tier, asked, outcome, anxiety_pre, anxiety_post, note, logged_on, logged_at')
     .order('logged_at', { ascending: false })
+    // Rows written in the same instant would otherwise come back in whatever
+    // order the planner felt like, and history that reshuffles on refresh reads
+    // as a bug.
+    .order('id', { ascending: false })
     .limit(limit)
 
   return (data ?? []).map((row) => ({
@@ -466,7 +486,9 @@ export async function fetchFieldStats(): Promise<FieldStats> {
   const user = auth.user
 
   const [{ data: logs }, { data: profile }, { data: challenges }] = await Promise.all([
-    supabase.from('field_logs').select('challenge_id, tier, asked, outcome'),
+    supabase
+      .from('field_logs')
+      .select('challenge_id, tier, asked, outcome, anxiety_pre, anxiety_post, logged_on'),
     user
       ? supabase.from('profiles').select('current_level').eq('id', user.id).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -479,6 +501,16 @@ export async function fetchFieldStats(): Promise<FieldStats> {
     rows.filter((row) => row.tier === tier && row.challenge_id).map((row) => row.challenge_id as string),
   )
 
+  // The same function the chart draws from, so the figure on the profile and
+  // the line on `/field` can never disagree about the gap.
+  const series = anxietySeries(
+    rows.map((row) => ({
+      anxietyPre: row.anxiety_pre,
+      anxietyPost: row.anxiety_post,
+      loggedOn: row.logged_on,
+    })),
+  )
+
   return {
     asksMade: rows.filter((row) => row.asked).length,
     rejectionsCollected: rows.filter((row) => row.outcome === 'declined').length,
@@ -486,5 +518,192 @@ export async function fetchFieldStats(): Promise<FieldStats> {
     tierDone: atTier.size,
     tierTotal: (challenges ?? []).filter((row) => row.tier === tier).length,
     nextTierAt: nextTierRequirement(tier),
+    anxiety:
+      series.meanPredicted !== null && series.meanActual !== null && series.meanGap !== null
+        ? {
+            meanPredicted: series.meanPredicted,
+            meanActual: series.meanActual,
+            meanGap: series.meanGap,
+            points: series.points.length,
+          }
+        : null,
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Character memory (§08)
+ * ------------------------------------------------------------------ */
+
+/**
+ * What she still has in mind, for the brief screen.
+ *
+ * The live rep reads this again on the server, because that is where the
+ * character contract is compiled. This read is only ever for showing the user
+ * what she is carrying and offering to clear it — the two must agree, so both
+ * read the same row rather than one being handed the other's answer.
+ */
+export async function fetchPersonaMemory(slug: string): Promise<PersonaMemory | null> {
+  // The interview track passes an empty slug rather than branching at the call
+  // site; an interviewer carrying a memory of your last attempt is a different
+  // feature with different rules (§08).
+  if (!slug) return null
+
+  const supabase = supabaseBrowser()
+  const { data: auth } = await supabase.auth.getUser()
+  const user = auth.user
+  if (!user) return null
+
+  const { data: persona } = await supabase
+    .from('personas')
+    .select('id')
+    .eq('slug', slug)
+    .maybeSingle()
+  if (!persona) return null
+
+  const [{ data: memory }, { data: profile }] = await Promise.all([
+    supabase
+      .from('persona_memory')
+      .select('summary, last_seen_at')
+      .eq('user_id', user.id)
+      .eq('persona_id', persona.id)
+      .maybeSingle(),
+    supabase.from('profiles').select('ui_flags').eq('id', user.id).maybeSingle(),
+  ])
+
+  const line = memory?.summary?.trim()
+  if (!line) return null
+
+  const flags = profile?.ui_flags
+  const seen = !!(flags && typeof flags === 'object' && !Array.isArray(flags)
+    && (flags as Record<string, unknown>)[MEMORY_BEAT_FLAG])
+
+  return { line, lastSeenAt: memory?.last_seen_at ?? null, firstEver: !seen }
+}
+
+/**
+ * The milestone that has been earned and not yet shown.
+ *
+ * Read rather than remembered: the sheet fires off a row, so closing the tab
+ * on the tenth ask means it lands next time instead of being lost. Oldest
+ * first, because crossing two at once should be walked through in order.
+ */
+export async function fetchPendingMilestone(): Promise<Milestone | null> {
+  const supabase = supabaseBrowser()
+  const { data } = await supabase
+    .from('unlocks')
+    .select('ref')
+    .eq('kind', 'milestone')
+    .is('announced_at', null)
+    .order('unlocked_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  return data ? milestoneFor(data.ref) : null
+}
+
+/**
+ * The most recent Sunday review, if one has been written (§09, §11).
+ *
+ * Read, never computed here. The letter is stored because it is about one
+ * specific week and has to keep saying seven in October.
+ */
+export async function fetchWeeklyReview(): Promise<WeeklyReview | null> {
+  const supabase = supabaseBrowser()
+  const { data } = await supabase
+    .from('weekly_reviews')
+    .select('week_start, copy, stats')
+    .order('week_start', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!data) return null
+  const stats = (data.stats ?? {}) as Partial<WeekStats>
+  return {
+    weekStart: data.week_start,
+    copy: data.copy,
+    stats: { ...EMPTY_WEEK, ...stats },
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * The baseline, and the week-four re-test (§08)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Where this account stands against its own first rep.
+ *
+ * Everything derived rather than stored beyond the two baseline columns: which
+ * rep counts as the re-test is a rule, and a rule that is also a column is a
+ * rule that can disagree with itself.
+ */
+export async function fetchBaseline(): Promise<BaselineState | null> {
+  const supabase = supabaseBrowser()
+  const { data: auth } = await supabase.auth.getUser()
+  const user = auth.user
+  if (!user) return null
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('baseline_session_id, baseline_score, timezone')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (!profile?.baseline_session_id || profile.baseline_score === null) return null
+
+  const sessions = await fetchSessions(200)
+  const first = sessions.find((session) => session.id === profile.baseline_session_id)
+  // The session is gone — deleted under §16.7. The number survives it, and
+  // that is exactly why the score is denormalised, but there is nothing left to
+  // compare side by side.
+  if (!first) return null
+
+  const baseline: BaselineRep = {
+    sessionId: first.id,
+    personaId: first.personaId,
+    score: profile.baseline_score,
+    takenAt: first.startedAt,
+  }
+
+  const graded = sessions.map((session) => ({
+    id: session.id,
+    personaId: session.personaId,
+    startedAt: session.startedAt,
+    compositeScore: session.compositeScore,
+  }))
+
+  const timezone = profile.timezone ?? null
+  const retest = findRetest({ baseline, sessions: graded, timezone })
+
+  return {
+    baseline,
+    personaName: first.personaName,
+    retestSessionId: retest?.id ?? null,
+    due: retestDue({ baseline, retest, now: new Date(), timezone }),
+    daysSince: daysSinceBaseline(baseline.takenAt, new Date(), timezone),
+  }
+}
+
+/**
+ * A level or field tier earned and not yet celebrated (§12).
+ *
+ * Read rather than returned by the write, for the same reason the milestone is:
+ * grading lands seconds after the rep ends, and a user who closes the scorecard
+ * before it arrives should still get the moment next time rather than lose it.
+ * Oldest first, so clearing two at once walks them in the order they happened.
+ */
+export async function fetchPendingUnlock(): Promise<PendingUnlock | null> {
+  const supabase = supabaseBrowser()
+  const { data } = await supabase
+    .from('unlocks')
+    .select('kind, ref')
+    .in('kind', ['level', 'tier'])
+    .is('announced_at', null)
+    .order('unlocked_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (!data) return null
+  const ref = Number(data.ref)
+  if (!Number.isInteger(ref) || ref < 1 || ref > 4) return null
+  return { kind: data.kind === 'tier' ? 'tier' : 'level', ref: ref as Level }
 }

@@ -45,7 +45,16 @@ export interface Trajectory {
    * Standing still has to lose ground or the meter only ratchets up.
    */
   decayPerTurn: number
-  /** Maximum applied gain from any single turn, after gain and falloff. */
+  /**
+   * Maximum applied gain from any single turn, after gain and falloff.
+   *
+   * This is the one trajectory dial that is a function of REP LENGTH rather
+   * than of who she is. Below roughly warmth 48 at Level 1 the cap clips every
+   * strong turn, so most of a rep is cap-limited and the total a good run can
+   * bank is `cap × turns` before decay — which means a longer rep is a
+   * uniformly easier rep unless the cap comes down with it. It was re-sized
+   * when the rep went from two minutes to three; see `rep-rules.ts`.
+   */
   maxGainPerTurn: number
   /** Maximum reachable within a SINGLE session. */
   sessionCeiling: number
@@ -187,6 +196,25 @@ export interface OutcomeWeights {
 }
 
 /**
+ * One thing the scene does to her, unprompted.
+ *
+ * `at` is a fraction of the rep, not a wall-clock time, so the same authored
+ * beat lands proportionally in a three-minute dating rep and an eight-minute
+ * interview. Kept clear of the last third: the wind-down owns that, and a
+ * character being told two different things thirty seconds from the end is the
+ * argument this codebase already had once and settled.
+ *
+ * `direction` is written as a bracketed stage direction, second person, in the
+ * same voice as the band directive — because it travels the same channel and
+ * two grammars on one channel is how a model starts narrating them out loud.
+ */
+export interface SceneBeat {
+  /** 0-1 through the rep. Authored between 0.15 and 0.7. */
+  at: number
+  direction: string
+}
+
+/**
  * Per-provider voice selection.
  *
  * The brief sketched this as a single `voiceId`. It stays a per-provider record
@@ -226,6 +254,40 @@ export interface Persona {
    * against a contract asking for four to ten.
    */
   contract: string
+
+  /**
+   * What she would rather be doing, in her own scene.
+   *
+   * THE PERSONHOOD FIELD, and the thing whose absence read loudest as "this is
+   * an AI". Every other dial governs how much she gives BACK. None of them gave
+   * her anything she was after on her own account, so outside the warm bands
+   * she was a pure responder: she answered, forever, and never once steered.
+   * `initiatesTopics` unlocks at warmth 70, which on levels 3 and up is not
+   * reachable inside a three-minute rep, so for most of the roster that gate
+   * never opened at all.
+   *
+   * This is deliberately NOT gated on warmth. Wanting something is not a reward
+   * for good play, it is the baseline condition of being a person, and a
+   * character with no agenda of her own is a search box with a voice. What
+   * warmth changes is whether she pursues it *at* him or *away* from him — see
+   * `wantClause` in ./steering.ts.
+   *
+   * One short phrase, completing "you would rather be ___".
+   */
+  want: string
+
+  /**
+   * Things that happen TO her while the rep runs, on the scene's own clock.
+   *
+   * Her availability used to change only in response to the user, which is not
+   * how strangers work: the train arrives, the friend comes back, the phone
+   * goes. Ordered, fired once each at a fraction of the way through the rep,
+   * and delivered on the same bracketed channel as the band direction.
+   *
+   * Empty is a valid answer for a character whose scene genuinely has no
+   * interruptions in it.
+   */
+  sceneBeats?: SceneBeat[]
 
   /** Explicit triggers that end the scene. */
   exitConditions: string[]
@@ -283,7 +345,16 @@ export interface Calibration {
    * hesitant speaker; patience can widen it further.
    */
   silenceMs: number
-  /** Patience preference, added on top. Widens the threshold, never narrows it. */
+  /**
+   * The per-user calibration, as an offset from the default.
+   *
+   * SIGNED, and the sign matters. This used to be floored at zero — "widens the
+   * threshold, never narrows it" — which made the negative half of the stored
+   * range unreachable and meant a confident, fluent speaker could never be
+   * given a faster turn than a hesitant one. A window that is too long is not
+   * free: it is dead air after every sentence, and it reads as her being slow
+   * rather than as her being patient.
+   */
   patienceOffsetMs?: number
 }
 
@@ -294,7 +365,7 @@ export const DEFAULT_CALIBRATION: Calibration = {
 
 /** Resolved threshold. One place, so both adapters agree. */
 export function resolveSilenceMs(calibration: Calibration): number {
-  const offset = Math.max(0, calibration.patienceOffsetMs ?? 0)
+  const offset = calibration.patienceOffsetMs ?? 0
   return Math.round(clamp(calibration.silenceMs + offset, 200, 3000))
 }
 
@@ -340,6 +411,42 @@ export interface VoiceEventMap {
    * stays in the transcript and only the incident is reported.
    */
   'agent.double-turn': { at: number }
+  /**
+   * A reply was generated, and never reached the speakers.
+   *
+   * Its transcript arrived but its audio buffer never opened — cancelled as an
+   * overlap, usually. The turn is DROPPED rather than committed, because a
+   * line the user did not hear is worse than a gap: the scorer reads these
+   * turns and the user reads them too.
+   *
+   * Reported so that dropping is never silent. If this fires on every reply,
+   * the transport has stopped sending `output_audio_buffer.started` and the
+   * transcript is being thrown away — which is exactly the kind of total,
+   * quiet loss this codebase has been bitten by twice (M0, round 11).
+   */
+  'agent.unheard': { at: number }
+  /**
+   * She was cut off mid-line, and the transcript was cut back to match.
+   *
+   * The user heard a prefix; the words after it were generated and thrown
+   * away. The turn is still committed — she really did say the part they
+   * heard — but only that part, because a transcript's job is to record what
+   * reached the ear and §07 grades on it.
+   *
+   * Worth watching as a rate rather than an incident. A handful across a rep
+   * is a conversation with barge-in in it; one on every reply means VAD is
+   * firing on breathing and she is never allowed to finish a sentence.
+   */
+  'agent.truncated': { at: number }
+  /**
+   * A user turn was discarded as her own voice returning through the mic.
+   *
+   * The most dangerous suppression in the pipeline, because from the user's
+   * seat it is indistinguishable from being ignored: no transcript entry, no
+   * warmth event, no reply. It shipped completely silent, which is how a
+   * one-word answer scoring 1.00 against a single shared word went unnoticed.
+   */
+  'user.echo-rejected': { at: number; overlap: number }
   /** The character chose a genuine exit and the live scene must now close. */
   'character.exit': { at: number }
   'agent.transcript': { turn: TranscriptTurn; final: boolean }

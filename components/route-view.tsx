@@ -2,6 +2,7 @@ import { TrainScreen } from './screens/train-screen'
 import { AuthScreen, type AuthRoute } from './screens/auth-screens'
 import { OnboardingScreen, type OnboardingRoute } from './screens/onboarding-screens'
 import { FieldScreen, PersonaDetailScreen, RosterScreen } from './screens/core-screens'
+import { BaselineScreen } from './screens/baseline-screen'
 import { ProfileScreen, type ProfileRoute } from './screens/profile-screens'
 import { SessionScreen, type SessionView } from './screens/session-screens'
 import { InterviewScreen, type InterviewRoute } from './screens/interview-screens'
@@ -44,6 +45,7 @@ export function RouteView({ path, query = {}, auth }: { path: string; query?: Re
   if (path === '/roster') return <RosterScreen />
   if (path.startsWith('/roster/')) return <PersonaDetailScreen personaId={path.split('/')[2] ?? ''} />
   if (path === '/field') return <FieldScreen />
+  if (path === '/progress/baseline') return <BaselineScreen />
   if (path === '/profile' || path === '/profile/history' || path === '/profile/settings' || path === '/profile/subscription') return <ProfileScreen route={path as ProfileRoute} />
   if (path.startsWith('/session/')) {
     const [, , sessionId = '', view = 'result'] = path.split('/')

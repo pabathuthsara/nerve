@@ -76,6 +76,97 @@ was doubling as both the ambient scene id and the word the persona compiler
 drops into "a stranger in a bookshop". `sceneId(room)` now supplies the second,
 so a silent room does not make her forget where she is standing.
 
+## Her voice plays through the media element, not through the graph
+
+**With no room, the `<audio>` element is the playback path and it is unmuted.**
+That is not a detail — it is what lets the browser's echo canceller work. The
+canceller cancels what it is *playing*, and it does not know about audio a
+WebAudio graph renders. Route her through the graph and her own voice comes
+back in on the microphone, server VAD commits it as a user turn, the response
+gate creates a second reply on top of the one still speaking, and the overlap
+guard cancels it.
+
+M0's sixth finding measured the first half of that: 24 VAD triggers for 19 real
+turns, five of them her own voice. The second half showed up in the stored
+transcripts as agent turns with impossible durations — *"Catching my breath
+between sets right now."*, seven words, **0.22 seconds** — replies that were
+generated, cancelled before their audio buffer opened, and recorded anyway.
+
+Two fixes, both in place:
+
+- `attachRemote` plays her through the element when there is no room, and only
+  routes into WebAudio when a room is actually going to convolve something. The
+  analyser still taps the dry stream, through a zero-gain node into the
+  destination so the waveform cannot quietly stop being pulled.
+- The transcript-delta path no longer marks her as speaking. `agent.speech.start`
+  and the turn boundary come from `output_audio_buffer.started` alone, and a
+  reply whose buffer never opened is **dropped rather than committed** — a line
+  the user never heard is worse than a gap, because the scorer reads these
+  turns and so does the user. Dropping is reported as `agent.unheard` so it can
+  never become a silent total loss.
+
+**Turning procedural acoustics back on re-introduces the echo risk**, because
+convolution has to happen in the graph. That is one more argument for recorded
+beds over convolution on her voice.
+
+## Barge-in: what she said, and what she remembers saying
+
+Echo cancellation stops her voice being *heard* as a user turn. It does nothing
+about the other half, which went unnoticed for longer: when a barge-in really
+does cut her off, the words she generated after that instant reached nobody.
+
+Two things now happen at that moment, and they are separate because they fix
+separate faults.
+
+**The transcript is cut back to what played.** The translator used to drop a
+reply only when its audio never opened at all — 200ms of audio satisfied that,
+so a reply the user heard one syllable of was committed in full to the
+transcript, the warmth engine and `/api/grade`. `lib/voice/truncate.ts` clips it
+proportionally against an estimate of how long the whole line would have taken,
+and `snapToWordBoundary` guarantees the cut never lands mid-word. A cut
+mid-*sentence* is honest — the user really did interrupt there. A cut mid-*word*
+is a bug, and neither adapter is allowed to produce one. Reported as
+`agent.truncated`.
+
+**Her own history is cut back with it.** `conversation.item.truncate` is sent
+with the measured playhead. Without it the model's conversation still contains
+the whole sentence, so her next line continues from a thought the user received
+one word of — which is what reads, live, as her starting to say something and
+then saying something else. Server VAD does truncate on its own, but on the send
+side: it knows what left the server, not what left the speaker. Our playhead is
+never later than the server's, and truncating to an earlier point is always
+legal, so this is a refinement rather than a fight.
+
+The estimate is deliberately conservative. `WORDS_PER_SECOND` is set a little
+slow, which over-estimates how long the full line would have taken and therefore
+keeps slightly *more* text — the error that keeps a word the user did hear is far
+cheaper than the error that deletes one.
+
+The ElevenLabs arm has had this since round 8, sample-accurate from
+`/with-timestamps` alignment. The two adapters now share the string arithmetic in
+`lib/voice/truncate.ts`; only the precision of the playhead differs.
+
+## Timing is a character trait
+
+Warmth changed everything she said and nothing about how long she took, which is
+backwards — people read interest from timing before they read it from words.
+
+`lib/warmth/timing.ts` owns three consequences, all pure:
+
+- **`replyDelayMs`** — a real pause before a cold reply, about the length of a
+  glance up from a phone, tapering to nothing by warmth 60. Held inside the
+  response gate with `inFlight` already set, so a turn arriving during the pause
+  coalesces exactly as one arriving mid-generation would and the delay can never
+  produce two replies.
+- **`interruptsAt`** — §05 stays the ceiling: levels 1–4 never interrupt, at any
+  warmth. Above that, interruption becomes a sign of engagement rather than a
+  property of the rung. A bored stranger does not cut across you. This also
+  removes the worst version of the barge-in problem, because at low warmth —
+  where a nervous user is most likely to make noise they did not mean as speech —
+  she is no longer listening for a gap to jump into.
+- **`paceFor`** — a few percent, and no more. Past that it stops reading as
+  engagement and starts reading as a character whose voice changes.
+
 ## Levels — one absolute number
 
 `masterDb` is the bed's absolute level in dBFS and is **the only absolute

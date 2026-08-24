@@ -28,6 +28,19 @@ export interface ResponseGateOptions {
   stallMs?: number
   /** Called when the watchdog fires. The rep continues; this is not fatal. */
   onStall?: () => void
+  /**
+   * How long to sit on a reply before creating it.
+   *
+   * A cold character does not answer the instant you stop talking; she looks up
+   * first. Read fresh on each turn, because warmth moves during a rep and the
+   * whole point is that the pause shortens as she warms — see
+   * `lib/warmth/timing.ts`.
+   *
+   * The gate is held for the duration, which is what makes this safe: a turn
+   * that lands during the pause is coalesced exactly as it would be during
+   * generation, so the delay can never produce two responses.
+   */
+  delayMs?: () => number
   /** Injectable for tests. */
   setTimer?: (fn: () => void, ms: number) => unknown
   clearTimer?: (handle: unknown) => void
@@ -37,9 +50,11 @@ export class OpenAIResponseGate {
   private inFlight = false
   private pending = false
   private stallHandle: unknown = null
+  private delayHandle: unknown = null
 
   private readonly stallMs: number
   private readonly onStall: (() => void) | undefined
+  private readonly delayMs: (() => number) | undefined
   private readonly setTimer: (fn: () => void, ms: number) => unknown
   private readonly clearTimer: (handle: unknown) => void
 
@@ -49,6 +64,7 @@ export class OpenAIResponseGate {
   ) {
     this.stallMs = options.stallMs ?? DEFAULT_STALL_MS
     this.onStall = options.onStall
+    this.delayMs = options.delayMs
     this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms))
     this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as never))
   }
@@ -94,6 +110,7 @@ export class OpenAIResponseGate {
 
   reset(): void {
     this.disarm()
+    this.clearDelay()
     this.inFlight = false
     this.pending = false
   }
@@ -103,16 +120,47 @@ export class OpenAIResponseGate {
     return this.inFlight
   }
 
+  /**
+   * Take the turn — after the beat, if she is taking one.
+   *
+   * `inFlight` and the stall watchdog are both set BEFORE the pause, not after.
+   * That ordering is the whole safety argument: for the entire delay the gate
+   * looks busy, so a second commit coalesces into `pending` instead of racing
+   * a second `response.create`, and if anything goes wrong during the pause the
+   * watchdog still fires and recovers the rep.
+   */
   private startResponse(): void {
     this.inFlight = true
     this.arm()
-    this.createResponse()
+
+    const delay = Math.max(0, Math.round(this.delayMs?.() ?? 0))
+    if (delay === 0) {
+      this.createResponse()
+      return
+    }
+
+    this.clearDelay()
+    this.delayHandle = this.setTimer(() => {
+      this.delayHandle = null
+      // Reset or a stall may have released the gate while she was pausing. The
+      // turn belongs to whatever is happening now, not to a timer from before.
+      if (!this.inFlight) return
+      this.createResponse()
+    }, delay)
+  }
+
+  private clearDelay(): void {
+    if (this.delayHandle === null) return
+    this.clearTimer(this.delayHandle)
+    this.delayHandle = null
   }
 
   private arm(): void {
     this.disarm()
     this.stallHandle = this.setTimer(() => {
       this.stallHandle = null
+      // A pause that outlived its own watchdog is not a pause any more.
+      this.clearDelay()
       // Report first, so the incident is visible even if the recovery is
       // clean. A gate that silently repairs itself hides a real defect.
       this.onStall?.()

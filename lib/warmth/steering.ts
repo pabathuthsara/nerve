@@ -30,17 +30,38 @@ import {
   type Persona,
 } from '@/lib/voice/types'
 import { bandDirectiveParts, type DirectiveContext } from './bands'
+import { postureClause, type Posture } from './affect'
 
 export interface SteeringContext extends DirectiveContext {
   persona: Persona
   warmth: number
+  /** She cooled on a recent turn and he is inside the repair window. */
+  repairOpen?: boolean
+  /**
+   * How interest, comfort and liking stand relative to each other.
+   *
+   * The band says how much she gives; this says what shape it takes. Omitted —
+   * or `level`, when the three agree — adds nothing, which is the common case
+   * and keeps the line short.
+   */
+  posture?: Posture
 }
 
 /**
  * A ceiling on the whole line, enforced by construction rather than by
  * truncation — a directive cut off mid-sentence is worse than a shorter one.
+ *
+ * Round 13 raised this from 340, and the reason is worth writing down because
+ * the number looks like a cost regression and is not one. Two clauses were
+ * added: a want, which is what stops her being a pure responder, and a posture,
+ * which is what a second and third affect axis are FOR. Meanwhile the caller
+ * stopped sending this on every VAD trigger and now sends it only when the line
+ * actually changes, so a rep carries far fewer copies of a slightly longer
+ * line. Total context spent on steering went down.
+ *
+ * The ceiling still binds, and binding is the point — see `assemble`.
  */
-export const STEERING_BUDGET = 340
+export const STEERING_BUDGET = 420
 
 /** At most this many personality clauses. Past two it stops being a direction. */
 const MAX_PERSONALITY_CLAUSES = 2
@@ -48,12 +69,117 @@ const MAX_PERSONALITY_CLAUSES = 2
 const MAX_GATE_CLAUSES = 2
 
 export function composeSteering(context: SteeringContext): string {
-  const parts = [
-    ...bandDirectiveParts(context.warmth, context),
-    ...personalityClauses(context.persona, context.warmth),
-    ...gateClauses(context.persona, context.warmth),
-  ]
+  // Priority order, highest first. Everything below the band is droppable, and
+  // when the budget binds the LAST ones go — which is why the order is a
+  // judgement about what she most needs to be told and not the order the
+  // clauses happen to be written in.
+  //
+  //   band         non-negotiable. It owns how much she gives.
+  //   posture      what shape that takes. Only present when the axes disagree,
+  //                so when it IS present it is the most informative line here.
+  //   repair       rare, and expires in two turns. If it is dropped it is gone.
+  //   want         every turn, and the reason she is a person rather than a
+  //                response. Above personality because a character with an
+  //                agenda and no adjectives still reads as someone; a character
+  //                with adjectives and no agenda reads as a chatbot.
+  //   personality  colour.
+  //   gates        permissions she will still have next turn.
+  return assemble([
+    bandDirectiveParts(context.warmth, context),
+    postureClauses(context),
+    repairClauses(context),
+    wantClauses(context.persona, context.warmth),
+    personalityClauses(context.persona, context.warmth),
+    gateClauses(context.persona, context.warmth),
+  ])
+}
+
+/**
+ * Fit the clauses into the budget, dropping from the bottom.
+ *
+ * The first group always survives, whatever it costs — a line with no band
+ * directive is worse than a long one, because then nothing owns reply length
+ * and round 6 happens again. Everything after it is admitted only if it fits
+ * whole. Clauses are never cut mid-sentence.
+ *
+ * This is also a quality rule and not only a cost one. Eight simultaneous
+ * directions are obeyed about as well as none: the failure this file already
+ * documents — two sets of numbers producing a third answer nobody asked for —
+ * is the same failure, and adding axes to the model is exactly the kind of
+ * change that would have reintroduced it.
+ */
+function assemble(groups: string[][]): string {
+  const [required = [], ...optional] = groups
+  const parts = [...required]
+  let length = parts.join(' ').length + 2
+
+  for (const group of optional) {
+    for (const clause of group) {
+      const cost = clause.length + 1
+      if (length + cost > STEERING_BUDGET) continue
+      parts.push(clause)
+      length += cost
+    }
+  }
   return `[${parts.join(' ')}]`
+}
+
+/**
+ * The shape of what she is feeling, when the three axes disagree.
+ *
+ * Placed directly after the band because it qualifies it: the band has just
+ * said how much she gives, and this says whether that is curiosity held at a
+ * distance, ease with nothing behind it, or the other way round. Silent when
+ * the axes agree, which is most turns — see `postureOf`.
+ */
+export function postureClauses(context: SteeringContext): string[] {
+  if (!context.posture) return []
+  const clause = postureClause(context.posture)
+  return clause ? [clause] : []
+}
+
+/**
+ * What she is after, on her own account.
+ *
+ * Ungated on purpose, and it is the one clause here that is not a reward. Every
+ * other line in this file describes how she responds; without this she has no
+ * reason to say anything nobody asked for, and outside the warm bands
+ * `initiatesTopics` never opens — so on most of the ladder she was a pure
+ * responder for the whole rep. A person who only ever answers is the most
+ * recognisable tell there is.
+ *
+ * Warmth changes the DIRECTION of the want, never whether she has one:
+ *
+ *   cold   it pulls her away from him, and she may say so
+ *   mid    it is still there, and he is allowed to be a reason to put it off
+ *   warm   she brings him into it
+ *
+ * One clause, because it is charged on every turn after this one.
+ */
+export function wantClauses(persona: Persona, warmth: number): string[] {
+  const want = persona.want?.trim()
+  if (!want) return []
+
+  if (warmth < 20) return [`You would rather be ${want}, and it shows.`]
+  if (warmth < 60) return [`You would still rather be ${want}. You are not going yet.`]
+  return [`You would rather be ${want}. Bring him into it.`]
+}
+
+/**
+ * She has just cooled, and this is his next move.
+ *
+ * A misstep followed by a decent recovery is the strongest bonding move there
+ * is, and it was worth nothing: a bad turn cost its points and the conversation
+ * carried on as though nothing had happened. That teaches avoidance rather than
+ * recovery, which is the opposite of the skill.
+ *
+ * The engine owns whether the window is open (see `WarmthEngine.repairOpen`).
+ * All this does is let her ACKNOWLEDGE it, because a repair the other person
+ * does not visibly register is not a repair.
+ */
+export function repairClauses(context: SteeringContext): string[] {
+  if (!context.repairOpen) return []
+  return ['He misjudged it and is recovering. Let him, if he earns it.']
 }
 
 /**

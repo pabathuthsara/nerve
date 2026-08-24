@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { chooseChallenge, nextTierRequirement, unlockedTier, type AssignableChallenge } from './assignment'
+import { chooseChallenge, nextTierRequirement, T4_ASK_DAYS, unlockedTier, type AssignableChallenge } from './assignment'
 
 const pool: AssignableChallenge[] = [
   { id: 't1-a', tier: 1 }, { id: 't1-b', tier: 1 }, { id: 't1-c', tier: 1 },
@@ -14,14 +14,44 @@ const pool: AssignableChallenge[] = [
 ]
 
 describe('the tier gate (§09)', () => {
-  it('opens tier 2 at sim level 4, tier 3 at 6, tier 4 at 7', () => {
+  it('opens tier 2 on the second rung and tier 3 on the top one', () => {
+    // Re-anchored when the roster went to three rungs — 1, 2 and 4. The old
+    // thresholds (4, 6, 7) read an eight-rung ladder and would now gate two of
+    // the four field tiers behind a sim level nobody can reach.
     expect(unlockedTier(1)).toBe(1)
-    expect(unlockedTier(3)).toBe(1)
-    expect(unlockedTier(4)).toBe(2)
-    expect(unlockedTier(5)).toBe(2)
-    expect(unlockedTier(6)).toBe(3)
-    expect(unlockedTier(7)).toBe(4)
-    expect(unlockedTier(8)).toBe(4)
+    expect(unlockedTier(2)).toBe(2)
+    expect(unlockedTier(3)).toBe(2)
+    expect(unlockedTier(4)).toBe(3)
+  })
+
+  it('never opens the romantic tier from the sim ladder alone', () => {
+    // T4 asks a real person for a name or a number. No amount of being good at
+    // talking to a synthetic character earns that — only having gone outside
+    // and asked does.
+    for (const rung of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      expect(unlockedTier(rung)).toBeLessThan(4)
+      expect(unlockedTier(rung, { tier3AskDays: 0 })).toBeLessThan(4)
+    }
+  })
+
+  it('opens tier 4 on field days, and needs the top rung too', () => {
+    const earned = { tier3AskDays: T4_ASK_DAYS }
+    expect(unlockedTier(4, earned)).toBe(4)
+    expect(unlockedTier(4, { tier3AskDays: T4_ASK_DAYS - 1 })).toBe(3)
+
+    // The gym rung is still necessary, just no longer sufficient. Somebody who
+    // has done the field work but never cleared the ladder is not handed T4 as
+    // a consolation.
+    expect(unlockedTier(1, earned)).toBe(1)
+    expect(unlockedTier(2, earned)).toBe(2)
+  })
+
+  it('fails shut when the field history is unknown', () => {
+    // Every caller that cannot see the log gates T4 closed rather than open.
+    // For an exposure ladder that is the only safe direction to be wrong in:
+    // too little exposure is a slow week, too much is somebody quitting.
+    expect(unlockedTier(4)).toBe(3)
+    expect(unlockedTier(8)).toBe(3)
   })
 
   it('never hands a beginner the romantic tier', () => {
@@ -30,9 +60,12 @@ describe('the tier gate (§09)', () => {
     expect(chosen?.tier).toBe(1)
   })
 
-  it('says what the next tier costs, and stops at the top', () => {
-    expect(nextTierRequirement(1)).toContain('Level 4')
-    expect(nextTierRequirement(3)).toContain('Level 7')
+  it('says what the next tier costs, and stops where the gym stops', () => {
+    expect(nextTierRequirement(1)).toContain('Level 2')
+    expect(nextTierRequirement(2)).toContain('Level 4')
+    // T3 is the last one the gym opens, so there is no requirement to state.
+    // Naming one for T4 would be a promise the product cannot keep.
+    expect(nextTierRequirement(3)).toContain(String(T4_ASK_DAYS))
     expect(nextTierRequirement(4)).toBeNull()
   })
 })

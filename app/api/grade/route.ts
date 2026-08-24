@@ -14,7 +14,9 @@
 
 import { NextResponse } from 'next/server'
 import { requireUser } from '@/lib/db/api-auth'
+import { maySpend } from '@/lib/db/spend'
 import { composeScorecard, clampSubScores } from '@/lib/grade'
+import { memoryLineFrom } from '@/lib/grade/memory'
 import { buildGradeSystemPrompt, renderMetrics, renderTranscript } from '@/lib/grade/prompt'
 import { computeDeterministicMetrics } from '@/lib/grade/metrics'
 import type { JudgementLayer, Scorecard, SubScores } from '@/lib/grade/types'
@@ -60,6 +62,11 @@ export async function POST(request: Request): Promise<Response> {
   // strongest text model on the account with a caller-supplied transcript.
   const auth = await requireUser(request)
   if ('response' in auth) return auth.response
+
+  // The most expensive single call in the product per request, and the one a
+  // loop is cheapest to write against. §18's margins assume nobody is trying.
+  const allowed = await maySpend(auth.userId, 'grade')
+  if (!allowed.ok) return allowed.response
 
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'not configured' }, { status: 500 })
@@ -147,6 +154,10 @@ export async function POST(request: Request): Promise<Response> {
     scores,
     evidence,
     wentWell: typeof parsed['wentWell'] === 'string' ? parsed['wentWell'].slice(0, 300) : '',
+    // The only place a memory line is judged fit to store. The prompt asks for
+    // the right shape; this decides. A line that fails is dropped and she
+    // brings nothing up next time, which is the normal case anyway (§08).
+    memoryLine: memoryLineFrom(parsed['memoryLine']),
   }
 
   const rawOutcome = parsed['outcome']

@@ -12,6 +12,7 @@ import { WarmthSession } from './session'
 import { nadia as nadiaPersona } from '@/lib/personas/nadia'
 import type { SlowScore, SlowScorer } from './slow'
 import { nadia } from '@/lib/personas/nadia'
+import { alex } from '@/lib/personas/alex'
 import type { TranscriptTurn } from '@/lib/voice/types'
 
 const L1 = { ...nadiaPersona.trajectory, startJitter: 0 }
@@ -175,12 +176,37 @@ describe('WarmthSession', () => {
     expect(gained).toBeLessThan(L1.maxGainPerTurn)
   })
 
-  it('tracks dead-end streaks across turns', () => {
+  it('tracks dead-end streaks across turns, at what this character charges', () => {
     const session = makeSession(null)
     for (let i = 1; i <= 3; i += 1) session.onUserTurn(userTurn('Yeah.', i * 10, i * 10 + 1))
-    // Third dead end carries the streak penalty on top of its own.
+    // Third dead end carries the streak penalty on top of its own: -3 and -4.
+    //
+    // Charged at 0.7x, because this is Nadia and her patience is 80. That is
+    // the point of the temperament layer and not a softening of the rule — our
+    // user is nervous by definition and short replies are the symptom the
+    // product exists to treat, so whether the character gets colder or gentler
+    // when he stalls has to be a property of the character. Alex charges 1.25x
+    // for the same three turns; see the companion test below.
     const last = session.engine.events[session.engine.events.length - 1]
-    expect(last?.rawDelta).toBe(-7)
+    expect(last?.rawDelta).toBeCloseTo(-7 * 0.7, 5)
+  })
+
+  it('charges an impatient character more for the same three dead ends', () => {
+    const patient = makeSession(null)
+    const impatient = new WarmthSession({
+      persona: alex,
+      trajectory: alex.trajectory,
+      scorer: null,
+      nowSeconds: () => 0,
+      rng: () => 0.5,
+    })
+    for (let i = 1; i <= 3; i += 1) {
+      patient.onUserTurn(userTurn('Yeah.', i * 10, i * 10 + 1))
+      impatient.onUserTurn(userTurn('Yeah.', i * 10, i * 10 + 1))
+    }
+    const softer = patient.engine.events[patient.engine.events.length - 1]?.rawDelta ?? 0
+    const harder = impatient.engine.events[impatient.engine.events.length - 1]?.rawDelta ?? 0
+    expect(harder).toBeLessThan(softer)
   })
 
   it('hands out a directive that names a band and no number', () => {

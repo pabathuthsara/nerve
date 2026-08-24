@@ -14,6 +14,7 @@ import { priceUsageSample, summarizeUsage } from '../rates'
 import { sortTurns } from '../transcript'
 import type { VoiceProvider } from '../provider'
 import {
+  mayInterrupt,
   SESSION_CAP_SECONDS,
   VoiceError,
   type Analysers,
@@ -30,6 +31,7 @@ import {
 } from '../types'
 import type { OpenAISessionConfig } from './persona'
 import { compileReinforcement } from '../reinforcement'
+import { interruptsAt, replyDelayMs } from '../../warmth/timing'
 import { OpenAIEventTranslator } from './translate'
 import { OpenAIResponseGate } from './response-gate'
 import { buildSteeringItem } from './messages'
@@ -77,7 +79,14 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   private dc: RTCDataChannel | null = null
   private micStream: MediaStream | null = null
   private audioEl: HTMLAudioElement | null = null
-  /** Holds the remote track open for WebAudio. Muted; never the playback path. */
+  /**
+   * The element her remote track is attached to.
+   *
+   * With a room it is a muted keep-alive and WebAudio does the playing. With no
+   * room — which is every rep today — it IS the playback path, unmuted, so the
+   * browser's echo canceller can see what is coming out of the speakers. See
+   * `attachRemote`.
+   */
   private keepAliveEl: HTMLAudioElement | null = null
   private room: Room | null = null
   private audioCtx: AudioContext | null = null
@@ -97,6 +106,15 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   private config: OpenAISessionConfig | null = null
   private persona: Persona | null = null
   private ended = false
+  /**
+   * The meter, as last reported by the application.
+   *
+   * NOT a second warmth engine — the adapter never computes this and never
+   * shows it to the character. It is here because two transport-level
+   * behaviours depend on it and cannot be expressed anywhere else: the pause
+   * before she answers, and whether she may take the turn.
+   */
+  private warmth = 0
 
   constructor(options: OpenAIAdapterOptions = {}) {
     this.tokenEndpoint = options.tokenEndpoint ?? '/api/voice/token'
@@ -106,6 +124,9 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     this.responseGate = new OpenAIResponseGate(
       () => this.send({ type: 'response.create' }),
       {
+        // She looks up before she answers, and looks up faster as she warms.
+        // Read live so the pause shortens across the rep (§H6).
+        delayMs: () => replyDelayMs(this.warmth),
         onStall: () => {
           // Clear the translator's side too, or the recovery response is
           // cancelled as an overlap the moment it is created.
@@ -134,7 +155,12 @@ export class OpenAIVoiceProvider implements VoiceProvider {
         onToolSyntaxLeak: (at) => this.emitter.emit('agent.tool-leak', { at }),
         onPhantomTurn: (at, reason, id) => this.cancelPhantomResponse(at, reason, id),
         onDoubleTurn: (at) => this.emitter.emit('agent.double-turn', { at }),
+        onUnheardReply: (at) => this.emitter.emit('agent.unheard', { at }),
+        onTruncatedTurn: ({ playedMs }) => this.truncateHerMemory(playedMs),
+        onEchoRejected: (at, overlap) =>
+          this.emitter.emit('user.echo-rejected', { at, overlap }),
       },
+      { paceOf: () => this.persona?.voice.pace ?? 1 },
     )
   }
 
@@ -349,21 +375,43 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     this.room = room
   }
 
+  /**
+   * Her voice, into the speakers and into the analyser.
+   *
+   * **The media element is the playback path whenever there is no room, and
+   * that is the whole point.** Routing her through WebAudio hides her from the
+   * browser's echo canceller: the canceller cancels what it is playing, and it
+   * does not know about audio rendered by a graph. So her voice came back in
+   * on the microphone, server VAD committed it as a user turn, the gate created
+   * a second response on top of the one still speaking, and the overlap guard
+   * cancelled it — leaving a line in the transcript she had barely started
+   * saying. M0's sixth finding measured this: 24 VAD triggers for 19 real
+   * turns, five of them her own voice.
+   *
+   * Procedural acoustics are currently off for every character (`AUDIO.md`), so
+   * until they come back this path is the only one that runs, and it was paying
+   * the echo cost for a room that was not there.
+   *
+   * When a room IS built, she has to go through WebAudio — convolution cannot
+   * happen anywhere else — and the echo risk returns with it. That is one more
+   * argument for recorded beds over convolution on her voice.
+   */
   private attachRemote(stream: MediaStream): void {
     const ctx = this.ensureAudioContext()
+    const throughRoom = this.room !== null
 
     // Chrome will not pump a remote WebRTC track into WebAudio unless the
-    // stream is also attached to a media element. This one is a keep-alive and
-    // nothing else: it is muted and it is never the playback path. What the
-    // user hears comes off `playbackSink`, wired in `armAudio`.
-    const keepAlive = new Audio()
-    keepAlive.autoplay = true
-    keepAlive.muted = true
-    keepAlive.srcObject = stream
-    void keepAlive.play().catch(() => {
+    // stream is also attached to a media element. With a room that element is
+    // a muted keep-alive; without one it is the speaker path, unmuted, which
+    // is what gives the echo canceller something to match against.
+    const el = new Audio()
+    el.autoplay = true
+    el.muted = throughRoom
+    el.srcObject = stream
+    void el.play().catch(() => {
       /* Silent by design; failing to start it is not an error worth surfacing. */
     })
-    this.keepAliveEl = keepAlive
+    this.keepAliveEl = el
 
     const source = ctx.createMediaStreamSource(stream)
 
@@ -375,13 +423,19 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     source.connect(analyser)
     this.agentAnalyser = analyser
 
-    // Into the room, which is already running. In a quiet scene there is no
-    // background masking a dry voice, so this matters more here, not less.
-    // With no room she goes straight to the sink — exactly once, which the old
-    // wiring did not manage.
-    if (this.room) source.connect(this.room.handles.input)
-    else if (this.playbackSink) source.connect(this.playbackSink)
-    else source.connect(ctx.destination)
+    if (throughRoom && this.room) {
+      source.connect(this.room.handles.input)
+      return
+    }
+
+    // She is already audible through the element. This branch exists only to
+    // keep the analyser inside a graph that reaches a destination — a silent
+    // tap, at zero gain, so the waveform cannot quietly stop moving on a
+    // browser that declines to pull an unterminated branch.
+    const silent = ctx.createGain()
+    silent.gain.value = 0
+    analyser.connect(silent)
+    silent.connect(ctx.destination)
   }
 
   private buildUserAnalyser(stream: MediaStream): void {
@@ -487,6 +541,38 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     })
   }
 
+  /**
+   * Cut her own history back to the audio the user actually received.
+   *
+   * The other half of the barge-in fix, and the half that changes what she
+   * SAYS NEXT. Clipping our transcript stops the debrief and the grader reading
+   * words nobody heard; this stops *her* reading them. Without it the model's
+   * conversation still contains the whole sentence, so her next line continues
+   * from a thought the user only got the first word of — which is exactly the
+   * live symptom of "she started saying something and then it became something
+   * else".
+   *
+   * Server VAD does truncate on its own, but on the send side: it knows what
+   * left the server, not what left the speaker, and the difference is the
+   * jitter buffer. Our playhead is measured from her first audible frame to the
+   * moment the buffer was cleared, so it is never LATER than the server's — and
+   * truncating to an earlier point is always legal. A refinement, not a fight.
+   *
+   * Best-effort by construction: a stale item id means the server has already
+   * moved on, and a rejected truncate is reported as a non-fatal provider error
+   * rather than being allowed to disturb a live conversation.
+   */
+  private truncateHerMemory(playedMs: number): void {
+    const itemId = this.translator.currentAudioItemId
+    if (!itemId) return
+    this.send({
+      type: 'conversation.item.truncate',
+      item_id: itemId,
+      content_index: 0,
+      audio_end_ms: Math.max(0, Math.round(playedMs)),
+    })
+  }
+
   /* -------------------------------------------------------------- *
    * VoiceProvider surface
    * -------------------------------------------------------------- */
@@ -515,6 +601,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   setInterruptible(interruptible: boolean): void {
     const td = this.config?.audio.input.turn_detection
     if (!td) return
+    if (td.interrupt_response === interruptible) return
     td.interrupt_response = interruptible
     this.send({
       type: 'session.update',
@@ -523,6 +610,26 @@ export class OpenAIVoiceProvider implements VoiceProvider {
         audio: { input: { turn_detection: { ...td } } },
       },
     })
+  }
+
+  /**
+   * Tell the adapter where the meter stands.
+   *
+   * The adapter deliberately owns no meter — warmth is the application's and
+   * the character never sees a number. What it needs is the ONE consequence
+   * that has to happen down here at transport level: how long she sits on a
+   * reply, and whether she takes the turn when he talks over her.
+   *
+   * Idempotent and cheap. `setInterruptible` no-ops when nothing changed, so
+   * this can be called on every turn without spending a session update.
+   */
+  setWarmth(warmth: number): void {
+    this.warmth = warmth
+    if (!this.persona) return
+    // §05 is the ceiling and this cannot raise it: levels 1-4 never interrupt,
+    // whatever the meter says. Above that, interruption becomes a sign of
+    // interest instead of a property of the rung.
+    this.setInterruptible(interruptsAt(warmth, mayInterrupt(this.persona)))
   }
 
   getAnalyser(): Analysers {

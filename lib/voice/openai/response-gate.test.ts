@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { OpenAIResponseGate } from './response-gate'
+import { DEFAULT_STALL_MS, OpenAIResponseGate } from './response-gate'
 import { OpenAIEventTranslator } from './translate'
 import { VoiceEmitter } from '../emitter'
 import type { TranscriptTurn } from '../types'
@@ -214,5 +214,75 @@ describe('response settling', () => {
       response: { id: 'resp_1', status: 'completed', output: [] },
     })
     expect(h.settles()).toBe(1)
+  })
+})
+
+describe('the beat before she answers', () => {
+  /** A gate with controllable timers, so the pause is deterministic. */
+  function gated(delay: number) {
+    const created: number[] = []
+    const timers: { fn: () => void; ms: number; id: number }[] = []
+    let nextId = 1
+    const gate = new OpenAIResponseGate(() => created.push(created.length), {
+      delayMs: () => delay,
+      setTimer: (fn, ms) => {
+        const id = nextId++
+        timers.push({ fn, ms, id })
+        return id
+      },
+      clearTimer: (handle) => {
+        const index = timers.findIndex((timer) => timer.id === handle)
+        if (index >= 0) timers.splice(index, 1)
+      },
+    })
+    return {
+      gate,
+      created,
+      /** Fire every pending timer shorter than the stall watchdog. */
+      runPause: () => {
+        for (const timer of [...timers]) {
+          if (timer.ms >= DEFAULT_STALL_MS) continue
+          const index = timers.findIndex((t) => t.id === timer.id)
+          if (index >= 0) timers.splice(index, 1)
+          timer.fn()
+        }
+      },
+    }
+  }
+
+  it('holds the reply for the beat, then sends it', () => {
+    const { gate, created, runPause } = gated(600)
+    gate.userTurnCommitted()
+    expect(created).toHaveLength(0)
+    runPause()
+    expect(created).toHaveLength(1)
+  })
+
+  it('looks busy for the whole pause, so a second turn cannot race it', () => {
+    // The safety argument for the whole feature: `inFlight` is set BEFORE the
+    // pause, so a turn arriving during it coalesces exactly as one arriving
+    // mid-generation would. A delay must never be able to produce two replies.
+    const { gate, created, runPause } = gated(600)
+    expect(gate.userTurnCommitted()).toBe('created')
+    expect(gate.userTurnCommitted()).toBe('queued')
+    expect(gate.busy).toBe(true)
+    runPause()
+    expect(created).toHaveLength(1)
+  })
+
+  it('answers immediately when she is warm enough not to pause', () => {
+    const { gate, created } = gated(0)
+    gate.userTurnCommitted()
+    expect(created).toHaveLength(1)
+  })
+
+  it('drops a pause that a reset overtook', () => {
+    // The turn belongs to whatever is happening now, not to a timer from
+    // before — a stall or a phantom cancel released the gate mid-pause.
+    const { gate, created, runPause } = gated(600)
+    gate.userTurnCommitted()
+    gate.reset()
+    runPause()
+    expect(created).toHaveLength(0)
   })
 })

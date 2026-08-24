@@ -15,6 +15,8 @@
 
 import { NextResponse } from 'next/server'
 import { requireUser } from '@/lib/db/api-auth'
+import { maySpend } from '@/lib/db/spend'
+import { supabaseAdmin } from '@/lib/db/admin'
 import { mayOpenSession } from '@/lib/db/progress'
 import { getPersona } from '@/lib/personas'
 import { mintSession } from '@/lib/voice/mint'
@@ -58,6 +60,11 @@ export async function POST(request: Request): Promise<Response> {
   const auth = await requireUser(request)
   if ('response' in auth) return auth.response
 
+  // Before the quota, because the kill switches have to reach the most
+  // expensive endpoint in the product or they are not switches (B9).
+  const allowed = await maySpend(auth.userId, 'token')
+  if (!allowed.ok) return allowed.response
+
   // The daily quota, at the point where money is actually committed. The rep
   // itself spends the counter when the transport connects; this refuses to
   // hand out a credential to somebody who has none left to spend (§14).
@@ -76,9 +83,28 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const personaId = typeof body.personaId === 'string' ? body.personaId : ''
-  const persona = getPersona(personaId)
-  if (!persona) {
+  const base = getPersona(personaId)
+  if (!base) {
     return NextResponse.json({ error: `No persona named "${personaId}".` }, { status: 404 })
+  }
+
+  // THE HOP THAT LOST CHARACTER MEMORY.
+  //
+  // Everything else about §08 worked: the grade produces a line, `grade/memory`
+  // refuses anything that is about him rather than about her, it is stored under
+  // the user's own context, the brief screen shows it, and "start fresh" deletes
+  // it. The live page even read it back and attached it to the persona — and
+  // then the browser sent us `persona.slug` and nothing else, and this route
+  // rebuilt the contract from the bare roster record. `compileInstructions`'
+  // "You have met before" block was never once reached in production.
+  //
+  // It is read HERE rather than accepted from the client on purpose, and it is
+  // the same reason the persona is compiled from an id: a client that can post
+  // its own memory can post its own character. `requireUser` has already run, so
+  // this is derived from the authenticated user and cannot be forged.
+  const persona = {
+    ...base,
+    ...(await recallMemory(auth.userId, base.slug)),
   }
 
   // Resolved here as well as in the page, from the same function, so the two
@@ -103,5 +129,49 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ error: cause.message }, { status })
     }
     return NextResponse.json({ error: String(cause) }, { status: 500 })
+  }
+}
+
+/**
+ * The one line she still has in mind, or nothing.
+ *
+ * Returns a partial persona rather than a string so the caller spreads it and
+ * an absent memory adds no key at all — `memorySummary` is optional on the
+ * schema and `compileInstructions` tests for its presence.
+ *
+ * Service role, because this runs on the edge with no user session attached and
+ * the user id has already been established by `requireUser`. It reads one row
+ * belonging to that user and nothing else.
+ *
+ * Best-effort by rule: a rep must never fail to start because a nice-to-have
+ * lookup was slow or the character was never seeded. Forgetting is the same
+ * answer as never having met.
+ */
+async function recallMemory(
+  userId: string,
+  slug: string,
+): Promise<{ memorySummary?: string }> {
+  if (userId === 'internal') return {}
+
+  try {
+    const admin = supabaseAdmin()
+    const { data: persona } = await admin
+      .from('personas')
+      .select('id')
+      .eq('slug', slug)
+      .maybeSingle()
+    if (!persona) return {}
+
+    const { data: memory } = await admin
+      .from('persona_memory')
+      .select('summary')
+      .eq('user_id', userId)
+      .eq('persona_id', persona.id)
+      .maybeSingle()
+
+    const summary = memory?.summary?.trim()
+    return summary ? { memorySummary: summary } : {}
+  } catch {
+    return {}
   }
 }

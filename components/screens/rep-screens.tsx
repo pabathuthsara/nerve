@@ -4,15 +4,18 @@ import Link from 'next/link'
 import { ChevronLeft, LockKeyhole, WifiOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { useInterviewers, usePersona, usePersonaProgress, useUserState } from '@/lib/data'
+import { useInterviewers, usePersona, usePersonaMemory, usePersonaProgress, useUserState } from '@/lib/data'
+import { MemoryLine } from './memory-line'
 import { DATING_DURATION_MS, useRepSession, type LiveRepConfig, type SpeakingState } from '@/lib/data/rep'
 import { WRAP_UP_MS } from '@/lib/data/rep-rules'
 import type { Band } from '@/lib/data/types'
-import { Avatar, Button, Skeleton } from '@/components/ui'
+import { TOP_TIER } from '@/lib/data/progression'
+import { Button, Skeleton } from '@/components/ui'
 import { RuleBlock } from './onboarding-screens'
 import { ConnectionLostModal, EndRepModal, HowItWorksSheet, MicLostModal, PaywallSheet, TrainingWheelsOffModal } from '@/components/modals'
-import { Orb, PhoneNumberCard, TimeArc, WarmthRing } from '@/components/rep-visuals'
+import { PhoneNumberCard, TimeArc } from '@/components/rep-visuals'
 import { useOnlineStatus } from '@/lib/hooks/use-online-status'
+import { FluidPersona } from '@/components/fluid-persona'
 
 interface RepScreenProps {
   personaId: string
@@ -33,6 +36,9 @@ export function RepBriefScreen({ personaId, interview = false }: RepScreenProps)
   const { data: user, loading: userLoading } = useUserState()
   const { data: progressRaw } = usePersonaProgress(personaId)
   const progress = Array.isArray(progressRaw) ? null : progressRaw
+  // Dating only. An interviewer carrying a memory of your last attempt is a
+  // different feature with different rules, and it is not this one (§08).
+  const memory = usePersonaMemory(interview ? '' : personaId)
   const online = useOnlineStatus()
   const interviewer = interviewers.find((item) => item.id === personaId)
   const subject = interview ? interviewer : persona
@@ -45,7 +51,7 @@ export function RepBriefScreen({ personaId, interview = false }: RepScreenProps)
   const enter = () => {
     if (!online || subject?.locked) return
     if ((user?.repsRemainingToday ?? 1) === 0) { setPaywall(true); return }
-    if (level === 4 && !trainingOff) { setTrainingOff(true); return }
+    if (level === TOP_TIER && !trainingOff) { setTrainingOff(true); return }
     setCurtain(true)
     window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560)
   }
@@ -57,7 +63,7 @@ export function RepBriefScreen({ personaId, interview = false }: RepScreenProps)
   const setting = interview ? `${interviewer?.styleLabel ?? 'Interviewer'} · ${interviewer?.gender ?? ''}` : persona?.setting ?? ''
   const hook = interview ? interviewer?.blurb ?? '' : persona?.hook ?? ''
   const back = interview ? '/interview/interviewers' : `/roster/${personaId}`
-  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}><Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link><section className="brief-shell"><Avatar name={subject.name} src={subject.portraitUrl} size={96} /><h1 className="display-lg">{subject.name}</h1><span className="label">{setting}</span><p className="brief-hook">{hook}</p>{!interview && progress && progress.attempts > 0 ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span> : null}<RuleBlock interview={interview} />{!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}<Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button><Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} /><TrainingWheelsOffModal open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /></main>
+  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}><Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link><section className="brief-shell"><FluidPersona name={subject.name} personaId={subject.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={132} /><h1 className="display-lg">{subject.name}</h1><span className="label">{setting}</span><p className="brief-hook">{hook}</p>{!interview && progress && progress.attempts > 0 ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span> : null}{!interview ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} /> : null}<RuleBlock interview={interview} />{!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}<Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button><Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} /><TrainingWheelsOffModal open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /></main>
 }
 
 export function RepLiveScreen({ personaId, interview = false, live = null }: RepScreenProps) {
@@ -132,7 +138,8 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
   // hurried.
   const wrapCue = !session.outcome && session.status === 'live'
     && session.msRemaining > 0 && session.msRemaining <= WRAP_UP_MS
-  return <main className={`rep-live${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label="End rep" disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{interview && session.question ? <p className="interview-question">{session.question}</p> : null}<section className="rep-center">{caption && subject ? <div className="rep-caption"><strong>{subject.name}</strong><span>{interview ? interviewer?.styleLabel : persona?.settingShort}</span></div> : null}<div className="orb-stage"><WarmthRing value={session.outcome?.won ? 100 : loss ? 0 : session.warmth} threshold={session.threshold} band={session.band} delta={session.lastDelta} neutral={level === 4} settled={Boolean(session.outcome)} /><Orb speaking={loss ? 'thinking' : session.speaking} userLevel={session.userLevel} personaLevel={session.personaLevel} band={loss ? 'CLOSED' : session.band} neutral={level === 4} /></div>{session.status === 'connecting' ? <span className="label rep-connecting">Connecting</span> : null}{session.status !== 'connecting' && level < 4 && !session.outcome ? <div className="band-readout"><span className="label" style={{ color: bandCss(session.band) }}>{displayBand}</span>{session.trainingWheels ? <strong className="data">{session.warmth}</strong> : null}</div> : null}{wrapCue ? <span className="wrap-cue label">30 seconds · land the conversation</span> : null}{session.outcome?.won && session.outcome.phoneNumber ? <PhoneNumberCard number={session.outcome.phoneNumber} /> : null}{loss ? <p className="exit-line">“{session.outcome?.exitLine}”</p> : null}<div className="mic-status" aria-live="polite">{statusLine}</div><div className="sr-only" aria-live="polite">{wrapCue ? 'Thirty seconds left. Land the conversation.' : bandAnnouncement(session.band, interview)}</div></section>{interview ? <span className="question-count data">Q{session.questionIndex} / {session.questionTotal}</span> : null}{resumeCount ? <div className="resume-count data">{resumeCount}</div> : null}<EndRepModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={() => { setEndOpen(false); session.end() }} /><MicLostModal open={micLost} onResume={() => { setMicLost(false); resume() }} onEnd={() => { setMicLost(false); session.end() }} /><ConnectionLostModal open={session.error === 'connection'} attempt={session.retryAttempt} onRetry={session.retry} onEnd={session.end} /></main>
+  const visualWarmth = session.outcome?.won ? 100 : loss ? 0 : session.warmth
+  return <main className={`rep-live${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label="End rep" disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{interview && session.question ? <p className="interview-question">{session.question}</p> : null}<section className="rep-center">{caption && subject ? <div className="rep-caption"><strong>{subject.name}</strong><span>{interview ? interviewer?.styleLabel : persona?.settingShort}</span></div> : null}<div className="orb-stage"><FluidPersona name={subject.name} personaId={subject.id} warmth={visualWarmth} announceWarmth speaking={loss ? 'thinking' : session.speaking} userLevel={session.userLevel} personaLevel={session.personaLevel} status={session.status === 'connecting' ? 'connecting' : 'live'} interactive fill /></div>{session.status === 'connecting' ? <span className="label rep-connecting">Connecting</span> : null}{session.status !== 'connecting' && level < 4 && !session.outcome ? <div className="band-readout"><span className="label" style={{ color: bandCss(session.band) }}>{displayBand}</span>{session.trainingWheels ? <strong className="data"><small>Warmth</small>{session.warmth}<i>/ {session.threshold}</i></strong> : null}</div> : null}{wrapCue ? <span className="wrap-cue label">30 seconds · land the conversation</span> : null}{session.outcome?.won && session.outcome.phoneNumber ? <PhoneNumberCard number={session.outcome.phoneNumber} /> : null}{loss ? <p className="exit-line">“{session.outcome?.exitLine}”</p> : null}<div className="mic-status" aria-live="polite">{statusLine}</div><div className="sr-only" aria-live="polite">{wrapCue ? 'Thirty seconds left. Land the conversation.' : bandAnnouncement(session.band, interview)}</div></section>{interview ? <span className="question-count data">Q{session.questionIndex} / {session.questionTotal}</span> : null}{resumeCount ? <div className="resume-count data">{resumeCount}</div> : null}<EndRepModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={() => { setEndOpen(false); session.end() }} /><MicLostModal open={micLost} onResume={() => { setMicLost(false); resume() }} onEnd={() => { setMicLost(false); session.end() }} /><ConnectionLostModal open={session.error === 'connection'} attempt={session.retryAttempt} onRetry={session.retry} onEnd={session.end} /></main>
 }
 
 function BriefGate({ title, description, href, locked = false }: { title: string; description: string; href: string; locked?: boolean }) {

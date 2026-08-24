@@ -5,9 +5,9 @@
  *
  * Everything a rep does except the voice itself: spend a quota, open a row,
  * write the transcript and the meter, record the day, store the grade, decide
- * the win, move the ladder. The transport is the one part this cannot cover —
- * WebRTC needs a browser and a microphone — and it is also the part that has
- * had a harness since M0.
+ * the win, move the ladder, and leave her with one line she still has in mind.
+ * The transport is the one part this cannot cover — WebRTC needs a browser and
+ * a microphone — and it is also the part that has had a harness since M0.
  *
  * Written against the real database with a throwaway user, for the reason
  * `db:verify` exists: a path that has only ever been exercised by hand is a
@@ -15,11 +15,15 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { asJson, type Database } from '@/lib/db/types'
+import { asJson } from '@/lib/db/json'
+import type { Database } from '@/lib/db/types'
 import { consumeRep, mayOpenSession, recordTrainingDay, syncLevel } from '@/lib/db/progress'
 import { momentsFrom, toScorecard, type StoredWarmthEvent } from '@/lib/data/scorecard'
-import { uiBand, uiLevel, wonFromRep } from '@/lib/data/progression'
-import { ARM_THRESHOLD, KEEP_THRESHOLD } from '@/lib/data/rep-rules'
+import { qualifyingByLevel, uiBand, uiLevel, unlockedLevels, wonFromRep } from '@/lib/data/progression'
+import { announceUnlock, recordUnlocks } from '@/lib/db/unlocks'
+import { ARM_THRESHOLD, KEEP_THRESHOLD, resultReading } from '@/lib/data/rep-rules'
+import { memoryLineFrom } from '@/lib/grade/memory'
+import { retestDue } from '@/lib/data/baseline'
 import { loadEnvLocal } from './env'
 
 let failures = 0
@@ -142,6 +146,11 @@ async function main(): Promise<void> {
       'finishing warm without ever having armed is not a win',
     )
 
+    // The warmth the ending was DECIDED on. Deliberately below the arm
+    // threshold while the rep finishes above it — the real Nadia rep that
+    // exposed this finished at 71.25 having been at 63.68 when she was told to
+    // leave, and the result screen showed the wrong one of those two.
+    const decisionWarmth = 63.68
     const { error: closeError } = await user
       .from('sessions')
       .update({
@@ -151,11 +160,32 @@ async function main(): Promise<void> {
         start_warmth: 32,
         final_warmth: finalWarmth,
         peak_warmth: peakWarmth,
+        decision_warmth: decisionWarmth,
         final_band: 'OPEN',
         won,
       })
       .eq('id', sessionId)
     check(!closeError, 'the rep closes with the meter on the row')
+
+    const { data: decided } = await user
+      .from('sessions').select('decision_warmth, final_warmth').eq('id', sessionId).maybeSingle()
+    check(Number(decided?.decision_warmth) === decisionWarmth, 'and with the warmth the ending turned on')
+
+    const reading = resultReading({
+      decisionWarmth: Number(decided?.decision_warmth),
+      finalWarmth: 71.25,
+      interview: false,
+      won: false,
+    })
+    check(reading.warmth === decisionWarmth, 'the result screen reads the decision, not the finish')
+    check(
+      reading.lateSurge,
+      `and names the late surge: ${decisionWarmth} when she decided, 71.25 at the end`,
+    )
+    check(
+      resultReading({ decisionWarmth: null, finalWarmth: 71.25, interview: false, won: false }).fallback,
+      'a rep recorded before the column existed falls back and says so',
+    )
 
     const { data: closed } = await user
       .from('sessions')
@@ -220,8 +250,174 @@ async function main(): Promise<void> {
     console.log('\nthe ladder (§08)')
     await syncLevel(userId)
     const { data: profile } = await user.from('profiles').select('current_level').eq('id', userId).maybeSingle()
-    check((profile?.current_level ?? 0) > 1, 'a win moves the ladder position')
-    check(uiLevel(profile?.current_level ?? 1) === 2, 'one win at tier 1 opens tier 2 and no further')
+    check((profile?.current_level ?? 0) > 1, 'a graded rep moves the ladder position')
+    check(uiLevel(profile?.current_level ?? 1) === 2, 'tier 2 is open and nothing above it')
+
+    // §08's rule, against the real join. One rep scoring 79 is not two, so the
+    // tier above must stay shut — the gate is demonstrated skill, and this is
+    // the half that proves it does not open early.
+    const openNow = async () => {
+      const { data: rows } = await user.from('sessions').select('id, persona_slug').not('ended_at', 'is', null)
+      const { data: scored } = await user.from('scores').select('session_id, composite')
+      const byId = new Map((scored ?? []).map((row) => [row.session_id, row.composite]))
+      return unlockedLevels(qualifyingByLevel((rows ?? []).map((row) => ({
+        level: uiLevel(row.persona_slug === 'nadia' ? 1 : 8),
+        composite: byId.get(row.id) ?? null,
+      }))))
+    }
+    check(!(await openNow()).has(3), 'one qualifying rep does not open the tier above')
+
+    console.log('\nthe unlock, once and only once (§12)')
+    const pending = (kind: 'level' | 'tier') => user
+      .from('unlocks')
+      .select('kind, ref, announced_at')
+      .eq('kind', kind)
+      .is('announced_at', null)
+
+    // Roster tiers 1 and 2 are open from the start, so they are not moments —
+    // telling somebody they have unlocked what they were given is worse than
+    // saying nothing.
+    const { data: levelsWaiting } = await pending('level')
+    check((levelsWaiting?.length ?? 0) === 0, 'a roster tier that was always open is never announced')
+
+    // The field tier is a different story and SHOULD be here. A fresh account
+    // reaches engine level 4 the moment its first rep is graded, because UI
+    // tiers 1 and 2 are free, and §09 opens Tier 2 challenges at sim level 4.
+    const { data: tiersWaiting } = await pending('tier')
+    check(
+      tiersWaiting?.length === 1 && tiersWaiting[0]?.ref === '2',
+      'the field tier the sim level just opened is waiting to be shown (§09)',
+    )
+
+    // Force the earned case: record tier 3 the way syncLevel would.
+    await recordUnlocks(userId, [{ kind: 'level', ref: '3' }])
+    const { data: waiting } = await pending('level')
+    check(waiting?.length === 1 && waiting[0]?.ref === '3', 'an earned tier waits to be shown, exactly once')
+
+    await recordUnlocks(userId, [{ kind: 'level', ref: '3' }])
+    const { count: rowCount } = await user
+      .from('unlocks')
+      .select('ref', { count: 'exact', head: true })
+      .eq('kind', 'level')
+      .eq('ref', '3')
+    check(rowCount === 1, 'recording it twice still leaves one row')
+
+    await announceUnlock(userId, 'level', '3')
+    const { data: afterShown } = await pending('level')
+    check((afterShown?.length ?? 0) === 0, 'once shown, it never comes back')
+
+    const { error: forgedUnlock } = await user
+      .from('unlocks')
+      .insert({ user_id: userId, kind: 'level', ref: '4' })
+    check(!!forgedUnlock, 'and a user cannot unlock a level for themselves')
+
+    console.log('\nthe baseline (§08)')
+    // Written by the first graded rep and filtered on `baseline_session_id is
+    // null`, so it is written once however the timing falls. A baseline that
+    // moves is not a baseline — the week-four comparison would be measuring
+    // against a target walking towards it.
+    const setBaseline = (id: string, score: number) => user
+      .from('profiles')
+      .update({ baseline_session_id: id, baseline_score: score })
+      .eq('id', userId)
+      .is('baseline_session_id', null)
+
+    await setBaseline(sessionId, composite)
+    const { data: withBaseline } = await user
+      .from('profiles').select('baseline_session_id, baseline_score').eq('id', userId).maybeSingle()
+    check(withBaseline?.baseline_session_id === sessionId, 'the first graded rep becomes the baseline')
+    check(withBaseline?.baseline_score === composite, 'and its composite is kept beside it')
+
+    // A second rep must not move it.
+    await setBaseline('00000000-0000-0000-0000-000000000000', 99)
+    const { data: stillBaseline } = await user
+      .from('profiles').select('baseline_session_id, baseline_score').eq('id', userId).maybeSingle()
+    check(
+      stillBaseline?.baseline_session_id === sessionId && stillBaseline?.baseline_score === composite,
+      'a later rep never revises it',
+    )
+
+    check(
+      !retestDue({
+        baseline: { sessionId, personaId: 'nadia', score: composite, takenAt: new Date().toISOString() },
+        retest: null,
+        now: new Date(),
+        timezone: 'Asia/Colombo',
+      }),
+      'the week-four offer stays shut on day one',
+    )
+
+    console.log('\nwhat she remembers (§08)')
+    // The filter decides; nothing reaches the table without clearing it. These
+    // two are the plan's own examples and they are the reason this table is
+    // safe to write to at all — a character who is pleased to see you is a
+    // companion app, and §14 says that is a payment account waiting to be
+    // closed.
+    check(
+      memoryLineFrom('You were doing well until you asked about work.') === null,
+      'a line about how he did never becomes a memory',
+    )
+    check(
+      memoryLineFrom("I've been hoping you'd come back.") === null,
+      'and neither does a line about wanting to see him again',
+    )
+
+    const GOOD_LINE = "Still looking for the blue one. Sister's birthday is Thursday."
+    const line = memoryLineFrom(GOOD_LINE)
+    check(line === GOOD_LINE, 'a line about her own situation survives the filter')
+
+    const { error: memoryError } = await user.from('persona_memory').upsert(
+      { user_id: userId, persona_id: persona?.id ?? '', summary: line ?? '', last_seen_at: new Date().toISOString() },
+      { onConflict: 'user_id,persona_id' },
+    )
+    check(!memoryError, `it is written down${memoryError ? ` (${memoryError.message})` : ''}`)
+
+    // What the live page reads to build the character contract. If this comes
+    // back empty the rep opens cold whatever is in the table.
+    const recall = async () => {
+      const { data } = await user
+        .from('persona_memory')
+        .select('summary')
+        .eq('user_id', userId)
+        .eq('persona_id', persona?.id ?? '')
+        .maybeSingle()
+      return data?.summary ?? null
+    }
+    check((await recall()) === GOOD_LINE, 'the next rep opens with it')
+
+    // A second rep must replace the line rather than accumulate lines.
+    await user.from('persona_memory').upsert(
+      { user_id: userId, persona_id: persona?.id ?? '', summary: 'The train was twenty minutes late again.', last_seen_at: new Date().toISOString() },
+      { onConflict: 'user_id,persona_id' },
+    )
+    const { count: memoryRows } = await user
+      .from('persona_memory')
+      .select('user_id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+    check(memoryRows === 1, 'a later rep replaces the line rather than stacking another')
+
+    // The reset, which is the whole reason `persona_memory` grants its owner
+    // DELETE rather than being service-role write like the ladder position.
+    const { error: forgetError } = await user
+      .from('persona_memory')
+      .delete()
+      .eq('user_id', userId)
+      .eq('persona_id', persona?.id ?? '')
+    check(!forgetError, `one tap clears it${forgetError ? ` (${forgetError.message})` : ''}`)
+    check((await recall()) === null, 'and the rep after that opens cold')
+
+    // The reset clears the line and nothing else. This is what the copy beside
+    // the control promises, so it is asserted rather than trusted.
+    const { count: survivingSessions } = await user
+      .from('sessions').select('id', { count: 'exact', head: true }).eq('user_id', userId)
+    const { count: survivingScores } = await user
+      .from('scores').select('session_id', { count: 'exact', head: true }).eq('user_id', userId)
+    const { data: afterForget } = await user
+      .from('profiles').select('current_level').eq('id', userId).maybeSingle()
+    check(
+      survivingSessions === 1 && survivingScores === 1 && afterForget?.current_level === profile?.current_level,
+      'forgetting takes the line and leaves the rep, the score and the ladder alone',
+    )
   } finally {
     if (userId) await admin.auth.admin.deleteUser(userId)
     console.log('\ntest user removed.')

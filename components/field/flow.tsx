@@ -34,20 +34,38 @@ export interface FieldFlow {
   logCouldNot: (reason: string) => void
 }
 
+interface FlowCallbacks {
+  /** Called after a write lands, so the screen can refetch. */
+  onChanged?: () => void
+  /**
+   * Called when the ask just logged crossed 10 / 25 / 50 / 100 rejections.
+   *
+   * The screen owns the sheet rather than this hook, because the Train card
+   * and `/field` want the same moment in different places — and because the
+   * row in `unlocks` is what actually makes it fire. This only decides when.
+   */
+  onMilestone?: (at: number) => void
+}
+
 /**
  * @param assignment today's challenge, or null while it loads
- * @param onChanged called after a write lands, so the screen can refetch
+ * @param callbacks what to do once a write lands
  */
-export function useFieldFlow(assignment: FieldAssignment | null, onChanged?: () => void): FieldFlow {
+export function useFieldFlow(assignment: FieldAssignment | null, callbacks: FlowCallbacks = {}): FieldFlow {
   const [override, setOverride] = useState<FieldStatus | null>(null)
   const [sheet, setSheet] = useState<SheetKind>(null)
   const [busy, setBusy] = useState(false)
   const toast = useToast()
+  const { onChanged, onMilestone } = callbacks
 
   const status = override ?? assignment?.status ?? null
 
   const run = useCallback(
-    (optimistic: FieldStatus, action: () => Promise<{ ok: boolean; message: string | null }>, success: string) => {
+    (
+      optimistic: FieldStatus,
+      action: () => Promise<{ ok: boolean; message: string | null; milestone?: number }>,
+      success: string,
+    ) => {
       const previous = override
       setOverride(optimistic)
       setSheet(null)
@@ -57,6 +75,7 @@ export function useFieldFlow(assignment: FieldAssignment | null, onChanged?: () 
           if (result.ok) {
             toast.push(success, 'volt')
             onChanged?.()
+            if (result.milestone !== undefined) onMilestone?.(result.milestone)
             return
           }
           // It did not land. Put the screen back where it was and say why —
@@ -70,7 +89,7 @@ export function useFieldFlow(assignment: FieldAssignment | null, onChanged?: () 
         })
         .finally(() => setBusy(false))
     },
-    [onChanged, override, toast],
+    [onChanged, onMilestone, override, toast],
   )
 
   return {

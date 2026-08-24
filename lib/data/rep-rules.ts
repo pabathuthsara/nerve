@@ -16,6 +16,8 @@
  * the clock reaches zero.
  */
 
+import type { SceneBeat } from '@/lib/voice/types'
+
 /** A dating rep is three minutes (§05, and §14's "3 reps ≈ 9 min"). */
 export const DATING_DURATION_MS = 180_000
 
@@ -144,6 +146,92 @@ export function isClosingOver(input: {
 }): boolean {
   if (input.msSinceTimeUp >= CLOSING_GRACE_MS) return true
   return !input.agentSpeaking && input.msSinceTimeUp >= CLOSING_IDLE_MS
+}
+
+/**
+ * The next thing the scene does to her, if it is due.
+ *
+ * Her availability used to change only in response to the user, which is not
+ * how strangers work. Erin has a train in four minutes and it never arrived;
+ * Jules's friend never came back; the argument with the brother never escalated.
+ * A scene that only reacts is a scene with one person in it.
+ *
+ * Fired on the rep's own clock, in authored order, once each. Nothing here
+ * touches warmth — a beat is a fact about the room, and how she takes it is
+ * hers. That is also what makes it a training signal: recovering from an
+ * interruption you did not cause is most of what actually happens in a bar.
+ *
+ * Beats past `LAST_BEAT_FRACTION` are ignored however they were authored. The
+ * wind-down owns the end of a rep, and a character being handed two different
+ * directions thirty seconds out is an argument this codebase has already had.
+ */
+export const LAST_BEAT_FRACTION = 0.75
+
+export function dueSceneBeat(input: {
+  beats: readonly SceneBeat[] | undefined
+  /** 0-1 through the rep. */
+  elapsedFraction: number
+  /** How many have already fired this rep. */
+  fired: number
+}): SceneBeat | null {
+  const beats = input.beats
+  if (!beats || input.fired >= beats.length) return null
+
+  const next = beats[input.fired]
+  if (!next) return null
+  if (next.at > LAST_BEAT_FRACTION) return null
+  return input.elapsedFraction >= next.at ? next : null
+}
+
+export interface ResultReading {
+  /** The number to show against the threshold. */
+  warmth: number
+  threshold: number
+  /** True when no decision warmth was stored and this is the final reading. */
+  fallback: boolean
+  /**
+   * She was told to leave, and then the meter climbed past the bar anyway.
+   *
+   * Correct behaviour, and the single most confusing thing the result screen
+   * can be asked to explain — so it is named here rather than inferred from
+   * two numbers at the point of rendering.
+   */
+  lateSurge: boolean
+}
+
+/**
+ * Which reading actually explains the outcome.
+ *
+ * **Not where the meter finished.** The ending is decided once, at the
+ * wind-down, and may not change afterwards — so warmth can rise through the
+ * last thirty seconds of a rep she has already been told to leave. Showing the
+ * final value against `ARM_THRESHOLD` compares two numbers that were never
+ * compared to each other, and it produced a real screen reading `71 / 65`
+ * under the words "She left", captioned "You were close".
+ *
+ * `decisionWarmth` is null for reps recorded before it was kept; the final
+ * reading stands in, and callers say which one they are showing.
+ */
+export function resultReading(input: {
+  decisionWarmth: number | null
+  finalWarmth: number
+  interview: boolean
+  /** Whether she gave it. Used to read a late surge off an older rep. */
+  won: boolean
+}): ResultReading {
+  const threshold = repThreshold(input.interview)
+  const fallback = input.decisionWarmth === null
+  const warmth = input.decisionWarmth ?? input.finalWarmth
+
+  // Finishing above the bar and not getting it is itself proof the decision
+  // was taken on a lower number — there is no other way for both to be true.
+  // So an older rep with no stored decision can still be read correctly, which
+  // matters: those are the reps already sitting in somebody's history.
+  const lateSurge = fallback
+    ? !input.won && input.finalWarmth > threshold
+    : warmth < threshold && input.finalWarmth > threshold
+
+  return { warmth, threshold, fallback, lateSurge }
 }
 
 /**

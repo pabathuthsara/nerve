@@ -15,6 +15,23 @@
  * So directives here are blunt, short, and imperative. At low warmth they
  * forbid questions outright rather than rationing them, because "occasionally"
  * is not a thing a model reliably counts.
+ *
+ * ## What the cold bands are allowed to be
+ *
+ * They used to be a word cap and almost nothing else — CLOSED was "one to four
+ * words", GUARDED "three to eight". On the lower rungs that is correct-ish; on
+ * levels 5 and up the meter never leaves those bands inside three minutes, so
+ * an entire rep was a stranger who could not form a sentence. "What?" does not
+ * read as a distracted commuter. It reads as a broken character, and it was the
+ * single loudest reason the personas did not feel human.
+ *
+ * The fix is not to make her warmer. It is to stop expressing coldness as
+ * syllables. A cold band now withholds the things coldness actually withholds —
+ * curiosity, volunteering, softening, follow-ups — while leaving her enough
+ * words to sound like a person who simply is not interested. The caps still
+ * climb monotonically across the ladder, and the WARM bands are untouched,
+ * because those were tuned against real reps and the round-6 failure lives at
+ * that end.
  */
 
 export type WarmthBand =
@@ -56,28 +73,28 @@ export const BANDS: readonly BandSpec[] = [
     min: -20,
     max: -1,
     directive:
-      'You want this to end. One or two words, or nothing at all. Do not ask anything. Do not soften it.',
+      'Under six words. You want this over. Do not ask anything, and do not soften it.',
   },
   {
     band: 'CLOSED',
     min: 0,
     max: 19,
     directive:
-      'One to four words. Do not ask him anything. Do not add anything he did not ask for.',
+      'Four to ten words. Answer, then stop. Do not ask him anything, do not volunteer anything, and do not warm it up.',
   },
   {
     band: 'GUARDED',
     min: 20,
     max: 39,
     directive:
-      'Three to eight words. Answer only what he asked. Do not ask him anything back.',
+      'One sentence, twelve words at most. Answer only what he asked. Do not ask him anything back.',
   },
   {
     band: 'OPEN',
     min: 40,
     max: 59,
     directive:
-      'One sentence, twelve words at most. You may volunteer one small thing. Do not ask a question this turn unless he asked you one first.',
+      'One sentence, fourteen words at most. You may volunteer one small thing. Do not ask a question this turn unless he asked you one first.',
   },
   {
     band: 'ENGAGED',

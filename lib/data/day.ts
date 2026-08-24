@@ -78,3 +78,16 @@ export function daysBetween(from: string, to: string): number {
   const [ty = 0, tm = 1, td = 1] = to.split('-').map(Number)
   return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000)
 }
+
+/**
+ * A `YYYY-MM-DD` day, shifted by whole days.
+ *
+ * Pure string arithmetic on a calendar date, deliberately: these strings are
+ * already in somebody's LOCAL day (`localDay` put them there), so re-entering a
+ * timezone here would apply the offset twice. `Date.UTC` is used only because
+ * it is the calendar arithmetic that does not drift across a DST boundary.
+ */
+export function shiftDays(day: string, delta: number): string {
+  const [year = 0, month = 1, date = 1] = day.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, date + delta)).toISOString().slice(0, 10)
+}

@@ -164,6 +164,31 @@ export function echoOverlap(candidate: string, agentText: string): number {
 const ECHO_DURING_PLAYBACK = 0.6
 const ECHO_AFTER_PLAYBACK = 0.85
 
+/**
+ * THE EVIDENCE FLOOR, and the reason this rule stopped eating real turns.
+ *
+ * `echoOverlap` is a ratio, and a ratio over one or two words is not evidence,
+ * it is a coincidence with a decimal point on it. One content word that also
+ * appears in her last line scores 1.00 — past both thresholds — so "Awesome."
+ * after she has said "awesome" was deleted outright: no transcript entry, no
+ * warmth event, no reply created, and nothing anywhere recording that it
+ * happened. From the user's seat she simply ignored them.
+ *
+ * Worse, it fired hardest on the single best move in the game. `scoreFast`
+ * pays for a callback — picking up her exact words — and §07 grades on it, so
+ * a high content-word overlap is the DEFINITION of the behaviour the product
+ * is trying to teach. "Four minutes?" answering "The board says four minutes"
+ * is a perfect callback and scored 1.00 as her own voice.
+ *
+ * So the rule now needs three content words to judge and two of them to be
+ * shared before it may fire at all. Below that there is no way to tell a
+ * callback from an echo, and the correct answer when you cannot tell is to let
+ * the turn through: a phantom costs one odd reply, a suppressed turn costs the
+ * user their answer and their score.
+ */
+const MIN_CANDIDATE_TOKENS = 3
+const MIN_SHARED_TOKENS = 2
+
 export interface EchoInput {
   text: string
   /** Her most recent spoken turn, or null when she has not spoken yet. */
@@ -172,8 +197,47 @@ export interface EchoInput {
   duringAgentSpeech: boolean
 }
 
-export function isAgentEcho(input: EchoInput): boolean {
-  if (!input.agentText) return false
+export interface EchoVerdict {
+  echo: boolean
+  /** Why not, when the rule declined to fire. Reported, never silent. */
+  reason: 'no-agent-text' | 'too-few-tokens' | 'too-few-shared' | 'below-threshold' | null
+  overlap: number
+  sharedTokens: number
+}
+
+/**
+ * The full verdict, including why the rule declined.
+ *
+ * `isAgentEcho` keeps the boolean shape every caller already uses; this exists
+ * so the adapter can report a near-miss instead of the rule being invisible
+ * either way.
+ */
+export function classifyEcho(input: EchoInput): EchoVerdict {
+  if (!input.agentText) {
+    return { echo: false, reason: 'no-agent-text', overlap: 0, sharedTokens: 0 }
+  }
+
+  const words = contentTokens(input.text)
+  const hers = new Set(contentTokens(input.agentText))
+  const sharedTokens = words.filter((word) => hers.has(word)).length
+  const overlap = words.length === 0 || hers.size === 0 ? 0 : sharedTokens / words.length
+
+  // Not enough of a sentence to judge. A one- or two-word turn is exactly the
+  // nervous acknowledgement this product exists to coax out of somebody.
+  if (words.length < MIN_CANDIDATE_TOKENS) {
+    return { echo: false, reason: 'too-few-tokens', overlap, sharedTokens }
+  }
+  if (sharedTokens < MIN_SHARED_TOKENS) {
+    return { echo: false, reason: 'too-few-shared', overlap, sharedTokens }
+  }
+
   const threshold = input.duringAgentSpeech ? ECHO_DURING_PLAYBACK : ECHO_AFTER_PLAYBACK
-  return echoOverlap(input.text, input.agentText) >= threshold
+  if (overlap < threshold) {
+    return { echo: false, reason: 'below-threshold', overlap, sharedTokens }
+  }
+  return { echo: true, reason: null, overlap, sharedTokens }
+}
+
+export function isAgentEcho(input: EchoInput): boolean {
+  return classifyEcho(input).echo
 }

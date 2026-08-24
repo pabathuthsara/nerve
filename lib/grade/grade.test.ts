@@ -194,6 +194,7 @@ describe('composite', () => {
     scores: { opening: 80, curiosity: 70, listening: 60, signalReading: 40, composure: 90, close: 50 },
     evidence: {},
     wentWell: 'He opened without hedging.',
+    memoryLine: 'Still looking for the blue one.',
   }
 
   it('weights deterministic 60 / judgement 40 (§07)', () => {
@@ -240,6 +241,24 @@ describe('composite', () => {
     })
     // A user who feels flayed after their third rep never comes back (§07).
     expect(card.wentWell).toBeTruthy()
+  })
+
+  it('carries the memory line through without letting it near the score', () => {
+    // §08's continuity line rides on the grade because grading is already the
+    // one pass over the full transcript. It must cost the composite nothing.
+    const withMemory = composeScorecard({
+      transcript: GOOD, sessionSeconds: 30, judgement, outcome: 'neutral', model: 'test',
+    })
+    const without = composeScorecard({
+      transcript: GOOD,
+      sessionSeconds: 30,
+      judgement: { ...judgement, memoryLine: null },
+      outcome: 'neutral',
+      model: 'test',
+    })
+    expect(withMemory.memoryLine).toBe('Still looking for the blue one.')
+    expect(without.memoryLine).toBeNull()
+    expect(withMemory.composite).toBe(without.composite)
   })
 
   it('rejects a judgement layer missing a sub-score', () => {

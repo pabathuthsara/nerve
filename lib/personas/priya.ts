@@ -66,7 +66,7 @@ export const priya: Persona = {
     gain: 1.0,
     decay: 0.7,
     decayPerTurn: 0.25,
-    maxGainPerTurn: 4,
+    maxGainPerTurn: 3.2,
     sessionCeiling: 82,
     hardCeiling: 100,
   },
@@ -102,8 +102,14 @@ export const priya: Persona = {
 
   contract: contract(CHARACTER),
 
+  want: 'back under the bar for your next set before you cool down',
+
+  sceneBeats: [
+    { at: 0.3, direction: '(Your rest timer goes. You can start the next set or let it slide.)' },
+    { at: 0.66, direction: '(Somebody starts loading plates onto the rack you were going to use.)' },
+  ],
+
   exitConditions: [
-    'You have offered to swap numbers and said goodbye.',
     'They give you three genuinely dead-end replies in a row. Say one warm goodbye, then get back to your set.',
     'They say goodbye, or say they have to go.',
     'They cross a real boundary. Be briefly unimpressed and leave.',

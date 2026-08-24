@@ -44,10 +44,19 @@ export const FIELD_CHALLENGES: FieldChallenge[] = [
    * Tier 1 — in-app. Day one. No social risk at all.
    * ---------------------------------------------------------------- */
   {
+    // The slug is deliberately stale. It named Alex, who is no longer on the
+    // roster, but `field_assignments` and `field_log` point at the row this
+    // slug upserts and the seeder never unpublishes a slug that disappears —
+    // renaming it would leave a live challenge behind still asking for her.
+    // The copy is what the user reads, and the copy is what was wrong.
     slug: 'ask-alex',
     tier: 1,
-    title: 'Ask Alex for her number.',
-    brief: 'Run a rep against Alex and ask for her number before the three minutes are up. She is going to say no. That is the exercise.',
+    // Naming no character at all is the better version of this challenge, not
+    // merely the version that survived the roster change: the exercise is
+    // hearing the word out loud, and pinning it to one character made it a
+    // thing you did once rather than a thing you can do in any rep.
+    title: 'Ask for her number.',
+    brief: 'In your next rep, ask for her number before the three minutes are up. If you are facing Robin you are almost certainly going to hear no, and she will be perfectly nice about it. Hearing it out loud is the exercise.',
     doneWhen: 'You asked out loud and heard the answer. Whatever she said, this one is done.',
     setting: 'in-app',
   },

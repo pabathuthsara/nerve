@@ -6,6 +6,8 @@ import { currentUser, supabaseServer } from '@/lib/db/server'
 import { getPersona } from '@/lib/personas'
 import { resolveProviderId } from '@/lib/voice'
 import { DEFAULT_CALIBRATION } from '@/lib/voice/types'
+import { NO_OFFSET, withDifficulty } from '@/lib/data/difficulty'
+import { readOffset } from '@/lib/db/difficulty'
 
 /**
  * The live rep, resolved on the server.
@@ -35,11 +37,32 @@ export default async function RepLivePage({ params }: { params: Promise<{ person
     .eq('id', user.id)
     .maybeSingle()
 
+  // Character memory (§08) is NOT read here any more, and the move is the fix.
+  //
+  // It used to be read on this page and attached to the persona handed to the
+  // browser — which then sent the token route a slug and nothing else, so the
+  // contract was recompiled from the bare roster record and the memory was
+  // dropped one hop before it would have mattered. It now lives in
+  // `app/api/voice/token/route.ts`, next to `compileInstructions`, derived from
+  // the authenticated user rather than travelling through the client.
+  //
+  // The brief screen still shows the line to the user; that reads its own query.
+
+  // Adaptive difficulty (§08), applied where the config is built and nowhere
+  // else. The engine reads its trajectory through a getter, which is the seam
+  // this hangs on — no engine change, and the character is unaware she has
+  // been adjusted. Nothing about the adjustment reaches the browser except the
+  // numbers themselves, so a downward one is invisible by construction (§12).
+  const offset = persona ? await readOffset(user.id, persona.level) : NO_OFFSET
+
   // A character on the roster whose engine config has not been authored yet
   // gets a screen that says so, not a session against nobody.
   const live: LiveRepConfig | null = persona
     ? {
-        persona,
+        persona: {
+          ...persona,
+          trajectory: withDifficulty(persona.trajectory, offset),
+        },
         provider: resolveProviderId({ envDefault: process.env.VOICE_PROVIDER }),
         model: process.env.OPENAI_REALTIME_MODEL ?? 'gpt-realtime-mini',
         calibration: {

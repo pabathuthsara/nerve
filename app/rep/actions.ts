@@ -20,9 +20,11 @@ import { supabaseAdmin } from '@/lib/db/admin'
 import type { ProviderId, Rate, SessionUsage, TranscriptTurn } from '@/lib/voice/types'
 import type { Scorecard } from '@/lib/grade/types'
 import type { WarmthTelemetry } from '@/lib/warmth/engine'
+import type { RepIncidents } from '@/lib/voice/incidents'
 import { AUDIO_RETENTION_DAYS } from '@/lib/db/retention'
-import { asJson } from '@/lib/db/types'
+import { asJson } from '@/lib/db/json'
 import { consumeRep, recordTrainingDay, syncLevel } from '@/lib/db/progress'
+import { adjustDifficulty, recentScoresAtLevel } from '@/lib/db/difficulty'
 import { wonFromRep } from '@/lib/data/progression'
 
 export interface SaveResult {
@@ -122,6 +124,15 @@ export async function finishSession(input: {
   /** The meter, as it was read at the end of the rep. */
   warmth?: WarmthTelemetry | null
   /**
+   * The warmth the ending was DECIDED on, which is not the warmth it ended on.
+   *
+   * The decision is taken once at the wind-down and cannot change afterwards,
+   * so the meter can keep climbing past the threshold on a rep she had already
+   * been told to leave. Storing only `final_warmth` left the result screen
+   * comparing two numbers that were never compared to each other.
+   */
+  decisionWarmth?: number
+  /**
    * Whether she gave her number.
    *
    * Passed explicitly rather than re-derived, because the number is given the
@@ -130,6 +141,16 @@ export async function finishSession(input: {
    * the meter finished.
    */
   won?: boolean
+  /**
+   * What the transport did to this rep.
+   *
+   * Stored because a transcript is only evidence if you know whether it is what
+   * the user heard. A rep where she was cut off on most replies, or where real
+   * user turns were deleted as echo, produces a low grade that is not about the
+   * user at all — and without this there is no way to tell those two apart
+   * after the fact. See lib/voice/incidents.ts.
+   */
+  incidents?: RepIncidents | null
 }): Promise<SaveResult> {
   const user = await currentUser()
   if (!user) return FAILED
@@ -158,6 +179,8 @@ export async function finishSession(input: {
       // the meter for a row written by anything else. See wonFromRep.
       won: input.won
         ?? (warmth ? wonFromRep({ finalWarmth: warmth.end, peakWarmth: warmth.peak }) : null),
+      decision_warmth: input.decisionWarmth === undefined ? null : round2(input.decisionWarmth),
+      pipeline_incidents: input.incidents ? asJson(input.incidents) : null,
     })
     .eq('id', input.sessionId)
 
@@ -264,6 +287,14 @@ export async function saveScore(input: {
   sessionId: string
   scorecard: Scorecard
   provider: ProviderId
+  /**
+   * The ENGINE level (1-8) this rep was at, for the difficulty offset.
+   *
+   * Passed rather than looked up: the live rep already holds the persona, and
+   * a second round trip to read a number it is holding is a round trip for
+   * nothing. Optional so a caller that does not know simply skips the nudge.
+   */
+  personaLevel?: number
 }): Promise<SaveResult> {
   const user = await currentUser()
   if (!user) return FAILED
@@ -298,7 +329,7 @@ export async function saveScore(input: {
   // It is recorded and worth zero points (§07).
   const { data: session } = await supabase
     .from('sessions')
-    .select('final_warmth, peak_warmth, won')
+    .select('final_warmth, peak_warmth, won, persona_id')
     .eq('id', input.sessionId)
     .maybeSingle()
 
@@ -306,16 +337,22 @@ export async function saveScore(input: {
     .from('sessions')
     .update({
       outcome: card.outcome,
-      // A win that already happened is not up for reconsideration: she gave
-      // her number, the user watched it happen, and a grader calling the
-      // exchange "neutral" afterwards does not take it back.
-      won: session?.won === true
-        ? true
-        : wonFromRep({
-            finalWarmth: session?.final_warmth ?? null,
-            peakWarmth: session?.peak_warmth ?? null,
-            outcome: card.outcome,
-          }),
+      // **The grade never revises the win, in either direction.** The live rep
+      // is the only thing that knows what she was told at the wind-down, so
+      // once it has answered, that answer stands — a grader calling the
+      // exchange "receptive" afterwards does not hand over a number the meter
+      // never earned, and one calling it "neutral" does not take back a number
+      // the user watched arrive.
+      //
+      // The old guard only protected the second of those. It read
+      // `won === true ? true : recompute(..., outcome)`, so a stored `false`
+      // was recomputed with the grader's outcome in the mix and flipped to
+      // true. Falling back only when there is no answer at all is the whole
+      // fix; `wonFromRep` no longer takes an outcome either.
+      won: session?.won ?? wonFromRep({
+        finalWarmth: session?.final_warmth ?? null,
+        peakWarmth: session?.peak_warmth ?? null,
+      }),
     })
     .eq('id', input.sessionId)
 
@@ -323,8 +360,115 @@ export async function saveScore(input: {
   // the outcome that decides the win is known — never before it.
   await syncLevel(user.id)
 
+  await rememberEncounter({
+    userId: user.id,
+    personaId: session?.persona_id ?? null,
+    line: card.memoryLine,
+  })
+
+  await recordBaseline({ sessionId: input.sessionId, composite: card.composite })
+
+  // Adaptive difficulty (§08). Deliberately last, and deliberately ignored:
+  // the decision carries an `announce` flag that is false for every downward
+  // adjustment, and this path has nothing to show either way. The scorecard
+  // reads the flag if it wants to celebrate a bump; a user being eased off is
+  // told nothing, by anything, ever (§12).
+  await adjustAfterGrade(user.id, input.personaLevel ?? null)
+
   revalidateReadPaths()
   return { ok: true, message: null }
+}
+
+/**
+ * What she carries into the next rep (§08).
+ *
+ * Written in the user's own context rather than with the service role, and
+ * that is deliberate: unlike plan, quota and the ladder position, this is not
+ * something anybody could pay to change. It is the user's own memory of their
+ * own rep, `persona_memory` grants them all four verbs, and the reset in
+ * `app/profile/actions.ts` needs the delete.
+ *
+ * **A dropped line leaves the previous one standing.** The alternative is that
+ * one forgettable rep erases the blue book, which is the opposite of
+ * continuity — the line is what she still has in mind, not a log of the most
+ * recent conversation. Forgetting is something the user asks for, on purpose.
+ */
+async function rememberEncounter(input: {
+  userId: string
+  personaId: string | null
+  line: string | null
+}): Promise<void> {
+  // No line, or a character who was never seeded and therefore has no row to
+  // key against. Either way there is nothing to write.
+  if (!input.line || !input.personaId) return
+
+  try {
+    const supabase = await supabaseServer()
+    await supabase.from('persona_memory').upsert(
+      {
+        user_id: input.userId,
+        persona_id: input.personaId,
+        summary: input.line,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,persona_id' },
+    )
+  } catch {
+    // The rep is graded and stored. Losing the callback line costs one nice
+    // moment next time; it must never cost the score that was just written.
+  }
+}
+
+/**
+ * Nudge the dials for the level this rep was at (§08).
+ *
+ * The upward direction may be announced through the existing modal; the
+ * downward one may not, and the shape of `nextDifficulty` is what enforces
+ * that rather than a comment asking nicely. Nothing is returned to the caller
+ * here at all, so this path cannot leak an ease even by accident.
+ */
+async function adjustAfterGrade(userId: string, level: number | null): Promise<void> {
+  if (level === null) return
+  try {
+    const recent = await recentScoresAtLevel(userId, level)
+    await adjustDifficulty({ userId, level, recent })
+  } catch {
+    // A rep at the last difficulty is a worse rep, not a broken one.
+  }
+}
+
+/**
+ * The measurement the first rep is framed as (§08).
+ *
+ * "The very first session is framed as a measurement, not a test. It is re-run
+ * at week four and the two are shown side by side." That makes session one
+ * valuable in itself and plants a retention hook four weeks deep on day one —
+ * and it is currently the cheapest retention mechanism in the spec.
+ *
+ * **Written exactly once.** The UPDATE is filtered on `baseline_session_id is
+ * null`, so the second graded rep writes nothing however the timing falls: a
+ * baseline that moves is not a baseline, and the week-four comparison would be
+ * measuring against a target that had been quietly walking towards it.
+ *
+ * The score is denormalised alongside the id on purpose. §16.7 lets a user
+ * delete any single rep, and the foreign key is `on delete set null` — losing
+ * the first session should cost the side-by-side, not the number.
+ */
+async function recordBaseline(input: { sessionId: string; composite: number }): Promise<void> {
+  const user = await currentUser()
+  if (!user) return
+
+  try {
+    const supabase = await supabaseServer()
+    await supabase
+      .from('profiles')
+      .update({ baseline_session_id: input.sessionId, baseline_score: input.composite })
+      .eq('id', user.id)
+      .is('baseline_session_id', null)
+  } catch {
+    // The rep is graded and stored. A missing baseline costs one comparison
+    // four weeks out; it must never cost the score that was just written.
+  }
 }
 
 /** User-deletable (§05). Cascades to the transcript and the score. */

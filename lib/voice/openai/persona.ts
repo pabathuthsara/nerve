@@ -192,8 +192,28 @@ export function compileInstructions(
     `You are speaking out loud, not writing. Contractions and false starts are normal. No emoji, markdown, stage directions, or polished assistant prose.`,
     ``,
     `# If a word or name is unclear`,
-    `Ask them to repeat only the unclear word, briefly and naturally. Do not guess, expand, translate, or replace it. A simple spoken clarification is allowed; a service apology is not needed.`,
+    // Three separately correct rules used to compose into a bare "What?" — this
+    // one, the continuity rule about repeating back what you heard, and the
+    // band's word cap. Each was right; together they collapsed to one syllable,
+    // and a stranger who answers "What?" reads as broken rather than distracted.
+    // So the clarification must NAME the thing it did not catch: that is what a
+    // person actually does, and it cannot degenerate into a single word.
+    `Say back the part you did catch and ask about the part you did not — "the what?", "sorry, your what?". Never just "what?" on its own. Do not guess, expand, translate, or replace it. A service apology is not needed.`,
     ``,
+    // The rep format, not a character trait — which is why it is compiled in
+    // here for every character rather than written into eight contracts, and
+    // why Nadia's and Alex's hand-tuned prose does not have to be reopened to
+    // get it. The bracketed direction at the wind-down is the one thing that
+    // lifts it, and the contract already establishes that brackets win.
+    ...(persona.track === 'dating'
+      ? [
+          `# If they ask for your number`,
+          `Not while this is still going. Whatever you make of them, you are in the middle of your own afternoon and you do not swap contact details in the middle of it.`,
+          `Do not agree, and do not make a speech about it either. Put it off the way anyone would: tease them about the timing, or answer the thing underneath the question and carry on talking.`,
+          `Never promise it for later, never explain why not, and never treat being asked as a reason to leave. If that changes, the direction in brackets will tell you so.`,
+          ``,
+        ]
+      : []),
     `# When this ends`,
     ...persona.exitConditions.map((line) => `- ${line}`),
     `An ordinary pause or awkward reply is not an exit. Do not say you are leaving unless one of these conditions is actually met.`,

@@ -22,7 +22,15 @@
  * to produce.
  *
  * Pure. No DOM, no audio, no network.
+ *
+ * The two string helpers this uses are shared with the OpenAI arm — see
+ * `lib/voice/truncate.ts`. They are re-exported here so this module stays the
+ * one import for anything working on barge-in.
  */
+
+import { proportionalPrefix, snapToWordBoundary } from '../truncate'
+
+export { proportionalPrefix, snapToWordBoundary }
 
 export interface AlignmentChunk {
   characters: string[]
@@ -125,40 +133,3 @@ export class SpokenTurn {
   }
 }
 
-/**
- * Cut `text` at `share` of its length, by characters.
- *
- * Characters rather than duration because that is all we have without
- * alignment. It is wrong in proportion to how uneven her pacing is, which is a
- * real error on a voice tuned to trail off — hence alignment being the default
- * and this the fallback.
- */
-export function proportionalPrefix(text: string, share: number): string {
-  if (share <= 0) return ''
-  if (share >= 1) return text
-  return text.slice(0, Math.floor(text.length * share))
-}
-
-/**
- * Never end inside a word.
- *
- * If the first character we are dropping continues the word we are keeping,
- * walk back to the last space. Everything else — punctuation, a completed word,
- * the end of the clip — is left exactly where it fell, because the user really
- * did interrupt there and the transcript should say so.
- */
-export function snapToWordBoundary(kept: string, nextChar: string): string {
-  if (kept === '') return ''
-  const lastChar = kept[kept.length - 1] ?? ''
-  const midWord = isWordChar(lastChar) && isWordChar(nextChar)
-  if (!midWord) return kept.trimEnd()
-
-  const lastSpace = kept.replace(/\s+$/, '').lastIndexOf(' ')
-  if (lastSpace < 0) return ''
-  return kept.slice(0, lastSpace).trimEnd()
-}
-
-/** Apostrophes count: "a lot's" must not become "a lot" plus a stray "s". */
-function isWordChar(ch: string): boolean {
-  return /[\p{L}\p{N}'’-]/u.test(ch)
-}

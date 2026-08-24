@@ -15,7 +15,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { FIELD_CHALLENGES, REVIEWED_BY } from '@/lib/field/challenges'
 import { TECHNIQUES } from '@/lib/techniques/library'
-import { asJson, type Database } from '@/lib/db/types'
+import { asJson } from '@/lib/db/json'
+import type { Database } from '@/lib/db/types'
 import { loadEnvLocal } from './env'
 
 async function main(): Promise<void> {

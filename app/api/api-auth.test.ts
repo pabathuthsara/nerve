@@ -1,5 +1,6 @@
 /**
- * Every route that spends money refuses an anonymous caller.
+ * Every route that spends money refuses an anonymous caller — and a caller who
+ * is over their ceiling.
  *
  * Six route handlers shipped without an auth check. All six are called from
  * `/rep`, which already redirects an anonymous visitor to `/auth`, so the
@@ -11,6 +12,11 @@
  * failure mode is a handler forgetting to call the helper — which a test of the
  * helper alone cannot see. It asserts the refusal happens before any upstream
  * call, so a 401 can never be reached by way of a paid request.
+ *
+ * The spend ceiling (B9) is here for exactly the same reason. `maySpend` has its
+ * own harness against the real database (`npm run db:spend`) that proves the
+ * gate answers correctly; what that cannot see is a handler that never asks it.
+ * Six routes shipped without an auth check once already.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -33,12 +39,18 @@ let session: typeof anonymous | typeof signedIn = anonymous
 /** The daily quota, as the token route sees it. */
 let quota: { ok: boolean; message: string | null } = { ok: true, message: null }
 
+/** The spend ceiling, as every paid route sees it (B9). */
+let allowance: { ok: true } | { ok: false; response: Response } = { ok: true }
+
 vi.mock('server-only', () => ({}))
 vi.mock('@/lib/db/server', () => ({
   supabaseServer: async () => session,
 }))
 vi.mock('@/lib/db/progress', () => ({
   mayOpenSession: async () => quota,
+}))
+vi.mock('@/lib/db/spend', () => ({
+  maySpend: async () => allowance,
 }))
 
 /** Any upstream call at all is a failure when the caller is anonymous. */
@@ -47,6 +59,7 @@ const upstream = vi.fn(async () => new Response('{}', { status: 200 }))
 beforeEach(() => {
   session = anonymous
   quota = { ok: true, message: null }
+  allowance = { ok: true }
   upstream.mockClear()
   vi.stubGlobal('fetch', upstream)
   vi.stubEnv('OPENAI_API_KEY', 'sk-test')
@@ -192,5 +205,57 @@ describe('the machine bypass', () => {
       post('http://t/api/warmth/score', { userText: 'Hi.' }, { authorization: 'Bearer right' }),
     )
     expect(response.status).not.toBe(401)
+  })
+})
+
+describe('the spend ceiling (B9)', () => {
+  // `requireUser` answers "is this somebody?". It never answered "should we
+  // spend more on them?", so a signed-in user could post to the grader in a
+  // loop and a leaked cookie could do it faster (§18).
+  const refused = () => ({
+    ok: false as const,
+    response: new Response(JSON.stringify({ error: 'Too fast. Give it a moment.' }), {
+      status: 429,
+      headers: { 'Retry-After': '30' },
+    }),
+  })
+
+  // Every route in ROUTES except `/api/voice/credits`, which reads the vendor's
+  // own balance and buys nothing. It is authenticated because our commercial
+  // position is not public, not because it spends — and a gate there would be a
+  // spend ceiling on a route with no spend, which is the kind of thing that
+  // makes the next person distrust the whole mechanism.
+  const PAID_ROUTES = ROUTES.filter((route) => route.name !== '/api/voice/credits')
+
+  for (const route of PAID_ROUTES) {
+    it(`${route.name} refuses a caller over the ceiling, before spending`, async () => {
+      session = signedIn
+      allowance = refused()
+      const mod = await route.load()
+      const response = await route.call(mod, route.request())
+
+      expect(response.status).toBe(429)
+      // The whole point: the refusal lands before the paid call, not after it.
+      expect(upstream).not.toHaveBeenCalled()
+    })
+
+    it(`${route.name} returns the gate's own response untouched`, async () => {
+      // The gate distinguishes a rate limit from a daily cap from a halted
+      // account, and each says something different to the user. A handler that
+      // re-wrapped this would flatten three situations into one message.
+      session = signedIn
+      allowance = refused()
+      const mod = await route.load()
+      const response = await route.call(mod, route.request())
+      expect(response.headers.get('Retry-After')).toBe('30')
+    })
+  }
+
+  it('lets a caller under the ceiling through', async () => {
+    session = signedIn
+    allowance = { ok: true }
+    const { POST } = await import('./warmth/score/route')
+    const response = await POST(post('http://t/api/warmth/score', { userText: 'Hello.', warmth: 30 }))
+    expect(response.status).not.toBe(429)
   })
 })

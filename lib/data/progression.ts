@@ -4,33 +4,79 @@
  * Two translations live here and nowhere else, because both of them are places
  * a second opinion would silently corrupt a progression record:
  *
- *   levels   the ladder is eight rungs (§06); the frontend shows four tiers.
+ *   levels   the ladder is three rungs (§06 authors eight; the roster ships
+ *            three — see `lib/personas/index.ts`), and the frontend shows one
+ *            tier per rung.
  *   bands    the engine has six bands, HOSTILE included; the UI has five.
  *
- * Neither translation touches calibration. The engine keeps scoring on 1-8 and
- * on HOSTILE..INVESTED exactly as it was tuned to; this is presentation.
+ * Neither translation touches calibration. The engine still scores on the 1-8
+ * scale it was tuned on — the shipped rungs are 1, 2 and 4 of that scale, with
+ * their authored curves intact — and on HOSTILE..INVESTED as before. This is
+ * presentation.
  */
 
 import { ARM_THRESHOLD, KEEP_THRESHOLD } from './rep-rules'
 import type { Band, Level } from './types'
 
-/** The four tiers, in the frontend's own words. */
+/**
+ * The three tiers, in the frontend's own words.
+ *
+ * Tier 3 was "Hostile" when it held Alex and "Resistant" when it held Erin and
+ * Sam. It holds Robin, who is neither: she is unfailingly polite and the whole
+ * difficulty is that she gives nothing away in either direction. Naming the
+ * tier after a hostility she does not have would tell the user to brace for the
+ * wrong thing, which is the one mistake this tier cannot afford — the skill is
+ * reading her accurately.
+ */
 export const LEVEL_NAMES: Record<Level, string> = {
   1: 'Receptive',
   2: 'Neutral',
-  3: 'Resistant',
-  4: 'Hostile',
+  3: 'Ambiguous',
 }
 
 /**
- * Engine level 1-8 → UI tier 1-4, two rungs per tier.
+ * The last tier on the ladder.
  *
- * Nadia (1) is tier 1 and Alex (8) is tier 4, which is what the ladder already
- * means: the two ends, with the middle unwritten.
+ * Named rather than written as `3` at each call site, because the number is
+ * going to move again the moment a fourth character is authored, and a literal
+ * scattered across the UI is how the roster screen and the training-wheels
+ * warning come to disagree about where the top is.
  */
+export const TOP_TIER: Level = 3
+
+/**
+ * Engine level → UI tier, one tier per shipped rung.
+ *
+ * This was `ceil(level / 2)` while eight rungs shared four tiers. It cannot
+ * stay arithmetic now: the shipped rungs are 1, 2 and 4, and halving them puts
+ * Nadia and Maya in the same tier and Robin in the second — a roster screen
+ * with an empty top and a doubled bottom.
+ *
+ * The retired rungs still map, because a session row from before the roster
+ * shrank names a level and must still render. Each falls to the tier of the
+ * nearest shipped rung at or below it, so an old Erin rep (5) reads as tier 3
+ * rather than vanishing.
+ */
+const TIER_BY_RUNG: Record<number, Level> = { 1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3 }
+
 export function uiLevel(engineLevel: number): Level {
-  const tier = Math.ceil(engineLevel / 2)
-  return Math.min(4, Math.max(1, tier)) as Level
+  return TIER_BY_RUNG[Math.round(engineLevel)] ?? (engineLevel < 1 ? 1 : 3)
+}
+
+/**
+ * UI tier → the engine rung the roster offers at that tier. The inverse of
+ * `uiLevel`, and it has to stay the inverse.
+ *
+ * This was `tier * 2` while eight rungs shared four tiers, which was the exact
+ * inverse of the `ceil(level / 2)` above. Both moved when the roster went to
+ * three, and a stored `profiles.current_level` is written through here and read
+ * back through `uiLevel` — so if these two ever stop agreeing, a user's ladder
+ * position round-trips to a different tier than the one they earned.
+ */
+const RUNG_BY_TIER: Record<Level, number> = { 1: 1, 2: 2, 3: 4 }
+
+export function engineRung(tier: Level): number {
+  return RUNG_BY_TIER[tier]
 }
 
 /**
@@ -73,41 +119,86 @@ export function uiWarmth(warmth: number | null | undefined): number {
 export { ARM_THRESHOLD, KEEP_THRESHOLD } from './rep-rules'
 
 /**
+ * The score a rep has to reach to count toward the next tier (§08).
+ *
+ * "Unlock on demonstrated skill, not reps served." Two sessions scoring 70+ at
+ * a level opens the one above it, and grinding advances nobody.
+ */
+export const UNLOCK_SCORE = 70
+
+/** How many of them. Two, uniformly — §08 does not scale it by level. */
+export const UNLOCK_REPS = 2
+
+/**
  * What each tier costs to open.
  *
  * Derived from history rather than stored: an unlock is a fact about the reps
  * you have already run, and a stored copy of a derived fact is a stored copy
  * that can disagree with it. Tiers 1 and 2 are open from the start — a first
  * session that has to be earned is a first session nobody has.
+ *
+ * **This gate used to count wins.** A win is whether she gave her number, which
+ * §07 is careful to make never the thing that counts — and until the outcome
+ * bug was fixed the grader could invent one outright, so the gate was scoring
+ * outcome twice over. It counts qualifying SCORES now: process, not result. A
+ * clean rep that ends in rejection can score 92 and advance you.
  */
-export const UNLOCK_RULES: Record<Level, { level: Level; wins: number } | null> = {
+export const UNLOCK_RULES: Record<Level, { level: Level; reps: number } | null> = {
   1: null,
   2: null,
-  3: { level: 2, wins: 2 },
-  4: { level: 3, wins: 3 },
+  3: { level: 2, reps: UNLOCK_REPS },
 }
 
 export function unlockRequirement(level: Level): string | null {
   const rule = UNLOCK_RULES[level]
-  return rule ? `Win ${rule.wins} rep${rule.wins === 1 ? '' : 's'} at Level ${rule.level}` : null
+  if (!rule) return null
+  return `Score ${UNLOCK_SCORE}+ in ${rule.reps} reps at Level ${rule.level}`
 }
 
-/** Which tiers are open, given wins per tier. */
-export function unlockedLevels(winsByLevel: Record<number, number>): Set<Level> {
+/**
+ * Which tiers are open, given the count of qualifying reps per tier.
+ *
+ * "Qualifying" is a graded rep at that tier whose composite reached
+ * `UNLOCK_SCORE`. Ungraded reps count for nothing, which is correct: the gate
+ * is demonstrated skill and an ungraded rep has demonstrated nothing yet.
+ */
+export function unlockedLevels(qualifyingByLevel: Record<number, number>): Set<Level> {
   const open = new Set<Level>()
-  for (const level of [1, 2, 3, 4] as Level[]) {
+  for (const level of [1, 2, 3] as Level[]) {
     const rule = UNLOCK_RULES[level]
-    if (!rule || (winsByLevel[rule.level] ?? 0) >= rule.wins) open.add(level)
+    if (!rule || (qualifyingByLevel[rule.level] ?? 0) >= rule.reps) open.add(level)
   }
   return open
 }
 
 /**
- * A rep is a win when she was receptive. Outcome is recorded and worth zero
- * points (§07) — it decides the story the result screen tells, never the score.
+ * Count reps that clear the bar, by tier.
  *
- * Kept for rows written before `sessions.won` existed, which have an outcome
- * and nothing else to go on.
+ * Shared so the roster's locked state and the stored ladder position are
+ * computed by the same arithmetic. They read different tables — the browser
+ * joins under RLS, the server joins with the service role — and two
+ * implementations of one rule is how they come to disagree.
+ */
+export function qualifyingByLevel(
+  reps: readonly { level: Level; composite: number | null }[],
+): Record<number, number> {
+  const counts: Record<number, number> = {}
+  for (const rep of reps) {
+    if (rep.composite === null || rep.composite < UNLOCK_SCORE) continue
+    counts[rep.level] = (counts[rep.level] ?? 0) + 1
+  }
+  return counts
+}
+
+/**
+ * Last resort only: a row with no `won` and no meter to read.
+ *
+ * Kept for sessions written before `sessions.won` and the warmth columns
+ * existed, which have an outcome and nothing else to go on. **Every caller must
+ * try `row.won` first** — reaching for this on a modern row is how the grader's
+ * opinion gets to decide a win, which is the bug `wonFromRep` above documents.
+ * `fetchPersonas` did exactly that: it selected `outcome` and never `won`, so
+ * the roster's locked and unlocked state was computed from the grade alone.
  */
 export function wonFromOutcome(outcome: string | null | undefined): boolean {
   return outcome === 'receptive'
@@ -118,24 +209,28 @@ export function wonFromOutcome(outcome: string | null | undefined): boolean {
  *
  * The live rep decides this itself and passes the answer down, because it is
  * the only thing that knows what she was told at the wind-down. This is the
- * fallback for everything else: a row written before that existed, and the
- * refinement `saveScore` applies when the grader's outcome lands.
+ * fallback for a row that never got one — a rep that crashed before it could
+ * report, or one written before `sessions.won` existed.
  *
  * It reads the same rule off the two numbers the session row keeps. `peak`
  * answers "was she ever willing" — arming — and `final` answers "was she still
  * willing when it ended". Using final alone would call a rep that touched 80
  * and finished at 60 a loss, which it is not.
  *
- * None of this touches the score. A clean rep that ends in rejection still
- * scores what it scored (§07).
+ * **The grader's outcome is not an input, and used to be.** Two lines here read
+ * `if (outcome === 'receptive') return true` before the meter was consulted at
+ * all, so a rep whose meter peaked at 60.16 — never armed, shown to the user as
+ * "She left" — was rewritten as a win the moment the grade landed, because the
+ * conversation had gone pleasantly. That is precisely the substitution §07
+ * exists to forbid: outcome is recorded and worth zero, and whether she gave
+ * her number is a fact about the meter, not a judgement about the chat. It also
+ * meant the stored record disagreed with the screen the user had just been
+ * shown, which is worse than either answer on its own.
  */
 export function wonFromRep(input: {
   finalWarmth: number | null
   peakWarmth?: number | null
-  outcome?: string | null
 }): boolean {
-  if (input.outcome === 'receptive') return true
-  if (input.outcome === 'rejecting') return false
   const peak = input.peakWarmth ?? input.finalWarmth ?? 0
   return peak >= ARM_THRESHOLD && (input.finalWarmth ?? 0) >= KEEP_THRESHOLD
 }
@@ -168,5 +263,5 @@ export function chooseTodayPersona<T extends { id: string; level: Level; locked:
 
 /** The band tone a level card wears. Cosmetic, and consistent everywhere. */
 export function levelTone(level: Level): Band {
-  return level >= 4 ? 'CLOSED' : level === 3 ? 'GUARDED' : level === 2 ? 'OPEN' : 'ENGAGED'
+  return level >= 3 ? 'GUARDED' : level === 2 ? 'OPEN' : 'ENGAGED'
 }

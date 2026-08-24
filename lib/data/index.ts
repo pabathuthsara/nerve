@@ -15,12 +15,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { assignToday } from '@/app/field/actions'
+import type { Milestone } from '@/lib/field/milestones'
 import { interviewers, interviewSetup } from './mock/interview'
 import {
+  fetchBaseline,
   fetchFieldLog,
   fetchFieldStats,
   fetchLifetimeStats,
+  fetchPendingMilestone,
+  fetchPendingUnlock,
   fetchPersona,
+  fetchPersonaMemory,
   fetchPersonaProgress,
   fetchPersonas,
   fetchScorecard,
@@ -28,20 +33,25 @@ import {
   fetchSessions,
   fetchTranscript,
   fetchUserState,
+  fetchWeeklyReview,
 } from './queries'
 import type {
+  BaselineState,
   FieldAssignment,
   FieldLogEntry,
   FieldStats,
   Interviewer,
   InterviewSetup,
   LifetimeStats,
+  PendingUnlock,
   Persona,
+  PersonaMemory,
   PersonaProgress,
   Scorecard,
   SessionSummary,
   TranscriptTurn,
   UserState,
+  WeeklyReview,
 } from './types'
 
 interface Loadable<T> {
@@ -148,6 +158,17 @@ export function useUserState(): Loadable<UserState | null> {
   return useAsync(fetchUserState, null, [])
 }
 
+/**
+ * What this character still has in mind, if anything (§08).
+ *
+ * Null is the ordinary answer: most reps produce nothing worth carrying, and
+ * the filter drops anything that fails, so the brief screen shows a memory
+ * line only when there genuinely is one.
+ */
+export function usePersonaMemory(personaId: string): Loadable<PersonaMemory | null> {
+  return useAsync(() => fetchPersonaMemory(personaId), null, [personaId])
+}
+
 export function useSessionHistory(): Loadable<SessionSummary[]> {
   return useAsync(() => fetchSessions(), NO_SESSIONS, [])
 }
@@ -203,8 +224,43 @@ export function useFieldLog(): Loadable<FieldLogEntry[]> {
   return useAsync(() => fetchFieldLog(), NO_LOG, [])
 }
 
+/**
+ * A level or field tier earned and not yet celebrated (§12).
+ *
+ * The scorecard is where it fires, because that is the screen the user is on
+ * when the grade that earned it lands.
+ */
+export function usePendingUnlock(): Loadable<PendingUnlock | null> {
+  return useAsync(fetchPendingUnlock, null, [])
+}
+
+/**
+ * The baseline, and whether the week-four re-test is on offer (§08).
+ *
+ * Null until the first rep has been graded, which is also when the hook is
+ * planted — there is nothing to say about a measurement nobody has taken.
+ */
+export function useBaseline(): Loadable<BaselineState | null> {
+  return useAsync(fetchBaseline, null, [])
+}
+
+/** The most recent Sunday letter, or nothing yet (§09). */
+export function useWeeklyReview(): Loadable<WeeklyReview | null> {
+  return useAsync(fetchWeeklyReview, null, [])
+}
+
 export function useFieldStats(): Loadable<FieldStats | null> {
   return useAsync(fetchFieldStats, null, [])
+}
+
+/**
+ * A milestone earned and not yet shown (§09).
+ *
+ * Read on mount as well as returned by the write, so the tenth rejection still
+ * gets its moment if the tab was closed before the sheet rendered.
+ */
+export function usePendingMilestone(): Loadable<Milestone | null> {
+  return useAsync(fetchPendingMilestone, null, [])
 }
 
 /* --- still mock, and labelled as such ------------------------------------ */

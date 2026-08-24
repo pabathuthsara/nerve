@@ -41,6 +41,18 @@ export interface VoiceProvider {
    */
   setInterruptible(interruptible: boolean): void
 
+  /**
+   * Where the meter stands, for the two things that live at transport level.
+   *
+   * The adapter owns no warmth engine and the character is still never told a
+   * number. But how long she sits before answering, and whether she takes the
+   * turn when he talks over her, are decided below the application — and both
+   * of them are how a listener actually tells interest from politeness.
+   *
+   * Idempotent. Safe to call on every turn.
+   */
+  setWarmth(warmth: number): void
+
   /** AnalyserNodes for both streams, so the visualiser never knows the provider. */
   getAnalyser(): Analysers
 

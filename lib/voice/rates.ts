@@ -1,11 +1,25 @@
 /**
  * Cost per minute, stamped on every session summary (§04 — invariant 2).
  *
- * These are estimates until M0 measures the real thing. Realtime pricing
- * re-charges prior audio context on each turn, so cost per minute climbs as a
- * conversation lengthens: the ≈$0.065 figure holds for short reps, and measured
- * heavy-context sessions reach $0.12–0.15/min. If M0 lands above $0.12/min the
- * tier caps in §14 need revisiting before launch, not after.
+ * **These are not the measured figures, and they are deliberately not.** M0
+ * priced four `gpt-realtime-mini` reps from provider token usage and landed at
+ * $0.0192–$0.0293/min — roughly a third of the $0.065 below, and well under the
+ * $0.12/min line §04 said would force the §14 tier caps to be revisited. The
+ * fear that made that line necessary was that realtime re-charges prior audio
+ * context each turn, so a longer rep would cost more than pro rata; across
+ * 117.8s to 305.8s the rate moved 2.8%, which is not compounding. Removing
+ * blind scheduled reinforcement is what bought that (M0, fourth finding).
+ *
+ * What is below is therefore a CEILING, not an expectation. It is only ever
+ * reached when the provider reported no usage at all — a connection that
+ * dropped mid-rep — and in that one case over-charging the ledger is the safer
+ * error: `spend_today_cents()` reads it, and a spend ceiling that trips early
+ * costs a rep, while one that trips late costs a bill. Every ordinary rep is
+ * priced from real tokens by `priceUsageSample` and never touches this number.
+ *
+ * `npm run cost:model` projects the three-minute rep off the M0 runs and checks
+ * it against §14 and §18. The live re-measurement M0.md specifies — ten reps,
+ * five past three minutes, from the Colombo home connection — is still owed.
  */
 
 import type {

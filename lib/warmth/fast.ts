@@ -8,11 +8,19 @@
  * deterministic layer local, judgement layer model).
  */
 
-import type { TranscriptTurn } from '@/lib/voice/types'
+import type { Personality, TranscriptTurn } from '@/lib/voice/types'
+import { temperamentOf } from './temperament'
 
 export interface FastScoreContext {
   /** Persona level. Gates the pause penalty. */
   level: number
+  /**
+   * LAYER 2, weighting what this particular character is moved by.
+   *
+   * Optional so fixtures and the calibration harness keep a neutral character,
+   * but a live rep always passes it — see `temperamentOf`.
+   */
+  personality?: Personality
   /** Her recent turns, most recent last. Used to detect a genuine callback. */
   agentTurns: readonly TranscriptTurn[]
   /** How many dead-end replies immediately precede this one. */
@@ -117,18 +125,44 @@ export function isOpenQuestion(text: string): boolean {
   return OPEN_OPENERS.test(trimmed)
 }
 
-/** Did he pick up something she actually said, rather than just talking? */
+/**
+ * How far back a callback has to reach before it stops being an echo of the
+ * last thing said and starts being evidence of having listened.
+ */
+export const LONG_RANGE_TURNS = 4
+
+export interface Callback {
+  word: string
+  /** How many of her turns ago it was said. 1 is her previous line. */
+  distance: number
+}
+
+/**
+ * Did he pick up something she actually said, rather than just talking?
+ *
+ * Searches her WHOLE side of the conversation, not the last three turns.
+ * Picking up a word from her previous sentence is ordinary conversational
+ * cohesion and a model does it by accident; returning to something she
+ * mentioned two minutes ago is the thing that makes a person feel listened to,
+ * and it used to score exactly nothing because it fell outside the window.
+ *
+ * Prefers the most recent match so the reported word is the one he was most
+ * plausibly picking up, then reports how far back it reached and lets the
+ * caller price it.
+ */
 export function referencesAgent(
   text: string,
   agentTurns: readonly TranscriptTurn[],
-): string | null {
-  const recent = agentTurns.slice(-3)
-  if (recent.length === 0) return null
+): Callback | null {
+  if (agentTurns.length === 0) return null
   const mine = contentWords(text)
   if (mine.size === 0) return null
-  for (const turn of recent) {
+
+  for (let back = 1; back <= agentTurns.length; back += 1) {
+    const turn = agentTurns[agentTurns.length - back]
+    if (!turn) continue
     for (const word of contentWords(turn.text)) {
-      if (mine.has(word)) return word
+      if (mine.has(word)) return { word, distance: back }
     }
   }
   return null
@@ -163,7 +197,19 @@ export function scoreFast(turn: TranscriptTurn, context: FastScoreContext): Fast
 
   const callback = referencesAgent(text, context.agentTurns)
   if (callback) {
-    reasons.push({ code: 'callback', points: 2, detail: `picked up "${callback}"` })
+    // A long-range callback is worth more than an immediate one, and the
+    // difference is the whole point. Echoing her last sentence is cohesion;
+    // coming back to something she said four turns ago is proof of attention,
+    // and it is the single most reliable way a stranger decides you were
+    // actually listening rather than waiting to speak.
+    const longRange = callback.distance >= LONG_RANGE_TURNS
+    reasons.push({
+      code: 'callback',
+      points: longRange ? 3 : 2,
+      detail: longRange
+        ? `came back to "${callback.word}" from ${callback.distance} turns ago`
+        : `picked up "${callback.word}"`,
+    })
   }
 
   const deadEnd = wordCount > 0 && wordCount < 3
@@ -201,9 +247,37 @@ export function scoreFast(turn: TranscriptTurn, context: FastScoreContext): Fast
     })
   }
 
+  // LAYER 2, applied last and to the whole set.
+  //
+  // Until this existed, every character on the ladder was moved by identical
+  // arithmetic and `personality` was pure prose. Two things change here, both
+  // read off dials that were already authored:
+  //
+  //   patience     what a misstep costs. Our user is nervous by definition and
+  //                short replies are the symptom the product exists to treat,
+  //                so a flat penalty made every character coldest exactly when
+  //                the user was struggling most. Nadia gives grace. Alex does
+  //                not. That difference IS patience.
+  //   distraction  what an unspecific good turn earns. A distracted character
+  //                has to actually be reached — so a turn with no callback in
+  //                it is worth less from Erin than from Nadia, which is the
+  //                skill her rung claims to train.
+  const t = temperamentOf(context.personality)
+  const specific = callback !== null
+  const weighted = reasons.map((reason) => {
+    if (reason.points < 0) return { ...reason, points: reason.points * t.penalty }
+    if (specific) return reason
+    return { ...reason, points: reason.points * t.genericGain }
+  })
+
   return {
-    raw: reasons.reduce((sum, reason) => sum + reason.points, 0),
-    reasons,
+    // Rounded to one place so the log stays readable and two multipliers cannot
+    // produce a raw score with a tail of noise on it.
+    raw: Math.round(weighted.reduce((sum, reason) => sum + reason.points, 0) * 10) / 10,
+    reasons: weighted.map((reason) => ({
+      ...reason,
+      points: Math.round(reason.points * 10) / 10,
+    })),
     wordCount,
     deadEnd,
     fillerPerMinute,

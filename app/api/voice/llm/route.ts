@@ -8,6 +8,7 @@
  */
 
 import { requireUser } from '@/lib/db/api-auth'
+import { maySpend } from '@/lib/db/spend'
 import { handleLlmRequest } from '@/lib/voice/elevenlabs/server'
 
 export const runtime = 'edge'
@@ -17,6 +18,11 @@ export const runtime = 'edge'
 export async function POST(request: Request): Promise<Response> {
   const auth = await requireUser(request)
   if ('response' in auth) return auth.response
+
+  // Proxies a standing vendor key, so the ceiling matters more here than the
+  // session check does: a valid session with a loop behind it still spends.
+  const allowed = await maySpend(auth.userId, 'llm')
+  if (!allowed.ok) return allowed.response
 
   return handleLlmRequest(request)
 }

@@ -20,12 +20,116 @@ import {
   type WarmthBand,
 } from './bands'
 import { effectiveCeiling } from './levels'
-import { WARMTH_MIN } from './bands'
-import type { Trajectory } from '@/lib/voice/types'
+import { WARMTH_MIN, WARMTH_MAX } from './bands'
+import type { Personality, Trajectory } from '@/lib/voice/types'
 import { classifyOverreach, type OverreachVerdict, type SlowScore } from './slow'
 import type { FastReason, FastScore } from './fast'
+import { openingAffect, postureOf, type AffectState, type Posture } from './affect'
+import { temperamentOf, type Temperament } from './temperament'
 
-export type WarmthEventSource = 'start' | 'fast' | 'slow' | 'overreach'
+export type WarmthEventSource = 'start' | 'fast' | 'slow' | 'overreach' | 'repair'
+
+/**
+ * How each fast reason moves comfort and liking, relative to how it moves
+ * interest. Applied to the SIGNED points, so a negative reason pulls all three
+ * down in proportion.
+ *
+ * The shape of this table is the whole argument for three axes:
+ *
+ *  - A callback is the strongest liking signal there is (1.0) and says almost
+ *    nothing about ease (0.3). Being picked up on is how you decide you like
+ *    somebody.
+ *  - An open question raises liking and barely touches comfort — being
+ *    questioned is interesting, not relaxing.
+ *  - A dead-end streak is mostly an EASE failure (0.6). Two people with nothing
+ *    to say to each other is uncomfortable long before either stops being
+ *    interested.
+ *  - Hesitation reads as awkwardness (0.4) rather than dislike (0.1).
+ */
+const COMFORT_WEIGHT: Record<FastReason['code'], number> = {
+  'open-question': 0.1,
+  'engaged-length': 0.4,
+  callback: 0.3,
+  'dead-end': 0.3,
+  'dead-end-streak': 0.6,
+  'filler-rate': 0.2,
+  hesitation: 0.4,
+}
+
+const LIKING_WEIGHT: Record<FastReason['code'], number> = {
+  'open-question': 0.5,
+  'engaged-length': 0.3,
+  callback: 1.0,
+  'dead-end': 0.5,
+  'dead-end-streak': 0.4,
+  'filler-rate': 0.1,
+  hesitation: 0.1,
+}
+
+/** Overreach is an EASE event first and an interest event second. */
+const OVERREACH_COMFORT = 1.4
+const OVERREACH_LIKING = 0.8
+
+/** A model judgement carries more about him than about the topic. */
+const SLOW_COMFORT = 0.4
+const SLOW_LIKING = 0.7
+
+/**
+ * How long he has to put a misstep right.
+ *
+ * Two turns. One is not a conversation, and past two it stops being a recovery
+ * and becomes the next subject.
+ */
+export const REPAIR_WINDOW_TURNS = 2
+/** A fall this size or worse opens the window. Ordinary cooling does not. */
+export const REPAIR_TRIGGER = -1.5
+/** What a turn inside the window is worth, against the same turn outside it. */
+export const REPAIR_BONUS = 1.6
+
+/**
+ * A slow judgement this warm is a moment, not a turn.
+ *
+ * The model is asked for -10..+10 and reserves the top of that range for
+ * something that actually landed. `maxGainPerTurn` is right for ordinary turns
+ * and wrong for this one: capping the best moment in the rep guarantees nothing
+ * ever feels like a change, and real liking is not a curve, it is an instant.
+ */
+export const BREAKTHROUGH_INTENT = 8
+/** How far past the per-turn cap a breakthrough may reach. */
+export const BREAKTHROUGH_MULTIPLE = 2
+/** Twice a rep. A third would be a slot machine rather than a conversation. */
+export const BREAKTHROUGHS_PER_SESSION = 2
+
+/**
+ * How far the FAST layer's authority falls across a rep.
+ *
+ * The fast scorer pays +3 for an open question, +2 for a turn of eight to
+ * twenty-five words and +2 or +3 for reusing one of her content words. All
+ * three are LEXICAL, which means they are farmable: a user works out "ask a
+ * what/how question, say twelve words, echo one of her nouns" and the meter
+ * pays for it forever. The start jitter randomises the opening, not the rule.
+ *
+ * So form is worth full price early, when a stranger genuinely is judging you
+ * on how you open, and worth less as the conversation goes on and what you are
+ * actually saying starts to matter more than its shape. Late movement is
+ * dominated by the slow scorer, which is judgement rather than pattern.
+ *
+ * GAINS ONLY. A dead end late in a rep is not cheaper than a dead end early —
+ * if anything it is worse — and tapering penalties would make the last minute
+ * of a bad rep free.
+ *
+ * Checked against the ladder in `engine.test.ts`: the rungs still separate at
+ * 12, 15 and 18 turns, so this is an anti-farming measure and not a difficulty
+ * change.
+ */
+export const FAST_AUTHORITY_FLOOR = 0.8
+/** Turns over which the taper runs. Roughly one three-minute rep. */
+export const FAST_AUTHORITY_SPAN = 15
+
+export function fastAuthority(turnIndex: number): number {
+  const through = Math.min(1, Math.max(0, (turnIndex - 1) / (FAST_AUTHORITY_SPAN - 1)))
+  return 1 - (1 - FAST_AUTHORITY_FLOOR) * through
+}
 
 export interface WarmthEvent {
   at: number
@@ -44,6 +148,15 @@ export interface WarmthEvent {
   intimacy: number | null
   userText: string
   detail: string[]
+  /** Where comfort and liking finished. Interest is `warmthAfter`. */
+  comfortAfter: number
+  likingAfter: number
+  /** How the three stood relative to each other after this turn. */
+  posture: Posture
+  /** This turn was worth more because it repaired a fall. */
+  repaired: boolean
+  /** This turn was allowed past the per-turn cap. */
+  breakthrough: boolean
 }
 
 export interface AsyncScoreLatency {
@@ -62,6 +175,14 @@ export interface WarmthTelemetry {
   timeInBand: Record<WarmthBand, number>
   events: WarmthEvent[]
   asyncScoreLatencyMs: AsyncScoreLatency
+  /** Where comfort and liking finished, alongside `end` for interest. */
+  comfortEnd: number
+  likingEnd: number
+  /** The posture she finished in. */
+  posture: Posture
+  /** Turns that recovered a fall, and moments allowed past the cap. */
+  repairs: number
+  breakthroughs: number
   /** The jittered opening value actually rolled for this session. */
   rolledStart: number
   /** The trajectory in force when the rep ended — which, with the dev panel
@@ -79,16 +200,28 @@ export interface WarmthEngineOptions {
    * object is the same thing with a constant getter.
    */
   trajectory: Trajectory | (() => Trajectory)
+  /**
+   * LAYER 2, or a getter for it.
+   *
+   * Optional so every existing caller and fixture keeps working with a neutral
+   * temperament — but a live rep always passes it, because without it all eight
+   * characters are moved by identical arithmetic. See ./temperament.ts.
+   */
+  personality?: Personality | (() => Personality)
   /** Injected for tests. Defaults to Math.random. */
   rng?: () => number
 }
 
 export class WarmthEngine {
   private readonly readTrajectory: () => Trajectory
+  private readonly readPersonality: (() => Personality) | null
   private readonly startValue: number
   private current: number
   private peakValue: number
   private troughValue: number
+  /** The other two axes. See ./affect.ts for why there are three. */
+  private comfortValue: number
+  private likingValue: number
 
   private readonly eventLog: WarmthEvent[] = []
   private readonly bandSequence: WarmthBand[] = []
@@ -99,11 +232,22 @@ export class WarmthEngine {
   private lastAt = 0
   private skippedSlow = 0
   private turnIndex = 0
+  /** Turn index of the last real fall, for the repair window. */
+  private lastFallTurn: number | null = null
+  private repairCount = 0
+  private breakthroughCount = 0
 
   constructor(options: WarmthEngineOptions) {
     const trajectory = options.trajectory
     this.readTrajectory =
       typeof trajectory === 'function' ? trajectory : () => trajectory
+    const personality = options.personality
+    this.readPersonality =
+      personality === undefined
+        ? null
+        : typeof personality === 'function'
+          ? personality
+          : () => personality
     const rng = options.rng ?? Math.random
 
     // Rolled, not fixed (§05). The same opener must not always work, or the
@@ -116,6 +260,10 @@ export class WarmthEngine {
     this.peakValue = this.startValue
     this.troughValue = this.startValue
 
+    const opening = openingAffect(this.startValue)
+    this.comfortValue = opening.comfort
+    this.likingValue = opening.liking
+
     this.timeInBand = Object.fromEntries(
       BAND_NAMES.map((name) => [name, 0]),
     ) as Record<WarmthBand, number>
@@ -127,8 +275,41 @@ export class WarmthEngine {
     return this.readTrajectory()
   }
 
+  /** Live too, for the same reason. Neutral when no personality was given. */
+  private get temperament(): Temperament {
+    return temperamentOf(this.readPersonality?.())
+  }
+
   get warmth(): number {
     return Math.round(this.current * 100) / 100
+  }
+
+  get comfort(): number {
+    return Math.round(this.comfortValue * 100) / 100
+  }
+
+  get liking(): number {
+    return Math.round(this.likingValue * 100) / 100
+  }
+
+  get affect(): AffectState {
+    return { warmth: this.warmth, comfort: this.comfort, liking: this.liking }
+  }
+
+  get posture(): Posture {
+    return postureOf(this.affect)
+  }
+
+  /**
+   * He misjudged it recently and this turn is his chance to put it right.
+   *
+   * Read by the steering composer so she can visibly let him — a repair the
+   * other person does not register is not a repair, it is an apology into the
+   * air.
+   */
+  get repairOpen(): boolean {
+    if (this.lastFallTurn === null) return false
+    return this.turnIndex - this.lastFallTurn < REPAIR_WINDOW_TURNS
   }
 
   /**
@@ -178,11 +359,56 @@ export class WarmthEngine {
    * is not how anyone actually warms to a stranger. The cap on top stops one
    * exceptional turn doing the work of four.
    */
-  private scale(raw: number): number {
+  private scale(raw: number, options: { repair?: boolean; breakthrough?: boolean } = {}): number {
     const config = this.config
     if (raw <= 0) return raw * config.decay
     const falloff = Math.max(0, (100 - this.current) / 100)
-    return Math.min(raw * config.gain * falloff, config.maxGainPerTurn)
+    const gained = raw * config.gain * falloff * (options.repair ? REPAIR_BONUS : 1)
+
+    // The cap, and the two things allowed past it.
+    //
+    // A repair is worth more than the same turn cold, because recovering from a
+    // misstep is a harder and more human thing than never making one — but it
+    // is still an ordinary turn and it stays near the ceiling. A breakthrough is
+    // not an ordinary turn: it is the moment somebody decides they like you, and
+    // flattening it to the same 2.6 as every other good sentence is what made
+    // the meter feel like arithmetic instead of a person.
+    const ceiling = options.breakthrough
+      ? config.maxGainPerTurn * BREAKTHROUGH_MULTIPLE
+      : options.repair
+        ? config.maxGainPerTurn * 1.5
+        : config.maxGainPerTurn
+    return Math.min(gained, ceiling)
+  }
+
+  /**
+   * Move comfort and liking by the same event that moved interest.
+   *
+   * Both are clamped to the full 0..100 range rather than to the trajectory's
+   * ceiling: `sessionCeiling` is a statement about how interested she is
+   * willing to become, not about whether she can be at ease. Alex is capped at
+   * 45 interest for the whole rep and can still be perfectly comfortable, which
+   * is exactly what a level-8 character should feel like — pleasant, relaxed,
+   * and not going anywhere.
+   */
+  private moveSecondary(comfortRaw: number, likingRaw: number): void {
+    const config = this.config
+    const t = this.temperament
+
+    const scaleAxis = (raw: number, current: number, weight: number): number => {
+      if (raw === 0) return current
+      const moved =
+        raw <= 0
+          ? raw * config.decay * weight
+          : Math.min(
+              raw * config.gain * Math.max(0, (100 - current) / 100) * weight,
+              config.maxGainPerTurn,
+            )
+      return Math.max(WARMTH_MIN, Math.min(WARMTH_MAX, current + moved))
+    }
+
+    this.comfortValue = scaleAxis(comfortRaw, this.comfortValue, t.comfort)
+    this.likingValue = scaleAxis(likingRaw, this.likingValue, t.liking)
   }
 
   private accrueTime(at: number): void {
@@ -204,6 +430,11 @@ export class WarmthEngine {
     turnIndex: number
     /** Applied before the score. Zero for anything that is not a user turn. */
     naturalDecay?: number
+    /** Raw movement for the other two axes, before gain/decay. */
+    comfortRaw?: number
+    likingRaw?: number
+    /** This turn was allowed past the per-turn cap. */
+    breakthrough?: boolean
   }): WarmthEvent {
     const bandBefore = this.band
     // Time is attributed to the band that was actually occupied while it
@@ -217,8 +448,23 @@ export class WarmthEngine {
     const naturalDecay = params.naturalDecay ?? 0
     if (naturalDecay > 0) this.current = this.clamp(this.current - naturalDecay)
 
-    const delta = this.scale(params.rawDelta)
+    // A positive turn inside the repair window is worth more than the same turn
+    // cold. Checked BEFORE the turn is applied, because applying it is what
+    // closes the window.
+    const repaired = params.rawDelta > 0 && this.repairOpen
+    const breakthrough = Boolean(params.breakthrough)
+
+    const delta = this.scale(params.rawDelta, { repair: repaired, breakthrough })
     this.current = this.clamp(this.current + delta)
+    this.moveSecondary(params.comfortRaw ?? 0, params.likingRaw ?? 0)
+
+    if (repaired) this.repairCount += 1
+    if (breakthrough) this.breakthroughCount += 1
+
+    // A real fall opens the window; anything else closes it. Ordinary per-turn
+    // decay is not a misstep and must not arm a bonus.
+    if (delta <= REPAIR_TRIGGER) this.lastFallTurn = params.turnIndex
+    else if (repaired) this.lastFallTurn = null
 
     this.peakValue = Math.max(this.peakValue, this.current)
     this.troughValue = Math.min(this.troughValue, this.current)
@@ -235,7 +481,7 @@ export class WarmthEngine {
       delta: Math.round((this.warmth - warmthBefore) * 100) / 100,
       rawDelta: params.rawDelta,
       naturalDecay,
-      source: params.source,
+      source: repaired ? 'repair' : params.source,
       reason: params.reason,
       warmthBefore,
       warmthAfter: this.warmth,
@@ -243,6 +489,11 @@ export class WarmthEngine {
       intimacy: params.intimacy,
       userText: params.userText,
       detail: params.detail,
+      comfortAfter: this.comfort,
+      likingAfter: this.liking,
+      posture: this.posture,
+      repaired,
+      breakthrough,
     }
     this.eventLog.push(event)
     return event
@@ -257,13 +508,32 @@ export class WarmthEngine {
    */
   applyFast(score: FastScore, at: number, userText: string): WarmthEvent {
     this.turnIndex += 1
+
+    // The same reasons, weighted differently per axis. See COMFORT_WEIGHT /
+    // LIKING_WEIGHT above for why a callback is a liking event and a dead-end
+    // streak is an ease event.
+    let comfortRaw = 0
+    let likingRaw = 0
+    for (const reason of score.reasons) {
+      comfortRaw += reason.points * (COMFORT_WEIGHT[reason.code] ?? 0)
+      likingRaw += reason.points * (LIKING_WEIGHT[reason.code] ?? 0)
+    }
+
+    // Form is worth full price early and less as the rep goes on, so a user who
+    // has worked out the lexical rules cannot farm them for three minutes. Only
+    // gains taper — a late dead end is not cheaper than an early one.
+    const authority = fastAuthority(this.turnIndex)
+    const taper = (raw: number) => (raw > 0 ? raw * authority : raw)
+
     // Natural decay applies whether or not the turn scored anything, so an
     // event is always produced. A turn that moves nothing still costs ground.
     return this.apply({
       at,
       turnIndex: this.turnIndex,
       naturalDecay: this.config.decayPerTurn,
-      rawDelta: score.raw,
+      rawDelta: taper(score.raw),
+      comfortRaw: taper(comfortRaw),
+      likingRaw: taper(likingRaw),
       source: 'fast',
       reason: score.reasons.length ? dominantReason(score.reasons) : 'no signal',
       userText,
@@ -309,6 +579,12 @@ export class WarmthEngine {
         at,
         turnIndex,
         rawDelta: overreach.delta,
+        // Overreach is an EASE failure before it is an interest failure. She is
+        // not less curious about him, she is less comfortable with him, and
+        // splitting those is what lets a rep recover from one clumsy line
+        // without pretending it did not happen.
+        comfortRaw: overreach.delta * OVERREACH_COMFORT,
+        likingRaw: overreach.delta * OVERREACH_LIKING,
         source: 'overreach',
         reason: overreach.verdict satisfies OverreachVerdict,
         userText,
@@ -322,12 +598,21 @@ export class WarmthEngine {
       })
     }
 
+    // A judgement at the top of the model's range is a moment, not a turn —
+    // and only while she has moments left to give. See BREAKTHROUGH_INTENT.
+    const breakthrough =
+      score.intent >= BREAKTHROUGH_INTENT &&
+      this.breakthroughCount < BREAKTHROUGHS_PER_SESSION
+
     return this.apply({
       at,
       turnIndex,
       rawDelta: score.intent,
+      comfortRaw: score.intent * SLOW_COMFORT,
+      likingRaw: score.intent * SLOW_LIKING,
+      breakthrough,
       source: 'slow',
-      reason: 'model judgement',
+      reason: breakthrough ? 'model judgement · landed' : 'model judgement',
       userText,
       intimacy: score.intimacy,
       detail: [score.quote ? `quoted: "${score.quote}"` : '', score.reason].filter(Boolean),
@@ -358,6 +643,11 @@ export class WarmthEngine {
         p90: percentile(this.slowLatencies, 90),
         skipped: this.skippedSlow,
       },
+      comfortEnd: this.comfort,
+      likingEnd: this.liking,
+      posture: this.posture,
+      repairs: this.repairCount,
+      breakthroughs: this.breakthroughCount,
       rolledStart: round(this.startValue),
       config: this.config,
     }

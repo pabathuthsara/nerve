@@ -1,12 +1,3 @@
-/**
- * Generated from the live schema. Do not edit by hand.
- *
- *   npx supabase gen types typescript --project-id "$SUPABASE_PROJECT_REF" > lib/db/types.ts
- *
- * Regenerate after every migration. A stale file here compiles fine and lies
- * at runtime, which is the worst combination available.
- */
-
 export type Json =
   | string
   | number
@@ -16,11 +7,37 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: '14.15'
+    PostgrestVersion: "14.15"
   }
   public: {
     Tables: {
+      difficulty_offsets: {
+        Row: {
+          gain_bonus: number
+          level: number
+          start_bonus: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          gain_bonus?: number
+          level: number
+          start_bonus?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          gain_bonus?: number
+          level?: number
+          start_bonus?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       entitlements: {
         Row: {
           created_at: string
@@ -29,6 +46,8 @@ export type Database = {
           reps_day: string
           reps_per_day: number
           reps_used_today: number
+          spend_halt_reason: string | null
+          spend_halted_at: string | null
           updated_at: string
           user_id: string
         }
@@ -39,6 +58,8 @@ export type Database = {
           reps_day?: string
           reps_per_day?: number
           reps_used_today?: number
+          spend_halt_reason?: string | null
+          spend_halted_at?: string | null
           updated_at?: string
           user_id: string
         }
@@ -49,6 +70,8 @@ export type Database = {
           reps_day?: string
           reps_per_day?: number
           reps_used_today?: number
+          spend_halt_reason?: string | null
+          spend_halted_at?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -90,11 +113,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'field_assignments_challenge_id_fkey'
-            columns: ['challenge_id']
+            foreignKeyName: "field_assignments_challenge_id_fkey"
+            columns: ["challenge_id"]
             isOneToOne: false
-            referencedRelation: 'field_challenges'
-            referencedColumns: ['id']
+            referencedRelation: "field_challenges"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -194,18 +217,18 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'field_logs_assignment_id_fkey'
-            columns: ['assignment_id']
+            foreignKeyName: "field_logs_assignment_id_fkey"
+            columns: ["assignment_id"]
             isOneToOne: false
-            referencedRelation: 'field_assignments'
-            referencedColumns: ['id']
+            referencedRelation: "field_assignments"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: 'field_logs_challenge_id_fkey'
-            columns: ['challenge_id']
+            foreignKeyName: "field_logs_challenge_id_fkey"
+            columns: ["challenge_id"]
             isOneToOne: false
-            referencedRelation: 'field_challenges'
-            referencedColumns: ['id']
+            referencedRelation: "field_challenges"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -272,11 +295,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'persona_memory_persona_id_fkey'
-            columns: ['persona_id']
+            foreignKeyName: "persona_memory_persona_id_fkey"
+            columns: ["persona_id"]
             isOneToOne: false
-            referencedRelation: 'personas'
-            referencedColumns: ['id']
+            referencedRelation: "personas"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -359,6 +382,7 @@ export type Database = {
           ambience: boolean
           ambience_volume: number
           baseline_score: number | null
+          baseline_session_id: string | null
           created_at: string
           current_level: number
           date_of_birth: string | null
@@ -375,6 +399,7 @@ export type Database = {
           rank: string
           timezone: string
           training_wheels: boolean
+          ui_flags: Json
           unlocked_tracks: string[]
           updated_at: string
           vad_offset_ms: number
@@ -385,6 +410,7 @@ export type Database = {
           ambience?: boolean
           ambience_volume?: number
           baseline_score?: number | null
+          baseline_session_id?: string | null
           created_at?: string
           current_level?: number
           date_of_birth?: string | null
@@ -401,6 +427,7 @@ export type Database = {
           rank?: string
           timezone?: string
           training_wheels?: boolean
+          ui_flags?: Json
           unlocked_tracks?: string[]
           updated_at?: string
           vad_offset_ms?: number
@@ -411,6 +438,7 @@ export type Database = {
           ambience?: boolean
           ambience_volume?: number
           baseline_score?: number | null
+          baseline_session_id?: string | null
           created_at?: string
           current_level?: number
           date_of_birth?: string | null
@@ -427,9 +455,39 @@ export type Database = {
           rank?: string
           timezone?: string
           training_wheels?: boolean
+          ui_flags?: Json
           unlocked_tracks?: string[]
           updated_at?: string
           vad_offset_ms?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_baseline_session_id_fkey"
+            columns: ["baseline_session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rate_limits: {
+        Row: {
+          bucket: string
+          hits: number
+          user_id: string
+          window_start: string
+        }
+        Insert: {
+          bucket: string
+          hits?: number
+          user_id: string
+          window_start?: string
+        }
+        Update: {
+          bucket?: string
+          hits?: number
+          user_id?: string
+          window_start?: string
         }
         Relationships: []
       }
@@ -463,11 +521,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'safety_events_session_id_fkey'
-            columns: ['session_id']
+            foreignKeyName: "safety_events_session_id_fkey"
+            columns: ["session_id"]
             isOneToOne: false
-            referencedRelation: 'sessions'
-            referencedColumns: ['id']
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -537,11 +595,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'scores_session_id_fkey'
-            columns: ['session_id']
+            foreignKeyName: "scores_session_id_fkey"
+            columns: ["session_id"]
             isOneToOne: true
-            referencedRelation: 'sessions'
-            referencedColumns: ['id']
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -550,6 +608,7 @@ export type Database = {
           audio_expires_at: string | null
           audio_path: string | null
           created_at: string
+          decision_warmth: number | null
           duration_s: number | null
           ended_at: string | null
           ended_by: string | null
@@ -561,6 +620,7 @@ export type Database = {
           peak_warmth: number | null
           persona_id: string | null
           persona_slug: string
+          pipeline_incidents: Json | null
           provider: string
           start_warmth: number | null
           started_at: string
@@ -571,6 +631,7 @@ export type Database = {
           audio_expires_at?: string | null
           audio_path?: string | null
           created_at?: string
+          decision_warmth?: number | null
           duration_s?: number | null
           ended_at?: string | null
           ended_by?: string | null
@@ -582,6 +643,7 @@ export type Database = {
           peak_warmth?: number | null
           persona_id?: string | null
           persona_slug: string
+          pipeline_incidents?: Json | null
           provider: string
           start_warmth?: number | null
           started_at?: string
@@ -592,6 +654,7 @@ export type Database = {
           audio_expires_at?: string | null
           audio_path?: string | null
           created_at?: string
+          decision_warmth?: number | null
           duration_s?: number | null
           ended_at?: string | null
           ended_by?: string | null
@@ -603,6 +666,7 @@ export type Database = {
           peak_warmth?: number | null
           persona_id?: string | null
           persona_slug?: string
+          pipeline_incidents?: Json | null
           provider?: string
           start_warmth?: number | null
           started_at?: string
@@ -611,13 +675,43 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'sessions_persona_id_fkey'
-            columns: ['persona_id']
+            foreignKeyName: "sessions_persona_id_fkey"
+            columns: ["persona_id"]
             isOneToOne: false
-            referencedRelation: 'personas'
-            referencedColumns: ['id']
+            referencedRelation: "personas"
+            referencedColumns: ["id"]
           },
         ]
+      }
+      share_cards: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          payload: Json
+          revoked_at: string | null
+          token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          payload?: Json
+          revoked_at?: string | null
+          token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          payload?: Json
+          revoked_at?: string | null
+          token?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       streaks: {
         Row: {
@@ -760,11 +854,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'transcripts_session_id_fkey'
-            columns: ['session_id']
+            foreignKeyName: "transcripts_session_id_fkey"
+            columns: ["session_id"]
             isOneToOne: true
-            referencedRelation: 'sessions'
-            referencedColumns: ['id']
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -831,11 +925,11 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: 'usage_ledger_session_id_fkey'
-            columns: ['session_id']
+            foreignKeyName: "usage_ledger_session_id_fkey"
+            columns: ["session_id"]
             isOneToOne: false
-            referencedRelation: 'sessions'
-            referencedColumns: ['id']
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -867,44 +961,156 @@ export type Database = {
         Relationships: []
       }
     }
-    Views: { [_ in never]: never }
-    Functions: {
-      /** §16.7 — everything we hold about the caller, as it is stored. */
-      export_my_data: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      /** What today has cost on this account, in the caller's own day. */
-      spend_today_cents: {
-        Args: Record<PropertyKey, never>
-        Returns: number
-      }
+    Views: {
+      [_ in never]: never
     }
-    Enums: { [_ in never]: never }
-    CompositeTypes: { [_ in never]: never }
+    Functions: {
+      export_my_data: { Args: never; Returns: Json }
+      spend_allowance: {
+        Args: {
+          p_bucket: string
+          p_cap_cents: number
+          p_limit: number
+          p_user_id: string
+          p_window_seconds: number
+        }
+        Returns: {
+          allowed: boolean
+          reason: string
+          retry_after: number
+          spent_cents: number
+        }[]
+      }
+      spend_today_cents: { Args: never; Returns: number }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
 }
 
-type DefaultSchema = Database['public']
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
 
-export type Tables<T extends keyof DefaultSchema['Tables']> =
-  DefaultSchema['Tables'][T]['Row']
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
-export type TablesInsert<T extends keyof DefaultSchema['Tables']> =
-  DefaultSchema['Tables'][T]['Insert']
-
-export type TablesUpdate<T extends keyof DefaultSchema['Tables']> =
-  DefaultSchema['Tables'][T]['Update']
-
-/**
- * A TypeScript interface has no index signature, so a perfectly valid persona
- * layer or metrics record does not structurally satisfy `Json` even though it
- * serialises cleanly. This is the one sanctioned cast for that gap — the value
- * is on its way to PostgREST, which will JSON-encode it regardless.
- *
- * Use it rather than `as never` at each call site: a named helper is greppable
- * and says why, where a scattered cast just looks like someone gave up.
- */
-export function asJson<T>(value: T): Json {
-  return value as unknown as Json
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
 }
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {},
+  },
+} as const

@@ -1,5 +1,5 @@
 /**
- * Robin — Level 7, hotel lobby (§06).
+ * Robin — Level 4, hotel lobby (§06). The top rung.
  *
  * **The interesting one.** Ambiguous signals are the skill nobody trains and
  * everybody actually struggles with: not handling a clear no, but working out
@@ -8,9 +8,21 @@
  * scorecard grades whether the user read it correctly and left on their own
  * terms (§06).
  *
- * §06 puts Robin at a gallery opening. Alex already owns the gallery here, so
- * she is in a hotel lobby instead — the room was never the point of this
- * level; `signalClarity: 20` is.
+ * §06 puts Robin at a gallery opening. She is in a hotel lobby instead — the
+ * room was never the point of this level; `signalClarity: 20` is.
+ *
+ * **She moved from rung 7 to rung 4 when the roster went to three characters,
+ * and she is deliberately hard rather than impossible.** The rung-7 curve
+ * (`start: 9`, `hardCeiling: 88`) put her beyond reach of a three-minute rep by
+ * a wide margin, which is defensible as one of eight and not as one of three:
+ * a top rung nobody can move is a wall, and the user stops reading her and
+ * starts assuming. The authored rung-4 curve below is still not armable by a
+ * merely competent rep — see `engine.test.ts` — but the ceiling is 95 rather
+ * than 88 and the ground is real.
+ *
+ * What did NOT move is everything that makes her difficult in the way that
+ * matters. `signalClarity: 20` is layer 2 and is untouched: reading her is
+ * exactly as hard as it ever was. Only how far warmth travels changed.
  */
 
 import type { Persona } from '@/lib/voice/types'
@@ -53,24 +65,29 @@ export const robin: Persona = {
   slug: 'robin',
   name: 'Robin',
   scene: 'A hotel lobby in the early evening, waiting for a car that is late.',
-  level: 7,
+  level: 4,
   track: 'dating',
 
+  // Was `marin`, which is Nadia's. Level 1 and Level 7 sounding identical
+  // undermines the one thing eight characters are for.
   voice: {
     timbre: 'feminine',
-    ids: { openai: 'marin' },
+    ids: { openai: 'alloy' },
     pace: 0.98,
   },
 
+  // The authored rung-4 curve, inherited when the ladder went to three rungs.
+  // Hard and not sealed: `hardCeiling: 95` leaves the warm bands reachable in
+  // principle, and the rep length is what puts them out of reach in practice.
   trajectory: {
-    start: 9,
-    startJitter: 5,
-    gain: 0.55,
-    decay: 1.7,
-    decayPerTurn: 0.5,
-    maxGainPerTurn: 3,
-    sessionCeiling: 72,
-    hardCeiling: 88,
+    start: 20,
+    startJitter: 6,
+    gain: 0.8,
+    decay: 1.1,
+    decayPerTurn: 0.35,
+    maxGainPerTurn: 2.7,
+    sessionCeiling: 78,
+    hardCeiling: 95,
   },
 
   personality: {
@@ -104,8 +121,14 @@ export const robin: Persona = {
 
   contract: contract(CHARACTER),
 
+  want: 'your car to arrive so that this evening can finally be over',
+
+  sceneBeats: [
+    { at: 0.28, direction: '(Your phone buzzes: the car is another twelve minutes away.)' },
+    { at: 0.66, direction: '(A car pulls up outside. It is not yours. You sit back down.)' },
+  ],
+
   exitConditions: [
-    'You have offered to swap numbers and said goodbye.',
     'Your car arrives. Say so pleasantly and go.',
     'They say goodbye, or say they have to go.',
     'They ask you outright whether you want them to leave. Answer kindly, and leave.',

@@ -11,5 +11,6 @@ notes. `CLAUDE.md` is the standing brief for an agent picking the work up.
 npm run dev           # the app
 npm test              # unit tests
 npm run db:verify     # prove RLS holds, from a second real account
+npm run cost:model    # what a rep costs, projected off M0's measured runs
 ```
 

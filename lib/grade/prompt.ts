@@ -37,7 +37,24 @@ EVIDENCE: for each dimension, quote at most twelve words from HIS lines that
 drove the score. If nothing supports it, return "".
 
 WENT WELL: one sentence naming something he actually did well, quoting him.
-Required, and it is named before anything critical.`
+Required, and it is named before anything critical.
+
+MEMORY LINE: what SHE would still have in mind if he walked in another day.
+Fourteen words maximum.
+
+  It is about the encounter or about her own situation — the book she could not
+  find, where she was going, what she was in the middle of.
+
+  It is NEVER about him. Not how he did, not what she made of him, and above
+  all not whether she would like to see him again. Do not address him as "you".
+  She is a stranger he spoke to once, not someone waiting for him.
+
+  Good: "Still looking for the blue one. Sister's birthday is Thursday."
+  Bad:  "You were doing well until you asked about work."   (about him)
+  Bad:  "I've been hoping you'd come back."                 (waiting for him)
+
+  If nothing in this conversation is worth carrying, return "". An empty line
+  is the normal case and is always better than an invented one.`
 
 export interface GradeRequestPayload {
   transcript: TranscriptTurn[]
@@ -89,6 +106,6 @@ export function buildGradeSystemPrompt(): string {
     'Reply with JSON only:',
     '{"opening":n,"curiosity":n,"listening":n,"signalReading":n,"composure":n,"close":n,',
     '"evidence":{"opening":"...","curiosity":"...","listening":"...","signalReading":"...","composure":"...","close":"..."},',
-    '"wentWell":"...","outcome":"receptive|neutral|rejecting"}',
+    '"wentWell":"...","memoryLine":"...","outcome":"receptive|neutral|rejecting"}',
   ].join('\n')
 }

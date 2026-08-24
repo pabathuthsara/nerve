@@ -16,7 +16,10 @@ import 'server-only'
 
 import { supabaseAdmin } from './admin'
 import { daysBetween, localDay } from '@/lib/data/day'
-import { uiLevel, unlockedLevels, wonFromOutcome } from '@/lib/data/progression'
+import { engineRung, qualifyingByLevel, uiLevel, unlockedLevels, UNLOCK_RULES } from '@/lib/data/progression'
+import { unlockedTier, type FieldHistory } from '@/lib/field/assignment'
+import type { Level } from '@/lib/data/types'
+import { recordUnlocks } from './unlocks'
 
 export interface QuotaResult {
   ok: boolean
@@ -162,39 +165,123 @@ export async function recordTrainingDay(userId: string): Promise<void> {
 }
 
 /**
- * Recomputes the ladder position from the reps that have actually been won.
+ * The field's own record of somebody, for the tier-4 gate (§09).
+ *
+ * Counted off `field_logs` rather than kept as a counter, for the same reason
+ * the ladder is derived: a stored number can disagree with the history it is
+ * supposed to summarise, and this one decides whether a person is handed the
+ * hardest ask on the ladder.
+ *
+ * DISTINCT DAYS, and asks MADE. Five asks in one afternoon is one exposure;
+ * `asked = false` is an honest log of a challenge somebody did not do, and §09
+ * is explicit that honesty keeps the challenge but does not keep the credit.
+ */
+export async function fieldHistory(userId: string): Promise<FieldHistory> {
+  const admin = supabaseAdmin()
+  const { data } = await admin
+    .from('field_logs')
+    .select('logged_on')
+    .eq('user_id', userId)
+    .eq('tier', 3)
+    .eq('asked', true)
+
+  return { tier3AskDays: new Set((data ?? []).map((row) => row.logged_on)).size }
+}
+
+/**
+ * Opens the field tier that the field itself has earned, and records the moment.
+ *
+ * `syncLevel` runs after a graded rep, which is the wrong event for T4: it is
+ * earned by going outside and asking, so waiting for the next rep would mean a
+ * user unlocks it on a Tuesday and is told on Thursday. This runs from the log
+ * path instead, so the moment fires when the thing actually happened.
+ *
+ * Idempotent, like every other unlock write — `recordUnlocks` is the one that
+ * guarantees a moment fires once ever.
+ */
+export async function syncFieldTier(userId: string): Promise<void> {
+  const admin = supabaseAdmin()
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('current_level')
+    .eq('id', userId)
+    .maybeSingle()
+  if (!profile) return
+
+  const tier = unlockedTier(profile.current_level, await fieldHistory(userId))
+  if (tier > 1) await recordUnlocks(userId, [{ kind: 'tier', ref: String(tier) }])
+}
+
+/**
+ * Recomputes the ladder position from the reps that actually scored.
  *
  * Derived rather than incremented: an unlock is a fact about your history, and
  * a counter that drifts from that history is a user who is either stuck or
  * promoted for a rep they never ran. Levels only ever go up here — a bad week
  * does not take a character away, and a downward adjustment is never announced
  * (§08, §12).
+ *
+ * Also the one place that RECORDS an unlock. What is unlocked stays derived;
+ * the row exists so the moment can fire once and so a cohort's time-to-Level-3
+ * is answerable later. Recording is idempotent, so running this after every
+ * grade costs nothing after the first.
  */
 export async function syncLevel(userId: string): Promise<void> {
   const admin = supabaseAdmin()
 
-  const [{ data: personas }, { data: sessions }, { data: profile }] = await Promise.all([
-    admin.from('personas').select('slug, level'),
-    admin.from('sessions').select('persona_slug, won, outcome').eq('user_id', userId).not('ended_at', 'is', null),
-    admin.from('profiles').select('current_level').eq('id', userId).maybeSingle(),
-  ])
+  const [{ data: personas }, { data: sessions }, { data: scores }, { data: profile }] =
+    await Promise.all([
+      admin.from('personas').select('slug, level'),
+      admin.from('sessions').select('id, persona_slug').eq('user_id', userId).not('ended_at', 'is', null),
+      admin.from('scores').select('session_id, composite').eq('user_id', userId),
+      admin.from('profiles').select('current_level').eq('id', userId).maybeSingle(),
+    ])
 
   if (!profile) return
 
+  // §08's rule: two sessions scoring 70+ at a level opens the one above. The
+  // join is the point — the gate used to read `sessions.won`, which is whether
+  // she gave her number, and §07 is careful to make that never the thing that
+  // counts.
   const levelBySlug = new Map((personas ?? []).map((row) => [row.slug, uiLevel(row.level)]))
-  const winsByLevel: Record<number, number> = {}
-  for (const session of sessions ?? []) {
-    if (!(session.won ?? wonFromOutcome(session.outcome))) continue
+  const compositeBySession = new Map((scores ?? []).map((row) => [row.session_id, row.composite]))
+
+  const reps = (sessions ?? []).flatMap((session) => {
     const level = levelBySlug.get(session.persona_slug)
-    if (!level) continue
-    winsByLevel[level] = (winsByLevel[level] ?? 0) + 1
+    return level ? [{ level, composite: compositeBySession.get(session.id) ?? null }] : []
+  })
+
+  const open = unlockedLevels(qualifyingByLevel(reps))
+
+  // Tiers 1 and 2 are open from the start, so they are not moments — telling
+  // somebody they have unlocked what they were given is worse than saying
+  // nothing. Only a tier with a rule can be earned.
+  await recordUnlocks(userId, [...open]
+    .filter((tier) => UNLOCK_RULES[tier] !== null)
+    .map((tier) => ({ kind: 'level' as const, ref: String(tier) })))
+
+  const topTier = Math.max(...open) as Level
+  // The rung the roster offers at that tier, which is where the ladder position
+  // sits. This was `topTier * 2` — the inverse of the old eight-rungs-over-four-
+  // tiers mapping — and it has to keep being the exact inverse of `uiLevel`, so
+  // it reads from the one table rather than repeating the arithmetic.
+  const engineLevel = engineRung(topTier)
+
+  // Field tiers 2 and 3 ride on the sim level (§09), so they open at the same
+  // moment and are recorded from the same place. T1 is day one and is not
+  // earned; T4 is earned in the field and cannot open here, so the history is
+  // read rather than assumed — a rep is not the event that opens it, but a rep
+  // must not close it either once it has been earned.
+  const fieldTier = unlockedTier(
+    Math.max(engineLevel, profile.current_level),
+    await fieldHistory(userId),
+  )
+  if (fieldTier > 1) {
+    await recordUnlocks(userId, [{ kind: 'tier', ref: String(fieldTier) }])
   }
 
-  const topTier = Math.max(...unlockedLevels(winsByLevel))
-  // Engine levels are 1-8, two rungs per UI tier; the top of the tier is what
-  // the roster will offer, so that is where the ladder position sits.
-  const engineLevel = Math.min(8, topTier * 2)
+  // Only ever upward. A bad week does not take a character away, and a
+  // downward adjustment is never announced (§08, §12).
   if (engineLevel <= profile.current_level) return
-
   await admin.from('profiles').update({ current_level: engineLevel }).eq('id', userId)
 }

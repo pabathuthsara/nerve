@@ -27,15 +27,25 @@
 
 import { revalidatePath } from 'next/cache'
 import { currentUser, supabaseServer } from '@/lib/db/server'
-import { recordTrainingDay } from '@/lib/db/progress'
-import { localDay } from '@/lib/data/day'
+import { fieldHistory, recordTrainingDay, syncFieldTier } from '@/lib/db/progress'
+import { announceMilestone, recordRejectionMilestones } from '@/lib/db/unlocks'
+import { localDay, shiftDays } from '@/lib/data/day'
 import { chooseChallenge, unlockedTier } from '@/lib/field/assignment'
+import { milestoneRef, REJECTION_MILESTONES } from '@/lib/field/milestones'
 import type { FieldAssignment, FieldChallenge, FieldOutcome, FieldStatus } from '@/lib/data/types'
 
 export interface FieldResult {
   ok: boolean
   message: string | null
   assignment: FieldAssignment | null
+  /**
+   * A milestone this write just crossed, if it crossed one (§09).
+   *
+   * Carried back so the sheet lands on the ask that earned it rather than on
+   * the next page load. It is not what makes it fire — the `unlocks` row is —
+   * so losing this to a dropped response costs the timing, not the moment.
+   */
+  milestone?: number
 }
 
 const SIGNED_OUT: FieldResult = {
@@ -142,7 +152,9 @@ async function createAssignment(input: {
   attempt?: number
 }): Promise<FieldResult> {
   const { supabase, userId, today, level } = input
-  const tier = unlockedTier(level)
+  // T4 is earned in the field rather than in the gym, so assigning today's
+  // challenge has to read the field log and not only the ladder position.
+  const tier = unlockedTier(level, await fieldHistory(userId))
 
   const [{ data: challenges }, { data: recent }] = await Promise.all([
     supabase.from('field_challenges').select(CHALLENGE_COLUMNS).eq('published', true),
@@ -186,12 +198,6 @@ async function createAssignment(input: {
   return { ok: true, message: null, assignment: toAssignment(data, toChallenge(row)) }
 }
 
-/** `YYYY-MM-DD`, shifted. Used for the repeat window. */
-function shiftDays(day: string, delta: number): string {
-  const [year = 0, month = 1, date = 1] = day.split('-').map(Number)
-  const shifted = new Date(Date.UTC(year, month - 1, date + delta))
-  return shifted.toISOString().slice(0, 10)
-}
 
 /**
  * Accepting captures the prediction.
@@ -330,10 +336,60 @@ export async function logAsk(input: {
   // §09: streaks run on asks made, never on asks accepted — and never on an
   // ask that did not happen. Honesty keeps the challenge; it does not keep
   // the streak.
-  if (input.asked) await recordTrainingDay(user.id)
+  //
+  // The same ask is what opens field tier 4, so the tier is re-checked here
+  // rather than on the next graded rep. This is the only place the T4 moment
+  // can fire on the day it was earned.
+  if (input.asked) {
+    await recordTrainingDay(user.id)
+    await syncFieldTier(user.id)
+  }
+
+  const milestone = input.outcome === 'declined' ? await crossedMilestone(user.id) : null
 
   revalidatePath('/field')
   revalidatePath('/train')
   revalidatePath('/profile')
-  return { ok: true, message: null, assignment: null }
+  return { ok: true, message: null, assignment: null, ...(milestone ? { milestone } : {}) }
+}
+
+/**
+ * Did this refusal cross 10, 25, 50 or 100?
+ *
+ * Counted off `field_logs` rather than incremented, so the milestone cannot
+ * drift from the number on the screen — both read the same rows, and a counter
+ * that disagrees with the log is a counter nobody should believe. The count
+ * after the insert includes it, so the count before is one less.
+ */
+async function crossedMilestone(userId: string): Promise<number | null> {
+  const supabase = await supabaseServer()
+  const { count } = await supabase
+    .from('field_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('outcome', 'declined')
+
+  const after = count ?? 0
+  if (after === 0) return null
+
+  const crossed = await recordRejectionMilestones(userId, after - 1, after)
+  return crossed[0]?.at ?? null
+}
+
+/**
+ * Marks a milestone as seen.
+ *
+ * Called when the sheet is dismissed, not when it is rendered: a sheet that
+ * flashed past behind a navigation was not a moment, and §12 says this is a
+ * designed beat rather than a toast.
+ */
+export async function acknowledgeMilestone(at: number): Promise<{ ok: boolean }> {
+  const user = await currentUser()
+  if (!user) return { ok: false }
+
+  const milestone = REJECTION_MILESTONES.find((entry) => entry.at === at)
+  if (!milestone) return { ok: false }
+
+  await announceMilestone(user.id, milestoneRef(milestone.at))
+  return { ok: true }
 }

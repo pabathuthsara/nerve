@@ -22,6 +22,7 @@ import {
 
 export * from './types'
 export * from './metrics'
+export * from './memory'
 
 /**
  * The deterministic 60%, and the working behind it.
@@ -98,5 +99,8 @@ export function composeScorecard(params: {
     model: params.model,
     gradedAt: new Date().toISOString(),
     outcome: params.outcome,
+    // Passed through, never re-derived. The filter runs once, in the route, so
+    // there is exactly one place where a line is judged fit to store.
+    memoryLine: params.judgement.memoryLine,
   }
 }

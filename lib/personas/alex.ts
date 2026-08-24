@@ -80,9 +80,12 @@ export const alex: Persona = {
   level: 8,
   track: 'dating',
 
+  // Was empty, which silently fell through `VOICE_BY_TIMBRE` to `coral` — the
+  // same voice as Maya, by accident rather than by casting. Named explicitly
+  // now; `lib/voice/conformance.test.ts` refuses an unnamed or duplicated one.
   voice: {
     timbre: 'feminine',
-    ids: {},
+    ids: { openai: 'coral' },
     pace: 0.95,
   },
 
@@ -94,7 +97,7 @@ export const alex: Persona = {
     gain: 0.4,
     decay: 2.0,
     decayPerTurn: 0.6,
-    maxGainPerTurn: 3,
+    maxGainPerTurn: 2.4,
     sessionCeiling: 45,
     // The whole point of Level 8. ENGAGED begins at 60 and she never gets there.
     hardCeiling: 45,
@@ -133,6 +136,13 @@ export const alex: Persona = {
   },
 
   contract: CONTRACT,
+
+  want: 'back with the people you actually came here to see',
+
+  sceneBeats: [
+    { at: 0.3, direction: '(Somebody across the room catches your eye and raises a glass at you.)' },
+    { at: 0.62, direction: '(The room drifts towards a speech starting at the far end. You do not move.)' },
+  ],
 
   exitConditions: [
     'They persist after you have signalled clearly that this is finished.',

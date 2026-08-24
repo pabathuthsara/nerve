@@ -34,6 +34,12 @@ export interface JudgementLayer {
   evidence: Partial<Record<keyof SubScores, string>>
   /** Named before anything critical. A user who feels flayed does not return. */
   wentWell: string
+  /**
+   * What she would still have in mind on a return visit (§08), already past
+   * `lib/grade/memory.ts`. Null is the normal case and means she brings
+   * nothing up — never an invented line.
+   */
+  memoryLine: string | null
 }
 
 export interface Scorecard {
@@ -57,6 +63,15 @@ export interface Scorecard {
    * ends in rejection can score 92.
    */
   outcome: 'receptive' | 'neutral' | 'rejecting' | 'unknown'
+  /**
+   * One line she would still have in mind next time (§08), filtered.
+   *
+   * Carried on the scorecard because grading is already the one pass over the
+   * full transcript — a second model call to produce a sentence would be a
+   * second thing to audit and a second thing to pay for. It contributes
+   * nothing to the composite.
+   */
+  memoryLine: string | null
 }
 
 export const DETERMINISTIC_WEIGHT = 0.6
