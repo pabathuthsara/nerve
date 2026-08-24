@@ -276,10 +276,75 @@ its menu is nothing like the others; `lib/data/mic.test.ts` covers the user-agen
 detection, including that Chrome's UA contains "Safari" and Edge's contains
 both.
 
-**Blocker total: roughly 13.5 working days**, down from 21 after the database
-pass, 16 with B8 cleared, 15 with B9 and 14 with B10 — plus merchant-of-record
-review time, which runs in parallel and can fail. **Seven of the ten blockers
-remain.**
+### B11 · Some of her replies are never heard, and nothing noticed  ·  ~0.5 days to root-cause  ·  `detection landed 24 Aug`
+
+Reported as "I can't hear her first few sentences, and sometimes I hear
+everything." Measured rather than reproduced: five stored rep recordings were
+decoded and every agent turn was scored for audio energy against its own
+transcript window.
+
+| Rep | Agent turns | Turns with no audio at all |
+|---|---|---|
+| nadia (fresh test account, 24 Aug 14:17) | 21 | 2 — **her first two**, "Hey." and "Nadia." |
+| nadia (24 Aug 02:57) | 22 | 2 — "Afternoon." (her first) and "Yeah, that's it." |
+| maya (24 Aug 01:51) | 21 | 3 — "I drink it.", "Maya.", "Hey." |
+| maya (24 Aug 09:58) | 21 | 0 |
+| robin (24 Aug 08:08) | 19 | 0 |
+
+Seven of 104. The recording taps the agent AnalyserNode, which sits on the
+remote WebRTC track itself, so this is what arrived in the browser and not what
+the speakers did with it.
+
+**It is all-or-nothing per utterance.** The voiced-fraction histogram across all
+104 turns is bimodal: a normal cluster at 0.4–0.8 and six turns at exactly 0.00,
+with almost nothing between. Random packet loss produces partials; this does
+not. Whole replies are either rendered or absent.
+
+**What it is not.** The clean maya rep with three inaudible turns recorded
+`{overlaps: 0, truncated: 0, unheard: 0, echoRejected: 0, providerErrors: 0}` —
+so no `response.cancel`, no `output_audio_buffer.clear` and no
+`conversation.item.truncate` was sent for any of them. `interrupt_response` is
+`mayInterrupt(persona)`, false below level 5, so the server did not interrupt
+her either. Autoplay is not it: MediaStream playback is exempt from Chrome's
+policy, and the AudioContext is not the playback path while
+`roomAcousticsEnabled()` is off. The rounds 10–12 fixes in `translate.ts` are
+all still holding.
+
+**Why it stayed invisible.** `sealAgentTurn` refuses to commit a reply whose
+`output_audio_buffer.started` never fired, and reports `agent.unheard`. A buffer
+that opens, sends nothing audible and closes cleanly is indistinguishable from a
+healthy turn on the data channel — so the line was committed in full, scored,
+counted into warmth, and shown in the debrief as something she said. `unheard`
+read 0 on every one of these reps.
+
+**Landed 24 Aug.** `lib/voice/audibility.ts` plus the watch in the OpenAI
+adapter: her analyser is sampled every 50ms between `agent.speech.start` and
+`agent.speech.stop`, and a turn whose peak never reaches -46 dBFS now fires the
+existing `agent.unheard` incident, so it counts into `pipeline_incidents` and
+into `incidentsAreAlarming`. The non-fatal error it emits alongside carries the
+`inbound-rtp.packetsReceived` delta across the turn. The turn is **not** dropped
+from the transcript — `sealAgentTurn` drops on the provider's own evidence,
+while this is a local measurement, and a browser with an odd WebAudio graph must
+not be able to quietly delete a rep.
+
+Also landed: the cold-track rebind in `attachRemote`. `ontrack` fires inside
+`setRemoteDescription`, before any RTP has arrived, so both the
+`MediaStreamAudioSourceNode` and the element's `play()` were bets that the
+browser would wire them up retroactively when media started. The source is now
+rebuilt once on the track's first `unmute`, against a stable analyser the
+recorder and the visualiser can keep holding. That targets the two first-turn
+cases in the table; it does not explain the three mid-rep ones.
+
+**Still owed.** One rep with the counter running says which half this is. Packets
+arrived and nothing rendered → a browser graph fault, ours to fix. Packets did
+not arrive → the audio left the model and not the network, and the recovery is a
+product decision rather than a patch. Not sized past that on purpose.
+
+**Blocker total: roughly 14 working days**, down from 21 after the database
+pass, 16 with B8 cleared, 15 with B9 and 14 with B10, and back up by the half
+day B11 needs to be root-caused — plus merchant-of-record review time, which
+runs in parallel and can fail. **Eight of the eleven blockers remain**, one of
+them (B11) measured but not yet explained.
 
 > **B9 was the one to take next, and it is done (24 Aug).** The grader,
 > the live scorer, both pipeline hops and the Realtime token now sit behind

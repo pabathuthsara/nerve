@@ -11,3 +11,5 @@ voice-lab
 # these are local state and must not be.
 supabase/.temp
 supabase/.branches
+.vercel
+.env*.local

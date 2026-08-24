@@ -38,6 +38,38 @@ original bug in a subtler form.
 Verify by ear: mute the mic, say nothing for ten seconds, and the room must
 still be there.
 
+## Her track, and whether it was heard
+
+Two things sit on the remote WebRTC track and neither is optional.
+
+**The cold-track rebind.** `pc.ontrack` fires inside `setRemoteDescription`,
+which is before a single RTP packet has arrived: the track is still `muted` and
+has no renderer. A `MediaStreamAudioSourceNode` built then, and a `play()`
+issued on an element with nothing to play, are both bets that the browser wires
+them up retroactively once media starts. `attachRemote` now rebuilds the source
+once on the track's first `unmute` — first only, because the track re-mutes
+between talkspurts on some builds and rebuilding every turn would trade a rare
+fault for a glitch at the head of every reply.
+
+The analyser it feeds is built **once** and kept. `getAnalyser()` is read at
+connect by the recorder and by the visualiser, and both hold the node they were
+handed; replacing it would leave the recording tapping a node nothing feeds any
+more, which is the quietest possible way to lose her voice from a rep.
+
+**The audibility watch** (`lib/voice/audibility.ts`). The provider's
+`output_audio_buffer.started` / `.stopped` are the server's account of playback,
+and the two came apart in seven of 104 turns across five stored reps — full
+transcript, zero audio, no incident. The adapter now samples her analyser every
+50ms between `agent.speech.start` and `agent.speech.stop`; a turn whose peak
+never reaches -46 dBFS fires `agent.unheard`, which was already counted into
+`pipeline_incidents` and already feeds `incidentsAreAlarming`.
+
+Float samples, not bytes: `getByteTimeDomainData` quantises to 1/128, so its
+quietest non-zero reading is ≈ -42 dBFS — above the floor this has to test
+against. The waveform can afford bytes because it is drawing a shape.
+
+The measurement, and what is still unexplained about it, is `LAUNCH-GAP.md` B11.
+
 `lib/audio/audio.test.ts` pins this with a recording stub of WebAudio: it walks
 the graph and asserts every looping ambient source reaches the destination
 **without** passing through her input bus. That was a wiring fault, and wiring

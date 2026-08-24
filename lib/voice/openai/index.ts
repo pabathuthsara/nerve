@@ -33,6 +33,11 @@ import type { OpenAISessionConfig } from './persona'
 import { compileReinforcement } from '../reinforcement'
 import { interruptsAt, replyDelayMs } from '../../warmth/timing'
 import { OpenAIEventTranslator } from './translate'
+import {
+  analyserRms,
+  SAMPLE_INTERVAL_MS,
+  TurnAudibility,
+} from '../audibility'
 import { OpenAIResponseGate } from './response-gate'
 import { buildSteeringItem } from './messages'
 import { Room } from '@/lib/audio/engine'
@@ -99,6 +104,17 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   private playbackSink: MediaStreamAudioDestinationNode | null = null
   private userAnalyser: AnalyserNode | null = null
   private agentAnalyser: AnalyserNode | null = null
+  /**
+   * Her remote track, inside the graph. Held so it can be rebound once the
+   * track carries media — see `attachRemote`.
+   */
+  private remoteSource: MediaStreamAudioSourceNode | null = null
+  /** Did that line actually come out of the speakers? See ../audibility.ts. */
+  private readonly audibility = new TurnAudibility()
+  private audibilityTimer: ReturnType<typeof setInterval> | null = null
+  private readonly audibilityBuffer = new Float32Array(2048)
+  /** `inbound-rtp.packetsReceived` when she started speaking. */
+  private packetsAtTurnStart: number | null = null
   private capTimer: ReturnType<typeof setTimeout> | null = null
 
   private t0: number | null = null
@@ -253,6 +269,11 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     // one point of contact with agent speech and it is a gain ramp.
     this.emitter.on('agent.speech.start', () => this.room?.duck(true))
     this.emitter.on('agent.speech.stop', () => this.room?.duck(false))
+
+    // And the same boundary, used to check the provider's word against what
+    // the speakers actually did. See `settleHerVoice`.
+    this.emitter.on('agent.speech.start', () => this.watchHerVoice())
+    this.emitter.on('agent.speech.stop', ({ at }) => this.settleHerVoice(at))
 
     // Backstop for the 8-minute hard cap (§05), enforced here as well as in the
     // UI so no code path can run a session past it.
@@ -413,29 +434,155 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     })
     this.keepAliveEl = el
 
-    const source = ctx.createMediaStreamSource(stream)
-
     // The analyser taps her DRY voice. The waveform should track what she said,
     // not what the room did to it.
+    //
+    // Built ONCE and kept for the life of the session. `getAnalyser()` is read
+    // at connect by the recorder and by the visualiser, and both hold the node
+    // they were given — replacing it below would leave the recording tapping a
+    // node nothing feeds any more, which is the quietest possible way to lose
+    // her voice from a rep.
     const analyser = ctx.createAnalyser()
     analyser.fftSize = 1024
     analyser.smoothingTimeConstant = 0.7
-    source.connect(analyser)
     this.agentAnalyser = analyser
 
-    if (throughRoom && this.room) {
-      source.connect(this.room.handles.input)
-      return
+    if (!throughRoom) {
+      // She is already audible through the element. This branch exists only to
+      // keep the analyser inside a graph that reaches a destination — a silent
+      // tap, at zero gain, so the waveform cannot quietly stop moving on a
+      // browser that declines to pull an unterminated branch.
+      const silent = ctx.createGain()
+      silent.gain.value = 0
+      analyser.connect(silent)
+      silent.connect(ctx.destination)
     }
 
-    // She is already audible through the element. This branch exists only to
-    // keep the analyser inside a graph that reaches a destination — a silent
-    // tap, at zero gain, so the waveform cannot quietly stop moving on a
-    // browser that declines to pull an unterminated branch.
-    const silent = ctx.createGain()
-    silent.gain.value = 0
-    analyser.connect(silent)
-    silent.connect(ctx.destination)
+    const bind = () => {
+      this.remoteSource?.disconnect()
+      const source = ctx.createMediaStreamSource(stream)
+      source.connect(analyser)
+      if (throughRoom && this.room) source.connect(this.room.handles.input)
+      this.remoteSource = source
+    }
+    bind()
+
+    // THE COLD-TRACK REBIND.
+    //
+    // `ontrack` fires inside `setRemoteDescription`, which is before a single
+    // RTP packet has arrived: the remote track is still `muted` and its
+    // renderer does not exist yet. A `MediaStreamAudioSourceNode` built against
+    // a track in that state, and a `play()` issued on an element with nothing
+    // to play, are both bets that the browser will wire them up retroactively
+    // when media starts. It usually does. When it does not, her opening lines
+    // are generated, streamed, transcribed and never heard — and nothing
+    // upstream can tell, because the data channel is perfect throughout.
+    //
+    // Rebinding on the FIRST `unmute` costs one node and removes the bet. Only
+    // the first: the track re-mutes between talkspurts on some builds, and
+    // rebuilding the source on every turn would trade this fault for a glitch
+    // at the head of each reply.
+    const track = stream.getAudioTracks()[0]
+    let boundWhileMuted = track?.muted !== false
+    track?.addEventListener('unmute', () => {
+      void el.play().catch(() => {
+        /* Same reasoning as above. */
+      })
+      if (!boundWhileMuted) return
+      boundWhileMuted = false
+      bind()
+    })
+  }
+
+  /* -------------------------------------------------------------- *
+   * Was that line audible?
+   * -------------------------------------------------------------- */
+
+  /**
+   * Start watching her analyser for the turn that just opened.
+   *
+   * The server's `output_audio_buffer.started` is the trigger, and the server's
+   * account is exactly what needs checking — see ../audibility.ts for the
+   * measurement that showed the two disagreeing.
+   */
+  private watchHerVoice(): void {
+    this.audibility.reset()
+    this.packetsAtTurnStart = null
+    void this.inboundAudioPackets().then((packets) => {
+      this.packetsAtTurnStart = packets
+    })
+    this.stopWatchingHerVoice()
+    this.audibilityTimer = setInterval(() => {
+      this.audibility.observe(analyserRms(this.agentAnalyser, this.audibilityBuffer))
+    }, SAMPLE_INTERVAL_MS)
+  }
+
+  /**
+   * The turn closed. Report it if nothing came out.
+   *
+   * `agent.unheard` rather than a new event: the incident already exists, is
+   * already counted into `pipeline_incidents`, and already feeds
+   * `incidentsAreAlarming`. What changes is that it can now fire for a reply
+   * whose buffer opened normally, which is the case that was invisible.
+   *
+   * The turn is NOT dropped from the transcript here. `sealAgentTurn` drops the
+   * replies it knows never started, on evidence from the provider's own event
+   * stream; this evidence is a local measurement, and a browser whose WebAudio
+   * graph is behaving oddly would otherwise quietly delete a whole rep.
+   * Reported, counted, and left for the grader to be judged against.
+   */
+  private settleHerVoice(at: number): void {
+    this.stopWatchingHerVoice()
+    const verdict = this.audibility.verdict()
+    if (!verdict.silent) return
+
+    this.emitter.emit('agent.unheard', { at })
+
+    const before = this.packetsAtTurnStart
+    void this.inboundAudioPackets().then((after) => {
+      const delta = before === null || after === null ? null : after - before
+      this.emitter.emit('error', {
+        error: new VoiceError(
+          'provider_error',
+          PROVIDER,
+          `A reply played to silence: her audio buffer opened and closed with nothing audible` +
+            ` (peak ${verdict.peak.toFixed(4)} over ${verdict.samples} samples` +
+            `${delta === null ? '' : `, inbound audio packets +${delta}`}).`,
+          { fatal: false },
+        ),
+      })
+    })
+  }
+
+  private stopWatchingHerVoice(): void {
+    if (this.audibilityTimer === null) return
+    clearInterval(this.audibilityTimer)
+    this.audibilityTimer = null
+  }
+
+  /**
+   * Packets received on the inbound audio track, or null.
+   *
+   * The one number that separates "the audio never arrived" from "it arrived
+   * and was not rendered", and therefore the difference between a network fault
+   * and a graph fault. Sampled only around her turns, so it costs one
+   * `getStats()` per reply rather than a polling loop.
+   */
+  private async inboundAudioPackets(): Promise<number | null> {
+    if (!this.pc) return null
+    try {
+      const stats = await this.pc.getStats()
+      let packets: number | null = null
+      stats.forEach((report) => {
+        if (report.type !== 'inbound-rtp') return
+        const inbound = report as RTCInboundRtpStreamStats
+        if (inbound.kind !== 'audio') return
+        if (typeof inbound.packetsReceived === 'number') packets = inbound.packetsReceived
+      })
+      return packets
+    } catch {
+      return null
+    }
   }
 
   private buildUserAnalyser(stream: MediaStream): void {
@@ -684,6 +831,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
 
     if (this.capTimer) clearTimeout(this.capTimer)
     this.capTimer = null
+    this.stopWatchingHerVoice()
 
     try {
       this.room?.stop()
@@ -709,6 +857,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     this.audioCtx = null
     this.userAnalyser = null
     this.agentAnalyser = null
+    this.remoteSource = null
     this.room = null
     this.responseGate.reset()
 
