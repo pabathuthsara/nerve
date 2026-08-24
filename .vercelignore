@@ -1,0 +1,13 @@
+# Vercel installs dependencies and builds on its own machine, so nothing here
+# needs to travel. `.gitignore` is not consulted for the CLI upload: `.next` is
+# excluded by default but `.next-check` is a custom distDir (see next.config.ts)
+# and is not, which sent a 140MB webpack cache pack over the 100MB file limit.
+node_modules
+.next
+.next-check
+voice-lab
+*.tsbuildinfo
+
+# Local Supabase CLI state. config.toml and migrations/ are committed and stay.
+supabase/.temp
+supabase/.branches
