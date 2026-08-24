@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Flame, Target, User, Users, Zap } from 'lucide-react'
+import { BookOpen, Flame, Target, User, Users, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useUserState } from '@/lib/data'
 import type { Track } from '@/lib/data/types'
@@ -15,6 +15,9 @@ const navItems = [
   { label: 'Train', href: '/interview', icon: Zap, tracks: ['interview'] as Track[] },
   { label: 'Roster', href: '/roster', icon: Users, tracks: ['dating', 'interview'] as Track[] },
   { label: 'Field', href: '/field', icon: Target, tracks: ['dating'] as Track[] },
+  // §11 lists the library under both tracks. The cards are about holding a
+  // conversation with somebody who is not helping you, which an interview is.
+  { label: 'Library', href: '/library', icon: BookOpen, tracks: ['dating', 'interview'] as Track[] },
   { label: 'Profile', href: '/profile', icon: User, tracks: ['dating', 'interview'] as Track[] },
 ]
 

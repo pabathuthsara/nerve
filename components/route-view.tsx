@@ -2,6 +2,8 @@ import { TrainScreen } from './screens/train-screen'
 import { AuthScreen, type AuthRoute } from './screens/auth-screens'
 import { OnboardingScreen, type OnboardingRoute } from './screens/onboarding-screens'
 import { FieldScreen, PersonaDetailScreen, RosterScreen } from './screens/core-screens'
+import { LibraryCardScreen, LibraryScreen } from './screens/library-screens'
+import { ProgressScreen, WeeklyReviewScreen } from './screens/progress-screens'
 import { BaselineScreen } from './screens/baseline-screen'
 import { ProfileScreen, type ProfileRoute } from './screens/profile-screens'
 import { SessionScreen, type SessionView } from './screens/session-screens'
@@ -45,7 +47,11 @@ export function RouteView({ path, query = {}, auth }: { path: string; query?: Re
   if (path === '/roster') return <RosterScreen />
   if (path.startsWith('/roster/')) return <PersonaDetailScreen personaId={path.split('/')[2] ?? ''} />
   if (path === '/field') return <FieldScreen />
+  if (path === '/library') return <LibraryScreen />
+  if (path.startsWith('/library/')) return <LibraryCardScreen slug={path.split('/')[2] ?? ''} />
   if (path === '/progress/baseline') return <BaselineScreen />
+  if (path === '/progress') return <ProgressScreen />
+  if (path.startsWith('/progress/week/')) return <WeeklyReviewScreen weekStart={path.split('/')[3] ?? ''} />
   if (path === '/profile' || path === '/profile/history' || path === '/profile/settings' || path === '/profile/subscription') return <ProfileScreen route={path as ProfileRoute} />
   if (path.startsWith('/session/')) {
     const [, , sessionId = '', view = 'result'] = path.split('/')

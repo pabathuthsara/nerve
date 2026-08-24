@@ -76,6 +76,85 @@ describe('deterministic metrics', () => {
     expect(computeDeterministicMetrics(vague, 5).specificPlanOffered).toBe(false)
   })
 
+  it('grades the ask, and leaves it unmeasured when he did not ask', () => {
+    // §07 compares two ASKS — "Coffee Thursday?" beats "we should hang out
+    // sometime". It does not compare asking with not asking, and it must not:
+    // §16 rule 6 bans pressure closes, so a metric that docked him for reading
+    // a closed person correctly would teach the one thing the product refuses.
+    expect(computeDeterministicMetrics(GOOD, 30).planQuality).toBe(1)
+
+    const vague = convo([
+      ['user', 'This has been nice', 0, 2],
+      ['user', 'we should hang out sometime', 3, 6],
+    ])
+    expect(computeDeterministicMetrics(vague, 8).planQuality).toBe(0.5)
+
+    const neverAsked = convo([
+      ['user', 'What are you reading?', 0, 2],
+      ['user', 'Nice to meet you', 3, 5],
+    ])
+    expect(computeDeterministicMetrics(neverAsked, 8).planQuality).toBeNull()
+  })
+
+  it('does not read a goodbye as an attempted close', () => {
+    // "See you" is how people leave. "See you again" is a proposal. Conflating
+    // them would score every polite exit as an ask.
+    const goodbye = convo([
+      ['user', 'What are you reading?', 0, 2],
+      ['user', 'See you', 3, 4],
+    ])
+    expect(computeDeterministicMetrics(goodbye, 6).planQuality).toBeNull()
+  })
+
+  it('grades the exit warm, trailed off, or pushed', () => {
+    expect(computeDeterministicMetrics(GOOD, 30).exitQuality).toBe(1)
+
+    const trailed = convo([
+      ['user', 'What are you reading?', 0, 2],
+      ['agent', 'A novel.', 3, 4],
+      ['user', 'Right', 5, 6],
+    ])
+    expect(computeDeterministicMetrics(trailed, 8).exitQuality).toBe(0.5)
+
+    const pushy = convo([
+      ['agent', 'I should get on.', 0, 2],
+      ['user', 'Come on, just one drink', 3, 5],
+      ['user', 'Nice to meet you', 6, 8],
+    ])
+    expect(computeDeterministicMetrics(pushy, 10).exitQuality).toBe(0)
+  })
+
+  it('never lets the outcome decide which metrics are scored', () => {
+    // THE RULE THIS CHANGE COULD HAVE BROKEN (§07). Gating the exit on
+    // rejection would score a rejecting rep across seven metrics and a
+    // receptive one across six — outcome deciding the composite's composition,
+    // which is outcome scoring by the back door. The same conversation, ending
+    // both ways, must be marked on the same metrics.
+    const shared: [string, string, number, number][] = [
+      ['user', 'Sorry, is this place always this quiet?', 0, 3],
+      ['agent', 'Pretty much.', 3.5, 6],
+      ['user', 'Would you want to grab a coffee on Thursday?', 7, 10],
+    ]
+    const rejected = convo([
+      ...shared,
+      ['agent', 'Mm. Maybe not.', 10.5, 12],
+      ['user', 'Fair enough. Nice to meet you anyway.', 13, 16],
+    ] as never)
+    const accepted = convo([
+      ...shared,
+      ['agent', 'Yeah, go on then.', 10.5, 12],
+      ['user', 'Great. Nice to meet you anyway.', 13, 16],
+    ] as never)
+
+    const keysOf = (t: typeof rejected) =>
+      scoreDeterministic(computeDeterministicMetrics(t, 18))
+        .breakdown.filter((entry) => entry.points !== null)
+        .map((entry) => entry.key)
+        .sort()
+
+    expect(keysOf(rejected)).toEqual(keysOf(accepted))
+  })
+
   it('recognises a clean exit, and refuses one that pushed', () => {
     expect(computeDeterministicMetrics(GOOD, 30).cleanExit).toBe(true)
 
@@ -92,6 +171,9 @@ describe('deterministic metrics', () => {
     expect(metrics.talkRatio).toBeNull()
     expect(metrics.questionsAsked).toBe(0)
     expect(metrics.cleanExit).toBe(false)
+    // Nothing to mark, rather than a zero for an ending that never happened.
+    expect(metrics.exitQuality).toBeNull()
+    expect(metrics.planQuality).toBeNull()
   })
 })
 
@@ -156,7 +238,9 @@ describe('the round-9 regression', () => {
     longestMonologue: 8,
     meanResponseLatency: 1.0,
     specificPlanOffered: false,
+    planQuality: null,
     cleanExit: true,
+    exitQuality: 1,
     userTurns: 14,
     agentTurns: 14,
     sessionSeconds: 176,

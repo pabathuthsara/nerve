@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { useBaseline, useFieldToday, usePersonaProgress, usePersonas, useSessionHistory, useUserState, useWeeklyReview } from '@/lib/data'
 import type { PersonaProgress, SessionSummary } from '@/lib/data/types'
 import { chooseTodayPersona, LEVEL_NAMES, levelTone } from '@/lib/data/progression'
+import { RANKS, RANK_BLURBS, RANK_NAMES, nextRankRequirement, rankIndex, type Rank } from '@/lib/data/rank'
 import { FieldActions, FieldSheets, useFieldFlow } from '@/components/field/flow'
 import { MilestoneSheet } from '@/components/field/milestone-sheet'
 import { REJECTION_MILESTONES, type Milestone } from '@/lib/field/milestones'
@@ -72,6 +73,7 @@ function TrainContent() {
           )}
         </section>
         <aside className="side-stack">
+          {userLoading || !user ? <Skeleton height={86} /> : <RankRail rank={user.rank} />}
           <div className="side-stats">
             <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Reps remaining" value={`${user.repsRemainingToday} / ${user.repsPerDay}`} size="lg" />}</div>
             <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Current streak" value={`${user.streakDays} days`} size="lg" />}</div>
@@ -140,4 +142,45 @@ export function SessionRow({ session }: { session: SessionSummary }) {
   // A composite of null is a rep that has not been graded yet — a dash, never
   // a zero somebody could read as a verdict.
   return <Link className="session-row" href={`/session/${session.id}/scorecard`}><span className="session-row__main"><span className={`session-row__outcome${session.won ? ' session-row__outcome--won' : ''}`}>{session.won ? <Check size={15} strokeWidth={1.5} /> : <X size={15} strokeWidth={1.5} />}</span><span><strong style={{ display: 'block', fontWeight: 500 }}>{session.personaName}</strong><span className="label">{session.personaSettingShort} · {minutes}:{String(seconds).padStart(2, '0')}</span></span></span><span className="session-row__score">{session.compositeScore ?? '—'}</span></Link>
+}
+
+/**
+ * The §08 rank rail. "Shown as a rail on the home screen rather than as a
+ * badge shelf."
+ *
+ * The distinction in that sentence is the whole brief: a badge says you have
+ * one, a rail says where you are and what is above you. So every rank is drawn
+ * — including the ones not yet reached — and the next one names its price in
+ * the same words the roster uses, because a rail with no next step is a badge
+ * with extra steps.
+ *
+ * Rank is the slow number. The level moves when you unlock a character; this
+ * moves when you have proven you can hold one, and it is deliberately harder
+ * to move than the thing next to it.
+ */
+function RankRail({ rank }: { rank: Rank }) {
+  const here = rankIndex(rank)
+  const next = nextRankRequirement(rank)
+  return (
+    <Card className="rank-rail">
+      <div className="rank-rail__head">
+        <span className="label">Rank</span>
+        <strong className="display-md volt">{RANK_NAMES[rank]}</strong>
+      </div>
+      <ol className="rank-rail__track" aria-label={`Rank ${RANK_NAMES[rank]}, ${here + 1} of ${RANKS.length}`}>
+        {RANKS.map((entry, index) => (
+          <li
+            key={entry}
+            className={index === here ? 'is-here' : index < here ? 'is-done' : undefined}
+            aria-current={index === here ? 'step' : undefined}
+          >
+            <i />
+            <span className="label">{RANK_NAMES[entry]}</span>
+          </li>
+        ))}
+      </ol>
+      <p>{RANK_BLURBS[rank]}</p>
+      {next ? <span className="label mute">Next · {next}</span> : null}
+    </Card>
+  )
 }

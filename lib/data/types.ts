@@ -1,4 +1,6 @@
 export type Track = 'dating' | 'interview'
+import type { Rank } from './rank'
+
 export type Level = 1 | 2 | 3
 
 /**
@@ -22,6 +24,11 @@ export interface UserState {
   activeTrack: Track
   unlockedTracks: Track[]
   currentLevel: Level
+  /**
+   * The §08 rail. Read from the `profiles` mirror that `syncLevel` maintains;
+   * `lib/data/rank.ts` is what decides it.
+   */
+  rank: Rank
   repsRemainingToday: number
   repsPerDay: number
   repsResetAt: string
@@ -194,6 +201,13 @@ export interface Scorecard {
   bestMoment: Moment | null
   worstMoment: Moment | null
   tryNext: string
+  /**
+   * The two weakest sub-scores, in order (§07). Carried so the screen can link
+   * each one to its technique — the sentence in §07 is "each links to the
+   * matching technique in the library", and a focus with nowhere to go is
+   * advice the user cannot act on.
+   */
+  focus: string[]
 }
 
 export interface TranscriptTurn {
@@ -294,3 +308,42 @@ export interface InterviewSetup {
   complete: boolean
 }
 
+/**
+ * A library card, as the screens read it (§10 D).
+ *
+ * The database row plus nothing: the library is content, seeded from
+ * `lib/techniques/library.ts` by `npm run db:content`, and the shape it is
+ * authored in is the shape it is read in.
+ */
+export interface LibraryCard {
+  slug: string
+  kind: 'technique' | 'opener' | 'ladder' | 'recovery' | 'exit'
+  title: string
+  summary: string
+  body: string
+  /** Which of the six sub-scores this card moves. */
+  targets: string[]
+  setting: string | null
+  examples: string[]
+  drill: string | null
+}
+
+/**
+ * One graded rep, reduced to the numbers the trend screens plot (§10 E).
+ *
+ * Deliberately thin. `/progress` draws lines through many reps, so anything it
+ * does not draw is bytes over the wire and a column that has to keep meaning
+ * the same thing next month.
+ */
+export interface ProgressPoint {
+  sessionId: string
+  gradedAt: string
+  personaSlug: string
+  composite: number
+  /** The six §07 names, absent when the judge did not return one. */
+  subScores: Partial<Record<string, number>>
+  /** Per minute of his speaking time. Null when he barely spoke. */
+  fillerRate: number | null
+  /** Share of speaking time that was his, 0-1. */
+  talkRatio: number | null
+}

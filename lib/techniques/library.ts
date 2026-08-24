@@ -275,3 +275,23 @@ export const TECHNIQUES: Technique[] = [
 export function techniqueFor(subScore: SubScore): Technique | null {
   return TECHNIQUES.find((technique) => technique.kind === 'technique' && technique.targets.includes(subScore)) ?? null
 }
+
+/**
+ * The technique for a sub-score — the link §07 promises.
+ *
+ * "The weakest two are surfaced as the focus for the next rep, and each links
+ * to the matching technique in the library." Six techniques, one per sub-score,
+ * which is why that sentence can be kept at all.
+ *
+ * Resolved from the authored registry rather than by querying, because it is
+ * used to build a href and a link does not need a round trip to know where it
+ * points. If a card has not been seeded the library screen says so; that is a
+ * better failure than a scorecard that hides its own advice while it loads.
+ */
+export function techniqueForSubScore(subScore: string): Technique | null {
+  return (
+    TECHNIQUES.find(
+      (card) => card.kind === 'technique' && card.targets.includes(subScore as SubScore),
+    ) ?? null
+  )
+}

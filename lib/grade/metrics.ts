@@ -30,8 +30,36 @@ export interface DeterministicMetrics {
   meanResponseLatency: number | null
   /** "Coffee Thursday?" beats "we should hang out sometime". */
   specificPlanOffered: boolean
+  /**
+   * The same judgement, graded, because §07 scores this one and a boolean
+   * cannot be scored without punishing the wrong thing.
+   *
+   * `null` when he proposed nothing at all — which is NOT a failure. Reading a
+   * closed person correctly and declining to push is good play, and §16 rule 6
+   * bans pressure closes outright; a metric that docked him for not asking
+   * would teach exactly the behaviour the product refuses to teach. §07's own
+   * gloss is a comparison between two ASKS — "Coffee Thursday?" beats "we
+   * should hang out sometime" — so what is scored is how well he asked, on the
+   * reps where he asked.
+   *
+   * 1 specific · 0.5 vague · null no attempt.
+   */
+  planQuality: number | null
   /** Left warmly without pushing. Only meaningful after a knock-back. */
   cleanExit: boolean
+  /**
+   * How he left, graded. `null` when he barely spoke at all.
+   *
+   * Deliberately NOT conditioned on how the rep went. Gating it on rejection
+   * would make the composite's own composition depend on the outcome — a
+   * rejecting rep scored across seven metrics and a receptive one across six —
+   * which is §07's cardinal rule broken by the back door. Every rep has an
+   * ending and leaving well is process, so every rep with a real conversation
+   * in it gets marked on it.
+   *
+   * 1 warm farewell · 0.5 trailed off · 0 pushed.
+   */
+  exitQuality: number | null
   userTurns: number
   agentTurns: number
   sessionSeconds: number
@@ -42,6 +70,17 @@ const SPECIFIC_PLAN =
   /\b(tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|this week|next week|at \d|around \d|\d\s?(am|pm)|o'?clock)\b/i
 const PLAN_VERB =
   /\b(coffee|drink|dinner|lunch|meet|see you|come along|go for|grab)\b/i
+
+/**
+ * He proposed seeing her again, in any form — the gate on whether the ask is
+ * marked at all.
+ *
+ * Deliberately narrower than a farewell. "See you" is how people say goodbye;
+ * "see you again" is a proposal, and conflating them would score every polite
+ * exit as an attempted close.
+ */
+const PLAN_PROPOSAL =
+  /\b(coffee|a drink|drinks|dinner|lunch|hang out|meet up|catch up|go for|grab (a|some)|see you again|do this again)\b/i
 
 const FAREWELL =
   /\b(nice to meet you|good to meet you|nice talking|enjoy the rest|have a good|take care|see you|all the best|good luck|no worries|fair enough|no problem)\b/i
@@ -91,6 +130,13 @@ export function computeDeterministicMetrics(
   const farewell = lastUser ? FAREWELL.test(lastUser.text) : false
   const pushedAtTheEnd = user.slice(-2).some((turn) => PUSHY.test(turn.text))
 
+  // Whether he asked at all, and then how well. The two questions are separate
+  // because only the second one is scored — see `planQuality`.
+  const proposed = user.some((turn) => PLAN_PROPOSAL.test(turn.text))
+  const specificPlanOffered = user.some(
+    (turn) => SPECIFIC_PLAN.test(turn.text) && PLAN_VERB.test(turn.text),
+  )
+
   return {
     talkRatio: totalSpoken > 0 ? userSeconds / totalSpoken : null,
     questionsAsked,
@@ -107,10 +153,13 @@ export function computeDeterministicMetrics(
       latencies.length > 0
         ? latencies.reduce((sum, value) => sum + value, 0) / latencies.length
         : null,
-    specificPlanOffered: user.some(
-      (turn) => SPECIFIC_PLAN.test(turn.text) && PLAN_VERB.test(turn.text),
-    ),
+    specificPlanOffered,
+    planQuality: proposed ? (specificPlanOffered ? 1 : 0.5) : null,
     cleanExit: farewell && !pushedAtTheEnd,
+    // Two user turns is the floor for marking an ending. Below that there was
+    // no conversation to leave, and §15 does not score a session under twenty
+    // seconds anyway.
+    exitQuality: user.length < 2 ? null : pushedAtTheEnd ? 0 : farewell ? 1 : 0.5,
     userTurns: user.length,
     agentTurns: agent.length,
     sessionSeconds: Math.round(sessionSeconds * 10) / 10,
@@ -147,6 +196,15 @@ export interface MetricBand {
   tolerance: number
   /** How the value is rendered in the audit line. */
   format: (value: number) => string
+  /**
+   * Overrides the computed target string in the audit line.
+   *
+   * For the two metrics §07 states as booleans, whose scale is a judgement
+   * rather than a quantity: "≥ 1" is arithmetically true and tells a user
+   * nothing, and §07's whole argument for the deterministic half is that a
+   * composite can be taken apart rather than trusted.
+   */
+  target?: string
 }
 
 /**
@@ -264,11 +322,34 @@ export const METRIC_BANDS: readonly MetricBand[] = [
     tolerance: 1.5,
     format: (value) => `${value.toFixed(2)}s`,
   },
+  // The two §07 metrics that were computed and never scored until 24 Aug.
+  // Both are graded 0-1 rather than boolean; see `planQuality` and
+  // `exitQuality` for why each is allowed to be unmeasured.
+  {
+    key: 'planQuality',
+    label: 'the ask',
+    min: 1,
+    // A vague ask lands at 44 rather than 0. He did the hard part — he asked —
+    // and the lesson is that "sometime" is not a plan, not that asking was a
+    // mistake.
+    tolerance: 1,
+    target: 'specific',
+    format: (value) => (value >= 1 ? 'specific' : 'vague'),
+  },
+  {
+    key: 'exitQuality',
+    label: 'the exit',
+    min: 1,
+    tolerance: 1,
+    target: 'warm, no push',
+    format: (value) => (value >= 1 ? 'warm' : value > 0 ? 'trailed off' : 'pushed'),
+  },
 ]
 
 /** Human-readable target, for the audit line. */
 export function describeBand(band: MetricBand): string {
   const { min, max, format } = band
+  if (band.target !== undefined) return band.target
   if (min !== undefined && max !== undefined) return `${format(min)}–${format(max)}`
   if (min !== undefined) return `≥ ${format(min)}`
   if (max !== undefined) return `≤ ${format(max)}`

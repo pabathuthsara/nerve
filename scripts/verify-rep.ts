@@ -20,6 +20,8 @@ import type { Database } from '@/lib/db/types'
 import { consumeRep, mayOpenSession, recordTrainingDay, syncLevel } from '@/lib/db/progress'
 import { momentsFrom, toScorecard, type StoredWarmthEvent } from '@/lib/data/scorecard'
 import { qualifyingByLevel, uiBand, uiLevel, unlockedLevels, wonFromRep } from '@/lib/data/progression'
+import { rankFor, type Rank } from '@/lib/data/rank'
+import { toProgressPoint } from '@/lib/data/queries'
 import { announceUnlock, recordUnlocks } from '@/lib/db/unlocks'
 import { ARM_THRESHOLD, KEEP_THRESHOLD, resultReading } from '@/lib/data/rep-rules'
 import { memoryLineFrom } from '@/lib/grade/memory'
@@ -253,6 +255,18 @@ async function main(): Promise<void> {
     check((profile?.current_level ?? 0) > 1, 'a graded rep moves the ladder position')
     check(uiLevel(profile?.current_level ?? 1) === 2, 'tier 2 is open and nothing above it')
 
+    // The §08 rail. Derived by `rankFor` and mirrored onto the profile by
+    // `syncLevel`, so what the home screen reads and what the unlocks were
+    // computed from cannot be two different answers.
+    const rankNow = async () =>
+      (await user.from('profiles').select('rank').eq('id', userId).maybeSingle()).data?.rank
+
+    // One qualifying rep is not a rank. §08 asks for two, uniformly, and the
+    // rail must not move on the first one — a rank you get for showing up is
+    // the badge shelf §08 explicitly does not want.
+    check(await rankNow() === 'rookie', 'one qualifying rep leaves you a Rookie')
+
+
     // §08's rule, against the real join. One rep scoring 79 is not two, so the
     // tier above must stay shut — the gate is demonstrated skill, and this is
     // the half that proves it does not open early.
@@ -418,6 +432,44 @@ async function main(): Promise<void> {
       survivingSessions === 1 && survivingScores === 1 && afterForget?.current_level === profile?.current_level,
       'forgetting takes the line and leaves the rep, the score and the ladder alone',
     )
+
+    // Deliberately last. It adds a second graded rep, and the memory checks
+    // above count rows — a harness that quietly changes the fixture other
+    // checks are reading is a harness that passes for the wrong reason.
+    console.log('\nthe progress read (§10 E)')
+    // `/progress` digs the two habit metrics out of a jsonb array by key. A
+    // rename in `METRIC_BANDS` would turn both lines flat with nothing failing,
+    // so a real stored row is put through the real mapping here.
+    const { data: progressRow } = await user
+      .from('scores')
+      .select('session_id, graded_at, composite, opening, curiosity, listening, signal_reading, composure, close, metric_scores')
+      .eq('session_id', sessionId)
+      .maybeSingle()
+    check(!!progressRow, 'the graded rep is readable in the shape /progress asks for')
+
+    if (progressRow) {
+      const point = toProgressPoint(progressRow as never, 'nadia')
+      check(point.composite === composite, 'the composite survives the mapping')
+      check(Object.keys(point.subScores).length === 6, `all six sub-scores map (got ${Object.keys(point.subScores).length})`)
+      check(point.talkRatio !== null, 'talk ratio is found in the stored metric array')
+      check(point.fillerRate !== null, 'and so is the filler rate')
+    }
+
+    console.log('\nthe rank rail (§08)')
+    const { data: secondRep } = await admin
+      .from('sessions')
+      .insert({ user_id: userId, persona_slug: 'nadia', provider: 'openai', model: 'gpt-realtime-mini', ended_at: new Date().toISOString() })
+      .select('id')
+      .single()
+    await admin.from('scores').insert({
+      session_id: secondRep?.id ?? '', user_id: userId, composite: 82,
+      model_version: 'harness', voice_provider: 'openai',
+    })
+    await syncLevel(userId)
+
+    const promoted = await rankNow()
+    check(promoted === 'regular', `a second qualifying rep makes you a Regular (got ${promoted})`)
+    check(rankFor({ 1: 2 }) === (promoted as Rank), 'and the mirror agrees with the function that decides it')
   } finally {
     if (userId) await admin.auth.admin.deleteUser(userId)
     console.log('\ntest user removed.')

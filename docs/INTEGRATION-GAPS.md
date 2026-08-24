@@ -14,6 +14,19 @@ change, which was the point of building them against a seam.
       it ends however it ends. The rules are pure functions in
       `lib/data/rep-rules.ts` with tests; the whole lifecycle behind the
       transport is covered by `npm run db:rep`.
+- [x] The library reads real rows. `/library` and `/library/[slug]` render the
+      seeded `techniques` table; the scorecard's two weakest sub-scores and the
+      brief's technique of the session resolve from the authored registry so the
+      links are there on first paint.
+- [x] `/progress` reads real rows — the composure trend, the six sub-score
+      lines and the two habit metrics all come off `scores`, and the Sunday
+      letters off `weekly_reviews`.
+- [x] The rank rail reads `profiles.rank`, mirrored by `syncLevel` from the same
+      qualifying counts the unlocks use.
+- [ ] The interview track is still fixtures — `useInterviewers` and
+      `useInterviewSetup` are mocks and nothing writes `interview_setups`. The
+      route now redirects unless `unlocked_tracks` says otherwise, so nobody
+      reaches it by accident.
 - [x] Three characters, one per rung, seeded with their presentation copy —
       §06 authors eight and five are retired rather than deleted, unpublished
       by `npm run db:seed` so their old sessions stay readable (D10a in

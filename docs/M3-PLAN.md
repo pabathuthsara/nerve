@@ -84,7 +84,7 @@ projection with a measurement. Recorded as D2a in `LAUNCH-GAP.md`.
 grader produces. Hand-score twenty transcripts first and you do the reading
 twice.
 
-### B1 · Score the two dead deterministic metrics
+### B1 · Score the two dead deterministic metrics · **shipped 24 Aug**
 
 §07 lists **eight** deterministic metrics. `METRIC_BANDS` in
 `lib/grade/metrics.ts` has **six**. `specificPlanOffered` and `cleanExit` are
@@ -111,7 +111,26 @@ Two design notes that are not optional:
 *Done when:* eight metrics carry points, a rep with no knock-back reports
 `cleanExit` as unmeasured rather than failed, and `grade.test.ts` covers both.
 
-### B2 · Fix the scorecard's reading order
+**Shipped, and one thing was decided differently.** `MetricBand` grew a
+`target` override and the two metrics became graded 0-1 values —
+`planQuality` and `exitQuality` — beside the booleans the prompt still reads.
+
+The design note above said `cleanExit` should be unmeasured without a
+knock-back. **It is not conditioned on the outcome at all**, and the reason is
+§07's own cardinal rule: gating it on rejection would score a rejecting rep
+across seven metrics and a receptive one across six, which is the outcome
+deciding the composite's composition — outcome scoring by the back door. Every
+rep has an ending, leaving well is process, so every rep with two user turns in
+it is marked on it: warm farewell 1, trailed off 0.5, pushed 0. A test asserts
+that the same conversation ending both ways is scored on the same metrics.
+
+`planQuality` **is** conditional, on a different thing: whether he proposed
+anything. No proposal is unmeasured rather than zero, because §16 rule 6 bans
+pressure closes and reading a closed person correctly is good play — a metric
+that docked him for not asking would teach the one behaviour the product
+refuses to teach. §07's gloss compares two asks, not asking with not asking.
+
+### B2 · Fix the scorecard's reading order · **shipped 24 Aug**
 
 §07: *"The scorecard always names one thing that went well before it names
 anything that didn't."* Today the composite leads, the metrics follow, and
@@ -121,7 +140,12 @@ entirely from free users.
 This is §07, not §02, so it belongs here rather than in M3. The staged reveal
 choreography is §02 rule 6 and stays in M3; this is only the order.
 
-### B3 · Collect ten more transcripts
+**Shipped.** `wentWell` is its own card between the composite and the metrics,
+and it is **never gated** — it used to sit inside the Pro lock, so the users
+most likely to quit after a bad rep were the only ones who never saw the
+encouraging half of their own scorecard.
+
+### B3 · Collect ten more transcripts · **owed**
 
 `npm run grade:collect`. With the roster at three (D10a) these concentrate on
 Nadia, Maya and Robin — roughly seven each rather than the two or three each
@@ -131,7 +155,7 @@ cutting the roster made this gate worth passing.
 Collect them **after** B1, so every transcript is scored against the rubric
 that ships.
 
-### B4 · Hand-score all twenty
+### B4 · Hand-score all twenty · **owed, and not a coding task**
 
 Not a coding task, and deliberately not one. `fixtures.ts` says it plainly:
 ground truth a model wrote is not ground truth. Six sub-scores and the
@@ -148,7 +172,7 @@ separately.
 
 ---
 
-## Phase C · The MVP scope §17 never scheduled · ~5 days
+## Phase C · The MVP scope §17 never scheduled · **shipped 24 Aug**
 
 Groups D and E of §10 are marked `[MVP]` and appear in no milestone. They are
 placed here rather than in M3 because **M3's gate is a stranger judging this
@@ -168,7 +192,55 @@ ambient bed the highest ratio of perceived production value to engineering cost
 in the entire product. It is switched off today for intelligibility
 (`AUDIO.md`), and the fix is recorded audio rather than more code — which makes
 it a procurement task with lead time, and the wrong thing to discover on the
-first morning of M3.
+first morning of M3. **Still owed** — it is the one Phase C item that is not
+engineering.
+
+### What shipped, and what was decided along the way
+
+**C1 · Ranks.** `lib/data/rank.ts`, derived from the same qualifying counts as
+the unlocks and mirrored onto `profiles.rank` by `syncLevel`. §08's four names
+are kept over three tiers by earning the last one *at* the top rather than above
+it: Closer is two reps at 70+ against Robin, which nothing else in the product
+unlocks. Ranks key off tiers **cleared**, never tiers open — tiers 1 and 2 are
+open from the start, so an unlock-keyed rank would hand a new account a rank it
+had not done anything for. The rail is on Train; `npm run db:rep` asserts one
+qualifying rep leaves you a Rookie and the second promotes you.
+
+**C2 · The technique library.** `/library` and `/library/[slug]`, grouped by the
+sub-score a card moves rather than by kind — nobody arrives wanting "an opener",
+they arrive having just scored 42 on signal reading. Both links §07 promises now
+exist: the scorecard's two weakest sub-scores each point at their technique, and
+the brief carries the technique of the session. `npm run db:verify` asserts the
+policy lets a user read the library, that every sub-score has a card to point
+at, and that a user cannot rewrite one.
+
+**C3 · The insight surface.** `/progress` — composure trend, six sub-score
+lines, the two habit metrics, and the stored Sunday letters at
+`/progress/week/[id]`. Linked from Profile and deliberately not from Train: §02
+says a wall of charts on the home screen is a screen you look at instead of
+training. Under three graded reps it says what unlocks it (§15) rather than
+drawing a trend through two points.
+
+**C4 · The orphaned overlays.** Six were dead duplicates of inline versions the
+screens had grown — the sign-out sheet, the mic test, the delete-account modal,
+the persona-detail sheet, the chickened-out sheet and the field-done sheet — and
+they are **deleted**, because a component nothing imports is how the next person
+wires the wrong one. Two were real gaps and are now built: §12's mic primer,
+shown *before* the browser dialog (B10 — "skipping this step is the single
+biggest cause of permanent permission denial"), with browser-specific recovery
+split out from `MicLostModal` since a refused microphone and one that dropped
+mid-rep are different problems; and the first-scorecard explainer, which §12
+calls load-bearing for retention because it is where a user learns outcome is
+worth nothing.
+
+**C5 · The interview track — the door is shut.** It is screens and fixtures:
+mock hooks, no interviewer characters, nothing writing `interview_setups`.
+Finishing it is M4-and-after by §17's ordering. The nav already hid it (the
+track switcher needs two unlocked tracks and every profile has one); what the
+nav could not do was stop somebody typing the URL, so `/interview*` now
+redirects unless `unlocked_tracks` contains it. That makes an existing column
+into a real gate, and it is what will let the track ship to a subset of
+accounts later without any of this changing.
 
 ---
 
@@ -221,18 +293,26 @@ the shape. It is the only number that decides anything.
 
 1. **A1** Blind provider A/B — ten people *(unblocks M3's sound work and M4's pricing)*
 2. **A2** Re-measure the three-minute rep cost → **M0 closes**
-3. **B1** Score `specificPlanOffered` and `cleanExit` *(before any hand-scoring)*
-4. **B2** Scorecard reading order
+3. ~~**B1** Score `specificPlanOffered` and `cleanExit`~~ **shipped 24 Aug**
+4. ~~**B2** Scorecard reading order~~ **shipped 24 Aug**
 5. **B3** Collect ten more transcripts
 6. **B4** Hand-score twenty
 7. **B5** `grade:calibrate` green → **M2 closes**
-8. **C1–C5** Ranks, library, progress, orphaned overlays, interview decision
+8. ~~**C1–C5** Ranks, library, progress, orphaned overlays, interview decision~~
+   **shipped 24 Aug** — except sourcing the room beds, which is procurement
 9. **Phase D** — M3
 
-Roughly **eight working days of building**, plus ten people for an afternoon
-and your own reading time on twenty transcripts. The two that are not
-engineering are the two that have been outstanding longest, which is the whole
-lesson of this document.
+### What is left before M3
 
-**Highest leverage single item: B1.** Half a day, and everything downstream of
-it is either wrong or has to be done twice.
+**None of it is engineering**, which is the shape this document predicted:
+
+| # | Owed | Whose |
+|---|---|---|
+| A1 | The blind provider A/B — ten people, one question | Ten people, an afternoon |
+| A2 | Ten reps measured at three minutes from Colombo | Yours |
+| B3 | Ten more transcripts collected | Falls out of running the reps above |
+| B4 | Twenty transcripts hand-scored | Yours, and deliberately not a model's |
+| C | Recorded room beds sourced | Procurement, with lead time |
+
+B1 was the highest-leverage item and it went first, so the twenty transcripts
+can now be scored once against the rubric that ships rather than twice.

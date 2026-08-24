@@ -39,6 +39,12 @@ eleventh anything.
 | `interview_setups` | user | Role, JD, CV pointer, custom questions (M4) |
 | `rate_limits` | user × bucket | The spend ceiling's counter. **No policies at all** — see below |
 
+`profiles.rank` is a mirror, not an authority: `lib/data/rank.ts` derives the
+rank from the same qualifying counts that drive the unlocks, and `syncLevel`
+writes it so cohorts are queryable. A stored copy of a derived fact can disagree
+with the history it summarises, so the function wins every time they differ.
+`npm run db:rep` asserts the two agree.
+
 Every table §13 names now exists. The two that differ from the spec's list do so
 on purpose: `streaks` counts training days rather than only asks, and there is
 no separate `unlocks` source of truth — see below.

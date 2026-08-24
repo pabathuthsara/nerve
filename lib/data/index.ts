@@ -27,15 +27,22 @@ import {
   fetchPersona,
   fetchPersonaMemory,
   fetchPersonaProgress,
+  fetchLatestFocus,
+  fetchLibrary,
+  fetchLibraryCard,
   fetchPersonas,
   fetchScorecard,
   fetchSession,
   fetchSessions,
   fetchTranscript,
   fetchUserState,
+  fetchProgress,
   fetchWeeklyReview,
+  fetchWeeklyReviews,
 } from './queries'
 import type {
+  LibraryCard,
+  ProgressPoint,
   BaselineState,
   FieldAssignment,
   FieldLogEntry,
@@ -141,6 +148,11 @@ function useMock<T>(value: T, delay = 280): Loadable<T> {
 }
 
 const NO_PERSONAS: Persona[] = []
+/** Stable empty arrays: a fresh literal each render restarts every effect. */
+const NO_CARDS: LibraryCard[] = []
+const NO_FOCUS: string[] = []
+const NO_POINTS: ProgressPoint[] = []
+const NO_REVIEWS: WeeklyReview[] = []
 const NO_SESSIONS: SessionSummary[] = []
 const NO_TURNS: TranscriptTurn[] = []
 const NO_PROGRESS: PersonaProgress[] = []
@@ -148,6 +160,24 @@ const NO_LOG: FieldLogEntry[] = []
 
 export function usePersonas(): Loadable<Persona[]> {
   return useAsync(fetchPersonas, NO_PERSONAS, [])
+}
+
+/**
+ * What the last graded rep said to work on — the technique of the session.
+ *
+ * Empty until there is a graded rep to draw it from.
+ */
+export function useLatestFocus(): Loadable<string[]> {
+  return useAsync(fetchLatestFocus, NO_FOCUS, [])
+}
+
+/** The library (§10 D). Content, so it never changes inside a session. */
+export function useLibrary(): Loadable<LibraryCard[]> {
+  return useAsync(fetchLibrary, NO_CARDS, [])
+}
+
+export function useLibraryCard(slug: string): Loadable<LibraryCard | null> {
+  return useAsync(() => fetchLibraryCard(slug), null, [slug])
 }
 
 export function usePersona(id: string): Loadable<Persona | null> {
@@ -247,6 +277,16 @@ export function useBaseline(): Loadable<BaselineState | null> {
 /** The most recent Sunday letter, or nothing yet (§09). */
 export function useWeeklyReview(): Loadable<WeeklyReview | null> {
   return useAsync(fetchWeeklyReview, null, [])
+}
+
+/** Every stored Sunday letter (§11). Newest first. */
+export function useWeeklyReviews(): Loadable<WeeklyReview[]> {
+  return useAsync(fetchWeeklyReviews, NO_REVIEWS, [])
+}
+
+/** The graded reps behind every line on `/progress` (§10 E). */
+export function useProgress(): Loadable<ProgressPoint[]> {
+  return useAsync(fetchProgress, NO_POINTS, [])
 }
 
 export function useFieldStats(): Loadable<FieldStats | null> {

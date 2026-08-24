@@ -17,6 +17,7 @@ import 'server-only'
 import { supabaseAdmin } from './admin'
 import { daysBetween, localDay } from '@/lib/data/day'
 import { engineRung, qualifyingByLevel, uiLevel, unlockedLevels, UNLOCK_RULES } from '@/lib/data/progression'
+import { rankFor } from '@/lib/data/rank'
 import { unlockedTier, type FieldHistory } from '@/lib/field/assignment'
 import type { Level } from '@/lib/data/types'
 import { recordUnlocks } from './unlocks'
@@ -234,7 +235,7 @@ export async function syncLevel(userId: string): Promise<void> {
       admin.from('personas').select('slug, level'),
       admin.from('sessions').select('id, persona_slug').eq('user_id', userId).not('ended_at', 'is', null),
       admin.from('scores').select('session_id, composite').eq('user_id', userId),
-      admin.from('profiles').select('current_level').eq('id', userId).maybeSingle(),
+      admin.from('profiles').select('current_level, rank').eq('id', userId).maybeSingle(),
     ])
 
   if (!profile) return
@@ -251,7 +252,8 @@ export async function syncLevel(userId: string): Promise<void> {
     return level ? [{ level, composite: compositeBySession.get(session.id) ?? null }] : []
   })
 
-  const open = unlockedLevels(qualifyingByLevel(reps))
+  const counts = qualifyingByLevel(reps)
+  const open = unlockedLevels(counts)
 
   // Tiers 1 and 2 are open from the start, so they are not moments — telling
   // somebody they have unlocked what they were given is worse than saying
@@ -280,8 +282,16 @@ export async function syncLevel(userId: string): Promise<void> {
     await recordUnlocks(userId, [{ kind: 'tier', ref: String(fieldTier) }])
   }
 
+  // The rank rail (§08). Derived from the same counts as the unlocks, and
+  // mirrored here so cohorts are queryable — `rankFor` stays the authority and
+  // this column is an index, never a second opinion.
+  const rank = rankFor(counts)
+
   // Only ever upward. A bad week does not take a character away, and a
   // downward adjustment is never announced (§08, §12).
-  if (engineLevel <= profile.current_level) return
-  await admin.from('profiles').update({ current_level: engineLevel }).eq('id', userId)
+  if (engineLevel <= profile.current_level) {
+    if (rank !== profile.rank) await admin.from('profiles').update({ rank }).eq('id', userId)
+    return
+  }
+  await admin.from('profiles').update({ current_level: engineLevel, rank }).eq('id', userId)
 }

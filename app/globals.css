@@ -742,6 +742,84 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .moment-card blockquote { margin: 0; font-size: 17px; line-height: 1.55; }
 .moment-card > div { display: flex; align-items: center; justify-content: space-between; border-block: 1px solid var(--line); padding: 9px 0; }
 .moment-card p { margin: 0; color: var(--text-dim); font-size: 13px; }
+/* Progress (§10 E). One tap from Profile, never on Train — §02 is explicit
+   that a wall of charts on the home screen is a screen you look at instead of
+   training. */
+.progress-stack { display: grid; gap: 26px; }
+.progress-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+.progress-card { display: grid; gap: 14px; padding: 20px; }
+.trend { width: 100%; }
+.trend svg { width: 100%; height: 120px; display: block; }
+.trend--compact svg { height: 44px; }
+.subscore-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+.subscore-cell { display: grid; gap: 6px; min-width: 0; }
+.subscore-cell__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.subscore-cell__empty { margin: 0; font-size: 13px; color: var(--text-mute); }
+.habit-row { display: grid; gap: 8px; padding: 14px 0; border-top: 1px solid var(--line); }
+.habit-row__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.habit-row__values { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.habit-row__values div { display: grid; gap: 2px; }
+.habit-row p { margin: 0; }
+.review-list { display: grid; gap: 10px; }
+.review-tile { text-decoration: none; color: inherit; display: block; }
+.review-tile > * { display: grid; gap: 6px; padding: 14px 16px; transition: border-color 140ms ease; }
+.review-tile:hover > * { border-color: var(--line-bright); }
+.review-tile p { margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.55; }
+.weekly-copy { font-size: 17px; line-height: 1.7; margin: 0; }
+
+/* The technique of the session (§11). One card, one line — a briefing that
+   becomes a lesson is §05's no-coaching rule broken thirty seconds early. */
+.brief-technique { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); text-decoration: none; color: inherit; text-align: left; transition: border-color 140ms ease; }
+.brief-technique:hover { border-color: var(--line-bright); }
+.brief-technique p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
+
+/* §07's focus links: the two weakest sub-scores, each pointing at the card
+   that moves it. Sits under "try this next time" because it is the same
+   sentence continued — what to change, then where to read about it. */
+.focus-links { display: grid; gap: 8px; margin-top: 14px; }
+.focus-link { display: grid; gap: 2px; padding: 10px 14px; border: 1px solid var(--line); text-decoration: none; color: inherit; transition: border-color 140ms ease; }
+.focus-link:hover { border-color: var(--line-bright); }
+.focus-link strong { font-size: 15px; font-weight: 500; }
+
+/* The library (§10 D). Grouped by the score a card moves, so the page reads in
+   the same order the scorecard does. */
+.library-stack { display: grid; gap: 34px; }
+.library-group { display: grid; gap: 14px; }
+.library-group__head h2 { margin: 0; }
+.library-group__head p { margin: 4px 0 0; color: var(--text-dim); }
+.library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.library-tile { text-decoration: none; color: inherit; display: block; min-width: 0; }
+.library-tile > * { display: grid; gap: 6px; height: 100%; padding: 16px 18px; transition: border-color 140ms ease; }
+.library-tile:hover > * { border-color: var(--line-bright); }
+.library-tile p { margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.5; }
+.library-detail { display: grid; gap: 22px; max-width: 68ch; }
+.library-detail__back { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.library-body { display: grid; gap: 14px; }
+.library-body p { margin: 0; line-height: 1.65; }
+.library-examples ul { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.library-examples li { border-left: 2px solid var(--volt-dim); padding: 4px 0 4px 14px; color: var(--text-dim); font-style: italic; }
+
+/* The §08 rank rail. A rail, not a badge shelf: every rank is drawn, the
+   reached ones filled, the current one volt, the rest hairline — so the shape
+   of the thing tells you where you are before any of the words do. */
+.rank-rail { display: grid; gap: 14px; padding: 18px; }
+.rank-rail__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.rank-rail__head strong { line-height: 1; }
+.rank-rail__track { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.rank-rail__track li { display: grid; gap: 6px; min-width: 0; }
+.rank-rail__track li i { display: block; height: 3px; background: var(--line); }
+.rank-rail__track li .label { font-size: 10px; letter-spacing: .1em; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-rail__track li.is-done i { background: var(--line-bright); }
+.rank-rail__track li.is-here i { background: var(--volt); }
+.rank-rail__track li.is-here .label { color: var(--volt); }
+.rank-rail p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
+
+/* §07's first line: what worked, above anything that did not. Same two-column
+   shape as .try-next so the encouraging block and the corrective one read as a
+   pair rather than as two unrelated cards. */
+.went-well { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 12px; padding: 16px 18px; }
+.went-well p { margin: 4px 0 0; font-size: 15px; line-height: 1.55; }
+
 .try-next { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 12px; }
 .try-next p { margin: 0; font-size: 16px; line-height: 1.55; }
 .scorecard-actions { display: grid; gap: 8px; margin-top: 30px; }

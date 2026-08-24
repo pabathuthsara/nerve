@@ -18,6 +18,9 @@ import { loadEnvLocal } from './env'
 
 type Client = SupabaseClient<Database>
 
+/** The six §07 names, as `scores.focus` writes them. */
+const SUB_SCORES = ['opening', 'curiosity', 'listening', 'signalReading', 'composure', 'close']
+
 let failures = 0
 
 function check(passed: boolean, description: string): void {
@@ -117,6 +120,33 @@ async function main(): Promise<void> {
     check(
       !!personaWrite || stillNadia?.name === 'Nadia',
       'a user cannot rewrite a character',
+    )
+
+    console.log('\nthe library (§10 D)')
+    // The cards were seeded in M3's content pass and had no reader until the
+    // `/library` route landed. What is checked here is the seam: the policy
+    // lets a signed-in user read them, and every sub-score the scorecard can
+    // name has a card to point at — §07 promises that link.
+    const { data: cards } = await a.from('techniques').select('slug, kind, targets').eq('published', true)
+    check((cards ?? []).length > 0, 'a signed-in user can read the library')
+
+    const covered = new Set(
+      (cards ?? [])
+        .filter((row) => row.kind === 'technique')
+        .flatMap((row) => (row.targets ?? []) as string[]),
+    )
+    const missing = SUB_SCORES.filter((sub) => !covered.has(sub))
+    check(missing.length === 0, `every sub-score has a technique to link to${missing.length ? ` (missing ${missing.join(', ')})` : ''}`)
+
+    const { error: cardWrite } = await a
+      .from('techniques')
+      .update({ title: 'Tampered' })
+      .eq('slug', (cards ?? [])[0]?.slug ?? '')
+    const { data: stillCard } = await admin
+      .from('techniques').select('title').eq('slug', (cards ?? [])[0]?.slug ?? '').maybeSingle()
+    check(
+      !!cardWrite || stillCard?.title !== 'Tampered',
+      'and cannot rewrite one — the library is content, reviewed in a pull request (§09, §16)',
     )
 
     console.log('\nusage_ledger (§14)')

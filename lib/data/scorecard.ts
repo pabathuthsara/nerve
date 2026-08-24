@@ -159,7 +159,7 @@ const FOCUS_INSTRUCTIONS: Record<string, string> = {
   close: 'Make the ask early enough that it grows out of the conversation instead of interrupting it.',
 }
 
-const SUB_SCORE_LABELS: Record<string, string> = {
+export const SUB_SCORE_LABELS: Record<string, string> = {
   opening: 'Opening',
   curiosity: 'Curiosity',
   listening: 'Listening',
@@ -282,5 +282,6 @@ export function toScorecard(input: {
     worstMoment: worst,
     tryNext: (firstFocus && FOCUS_INSTRUCTIONS[firstFocus])
       ?? 'Run it back and change one thing on purpose. One change is readable; three are not.',
+    focus: input.score.focus ?? [],
   }
 }

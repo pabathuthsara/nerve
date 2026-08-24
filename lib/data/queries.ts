@@ -23,13 +23,15 @@ import { milestoneFor, type Milestone } from '@/lib/field/milestones'
 import { MEMORY_BEAT_FLAG } from './ui-flags'
 import { localDay, nextLocalMidnight } from './day'
 import { qualifyingByLevel, uiBand, uiLevel, uiWarmth, unlockRequirement, unlockedLevels, wonFromOutcome } from './progression'
-import { toScorecard, type StoredWarmthEvent } from './scorecard'
+import { toScorecard, type StoredMetricScore, type StoredWarmthEvent } from './scorecard'
+import { RANKS, type Rank } from './rank'
 import type {
   BaselineState,
   WeeklyReview,
   FieldLogEntry,
   FieldOutcome,
   FieldStats,
+  LibraryCard,
   LifetimeStats,
   Level,
   PendingUnlock,
@@ -37,6 +39,7 @@ import type {
   PersonaMemory,
   PersonaProgress,
   Plan,
+  ProgressPoint,
   Scorecard,
   SessionSummary,
   Track,
@@ -76,7 +79,7 @@ export async function fetchUserState(): Promise<UserState | null> {
   const [{ data: profile }, { data: entitlement }, { data: streak }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('display_name, timezone, active_track, unlocked_tracks, current_level, training_wheels, onboarding_complete, focus_area, ambience, ambience_volume, input_device, output_device')
+      .select('display_name, timezone, active_track, unlocked_tracks, current_level, rank, training_wheels, onboarding_complete, focus_area, ambience, ambience_volume, input_device, output_device')
       .eq('id', user.id)
       .maybeSingle(),
     supabase
@@ -108,6 +111,10 @@ export async function fetchUserState(): Promise<UserState | null> {
     activeTrack,
     unlockedTracks: (profile?.unlocked_tracks ?? ['dating']).filter(isTrack),
     currentLevel: uiLevel(profile?.current_level ?? 1),
+    // The stored value is a mirror `syncLevel` maintains, so an unrecognised
+    // string means a row written before the rail existed — not an error worth
+    // failing a page load over.
+    rank: RANKS.includes(profile?.rank as Rank) ? (profile?.rank as Rank) : 'rookie',
     repsRemainingToday: Math.max(0, perDay - usedToday),
     repsPerDay: perDay,
     repsResetAt: nextLocalMidnight(new Date(), timezone).toISOString(),
@@ -706,4 +713,172 @@ export async function fetchPendingUnlock(): Promise<PendingUnlock | null> {
   const ref = Number(data.ref)
   if (!Number.isInteger(ref) || ref < 1 || ref > 4) return null
   return { kind: data.kind === 'tier' ? 'tier' : 'level', ref: ref as Level }
+}
+
+/* ------------------------------------------------------------------ *
+ * The library (§10 D)
+ * ------------------------------------------------------------------ */
+
+const LIBRARY_COLUMNS = 'slug, kind, title, summary, body, targets, setting, examples, drill'
+
+function toCard(row: Record<string, unknown>): LibraryCard {
+  return {
+    slug: String(row['slug'] ?? ''),
+    kind: (row['kind'] as LibraryCard['kind']) ?? 'technique',
+    title: String(row['title'] ?? ''),
+    summary: String(row['summary'] ?? ''),
+    body: String(row['body'] ?? ''),
+    targets: Array.isArray(row['targets']) ? (row['targets'] as string[]) : [],
+    setting: typeof row['setting'] === 'string' ? row['setting'] : null,
+    // `examples` is jsonb. A card with a malformed array is a content bug worth
+    // seeing as an empty list rather than a thrown page.
+    examples: Array.isArray(row['examples']) ? (row['examples'] as unknown[]).map(String) : [],
+    drill: typeof row['drill'] === 'string' ? row['drill'] : null,
+  }
+}
+
+export async function fetchLibrary(): Promise<LibraryCard[]> {
+  const supabase = supabaseBrowser()
+  const { data } = await supabase
+    .from('techniques')
+    .select(LIBRARY_COLUMNS)
+    .eq('published', true)
+    .order('kind')
+  return (data ?? []).map((row) => toCard(row as Record<string, unknown>))
+}
+
+export async function fetchLibraryCard(slug: string): Promise<LibraryCard | null> {
+  const supabase = supabaseBrowser()
+  const { data } = await supabase
+    .from('techniques')
+    .select(LIBRARY_COLUMNS)
+    .eq('slug', slug)
+    .eq('published', true)
+    .maybeSingle()
+  return data ? toCard(data as Record<string, unknown>) : null
+}
+
+/**
+ * The weakest sub-score from the last graded rep (§10 D — technique of the
+ * session).
+ *
+ * Read off `scores.focus`, which grading already wrote, rather than recomputed
+ * — the brief screen and the scorecard must not disagree about what somebody
+ * is supposed to be working on.
+ *
+ * Empty before the first graded rep, which is correct: a technique of the
+ * session on session one would be advice about a rep that has not happened.
+ */
+export async function fetchLatestFocus(): Promise<string[]> {
+  const supabase = supabaseBrowser()
+  const { data } = await supabase
+    .from('scores')
+    .select('focus, graded_at')
+    .order('graded_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return Array.isArray(data?.focus) ? (data.focus as string[]) : []
+}
+
+/* ------------------------------------------------------------------ *
+ * Progress (§10 E)
+ * ------------------------------------------------------------------ */
+
+/** How many reps the trend screens look back over. */
+export const PROGRESS_WINDOW = 30
+
+/**
+ * The graded reps behind every line on `/progress`.
+ *
+ * One query rather than one per chart: the six sub-score lines, the composure
+ * trend and the two habit metrics are all the same rows read different ways,
+ * and fetching them separately is three chances for the charts on one screen to
+ * disagree about which reps they are describing.
+ *
+ * Oldest first, because that is the direction a trend is read in.
+ */
+export async function fetchProgress(): Promise<ProgressPoint[]> {
+  const supabase = supabaseBrowser()
+  const { data } = await supabase
+    .from('scores')
+    .select('session_id, graded_at, composite, opening, curiosity, listening, signal_reading, composure, close, metric_scores')
+    .order('graded_at', { ascending: false })
+    .limit(PROGRESS_WINDOW)
+
+  const { data: sessions } = await supabase
+    .from('sessions')
+    .select('id, persona_slug')
+    .in('id', (data ?? []).map((row) => row.session_id))
+
+  const slugById = new Map((sessions ?? []).map((row) => [row.id, row.persona_slug]))
+
+  return (data ?? [])
+    .map((row) => toProgressPoint(row as ProgressRow, slugById.get(row.session_id) ?? ''))
+    .reverse()
+}
+
+/** The stored shape `/progress` reads, before it is mapped. */
+export interface ProgressRow {
+  session_id: string
+  graded_at: string
+  composite: number
+  opening: number | null
+  curiosity: number | null
+  listening: number | null
+  signal_reading: number | null
+  composure: number | null
+  close: number | null
+  metric_scores: unknown
+}
+
+/**
+ * One stored score row, as a point on the trend lines.
+ *
+ * Exported and pure so it can be run against real rows rather than trusted:
+ * the two habit metrics are dug out of a jsonb array by key, and a rename in
+ * `METRIC_BANDS` would silently turn both lines flat with nothing failing.
+ * `npm run db:rep` puts a real row through it.
+ *
+ * A sub-score the judge did not return is left out rather than defaulted to
+ * zero — a missing grade and a grade of nought are different facts, and a line
+ * that dips to the floor for the first is a lie.
+ */
+export function toProgressPoint(row: ProgressRow, personaSlug: string): ProgressPoint {
+  const stored = Array.isArray(row.metric_scores) ? (row.metric_scores as StoredMetricScore[]) : []
+  const valueOf = (key: string) => {
+    const found = stored.find((entry) => entry.key === key)
+    return typeof found?.value === 'number' ? found.value : null
+  }
+  return {
+    sessionId: row.session_id,
+    gradedAt: row.graded_at,
+    personaSlug,
+    composite: row.composite,
+    subScores: {
+      ...(row.opening !== null ? { opening: row.opening } : {}),
+      ...(row.curiosity !== null ? { curiosity: row.curiosity } : {}),
+      ...(row.listening !== null ? { listening: row.listening } : {}),
+      ...(row.signal_reading !== null ? { signalReading: row.signal_reading } : {}),
+      ...(row.composure !== null ? { composure: row.composure } : {}),
+      ...(row.close !== null ? { close: row.close } : {}),
+    },
+    fillerRate: valueOf('fillerRate'),
+    talkRatio: valueOf('talkRatio'),
+  }
+}
+
+/** Every stored Sunday letter, newest first (§11 `/progress/week/[id]`). */
+export async function fetchWeeklyReviews(): Promise<WeeklyReview[]> {
+  const supabase = supabaseBrowser()
+  const { data } = await supabase
+    .from('weekly_reviews')
+    .select('week_start, copy, stats')
+    .order('week_start', { ascending: false })
+    .limit(12)
+
+  return (data ?? []).map((row) => ({
+    weekStart: row.week_start,
+    copy: row.copy,
+    stats: { ...EMPTY_WEEK, ...((row.stats ?? {}) as Partial<WeekStats>) },
+  }))
 }

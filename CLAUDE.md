@@ -31,7 +31,7 @@ future sessions read those markers to decide what to do.
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint
-npm test              # vitest, ~645 assertions
+npm test              # vitest, ~665 assertions
 npm run build:check   # production build into .next-check, never .next
 npm run db:verify     # RLS from a second real account, 51 checks
 npm run db:rep        # the whole rep lifecycle, without a microphone

@@ -36,19 +36,24 @@ Feature inventory (§10), counted honestly against the 69 MVP features:
 | A · Training loop (12) | 8 | 2 | 2 |
 | B · Progression (8) | 8 | 0 | 0 |
 | C · The field (9) | 7 | 0 | 2 |
-| D · Coaching content (7) | 0 | 0 | 7 |
-| E · Insight & data (7) | 5 | 1 | 1 |
+| D · Coaching content (7) | 6 | 0 | 1 |
+| E · Insight & data (7) | 6 | 0 | 1 |
 | F · Premium craft (12) | 5 | 2 | 5 |
 | G · Account & billing (8) | 2 | 1 | 5 |
 | H · Safety (6) | 0 | 0 | 6 |
-| **Total** | **35** | **6** | **28** |
+| **Total** | **42** | **5** | **22** |
 
-The shape of that table is the finding and M2 has not changed it, only sharpened
-it. The product is real: the training loop, the field, progression, memory,
-adaptive difficulty, the retention hooks and the artefacts that carry organic
-distribution. What is still not built is everything that makes it a *business* —
-billing, safety, legal, instrumentation. **Groups D, G and H are 2 done out of
-21**, and that is where the remaining launch risk lives.
+The shape of that table is the finding, and 24 August moved it for the first
+time: groups D and E — the coaching content and the insight surface, which §17
+never scheduled into any milestone — went from 5 of 14 to 12 of 14. What
+remains missing in both is one `[V2]` feature each.
+
+The product is real: the training loop, the field, progression, memory,
+adaptive difficulty, the library, the trends, the retention hooks and the
+artefacts that carry organic distribution. What is still not built is everything
+that makes it a *business* — billing, safety, legal, instrumentation. **Groups G
+and H are 2 done out of 14**, and that is where the remaining launch risk
+lives.
 
 ---
 
@@ -254,20 +259,27 @@ That one is **correct and intended**: a rate limit a user can read is one they
 can pace against, and one they can write is not a limit. Only the service role
 touches it.
 
-### B10 · The mic primer is built and never shown  ·  ~0.5 days
-**Spec:** §12 — explain why we need the microphone *before* the OS dialog
-fires, because "skipping this step is the single biggest cause of permanent
-permission denial", plus browser-specific recovery when it is refused.
-**Built:** `MicPermissionSheet` exists in `components/modals.tsx` and is
-imported by nothing. The live screen goes straight to `getUserMedia`, and a
-refusal surfaces as the generic mic-lost modal with no recovery instructions.
-**Why it blocks:** it does not block the build, it blocks the funnel. A user
-who denies the permission on their first rep is, on most browsers, permanently
-denied — and this is the cheapest item on this entire list.
+### B10 · The mic primer is built and never shown  ·  **cleared 24 Aug**
+**Was:** `MicPermissionSheet` existed and was imported by nothing. The live
+screen went straight to `getUserMedia`, and a refusal surfaced as the generic
+mic-lost modal with no recovery instructions.
 
-**Blocker total: roughly 14 working days**, down from 21 after the database
-pass, 16 with B8 cleared and 15 with B9 — plus merchant-of-record review time,
-which runs in parallel and can fail. **Eight of the ten blockers remain.**
+**Now:** `MicPrimerSheet` fires on the brief, before the browser dialog, once
+per browser — and is skipped entirely once permission is granted, because an
+explanation of a dialog that will not appear is a door in the way. The refusal
+path is `MicBlockedSheet`, split out from `MicLostModal` because a refused
+microphone and one that dropped mid-rep are different problems with different
+fixes: telling somebody whose headset unplugged to go and edit their site
+settings is how a fixable problem becomes an abandoned session. Recovery copy
+names the actual menu per browser (§12), with Safari given its own answer since
+its menu is nothing like the others; `lib/data/mic.test.ts` covers the user-agent
+detection, including that Chrome's UA contains "Safari" and Edge's contains
+both.
+
+**Blocker total: roughly 13.5 working days**, down from 21 after the database
+pass, 16 with B8 cleared, 15 with B9 and 14 with B10 — plus merchant-of-record
+review time, which runs in parallel and can fail. **Seven of the ten blockers
+remain.**
 
 > **B9 was the one to take next, and it is done (24 Aug).** The grader,
 > the live scorer, both pipeline hops and the Realtime token now sit behind
@@ -313,26 +325,33 @@ until they land, and each one is somewhere the spec says the thinness will be
 felt.
 
 ### Scoring (§07)
-- **Six of eight deterministic metrics are scored.** `specific_plan_offered`
-  and `clean_exit` are computed and stored but carry no band and no points —
-  which means the two metrics most directly about *the close* and *the exit*
-  contribute nothing to the number.
+- ~~**Six of eight deterministic metrics are scored.**~~ **Done 24 Aug.** All
+  eight carry points. The two became graded 0-1 values beside their booleans:
+  `planQuality` (specific 1 / vague 0.5 / no attempt unmeasured) and
+  `exitQuality` (warm 1 / trailed off 0.5 / pushed 0). Neither is conditioned on
+  how the rep went — gating the exit on rejection would score a rejecting rep
+  across seven metrics and a receptive one across six, which is outcome
+  deciding the composite's composition and §07 broken by the back door. Not
+  asking is unmeasured rather than zero, because §16 rule 6 bans pressure
+  closes and reading a closed person correctly is good play.
 - **The grade calibration harness is built and unscored.** `npm run
   grade:calibrate` drives the deployed `/api/grade` and fails on drift beyond
   five points on any sub-score or the composite. Ten real transcripts are
   collected. **None are hand-scored**, and the suite refuses to report success
   below twenty — §17's gate on M2, and the one piece of it that is reading
   rather than building.
-- **The scorecard reads in the wrong order.** §07: "always names one thing that
-  went well before it names anything that didn't". Today the composite leads,
-  the metrics follow, and `wentWell` sits inside the judgement row two thirds
-  of the way down — and is hidden entirely from free users.
+- ~~**The scorecard reads in the wrong order.**~~ **Done 24 Aug.** `wentWell`
+  is its own card between the composite and the metrics, and it is never gated
+  — it used to sit inside the Pro lock, so the users most likely to quit after
+  a bad rep were the only ones who never saw the encouraging half.
 - **The six sub-scores are chips, not the display.** §07's example is six named
   rows; ours renders them as small labels inside one audit row.
 - **No staged reveal.** §02 rule 6 wants the composite counting up over 900ms
   with sub-scores staggering at 60ms. It renders instantly.
-- **No technique links.** The weakest two are stored and one hand-written line
-  is shown; there is no library to link to.
+- ~~**No technique links.**~~ **Done 24 Aug.** The weakest two each link to
+  their technique, and the brief carries the technique of the session. A test
+  asserts every sub-score has a card to point at, so §07's sentence stays
+  keepable.
 
 ### Progression (§08)
 - ~~**The unlock rule differs.**~~ **Done 23 Aug.** The gate is §08's: two
@@ -345,8 +364,10 @@ felt.
   two under 55 ease her back, clamped at ±6 start and ±0.25 gain in code *and*
   in CHECK constraints. The downward path returns nothing to display, by
   construction rather than by convention.
-- **Ranks are dead.** `profiles.rank` defaults to `rookie` and nothing moves or
-  displays it. The rank rail on the home screen (§11) is not built.
+- ~~**Ranks are dead.**~~ **Done 24 Aug.** `lib/data/rank.ts` derives the rank
+  from the same qualifying counts as the unlocks; `syncLevel` mirrors it onto
+  `profiles.rank`; the rail is on Train. §08's four names survive three tiers by
+  earning the last one *at* the top rather than above it.
 - ~~**No baseline rep and no week-four re-test.**~~ **Done 23 Aug.** Written
   once by the first graded rep, re-offered at day 28 in the user's own
   timezone, and compared sub-score by sub-score at `/progress/baseline`. Which
@@ -502,33 +523,36 @@ longer expressed as syllables.
 - No keyboard paths — `Space` to arm and `Esc` to end are unimplemented.
 - No first-scorecard explainer. §12 calls it "load-bearing for retention",
   because it is where the user learns that outcome is not scored.
-- Seven built overlays are imported by nothing: the mic primer, the mic test
-  sheet, the sign-out sheet, the chickened-out sheet, the field-done sheet, the
-  delete-account modal and the persona-detail sheet — the last two because the
-  screens grew their own inline versions instead. `LevelUnlockedSheet` does
-  render, but its trigger is a `useState(false)` nothing sets, so a level
-  unlock is currently silent.
+- ~~Seven built overlays are imported by nothing.~~ **Done 24 Aug.** Six were
+  dead duplicates of inline versions the screens had grown and are deleted — a
+  component nothing imports is how the next person wires the wrong one. The
+  seventh became two real overlays; see B10.
 - **Room tone is off on purpose.** §02 rule 2 calls the ambient bed the highest
   ratio of perceived value to effort in the product; the procedural version was
   hurting intelligibility and is switched off pending recorded beds
   (`AUDIO.md`). Until those land, this rule is unmet.
 
 ### Content (§10 D, E)
-- **The technique library exists in the database and nowhere else.** The table
-  is seeded with 14 hand-written cards — six techniques, one per sub-score;
-  five opener sets by setting; the facts→opinions→feelings ladder; a recovery
-  card; an exit card. What is missing is the `/library` route, the technique of
-  the session tied to the weakest sub-score, and the link from the scorecard.
-- **The insight surface is one chart.** `/progress`, six sub-score trend lines,
-  filler and talk-ratio history, and the Sunday weekly review are all missing;
-  the profile chart is warmth and score over the last twenty reps.
+- ~~**The technique library exists in the database and nowhere else.**~~
+  **Done 24 Aug.** `/library` and `/library/[slug]`, grouped by the sub-score a
+  card moves, plus the technique of the session on the brief and the link from
+  the scorecard.
+- ~~**The insight surface is one chart.**~~ **Done 24 Aug.** `/progress` carries
+  the composure trend, the six sub-score lines, the filler and talk-ratio
+  history and the stored Sunday letters at `/progress/week/[id]`. Linked from
+  Profile and deliberately not from Train (§02).
 
-### The interview track
+### The interview track — **door shut 24 Aug**
 Screens exist and are fixture-driven. There are no interviewer characters, no
 CV storage bucket, no role/JD/question persistence, and no interview-specific
 metrics. This is M4-and-after by the spec's own ordering and is not a launch
-blocker — but the nav currently offers a door that opens onto nothing, which
-should either be finished or hidden before strangers see it.
+blocker.
+
+The nav already hid it — the track switcher needs two unlocked tracks and every
+profile has one. What the nav could not do was stop somebody typing the URL, so
+`/interview*` now redirects unless `unlocked_tracks` contains it. That turns an
+existing column into a real gate, and it is what will let the track ship to a
+subset of accounts later without any of this changing.
 
 ---
 

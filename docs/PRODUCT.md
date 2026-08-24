@@ -130,13 +130,14 @@ at three different turn counts.
    drop-off is where apps in this category die.
 5. **Result → scorecard.** The number or the exit line, then the breakdown.
 
-Then, from that point on, four sections and nothing else:
+Then, from that point on, five sections and nothing else:
 
 | Section | What it is | Why it exists |
 |---|---|---|
 | **Train** | Today's rep, chosen for you. Plus today's field move and your last result. | The decision about who to face is the part people use to avoid the rep. One action, one screen. |
 | **Roster** | The progression map: three characters, three tiers, locked ones showing what they cost. | The thing to come back for. Also the only place difficulty is ever discussed. |
 | **Field** | One real-world move a day, hand-written, tiered. Plus rejections collected, the predicted-versus-actual chart, and the log. | The sim is practice; the field is the point. The chart is the one place a number is allowed to argue with the user, because it is their own. |
+| **Library** | Fourteen hand-written cards, grouped by the sub-score each one moves. | Where the scorecard's advice goes. Nobody opens this wanting "an opener" — they open it having just scored 42 on signal reading, which is why it is filed by score and not by kind. |
 
 **The field's four tiers no longer ride on the sim ladder alone.** T1 is day
 one, T2 opens on rung 2, T3 on rung 4 — and **T4 is earned in the field**: the
@@ -149,7 +150,20 @@ rather than the one that fitted: gating the hardest real-world ask on gym
 performance said that being good at talking to a synthetic character earns the
 right to approach a person. Doing the smaller thing, repeatedly, is what earns
 it.
-| **Profile** | History, lifetime stats, the warmth chart, the field summary, shared cards, subscription, settings. | Everything numeric lives here so that Train can stay one action. |
+| **Profile** | History, lifetime stats, the warmth chart, the field summary, shared cards, subscription, settings — and the door to `/progress`. | Everything numeric lives here so that Train can stay one action. |
+
+**The rank rail is the slow number.** Four ranks — Rookie, Regular, Contender,
+Closer — on Train, above the day's counters. The level moves when you unlock a
+character; the rank moves when you have proven you can hold one, and the last
+of them is earned *at* the top rung rather than above it, because there is
+nothing above Robin to unlock. §08 asks for a rail rather than a badge shelf, so
+every rank is drawn including the ones not reached, and the next one names its
+price.
+
+**`/progress` is one tap from Profile and nowhere else.** The composure trend,
+the six sub-score lines, the filler and talk-ratio history, and the Sunday
+letters. Under three graded reps it says what unlocks it rather than drawing a
+trend through two points (§15).
 
 **There is no dashboard, and Train is not one.** A wall of charts on the home
 screen is a screen you can look at instead of training. The charts are one tap

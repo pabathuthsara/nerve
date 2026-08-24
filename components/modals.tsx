@@ -1,10 +1,11 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, LockKeyhole, MicOff, Radio, Trash2, Trophy, WifiOff } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
-import { Button, Chip, Input, Modal, Sheet, Stat } from './ui'
+import { Check, LockKeyhole, Mic, MicOff, Radio, Trophy, WifiOff } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Button, Modal, Sheet, Stat } from './ui'
 import type { FieldTier, Level, PendingUnlock } from '@/lib/data/types'
+import { detectBrowser, micRecovery, type Browser } from '@/lib/data/mic'
 
 interface OpenProps { open: boolean; onClose: () => void }
 
@@ -70,22 +71,65 @@ export function TrainingWheelsOffModal({ open, onClose }: OpenProps) { return <M
 
 export function FirstWinSheet({ open, onClose }: OpenProps) { return <Sheet open={open} onClose={onClose} title="That&apos;s the loop"><div className="sheet-stack"><Check size={34} strokeWidth={1.5} className="volt" /><p>Do it again tomorrow. One completed rep keeps the streak alive.</p><Button fullWidth onClick={onClose}>Got it</Button></div></Sheet> }
 
-export function ChickenedOutSheet({ open, onClose, onLog }: OpenProps & { onLog: () => void }) { return <Sheet open={open} onClose={onClose} title="Logging it counts"><div className="sheet-stack"><p>Logging it honestly is the rep. It stays on your list for tomorrow.</p><div className="chip-row"><Chip>Wrong moment</Chip><Chip>Lost my nerve</Chip><Chip>No one around</Chip></div><Button fullWidth onClick={onLog}>Log it</Button></div></Sheet> }
 
-export function FieldDoneSheet({ open, onClose }: OpenProps) { return <Sheet open={open} onClose={onClose} title="Field rep logged"><div className="sheet-stack"><Check size={34} strokeWidth={1.5} className="volt" /><p>You made the move. That is the entire assignment.</p><Button fullWidth onClick={onClose}>Done</Button></div></Sheet> }
 
-export function MicPermissionSheet({ open, onClose, onRetry }: OpenProps & { onRetry: () => void }) { return <Sheet open={open} onClose={onClose} title="Microphone blocked"><div className="sheet-stack"><MicOff size={34} strokeWidth={1.5} className="danger" /><p>Click the lock in your address bar, open Site settings, and set Microphone to Allow.</p><Button fullWidth onClick={onRetry}>Try again</Button><Button variant="ghost" fullWidth>How do I fix this?</Button></div></Sheet> }
+/**
+ * The first scorecard, explained. Once ever (§12).
+ *
+ * §12 calls this "load-bearing for retention", and it is the only overlay in
+ * the product with that note against it. The reason is §07: outcome is worth
+ * zero points, and a user who does not know that reads their first 78 after a
+ * rejection as the app being kind to them. Once they know, the same number is
+ * the whole product working.
+ *
+ * Shown after the score is on screen rather than before it. The number is the
+ * emotional beat; explaining the rules over the top of it would flatten the one
+ * moment the scorecard has.
+ */
+export function ScorecardExplainerSheet({ open, onClose }: OpenProps) {
+  return <Sheet open={open} onClose={onClose} title="How this is scored"><div className="sheet-stack"><Trophy size={34} strokeWidth={1.5} className="volt" /><p><strong>Whether she gave you her number is worth nothing.</strong> It is recorded, and it contributes zero points.</p><p>What is scored is how you played: how much of the talking was yours, whether you asked real questions, whether you used what she gave you, whether you read her, and how you left.</p><p className="muted">A clean rep that ends in rejection can score 92. A sloppy one that got lucky scores 54. That is on purpose — you own the process, and nobody owns the result.</p><Button fullWidth onClick={onClose}>Understood</Button></div></Sheet>
+}
+
+/**
+ * The primer (§12, B10). Shown BEFORE the browser prompt, never after.
+ *
+ * "Skipping this step is the single biggest cause of permanent permission
+ * denial." A prompt with no explanation gets dismissed, and on most browsers a
+ * dismissal is permanent for the origin — so this sheet is the difference
+ * between a user who trains and a user who cannot, and it is one second long.
+ *
+ * It says what we do with the microphone and what we do not, because the honest
+ * answer is reassuring: the audio goes to the voice provider and to a private
+ * bucket that purges itself, and §16 makes the recording the user's.
+ */
+export function MicPrimerSheet({ open, onClose, onAllow }: OpenProps & { onAllow: () => void }) {
+  return <Sheet open={open} onClose={onClose} title="We need your microphone"><div className="sheet-stack"><Mic size={34} strokeWidth={1.5} className="volt" /><p>This is a talking exercise, so the next thing you see is your browser asking for the microphone. Say yes and the rep starts.</p><p className="muted">Your audio goes to the voice model and to your own private recording, which deletes itself after thirty days. You can delete it sooner, and turn recordings off entirely, in Settings.</p><Button fullWidth onClick={onAllow}>Got it — ask me</Button><Button variant="ghost" fullWidth onClick={onClose}>Not now</Button></div></Sheet>
+}
+
+/**
+ * The recovery (§12). Shown when permission was actually refused.
+ *
+ * Deliberately separate from `MicLostModal`, which is for a microphone that was
+ * working and stopped — a cable, a device switch, another tab taking it. Those
+ * are different situations with different fixes, and telling somebody whose
+ * headset unplugged to go and edit their site settings is how a fixable problem
+ * becomes an abandoned session.
+ */
+export function MicBlockedSheet({ open, onClose, onRetry }: OpenProps & { onRetry: () => void }) {
+  const [browser, setBrowser] = useState<Browser>('other')
+  // Read in an effect rather than at render: the user agent does not exist on
+  // the server, and a mismatch here would be a hydration error on the one
+  // screen a user is already having trouble with.
+  useEffect(() => { setBrowser(detectBrowser(navigator.userAgent)) }, [])
+  return <Sheet open={open} onClose={onClose} title="Microphone blocked"><div className="sheet-stack"><MicOff size={34} strokeWidth={1.5} className="danger" /><p>Your browser is refusing the microphone for this site. Nothing is wrong with your account.</p><p className="muted">{micRecovery(browser)}</p><Button fullWidth onClick={onRetry}>Try again</Button></div></Sheet>
+}
 
 export function MicLostModal({ open, onResume, onEnd }: { open: boolean; onResume: () => void; onEnd: () => void }) { return <Modal open={open} onClose={onResume} title="We can&apos;t hear you"><div className="sheet-stack"><MicOff size={34} strokeWidth={1.5} className="amber" /><p>The clock is paused. Restore microphone access to keep going.</p><Button fullWidth onClick={onResume}>Resume</Button><Button variant="danger" fullWidth onClick={onEnd}>End rep</Button></div></Modal> }
 
 export function ConnectionLostModal({ open, attempt, onRetry, onEnd }: { open: boolean; attempt: number; onRetry: () => void; onEnd: () => void }) { return <Modal open={open} onClose={onRetry} title="Connection lost"><div className="sheet-stack"><WifiOff size={34} strokeWidth={1.5} className="amber" /><p className="data">{attempt < 3 ? `Reconnecting — ${Math.max(1, attempt)}/3` : 'Could not reconnect'}</p>{attempt < 3 ? <Button fullWidth onClick={onRetry}>Retry now</Button> : null}<Button variant="danger" fullWidth onClick={onEnd}>End rep</Button></div></Modal> }
 
-export function MicTestSheet({ open, onClose, children }: OpenProps & { children?: ReactNode }) { return <Sheet open={open} onClose={onClose} title="Test microphone">{children ?? <div className="sheet-stack"><MicOff size={34} strokeWidth={1.5} /><p>Speak normally. Your level should move through the middle segments.</p></div>}</Sheet> }
 
-export function DeleteAccountModal({ open, onClose }: OpenProps) { const [text, setText] = useState(''); return <Modal open={open} onClose={onClose} title="Delete account"><div className="sheet-stack"><Trash2 size={34} strokeWidth={1.5} className="danger" /><div className="danger-list"><span>Every session and transcript</span><span>Scores, streaks, and progression</span><span>Your account access</span></div><Input label="Type DELETE to confirm" value={text} onChange={(event) => setText(event.target.value)} /><Button variant="danger" fullWidth disabled={text !== 'DELETE'}>Delete everything</Button><Button variant="ghost" fullWidth onClick={onClose}>Keep my account</Button></div></Modal> }
 
-export function SignOutSheet({ open, onClose }: OpenProps) { return <Sheet open={open} onClose={onClose} title="Sign out?"><div className="sheet-stack"><p>Your work stays saved.</p><Link className="arena-button arena-button--primary arena-button--full" href="/login">Sign out</Link><Button variant="ghost" fullWidth onClick={onClose}>Stay here</Button></div></Sheet> }
 
-export function PersonaDetailSheet({ open, onClose, children }: OpenProps & { children: ReactNode }) { return <Sheet open={open} onClose={onClose} title="Persona detail">{children}</Sheet> }
 
 export function CVReplaceSheet({ open, onClose, fileName, onReplace, onRemove }: OpenProps & { fileName: string; onReplace: () => void; onRemove: () => void }) { return <Sheet open={open} onClose={onClose} title="Replace CV"><div className="sheet-stack"><div className="locked-action"><LockKeyhole size={18} strokeWidth={1.5} /><span>{fileName}</span></div><Button fullWidth onClick={onReplace}>Replace</Button><Button variant="danger" fullWidth onClick={onRemove}>Remove</Button></div></Sheet> }

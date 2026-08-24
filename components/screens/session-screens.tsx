@@ -1,15 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { ChevronDown, ChevronUp, Crosshair, Flame, RotateCcw } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Crosshair, Flame, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useInterviewers, usePendingUnlock, usePersonas, useScorecard, useSession, useTranscript, useUserState } from '@/lib/data'
 import type { Band, JudgementBand, MetricBand, Moment, SessionSummary, TranscriptTurn } from '@/lib/data/types'
+import { techniqueForSubScore, type Technique } from '@/lib/techniques/library'
+import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
 import { LEVEL_NAMES } from '@/lib/data/progression'
 import { resultReading } from '@/lib/data/rep-rules'
 import { AppShell } from '@/components/app-shell'
 import { Button, Card, Chip, EmptyState, LockOverlay, Skeleton, Tabs } from '@/components/ui'
-import { FirstWinSheet, LevelUnlockedSheet, PaywallSheet } from '@/components/modals'
+import { FirstWinSheet, LevelUnlockedSheet, PaywallSheet, ScorecardExplainerSheet } from '@/components/modals'
 import { acknowledgeUnlock } from '@/app/profile/actions'
 import { ShareButton } from '@/components/share/share-button'
 import { FluidPersona } from '@/components/fluid-persona'
@@ -78,6 +80,19 @@ function ScorecardScreen({ session }: { session: SessionSummary }) {
   // sheet fire once ever rather than on every visit to this scorecard.
   const unlock = usePendingUnlock()
   const [dismissed, setDismissed] = useState(false)
+  // §12: once ever, and after the number has landed rather than over the top of
+  // it. Per browser, like the first-win sheet beside it — this explains a screen
+  // rather than recording an achievement, so it is not worth a database column.
+  const [explainer, setExplainer] = useState(false)
+  useEffect(() => {
+    if (loading || !scorecard) return
+    try {
+      if (window.localStorage.getItem(SCORECARD_SEEN) === '1') return
+      window.localStorage.setItem(SCORECARD_SEEN, '1')
+    } catch { return }
+    const timer = window.setTimeout(() => setExplainer(true), 1100)
+    return () => window.clearTimeout(timer)
+  }, [loading, scorecard])
   const pending = dismissed ? null : unlock.data
   const closeUnlock = () => {
     setDismissed(true)
@@ -95,7 +110,7 @@ function ScorecardScreen({ session }: { session: SessionSummary }) {
   const signalLabel = session.track === 'interview' ? 'Impression' : 'Warmth'
   const personaLevel = personas.find((item) => item.id === session.personaId)?.level ?? null
   const levelLabel = session.track === 'interview' ? 'Interview' : personaLevel ? `${String(personaLevel).padStart(2, '0')} — ${LEVEL_NAMES[personaLevel]}` : '—'
-  return <AppShell title="Scorecard"><header className="scorecard-title"><span className="label">Process score · {session.personaName}</span><h1 className="display-lg">Session breakdown</h1></header><div className="scorecard-grid"><div className="scorecard-left"><Card className="composite-card"><div><span className="composite data">{scorecard.composite}<small>/100</small></span><strong className="display-md">{verdict}</strong></div><p>{session.personaName} · Level {levelLabel} · {formatDuration(session.durationMs)} · {outcomeLabel}</p></Card><section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric, index) => <div key={metric.key}>{!pro && index >= 2 ? <LockOverlay requirement="Full scorecards are Pro"><MetricBandRow metric={metric} /></LockOverlay> : <MetricBandRow metric={metric} />}</div>)}{scorecard.judgement ? (pro ? <JudgementRow judgement={scorecard.judgement} /> : <LockOverlay requirement="Full scorecards are Pro"><JudgementRow judgement={scorecard.judgement} /></LockOverlay>) : null}</div></section></div><aside className="scorecard-right">{pro ? <><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} /><section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card></section></> : <LockOverlay requirement="Moments are available on Pro"><Card style={{ minHeight: 330 }} /></LockOverlay>}</aside></div><div className="scorecard-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>{pro ? <Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link> : <Button variant="secondary" onClick={() => setPaywall(true)}>Unlock transcript</Button>}<Link className="arena-button arena-button--ghost" href="/roster">Next persona</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div><PaywallSheet open={paywall} onClose={() => setPaywall(false)} reason="Full transcripts are available on Pro and Elite." /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /></AppShell>
+  return <AppShell title="Scorecard"><header className="scorecard-title"><span className="label">Process score · {session.personaName}</span><h1 className="display-lg">Session breakdown</h1></header><div className="scorecard-grid"><div className="scorecard-left"><Card className="composite-card"><div><span className="composite data">{scorecard.composite}<small>/100</small></span><strong className="display-md">{verdict}</strong></div><p>{session.personaName} · Level {levelLabel} · {formatDuration(session.durationMs)} · {outcomeLabel}</p></Card>{scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}<section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric, index) => <div key={metric.key}>{!pro && index >= 2 ? <LockOverlay requirement="Full scorecards are Pro"><MetricBandRow metric={metric} /></LockOverlay> : <MetricBandRow metric={metric} />}</div>)}{scorecard.judgement ? (pro ? <JudgementRow judgement={scorecard.judgement} /> : <LockOverlay requirement="Full scorecards are Pro"><JudgementRow judgement={scorecard.judgement} /></LockOverlay>) : null}</div></section></div><aside className="scorecard-right">{pro ? <><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} /><section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card><FocusLinks focus={scorecard.focus} /></section></> : <LockOverlay requirement="Moments are available on Pro"><Card style={{ minHeight: 330 }} /></LockOverlay>}</aside></div><div className="scorecard-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>{pro ? <Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link> : <Button variant="secondary" onClick={() => setPaywall(true)}>Unlock transcript</Button>}<Link className="arena-button arena-button--ghost" href="/roster">Next persona</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div><PaywallSheet open={paywall} onClose={() => setPaywall(false)} reason="Full transcripts are available on Pro and Elite." /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet open={explainer} onClose={() => setExplainer(false)} /></AppShell>
 }
 
 /**
@@ -106,7 +121,23 @@ function ScorecardScreen({ session }: { session: SessionSummary }) {
  * instead of a target band, because there is no band to have missed.
  */
 function JudgementRow({ judgement }: { judgement: JudgementBand }) {
-  return <div className="metric-row"><div className="metric-row__head"><span>{judgement.label}</span><span className="data">{judgement.subScores.length ? `${Math.round(judgement.subScores.reduce((sum, entry) => sum + entry.value, 0) / judgement.subScores.length)}/100` : '—'}</span><strong className="data">{judgement.points}/{judgement.maxPoints}</strong></div><div className="chip-row" style={{ marginTop: 4 }}>{judgement.subScores.map((entry) => <Chip key={entry.key}>{entry.label} {entry.value}</Chip>)}</div>{judgement.wentWell ? <div className="metric-row__foot"><span className="label">Went well</span><p>{judgement.wentWell}</p></div> : null}</div>
+  return <div className="metric-row"><div className="metric-row__head"><span>{judgement.label}</span><span className="data">{judgement.subScores.length ? `${Math.round(judgement.subScores.reduce((sum, entry) => sum + entry.value, 0) / judgement.subScores.length)}/100` : '—'}</span><strong className="data">{judgement.points}/{judgement.maxPoints}</strong></div><div className="chip-row" style={{ marginTop: 4 }}>{judgement.subScores.map((entry) => <Chip key={entry.key}>{entry.label} {entry.value}</Chip>)}</div></div>
+}
+
+/**
+ * The one thing that worked, before anything that did not (§07).
+ *
+ * It used to sit at the foot of the judgement row: last item in the list, two
+ * thirds down the page, and inside the Pro lock — so the users most likely to
+ * quit after a bad rep were the only ones who never saw it. §07 is explicit
+ * that this comes first, and the reason is retention rather than manners: "a
+ * user who feels flayed after their third rep never comes back for a fourth."
+ *
+ * Never gated. Whatever else is behind the paywall, the encouraging half of
+ * the scorecard is not.
+ */
+function WhatWorked({ line }: { line: string }) {
+  return <Card className="went-well"><Check size={18} strokeWidth={1.6} className="volt" /><div><span className="label">What worked</span><p>{line}</p></div></Card>
 }
 
 function MetricBandRow({ metric }: { metric: MetricBand }) {
@@ -145,3 +176,37 @@ function warmthBand(value: number): Band { return value >= 80 ? 'INVESTED' : val
 function bandCss(band: Band) { return `var(--band-${band.toLowerCase()})` }
 function interviewBand(band: Band) { return ({ CLOSED: 'SKEPTICAL', GUARDED: 'NEUTRAL', OPEN: 'INTERESTED', ENGAGED: 'IMPRESSED', INVESTED: 'CONVINCED' } as const)[band] }
 function formatDuration(ms: number) { const seconds = Math.floor(ms / 1000); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
+
+/**
+ * The two weakest sub-scores, each linked to the technique that moves it (§07).
+ *
+ * "The weakest two are surfaced as the focus for the next rep, and each links
+ * to the matching technique in the library." The surfacing existed; the links
+ * did not, because there was no library to link to. Advice a user cannot act on
+ * is decoration.
+ *
+ * Resolved from the authored registry rather than by fetching, so the links are
+ * there on first paint. A card that has not been seeded lands on the library's
+ * own "no such card" state, which is a better failure than a section that
+ * flickers in after the scorecard the user is already reading.
+ */
+function FocusLinks({ focus }: { focus: string[] }) {
+  const cards = focus
+    .map((key) => ({ key, card: techniqueForSubScore(key) }))
+    .filter((entry): entry is { key: string; card: Technique } => entry.card !== null)
+  if (cards.length === 0) return null
+  return (
+    <div className="focus-links">
+      <span className="label">Work on</span>
+      {cards.map(({ key, card }) => (
+        <Link key={key} href={`/library/${card.slug}`} className="focus-link">
+          <span className="label">{SUB_SCORE_LABELS[key] ?? key}</span>
+          <strong>{card.title}</strong>
+        </Link>
+      ))}
+    </div>
+  )
+}
+
+/** Per browser, like the first-win sheet. See the note at its only use. */
+const SCORECARD_SEEN = 'nerve.scorecard.explained'
