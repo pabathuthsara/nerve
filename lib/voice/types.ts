@@ -414,17 +414,39 @@ export interface VoiceEventMap {
   /**
    * A reply was generated, and never reached the speakers.
    *
-   * Its transcript arrived but its audio buffer never opened — cancelled as an
-   * overlap, usually. The turn is DROPPED rather than committed, because a
-   * line the user did not hear is worse than a gap: the scorer reads these
-   * turns and the user reads them too.
+   * Two different findings share this event, because they are the same
+   * incident to everyone downstream:
+   *
+   *   1. The audio buffer never opened — cancelled as an overlap, usually.
+   *      Known from the provider's own event stream, so the turn is DROPPED
+   *      rather than committed: a line the user did not hear is worse than a
+   *      gap, because the scorer reads these turns and the user reads them too.
+   *   2. The buffer opened, ran and closed with nothing audible in it. Known
+   *      only from a local measurement of her analyser, which is why the
+   *      diagnostics below exist and why case 1 carries none of them.
    *
    * Reported so that dropping is never silent. If this fires on every reply,
    * the transport has stopped sending `output_audio_buffer.started` and the
    * transcript is being thrown away — which is exactly the kind of total,
    * quiet loss this codebase has been bitten by twice (M0, round 11).
    */
-  'agent.unheard': { at: number }
+  'agent.unheard': {
+    at: number
+    /** Loudest RMS on her analyser across the turn. Case 2 only. */
+    peak?: number
+    /** How many analyser reads the verdict rests on. Case 2 only. */
+    samples?: number
+    /**
+     * `inbound-rtp.packetsReceived` across the turn, or null when it could not
+     * be read. **This is the number B11 is waiting on.** Zero means her audio
+     * never left the model and the recovery is a product decision; a healthy
+     * count means it arrived and the browser did not render it, which is ours
+     * to fix. Case 2 only.
+     */
+    packetDelta?: number | null
+    /** True when the adapter asked her to say the line again. */
+    recovered?: boolean
+  }
   /**
    * She was cut off mid-line, and the transcript was cut back to match.
    *

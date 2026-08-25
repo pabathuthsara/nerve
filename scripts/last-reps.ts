@@ -45,7 +45,24 @@ for (const session of sessions ?? []) {
       `(peak ${session.peak_warmth}, decision ${session.decision_warmth}) · ` +
       `${session.final_band} · won=${session.won}`,
   )
-  console.log(`  incidents  ${JSON.stringify(session.pipeline_incidents)}`)
+  const incidents = (session.pipeline_incidents ?? {}) as {
+    unheardTurns?: { at: number; peak: number; samples: number; packetDelta: number | null; recovered: boolean }[]
+  } & Record<string, unknown>
+  const { unheardTurns, ...counts } = incidents
+  console.log(`  incidents  ${JSON.stringify(counts)}`)
+
+  // B11's open question, printed rather than buried in a JSON blob. A zero
+  // packet delta means her audio never left the model; a healthy count means it
+  // arrived and the browser did not render it. See LAUNCH-GAP.md B11.
+  for (const turn of unheardTurns ?? []) {
+    const packets =
+      turn.packetDelta === null ? 'packets unreadable' : `packets +${turn.packetDelta}`
+    console.log(
+      `  UNHEARD    ${turn.at.toFixed(1)}s · peak ${turn.peak.toFixed(5)} over ` +
+        `${turn.samples} samples · ${packets}` +
+        `${turn.recovered ? ' · asked her to say it again' : ''}`,
+    )
+  }
 
   if (score) {
     console.log(

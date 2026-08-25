@@ -214,6 +214,11 @@ export class OpenAIEventTranslator {
   private readonly ignoredResponseIds = new Set<string>()
   private committedAgentTurn = false
   private userSinceAgent = false
+  /** Seal the next agent turn into `heldAgentTurn` instead of the transcript. */
+  private holdAgentTurn = false
+  /** A sealed turn the user never heard, waiting to see if a repeat arrives. */
+  private heldAgentTurn: TranscriptTurn | null = null
+  private heldTurnReplaced = false
   private characterExitRequested = false
   private characterExitSignalled = false
   private playbackFinishedForResponse = false
@@ -664,6 +669,63 @@ export class OpenAIEventTranslator {
     this.playbackStartedAt = null
     if (!turn) return
 
+    // The adapter measured this line as inaudible and is about to ask her to
+    // say it again. Hold it rather than commit it, so the repeat can take its
+    // place instead of the transcript carrying the line twice.
+    //
+    // Held, not dropped. The deletion only happens once something has actually
+    // arrived to replace it (`commitAgentTurn`), and `flush` releases anything
+    // still held when the rep ends — so the failure mode of the recovery is a
+    // line committed late, never a line lost. See `holdNextAgentTurn`.
+    if (this.holdAgentTurn) {
+      this.holdAgentTurn = false
+      this.heldAgentTurn = turn
+      this.heldTurnReplaced = false
+      return
+    }
+
+    this.commitAgentTurn(turn)
+  }
+
+  /**
+   * Hold the turn that is about to be sealed instead of committing it.
+   *
+   * Called from the adapter's audibility check, which runs on
+   * `agent.speech.stop` — inside the same `output_audio_buffer.stopped`
+   * handler that seals the turn, and before it. That ordering is the only
+   * reason this can work at all: by the time the adapter knows the line was
+   * never heard, the turn exists but has not yet reached the transcript.
+   */
+  holdNextAgentTurn(): void {
+    this.holdAgentTurn = true
+  }
+
+  /**
+   * A replacement really was requested; the held turn may be dropped once one
+   * arrives. Until then it stays held, because a repeat that never reaches the
+   * speakers must not take the original down with it.
+   */
+  markHeldTurnReplaced(): void {
+    if (this.heldAgentTurn) this.heldTurnReplaced = true
+  }
+
+  /** Commit a held turn after all, because no replacement was requested. */
+  releaseHeldAgentTurn(): void {
+    const held = this.heldAgentTurn
+    this.heldAgentTurn = null
+    this.heldTurnReplaced = false
+    this.holdAgentTurn = false
+    if (held) this.commitAgentTurn(held)
+  }
+
+  private commitAgentTurn(turn: TranscriptTurn): void {
+    // Something she said has arrived to stand in place of the line the user
+    // never heard. Only now is dropping it safe.
+    if (this.heldAgentTurn && this.heldTurnReplaced) {
+      this.heldAgentTurn = null
+      this.heldTurnReplaced = false
+    }
+
     // ROUND 12. This used to DELETE the turn — and deleting it was the bug.
     //
     // Sealing happens on `output_audio_buffer.stopped`, which is by definition
@@ -756,6 +818,10 @@ export class OpenAIEventTranslator {
   /** Seals anything still open, so a rep ending mid-sentence still scores. */
   flush(at: number): TranscriptTurn[] {
     const sealed: TranscriptTurn[] = []
+    // A line held for a repeat that the end of the rep overtook. She really
+    // did generate it, and holding it was a bet on a replacement that is now
+    // never coming — so it goes into the transcript rather than nowhere.
+    this.releaseHeldAgentTurn()
     const user = this.userTurns.commit(null, at)
     if (user) sealed.push(user)
     this.agentTurns.closeAt(at)

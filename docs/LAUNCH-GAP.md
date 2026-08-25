@@ -283,7 +283,7 @@ its menu is nothing like the others; `lib/data/mic.test.ts` covers the user-agen
 detection, including that Chrome's UA contains "Safari" and Edge's contains
 both.
 
-### B11 · Some of her replies are never heard, and nothing noticed  ·  ~0.5 days to root-cause  ·  `detection landed 24 Aug`
+### B11 · Some of her replies are never heard, and nothing noticed  ·  ~0 days, waiting on one rep  ·  `detection 24 Aug · evidence + recovery 25 Aug`
 
 Reported as "I can't hear her first few sentences, and sometimes I hear
 everything." Measured rather than reproduced: five stored rep recordings were
@@ -306,6 +306,47 @@ the speakers did with it.
 104 turns is bimodal: a normal cluster at 0.4–0.8 and six turns at exactly 0.00,
 with almost nothing between. Random packet loss produces partials; this does
 not. Whole replies are either rendered or absent.
+
+#### Re-measured 25 Aug over every stored rep — and it is not the opening
+
+The five reps above were widened to **all 31 reps that have a recording: 560 of
+her turns against 553 of the user's**. The user's own mic is the control.
+
+| | her turns | lost | rate |
+|---|---|---|---|
+| **all turns** | 560 | 22 | 3.9% |
+| turns of **3 words or fewer** | 95 | **22** | **23%** |
+| turns of **more than 3 words** | 465 | **0** | **0%** |
+| the user's turns (control) | 553 | 0 | 0% |
+
+**Length is the cause; position is a symptom.** Every lost line without
+exception is three words or shorter — median *one* word: "Hey.", "Nadia.",
+"Morning.", "Maya.", "Afternoon.", "Alright." Not one of the 465 turns longer
+than three words has ever been lost. Her first turn is over-represented (9 of
+the 22) only because her openings are where the short lines live, which is why
+this reads from the user's seat as "I can't hear her first few sentences".
+
+**Three more theories are dead**, measured over the same 560 turns:
+
+- **Not the cold-track race** the `attachRemote` rebind targets. Onset lag is
+  flat at 0.80s across every idle bucket from 0–1s to 12s+, correlation with
+  the preceding idle gap **+0.03**, and lost turns had *less* idle before them
+  than heard ones (3.9s vs 4.7s).
+- **Not barge-in or a cancel.** **0 of 22** lost turns had a user turn start
+  within 1.5s of them, against 19 of 538 heard turns.
+- **Not delayed playback.** Scanning ±6s around each lost line for unexplained
+  energy: 19 of 22 have none anywhere in the recording, and the other 3 are
+  adjacent user speech inside the scan window. The audio is dropped, not late.
+
+**The media path itself is healthy.** Her audio arrives a constant +0.80s after
+`output_audio_buffer.started` (p10 +0.12, p90 +1.04); the mic control is
++0.24s. That is ordinary end-to-end latency — data channel first, media after —
+and it is stable, not a stall.
+
+A duration-dependent loss is the useful constraint here. A WebAudio graph that
+is not pumping, or an element that never started, cannot know how long an
+utterance is: it would lose the head of the long lines too. Something is
+swallowing short talkspurts whole, which points **upstream of the browser**.
 
 **What it is not.** The clean maya rep with three inaudible turns recorded
 `{overlaps: 0, truncated: 0, unheard: 0, echoRejected: 0, providerErrors: 0}` —
@@ -342,10 +383,44 @@ rebuilt once on the track's first `unmute`, against a stable analyser the
 recorder and the visualiser can keep holding. That targets the two first-turn
 cases in the table; it does not explain the three mid-rep ones.
 
-**Still owed.** One rep with the counter running says which half this is. Packets
-arrived and nothing rendered → a browser graph fault, ours to fix. Packets did
-not arrive → the audio left the model and not the network, and the recovery is a
-product decision rather than a patch. Not sized past that on purpose.
+**Landed 25 Aug, part 1 — the packet delta is now stored.** The detector fired
+twice on the 24 Aug 15:39 rep and caught both of that rep's silent turns, which
+is the first and only rep it has run on. It also computed the
+`inbound-rtp.packetsReceived` delta across both of them, formatted it into a
+`VoiceError` string, and dropped it: `pipeline_incidents` stored counts and
+nothing else. The rep this blocker had been waiting for happened, and the answer
+was thrown away.
+
+`RepIncidents.unheardTurns` now carries one `{at, peak, samples, packetDelta,
+recovered}` record per locally measured silent turn, capped at
+`MAX_UNHEARD_RECORDS` and written into the existing `pipeline_incidents` column
+— no migration. The counter is polled every 4th audibility sample rather than
+awaited at settle, because `settleHerVoice` runs inside the same
+`output_audio_buffer.stopped` handler that seals the turn and an await there
+loses the incident on a final turn.
+
+**Read it with `npm run db:rep -- <n>` or `scripts/last-reps.ts`. `packetDelta:
+0` closes this blocker as a vendor fault; a healthy count reopens it as a
+browser graph fault and makes it ours.**
+
+**Landed 25 Aug, part 2 — she is asked to say it again.** Detection alone still
+left the user with a hole. On a silent verdict the adapter now deletes the
+conversation item she believes she said and asks the gate for a repeat, so she
+answers the question again in her own words rather than re-reading a line.
+
+The safety argument is that a held line is never lost. `sealAgentTurn` holds the
+turn instead of committing it, and it is dropped **only** once a replacement has
+actually been committed; every other path — gate declines, data channel closed,
+repeat stalls, rep ends — releases it back into the transcript. The gate
+declines rather than queues a repeat when a real user turn is already waiting,
+because a line arriving two turns late is worse than the gap. One recovery per
+line, never a chain: a repeat that is itself inaudible is committed normally.
+Covered by `lib/voice/incidents.test.ts` and the `holding an unheard turn` block
+in `response-gate.test.ts`.
+
+**Still owed.** The next rep with a short opener reads out the packet delta and
+settles which half this is. Until then the recovery is a mitigation, not a fix —
+it makes the hole audible again without explaining it.
 
 ### B12 · The Sunday letter has no scheduler  ·  ~0 days on Pro, ~0.5 days on Actions  ·  `deferred 24 Aug`
 
@@ -372,12 +447,12 @@ free, preserves the design, adds a second place that has to hold the secret; a
 Pro upgrade, which unlocks the expression as authored; or a daily cron and an
 accepted drift. Deferred rather than decided.
 
-**Blocker total: roughly 14 working days**, down from 21 after the database
-pass, 16 with B8 cleared, 15 with B9 and 14 with B10, and back up by the half
-day B11 needs to be root-caused — plus merchant-of-record review time, which
-runs in parallel and can fail. **Nine of the twelve blockers remain**, one of
-them (B11) measured but not yet explained and one (B12) deferred rather than
-decided.
+**Blocker total: roughly 13.5 working days**, down from 21 after the database
+pass, 16 with B8 cleared, 15 with B9, 14 with B10, and back down as B11's half
+day was spent — plus merchant-of-record review time, which runs in parallel and
+can fail. **Nine of the twelve blockers remain**, one of them (B11) now
+mitigated and instrumented but still owed its explanation, which costs a rep
+rather than a day, and one (B12) deferred rather than decided.
 
 > **B9 was the one to take next, and it is done (24 Aug).** The grader,
 > the live scorer, both pipeline hops and the Realtime token now sit behind

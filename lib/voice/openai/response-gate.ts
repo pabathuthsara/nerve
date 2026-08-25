@@ -120,6 +120,36 @@ export class OpenAIResponseGate {
     return this.inFlight
   }
 
+  /** True when a user turn is already waiting behind the response in flight. */
+  get hasPending(): boolean {
+    return this.pending
+  }
+
+  /**
+   * Take the turn again, for a reply the user never heard.
+   *
+   * **Declines rather than queues.** Every other path into this gate is a user
+   * turn, which must never be dropped; a repeat is the opposite. If something
+   * is already generating, or a real turn is waiting behind it, then by the
+   * time a repeat reached the speakers the moment it belonged to would be
+   * gone — and a line arriving two turns late is worse than the gap it was
+   * meant to fill. Returns whether it took.
+   *
+   * No reply delay, unlike `startResponse`. That pause is a warmth signal
+   * about a turn she has just heard; this is her finishing something she
+   * already started, and sitting on it a second time only widens the hole.
+   *
+   * The stall watchdog is armed exactly as it is for a normal response, so a
+   * repeat that never settles cannot wedge the gate.
+   */
+  requestRepeat(): boolean {
+    if (this.inFlight || this.pending) return false
+    this.inFlight = true
+    this.arm()
+    this.createResponse()
+    return true
+  }
+
   /**
    * Take the turn — after the beat, if she is taking one.
    *

@@ -47,6 +47,15 @@ import { applyRoomConfig, type RoomControls } from '@/lib/audio/types'
 const CALLS_ENDPOINT = 'https://api.openai.com/v1/realtime/calls'
 const PROVIDER: ProviderId = 'openai'
 
+/**
+ * Read the inbound packet counter every Nth audibility sample.
+ *
+ * At the adapter's 50ms sample interval this is roughly five reads a second
+ * while she is speaking, and none while she is not. Cheap enough to ignore,
+ * frequent enough that the count is never more than one interval stale.
+ */
+const PACKET_SAMPLE_EVERY = 4
+
 /** What the token route hands back. Instructions ride along so re-injection
  *  does not need a second round trip mid-rep. */
 export interface MintedSession {
@@ -115,6 +124,14 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   private readonly audibilityBuffer = new Float32Array(2048)
   /** `inbound-rtp.packetsReceived` when she started speaking. */
   private packetsAtTurnStart: number | null = null
+  /** The same counter, refreshed while she speaks. See `watchHerVoice`. */
+  private packetsLatest: number | null = null
+  /** Bumped per turn, so a late `getStats()` cannot land on the wrong one. */
+  private turnSeq = 0
+  /** A repeat has been requested; the next turn she starts is that repeat. */
+  private recoveryPending = false
+  /** The turn currently speaking is a repeat, and may not request another. */
+  private currentTurnIsRepeat = false
   private capTimer: ReturnType<typeof setTimeout> | null = null
 
   private t0: number | null = null
@@ -147,6 +164,11 @@ export class OpenAIVoiceProvider implements VoiceProvider {
           // Clear the translator's side too, or the recovery response is
           // cancelled as an overlap the moment it is created.
           this.translator.abandonActiveResponse()
+          // A repeat that stalled never spoke, so the turn it was meant to
+          // replace goes back into the transcript, and the next reply she
+          // manages is eligible for a recovery of its own.
+          this.recoveryPending = false
+          this.translator.releaseHeldAgentTurn()
           this.emitter.emit('error', {
             error: new VoiceError(
               'transport_failed',
@@ -508,12 +530,35 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   private watchHerVoice(): void {
     this.audibility.reset()
     this.packetsAtTurnStart = null
-    void this.inboundAudioPackets().then((packets) => {
-      this.packetsAtTurnStart = packets
-    })
+    this.packetsLatest = null
+    // The turn now starting IS the repeat we asked for, if we asked for one.
+    // Consumed here so a repeat can never itself trigger another repeat: one
+    // recovery per line, and a chain of them is a rep that never advances.
+    this.currentTurnIsRepeat = this.recoveryPending
+    this.recoveryPending = false
+
+    const seq = ++this.turnSeq
+    const readPackets = () => {
+      void this.inboundAudioPackets().then((packets) => {
+        // A `getStats()` from the previous turn must never land on this one.
+        if (seq !== this.turnSeq || packets === null) return
+        if (this.packetsAtTurnStart === null) this.packetsAtTurnStart = packets
+        this.packetsLatest = packets
+      })
+    }
+    readPackets()
+
     this.stopWatchingHerVoice()
+    let tick = 0
     this.audibilityTimer = setInterval(() => {
       this.audibility.observe(analyserRms(this.agentAnalyser, this.audibilityBuffer))
+      // Polled rather than read once at the end, so the delta is available the
+      // instant the turn closes. `settleHerVoice` runs inside the same event
+      // handler that seals the turn, and awaiting `getStats()` there would put
+      // the incident after the rep had already been saved on a final turn.
+      // At most one sample interval of packets is missed, which cannot change
+      // the only thing this number is asked: zero, or not zero.
+      if (++tick % PACKET_SAMPLE_EVERY === 0) readPackets()
     }, SAMPLE_INTERVAL_MS)
   }
 
@@ -525,33 +570,110 @@ export class OpenAIVoiceProvider implements VoiceProvider {
    * `incidentsAreAlarming`. What changes is that it can now fire for a reply
    * whose buffer opened normally, which is the case that was invisible.
    *
-   * The turn is NOT dropped from the transcript here. `sealAgentTurn` drops the
-   * replies it knows never started, on evidence from the provider's own event
-   * stream; this evidence is a local measurement, and a browser whose WebAudio
-   * graph is behaving oddly would otherwise quietly delete a whole rep.
-   * Reported, counted, and left for the grader to be judged against.
+   * The turn is never dropped on this evidence alone. `sealAgentTurn` drops
+   * the replies it knows never started, on the provider's own event stream;
+   * this is a local measurement, and a browser whose WebAudio graph is
+   * behaving oddly must not be able to quietly delete a whole rep. So the line
+   * is HELD rather than dropped, and only released from the hold once a repeat
+   * has actually arrived to stand in its place — see `attemptUnheardRecovery`
+   * and the translator's `holdNextAgentTurn`. Every path that does not end in
+   * a replacement puts the line back into the transcript.
+   *
+   * What is measured here is also, finally, recorded. The packet delta says
+   * whether her audio ever left the model, and it used to reach a console
+   * string and nothing else; it now rides the incident into
+   * `pipeline_incidents`, which is the column B11 has been waiting on.
    */
   private settleHerVoice(at: number): void {
     this.stopWatchingHerVoice()
     const verdict = this.audibility.verdict()
     if (!verdict.silent) return
 
-    this.emitter.emit('agent.unheard', { at })
+    const delta =
+      this.packetsAtTurnStart === null || this.packetsLatest === null
+        ? null
+        : this.packetsLatest - this.packetsAtTurnStart
 
-    const before = this.packetsAtTurnStart
-    void this.inboundAudioPackets().then((after) => {
-      const delta = before === null || after === null ? null : after - before
-      this.emitter.emit('error', {
-        error: new VoiceError(
-          'provider_error',
-          PROVIDER,
-          `A reply played to silence: her audio buffer opened and closed with nothing audible` +
-            ` (peak ${verdict.peak.toFixed(4)} over ${verdict.samples} samples` +
-            `${delta === null ? '' : `, inbound audio packets +${delta}`}).`,
-          { fatal: false },
-        ),
-      })
+    // Captured now, synchronously: this is the item she believes she said, and
+    // the translator moves `audioItemId` on to the next response as soon as
+    // its transcript starts arriving.
+    const itemId = this.translator.currentAudioItemId
+    // The gate is still holding the response that just ended — it settles
+    // later in this same handler — so what decides whether a repeat is
+    // possible is whether a real user turn is already queued behind it.
+    // `attemptUnheardRecovery` re-checks before sending anything.
+    const recovering =
+      !this.currentTurnIsRepeat &&
+      !this.ended &&
+      itemId !== null &&
+      !this.responseGate.hasPending
+
+    // Held BEFORE the emit, because `sealAgentTurn` runs later in this same
+    // handler and the hold has to be in place by then.
+    if (recovering) this.translator.holdNextAgentTurn()
+
+    this.emitter.emit('agent.unheard', {
+      at,
+      peak: verdict.peak,
+      samples: verdict.samples,
+      packetDelta: delta,
+      recovered: recovering,
     })
+    this.emitter.emit('error', {
+      error: new VoiceError(
+        'provider_error',
+        PROVIDER,
+        `A reply played to silence: her audio buffer opened and closed with nothing audible` +
+          ` (peak ${verdict.peak.toFixed(4)} over ${verdict.samples} samples` +
+          `${delta === null ? '' : `, inbound audio packets +${delta}`})` +
+          `${recovering ? '. Asking her to say it again.' : '.'}`,
+        { fatal: false },
+      ),
+    })
+
+    if (recovering && itemId !== null) this.attemptUnheardRecovery(itemId)
+  }
+
+  /**
+   * Ask her to say the line the user never heard.
+   *
+   * Deferred by a zero timeout on purpose. The whole
+   * `output_audio_buffer.stopped` handler is still on the stack when this is
+   * called: the turn has not been sealed, and the gate still holds the
+   * response that just ended. Both have finished by the time a macrotask runs,
+   * and nothing else can reach the gate in between — the only other writer is
+   * the data channel, which cannot deliver a message mid-task.
+   *
+   * The conversation item goes first. Her history still contains the line as
+   * something she said out loud, so without the delete she would answer the
+   * repeat with "like I said" against a silence the user never heard the first
+   * half of. Deleting it makes her answer the user's question again, in her own
+   * words — which reads better than a verbatim re-read anyway.
+   *
+   * Nothing here is fatal. If the gate declines, or the rep ended underneath
+   * us, the held turn is released and the transcript is exactly what it would
+   * have been before any of this existed.
+   */
+  private attemptUnheardRecovery(itemId: string): void {
+    setTimeout(() => {
+      if (this.ended || this.dc?.readyState !== 'open') {
+        this.translator.releaseHeldAgentTurn()
+        return
+      }
+      if (this.responseGate.busy || this.responseGate.hasPending) {
+        this.translator.releaseHeldAgentTurn()
+        return
+      }
+
+      this.send({ type: 'conversation.item.delete', item_id: itemId })
+
+      if (!this.responseGate.requestRepeat()) {
+        this.translator.releaseHeldAgentTurn()
+        return
+      }
+      this.recoveryPending = true
+      this.translator.markHeldTurnReplaced()
+    }, 0)
   }
 
   private stopWatchingHerVoice(): void {
@@ -564,9 +686,9 @@ export class OpenAIVoiceProvider implements VoiceProvider {
    * Packets received on the inbound audio track, or null.
    *
    * The one number that separates "the audio never arrived" from "it arrived
-   * and was not rendered", and therefore the difference between a network fault
-   * and a graph fault. Sampled only around her turns, so it costs one
-   * `getStats()` per reply rather than a polling loop.
+   * and was not rendered", and therefore the difference between a vendor fault
+   * and a graph fault. Read only while she is speaking — see
+   * `PACKET_SAMPLE_EVERY` — so it never becomes a background polling loop.
    */
   private async inboundAudioPackets(): Promise<number | null> {
     if (!this.pc) return null

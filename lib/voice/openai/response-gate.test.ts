@@ -106,6 +106,54 @@ describe('OpenAIResponseGate', () => {
     expect(h.stalls).toHaveLength(0)
   })
 
+  it('takes the turn again for a line the user never heard', () => {
+    const h = gate()
+    expect(h.instance.requestRepeat()).toBe(true)
+    expect(h.created).toHaveLength(1)
+    expect(h.instance.busy).toBe(true)
+  })
+
+  it('declines a repeat while a response is generating', () => {
+    const h = gate()
+    h.instance.userTurnCommitted()
+    expect(h.instance.requestRepeat()).toBe(false)
+    // The reply in flight is untouched; nothing extra was created.
+    expect(h.created).toHaveLength(1)
+  })
+
+  it('declines a repeat when a real turn is already waiting', () => {
+    // The user has spoken again. The moment the repeat belonged to is gone,
+    // and answering the older line first would put her two turns behind.
+    const h = gate()
+    h.instance.userTurnCommitted()
+    h.instance.userTurnCommitted()
+    expect(h.instance.hasPending).toBe(true)
+
+    h.instance.responseSettled()
+    expect(h.created).toHaveLength(2)
+    expect(h.instance.requestRepeat()).toBe(false)
+    expect(h.created).toHaveLength(2)
+  })
+
+  it('arms the watchdog for a repeat, so one that never settles cannot wedge', () => {
+    const h = gate({ stallMs: 12_000 })
+    h.instance.requestRepeat()
+    h.advance(12_000)
+    expect(h.stalls).toHaveLength(1)
+    expect(h.instance.busy).toBe(false)
+  })
+
+  it('does not sit on a repeat for the warmth beat', () => {
+    // `startResponse` pauses before she answers. A repeat is her finishing
+    // something she already started, so it goes immediately.
+    const created: number[] = []
+    const instance = new OpenAIResponseGate(() => created.push(1), {
+      delayMs: () => 900,
+    })
+    instance.requestRepeat()
+    expect(created).toHaveLength(1)
+  })
+
   it('does not fire the watchdog after a reset', () => {
     const h = gate({ stallMs: 1_000 })
     h.instance.userTurnCommitted()
@@ -284,5 +332,111 @@ describe('the beat before she answers', () => {
     gate.reset()
     runPause()
     expect(created).toHaveLength(0)
+  })
+})
+
+/**
+ * Holding a line the user never heard, so a repeat can replace it.
+ *
+ * The recovery's whole safety argument is that a held turn is never lost: it
+ * is dropped only once something has actually arrived to stand in its place,
+ * and released back into the transcript on every other path. These cover the
+ * paths, because the failure they guard against is silent — a line vanishing
+ * from a transcript nobody is comparing against the audio.
+ */
+describe('holding an unheard turn', () => {
+  function harness() {
+    const emitter = new VoiceEmitter()
+    const turns: TranscriptTurn[] = []
+    let clock = 0
+    const translator = new OpenAIEventTranslator(
+      emitter,
+      () => clock,
+      (turn) => turns.push(turn),
+      {},
+    )
+
+    const at = (t: number, payload: Record<string, unknown>) => {
+      clock = t
+      translator.ingest(JSON.stringify(payload))
+    }
+
+    /**
+     * One complete reply, from created to sealed.
+     *
+     * `onSpeechStop` stands in for the adapter's audibility check, which runs
+     * on `agent.speech.stop` — emitted from inside the same
+     * `output_audio_buffer.stopped` event that seals the turn, and before it.
+     * That ordering is what the hold depends on, so the test reproduces it
+     * rather than calling the translator directly.
+     */
+    const reply = (id: string, text: string, t: number, onSpeechStop?: () => void) => {
+      at(t, { type: 'response.created', response: { id } })
+      at(t + 0.1, { type: 'output_audio_buffer.started' })
+      at(t + 0.2, { type: 'response.output_audio_transcript.done', transcript: text })
+      const off = onSpeechStop ? emitter.on('agent.speech.stop', onSpeechStop) : null
+      at(t + 1.0, { type: 'output_audio_buffer.stopped' })
+      off?.()
+    }
+
+    return { translator, turns, reply }
+  }
+
+  it('keeps the line out of the transcript while a repeat is pending', () => {
+    const h = harness()
+    h.reply('resp_1', 'Hey.', 1, () => h.translator.holdNextAgentTurn())
+    expect(h.turns).toHaveLength(0)
+  })
+
+  it('drops the held line once a replacement is committed', () => {
+    const h = harness()
+    h.reply('resp_1', 'Hey.', 1, () => h.translator.holdNextAgentTurn())
+    h.translator.markHeldTurnReplaced()
+    expect(h.turns).toHaveLength(0)
+
+    h.reply('resp_2', 'Hey, sorry — hi.', 3)
+    // One line in the transcript, and it is the one that was audible.
+    expect(h.turns).toHaveLength(1)
+    expect(h.turns[0]?.text).toBe('Hey, sorry — hi.')
+  })
+
+  it('releases the held line when no repeat was requested after all', () => {
+    const h = harness()
+    h.reply('resp_1', 'Hey.', 1, () => h.translator.holdNextAgentTurn())
+    expect(h.turns).toHaveLength(0)
+
+    // The gate declined — a real user turn was already queued behind it.
+    h.translator.releaseHeldAgentTurn()
+    expect(h.turns).toHaveLength(1)
+    expect(h.turns[0]?.text).toBe('Hey.')
+  })
+
+  it('releases a held line when the rep ends before the repeat lands', () => {
+    const h = harness()
+    h.reply('resp_1', 'Hey.', 1, () => h.translator.holdNextAgentTurn())
+    h.translator.markHeldTurnReplaced()
+    expect(h.turns).toHaveLength(0)
+
+    h.translator.flush(4)
+    expect(h.turns).toHaveLength(1)
+    expect(h.turns[0]?.text).toBe('Hey.')
+  })
+
+  it('keeps exactly one copy when the repeat is also never heard', () => {
+    // One recovery per line, never a chain: the repeat's own turn is committed
+    // normally even if it too was inaudible, so the transcript still ends up
+    // with what she said rather than nothing.
+    const h = harness()
+    h.reply('resp_1', 'Hey.', 1, () => h.translator.holdNextAgentTurn())
+    h.translator.markHeldTurnReplaced()
+    h.reply('resp_2', 'Hey.', 3)
+    expect(h.turns).toHaveLength(1)
+  })
+
+  it('does not disturb an ordinary turn', () => {
+    const h = harness()
+    h.reply('resp_1', 'Looking for a present.', 1)
+    expect(h.turns).toHaveLength(1)
+    expect(h.turns[0]?.text).toBe('Looking for a present.')
   })
 })
