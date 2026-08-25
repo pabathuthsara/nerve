@@ -16,7 +16,7 @@
 import { NextResponse } from 'next/server'
 import { requireUser } from '@/lib/db/api-auth'
 import { maySpend } from '@/lib/db/spend'
-import { supabaseAdmin } from '@/lib/db/admin'
+import { personaContext } from '@/lib/db/persona-context'
 import { mayOpenSession } from '@/lib/db/progress'
 import { getPersona } from '@/lib/personas'
 import { mintSession } from '@/lib/voice/mint'
@@ -102,9 +102,13 @@ export async function POST(request: Request): Promise<Response> {
   // the same reason the persona is compiled from an id: a client that can post
   // its own memory can post its own character. `requireUser` has already run, so
   // this is derived from the authenticated user and cannot be forged.
+  //
+  // The same lookup now also carries what he is called, so §08's `usesYourName`
+  // gate has a name to open onto. Both live in `lib/db/persona-context.ts`
+  // because three routes need them and two of them used to disagree.
   const persona = {
     ...base,
-    ...(await recallMemory(auth.userId, base.slug)),
+    ...(await personaContext(auth.userId, base.slug)),
   }
 
   // Resolved here as well as in the page, from the same function, so the two
@@ -129,49 +133,5 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ error: cause.message }, { status })
     }
     return NextResponse.json({ error: String(cause) }, { status: 500 })
-  }
-}
-
-/**
- * The one line she still has in mind, or nothing.
- *
- * Returns a partial persona rather than a string so the caller spreads it and
- * an absent memory adds no key at all — `memorySummary` is optional on the
- * schema and `compileInstructions` tests for its presence.
- *
- * Service role, because this runs on the edge with no user session attached and
- * the user id has already been established by `requireUser`. It reads one row
- * belonging to that user and nothing else.
- *
- * Best-effort by rule: a rep must never fail to start because a nice-to-have
- * lookup was slow or the character was never seeded. Forgetting is the same
- * answer as never having met.
- */
-async function recallMemory(
-  userId: string,
-  slug: string,
-): Promise<{ memorySummary?: string }> {
-  if (userId === 'internal') return {}
-
-  try {
-    const admin = supabaseAdmin()
-    const { data: persona } = await admin
-      .from('personas')
-      .select('id')
-      .eq('slug', slug)
-      .maybeSingle()
-    if (!persona) return {}
-
-    const { data: memory } = await admin
-      .from('persona_memory')
-      .select('summary')
-      .eq('user_id', userId)
-      .eq('persona_id', persona.id)
-      .maybeSingle()
-
-    const summary = memory?.summary?.trim()
-    return summary ? { memorySummary: summary } : {}
-  } catch {
-    return {}
   }
 }

@@ -40,7 +40,10 @@ function TrainContent() {
   // Chosen for you, not picked off a list: the decision before the rep is the
   // part people use to avoid the rep.
   const progress: PersonaProgress[] = Array.isArray(progressRaw) ? progressRaw : []
-  const persona = chooseTodayPersona(personas, progress, user?.currentLevel ?? 1)
+  // The onboarding answer, finally spending. It is the last tie-break inside
+  // `chooseTodayPersona`, so it decides the first rep and then gets out of the
+  // way of the rotation.
+  const persona = chooseTodayPersona(personas, progress, user?.currentLevel ?? 1, user?.focusArea)
   const personaProgress = persona ? progress.find((item) => item.personaId === persona.id) : undefined
   const last = sessions[0]
   const challenge = assignment?.challenge
@@ -64,9 +67,20 @@ function TrainContent() {
                 <h1 className="display-xl">{persona.name}</h1>
                 <span className="label">{persona.setting}</span>
                 <p className="today-card__hook">{persona.hook}</p>
+                {/* The activation cliff, closed (F-14). The primary action on
+                    this screen used to read OUT OF REPS in amber — a dead
+                    control the whole layout pointed at, on the screen a new
+                    user lands on ten minutes after signing up. Text mode costs
+                    no quota and is the same character, so when the day's voice
+                    reps are gone the screen reorganises around what is still
+                    open instead of around waiting. */}
                 <div className="today-card__action">
-                  {remaining > 0 ? <Link href={repHref} className="arena-button arena-button--primary arena-button--lg arena-button--full">Start rep</Link> : <Button variant="secondary" size="lg" fullWidth onClick={() => setPaywallOpen(true)}><span className="amber">Out of reps</span></Button>}
-                  <Link href="/roster" className="arena-button arena-button--ghost arena-button--sm arena-button--full"><RotateCcw size={16} strokeWidth={1.5} /> Someone else</Link>
+                  {remaining > 0
+                    ? <Link href={repHref} className="arena-button arena-button--primary arena-button--lg arena-button--full">Start rep</Link>
+                    : <Link href={`/text/${persona.id}`} className="arena-button arena-button--primary arena-button--lg arena-button--full">Talk to {persona.name} in text</Link>}
+                  {remaining > 0
+                    ? <Link href="/roster" className="arena-button arena-button--ghost arena-button--sm arena-button--full"><RotateCcw size={16} strokeWidth={1.5} /> Someone else</Link>
+                    : <Button variant="ghost" size="sm" fullWidth onClick={() => setPaywallOpen(true)}>Voice reps are done for today</Button>}
                 </div>
               </div>
             </article>
@@ -75,7 +89,10 @@ function TrainContent() {
         <aside className="side-stack">
           {userLoading || !user ? <Skeleton height={86} /> : <RankRail rank={user.rank} />}
           <div className="side-stats">
-            <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Reps remaining" value={`${user.repsRemainingToday} / ${user.repsPerDay}`} size="lg" />}</div>
+            {/* Day one is three reps on any plan (`lib/data/allowance.ts`), and
+                a counter that silently reads 3 / 3 today and 1 / 1 tomorrow
+                looks like a bug. Saying so is the whole point of the grant. */}
+            <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Reps remaining" value={`${user.repsRemainingToday} / ${user.repsPerDay}`} size="lg" detail={user.dayOne ? 'Day one — three on us' : undefined} />}</div>
             <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Current streak" value={`${user.streakDays} days`} size="lg" />}</div>
           </div>
           <Card className="field-card">
@@ -96,8 +113,8 @@ function TrainContent() {
       </div>
       <FieldSheets flow={flow} title={challenge?.title ?? ''} />
       <MilestoneSheet milestone={milestone} onClose={() => setMilestone(null)} />
-      <Sheet open={paywallOpen} onClose={() => setPaywallOpen(false)} title="Today&apos;s reps are done">
-        <div style={{ display: 'grid', gap: 20 }}><p className="muted" style={{ margin: 0 }}>Your voice reps reset tonight. Field work stays open.</p><div className="plan-mini"><Stat label="Pro" value="3 / day" /><Stat label="Elite" value="6 / day" /></div><Link href="/profile/subscription" className="arena-button arena-button--primary arena-button--full">See plans</Link><Button variant="ghost" fullWidth onClick={() => setPaywallOpen(false)}>Maybe later</Button></div>
+      <Sheet open={paywallOpen} onClose={() => setPaywallOpen(false)} title="Today&apos;s voice reps are done">
+        <div style={{ display: 'grid', gap: 20 }}><p className="muted" style={{ margin: 0 }}>Your voice reps reset tonight. Text mode and the field stay open, and neither of them uses a rep.</p><div className="plan-mini"><Stat label="Pro" value="3 / day" /><Stat label="Elite" value="6 / day" /></div>{persona ? <Link href={`/text/${persona.id}`} className="arena-button arena-button--secondary arena-button--full">Keep talking in text</Link> : null}<Link href="/profile/subscription" className="arena-button arena-button--primary arena-button--full">See plans</Link><Button variant="ghost" fullWidth onClick={() => setPaywallOpen(false)}>Maybe later</Button></div>
       </Sheet>
     </>
   )

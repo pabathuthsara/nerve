@@ -22,6 +22,7 @@
 import { revalidatePath } from 'next/cache'
 import { currentUser, supabaseServer } from '@/lib/db/server'
 import { announceUnlock } from '@/lib/db/unlocks'
+import { ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG } from '@/lib/data/guards'
 import type { TablesUpdate } from '@/lib/db/types'
 import type { Track } from '@/lib/data/types'
 import { OFFSET_MAX_MS, OFFSET_MIN_MS } from '@/lib/voice/calibration'
@@ -90,12 +91,49 @@ export async function saveOnboardingChoice(input: {
   track?: Track
   focusArea?: 'opening' | 'sustaining' | 'flirting' | 'rejection'
   experience?: 'never' | 'sometimes' | 'often'
+  /**
+   * The name step (§08's `usesYourName` dial).
+   *
+   * `null` is a deliberate skip and is recorded as answered — the step is
+   * optional, and a resume path that reads an empty `display_name` as "not
+   * asked yet" would put somebody who declined back on the same screen every
+   * time they reload.
+   */
+  displayName?: string | null
 }): Promise<SaveResult> {
   const patch: ProfilePatch = {}
+  const flags: string[] = []
+
   if (input.track) patch.active_track = input.track
   if (input.focusArea) patch.focus_area = input.focusArea
   if (input.experience) patch.experience = input.experience
-  if (Object.keys(patch).length === 0) return { ok: true, message: null }
+
+  // The track step needs a marker of its own. `active_track` carries a default,
+  // so it is already set for somebody who has answered nothing — which made it
+  // useless for "where did this person stop". See `onboardingResumePath`.
+  if (input.track) flags.push(ONBOARDING_TRACK_FLAG)
+
+  if (input.displayName !== undefined) {
+    const trimmed = input.displayName?.trim().slice(0, 40) ?? ''
+    if (trimmed) patch.display_name = trimmed
+    flags.push(ONBOARDING_NAME_FLAG)
+  }
+
+  if (Object.keys(patch).length === 0 && flags.length === 0) return { ok: true, message: null }
+
+  if (flags.length > 0) {
+    const user = await currentUser()
+    if (!user) return SIGNED_OUT
+    const supabase = await supabaseServer()
+    const { data: profile } = await supabase.from('profiles').select('ui_flags').eq('id', user.id).maybeSingle()
+    const current = isFlagRecord(profile?.ui_flags) ? profile.ui_flags : {}
+    const stamp = new Date().toISOString()
+    patch.ui_flags = flags.reduce<Record<string, string>>(
+      (carry, flag) => ({ ...carry, [flag]: stamp }),
+      { ...current },
+    )
+  }
+
   return updateProfile(patch)
 }
 

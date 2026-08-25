@@ -30,8 +30,17 @@ export interface UserState {
    */
   rank: Rank
   repsRemainingToday: number
+  /**
+   * What today is worth — the plan's number, except on day one.
+   *
+   * Not `entitlements.reps_per_day`: the first day is three reps on every plan
+   * (`lib/data/allowance.ts`), so this is the figure every screen counts down
+   * from and the same one `consumeRep` enforces.
+   */
   repsPerDay: number
   repsResetAt: string
+  /** True on the account's own first local day. What the copy keys off. */
+  dayOne: boolean
   streakDays: number
   plan: Plan
   trainingWheels: boolean
@@ -150,7 +159,15 @@ export interface SessionSummary {
 /** The profile header. Every figure is derived from stored reps. */
 export interface LifetimeStats {
   totalReps: number
-  winRate: number | null
+  /**
+   * Mean composite across every graded rep (§07).
+   *
+   * This slot used to hold a win rate, which is the one thing the product is
+   * explicit about never scoring: "a clean rep that ends in rejection can score
+   * 92." A headline figure that counted numbers-given taught exactly the lesson
+   * the reps exist to unteach, and read 0% to anybody on their first day.
+   */
+  averageScore: number | null
   bestTimeMs: number | null
   averageWarmthGain: number | null
   currentStreak: number

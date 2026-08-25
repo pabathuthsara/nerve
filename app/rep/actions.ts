@@ -23,7 +23,7 @@ import type { WarmthTelemetry } from '@/lib/warmth/engine'
 import type { RepIncidents } from '@/lib/voice/incidents'
 import { AUDIO_RETENTION_DAYS } from '@/lib/db/retention'
 import { asJson } from '@/lib/db/json'
-import { consumeRep, recordTrainingDay, syncLevel } from '@/lib/db/progress'
+import { consumeRep, recordTrainingDay, refundRep, syncLevel } from '@/lib/db/progress'
 import { adjustDifficulty, recentScoresAtLevel } from '@/lib/db/difficulty'
 import { wonFromRep } from '@/lib/data/progression'
 
@@ -41,6 +41,17 @@ const FAILED: SaveResult = { ok: false, message: 'Not saved — you are signed o
 
 /** How long a rep may be resumed on the quota it already spent. */
 const RESUME_WINDOW_MS = 10 * 60 * 1000
+
+/**
+ * What `finishSession` tells the caller beyond "it saved".
+ *
+ * `refunded` is true when the rep recorded no user speech and the daily quota
+ * was given back. The result screen reads it to say so rather than reporting a
+ * rejection that never happened.
+ */
+export interface FinishResult extends SaveResult {
+  refunded: boolean
+}
 
 /**
  * Opened when the transport connects, so a rep that crashes still leaves a row.
@@ -151,9 +162,9 @@ export async function finishSession(input: {
    * after the fact. See lib/voice/incidents.ts.
    */
   incidents?: RepIncidents | null
-}): Promise<SaveResult> {
+}): Promise<FinishResult> {
   const user = await currentUser()
-  if (!user) return FAILED
+  if (!user) return { ...FAILED, refunded: false }
 
   const supabase = await supabaseServer()
   const seconds = Math.max(0, Math.round(input.seconds))
@@ -184,7 +195,7 @@ export async function finishSession(input: {
     })
     .eq('id', input.sessionId)
 
-  if (sessionError) return { ok: false, message: `Not saved — ${sessionError.message}` }
+  if (sessionError) return { ok: false, message: `Not saved — ${sessionError.message}`, refunded: false }
 
   const { error: transcriptError } = await supabase.from('transcripts').upsert(
     {
@@ -209,17 +220,35 @@ export async function finishSession(input: {
   )
 
   if (transcriptError) {
-    return { ok: false, message: `Transcript not saved — ${transcriptError.message}` }
+    return { ok: false, message: `Transcript not saved — ${transcriptError.message}`, refunded: false }
   }
 
   await appendUsage({ ...input, userId: user.id, seconds })
 
-  // A rep that produced no turns is a connection that failed, and a streak
-  // built out of failed connections is worth nothing to anybody.
-  if (input.turns.length > 0) await recordTrainingDay(user.id)
+  // Did this rep hear the user at all?
+  //
+  // Not `turns.length`, which counts her side too: a session where the
+  // character talked into silence for three minutes has turns and is still a
+  // rep the user never had. A muted headset, the wrong input device, a
+  // permission the browser quietly withheld — all of them land here, and all
+  // of them used to be scored as though the user had simply been unappealing.
+  const heardUser = input.turns.some((turn) => turn.speaker === 'user' && turn.text.trim().length > 0)
+
+  // A streak built out of failed connections is worth nothing to anybody.
+  if (heardUser) await recordTrainingDay(user.id)
+
+  // The quota was spent when the transport connected, before anybody could
+  // know that. Give it back rather than charging a free account's only attempt
+  // of the day for a rep that produced nothing (§14 meters what was used; this
+  // was not used).
+  let refunded = false
+  if (!heardUser) {
+    const credit = await refundRep(user.id)
+    refunded = credit.ok
+  }
 
   revalidateReadPaths()
-  return { ok: true, message: null }
+  return { ok: true, message: null, refunded }
 }
 
 function round2(value: number): number {

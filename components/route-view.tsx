@@ -14,7 +14,7 @@ import { AlertTriangle } from 'lucide-react'
 import { LegalScreen } from './screens/legal-screens'
 
 const authRoutes = new Set<AuthRoute>(['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password'])
-const onboardingRoutes = new Set<OnboardingRoute>(['/onboarding/track', '/onboarding/focus', '/onboarding/experience', '/onboarding/mic', '/onboarding/ready'])
+const onboardingRoutes = new Set<OnboardingRoute>(['/onboarding/track', '/onboarding/focus', '/onboarding/experience', '/onboarding/name', '/onboarding/mic', '/onboarding/ready'])
 const sessionViews = new Set<SessionView>(['result', 'scorecard', 'transcript'])
 
 /**

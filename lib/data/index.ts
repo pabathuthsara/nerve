@@ -14,6 +14,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { sessionStatus } from './session'
 import { assignToday } from '@/app/field/actions'
 import type { Milestone } from '@/lib/field/milestones'
 import { interviewers, interviewSetup } from './mock/interview'
@@ -23,6 +25,7 @@ import {
   fetchFieldStats,
   fetchLifetimeStats,
   fetchPendingMilestone,
+  fetchPlanWaitlist,
   fetchPendingUnlock,
   fetchPersona,
   fetchPersonaMemory,
@@ -30,6 +33,7 @@ import {
   fetchLatestFocus,
   fetchLibrary,
   fetchLibraryCard,
+  fetchLibraryReads,
   fetchPersonas,
   fetchScorecard,
   fetchSession,
@@ -150,12 +154,14 @@ function useMock<T>(value: T, delay = 280): Loadable<T> {
 const NO_PERSONAS: Persona[] = []
 /** Stable empty arrays: a fresh literal each render restarts every effect. */
 const NO_CARDS: LibraryCard[] = []
+const NO_READS: string[] = []
 const NO_FOCUS: string[] = []
 const NO_POINTS: ProgressPoint[] = []
 const NO_REVIEWS: WeeklyReview[] = []
 const NO_SESSIONS: SessionSummary[] = []
 const NO_TURNS: TranscriptTurn[] = []
 const NO_PROGRESS: PersonaProgress[] = []
+const NO_WAITLIST: string[] = []
 const NO_LOG: FieldLogEntry[] = []
 
 export function usePersonas(): Loadable<Persona[]> {
@@ -180,12 +186,48 @@ export function useLibraryCard(slug: string): Loadable<LibraryCard | null> {
   return useAsync(() => fetchLibraryCard(slug), null, [slug])
 }
 
+/** Slugs this person has read (§10 D). Empty is the ordinary first answer. */
+export function useLibraryReads(): Loadable<string[]> {
+  return useAsync(fetchLibraryReads, NO_READS, [])
+}
+
 export function usePersona(id: string): Loadable<Persona | null> {
   return useAsync(() => fetchPersona(id), null, [id])
 }
 
+/**
+ * The signed-in user, and the one hook that notices when there is not one.
+ *
+ * Every protected screen reads this, and most of them draw skeletons while
+ * `user` is null — which was fine for "still loading" and wrong for "there is
+ * no session". The route guard only runs on the server, so a client whose
+ * session has gone (expired, revoked, signed out in another tab, cookies
+ * cleared) kept rendering a page the server had already decided it was allowed
+ * to see, with every read returning nothing. The result was a screen of
+ * skeletons that never resolved, and no way out of it but a manual reload.
+ *
+ * Now it sends them to log in — but only on `signed-out`, which is the auth
+ * server actually answering. A read that could not reach it at all is left
+ * alone, because bouncing somebody to a login screen over a dropped connection
+ * is a worse bug than the one being fixed.
+ */
 export function useUserState(): Loadable<UserState | null> {
-  return useAsync(fetchUserState, null, [])
+  const state = useAsync(fetchUserState, null, [])
+  const router = useRouter()
+  const { data, loading } = state
+
+  useEffect(() => {
+    if (loading || data) return
+    if (sessionStatus() !== 'signed-out') return
+    // `replace`, not `push`: a page they were not signed in for does not belong
+    // in their history. No `next` — `/` is already the one place that decides
+    // where a signed-in person lands, including part-way through onboarding,
+    // and a redirect target read off the URL is an open redirect waiting to be
+    // found.
+    router.replace('/login')
+  }, [data, loading, router])
+
+  return state
 }
 
 /**
@@ -228,6 +270,11 @@ export function useTranscript(sessionId: string): Loadable<TranscriptTurn[]> {
 
 export function useLifetimeStats(): Loadable<LifetimeStats | null> {
   return useAsync(fetchLifetimeStats, null, [])
+}
+
+/** Paid plans this user has already asked to be told about. */
+export function usePlanWaitlist(): Loadable<string[]> {
+  return useAsync(fetchPlanWaitlist, NO_WAITLIST, [])
 }
 
 export function usePersonaProgress(personaId?: string): Loadable<PersonaProgress[] | PersonaProgress | null> {

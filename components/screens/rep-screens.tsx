@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { ChevronLeft, LockKeyhole, WifiOff } from 'lucide-react'
+import { ChevronLeft, LockKeyhole, MicOff, WifiOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { useInterviewers, useLatestFocus, usePersona, usePersonaMemory, usePersonaProgress, useUserState } from '@/lib/data'
-import { techniqueForSubScore } from '@/lib/techniques/library'
+import { techniqueBySlug, techniqueForSubScore } from '@/lib/techniques/library'
+import { focusPlan } from '@/lib/data/focus'
 import { MemoryLine } from './memory-line'
 import { DATING_DURATION_MS, useRepSession, type LiveRepConfig, type SpeakingState } from '@/lib/data/rep'
 import { WRAP_UP_MS } from '@/lib/data/rep-rules'
@@ -79,7 +80,11 @@ export function RepBriefScreen({ personaId, interview = false }: RepScreenProps)
   const setting = interview ? `${interviewer?.styleLabel ?? 'Interviewer'} · ${interviewer?.gender ?? ''}` : persona?.setting ?? ''
   const hook = interview ? interviewer?.blurb ?? '' : persona?.hook ?? ''
   const back = interview ? '/interview/interviewers' : `/roster/${personaId}`
-  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}><Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link><section className="brief-shell"><FluidPersona name={subject.name} personaId={subject.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={132} /><h1 className="display-lg">{subject.name}</h1><span className="label">{setting}</span><p className="brief-hook">{hook}</p>{!interview && progress && progress.attempts > 0 ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span> : null}{!interview ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} /> : null}<RuleBlock interview={interview} />{!interview ? <TechniqueOfTheSession /> : null}{!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}<Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button><Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} /><TrainingWheelsOffModal open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /><MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} /></main>
+  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}><Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link><section className="brief-shell"><FluidPersona name={subject.name} personaId={subject.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={132} /><h1 className="display-lg">{subject.name}</h1><span className="label">{setting}</span><p className="brief-hook">{hook}</p>{!interview && progress && progress.attempts > 0 ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span> : null}{!interview ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} /> : null}<RuleBlock interview={interview} />{!interview ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}{!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}<Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button>{/* The way out of the microphone, offered at the exact moment somebody
+    is deciding whether to grant it (P1). Same character, no permission,
+    no quota — and it is a link rather than a modal because a person
+    hesitating here should not have to answer another question. */}
+{!interview ? <Link className="arena-button arena-button--ghost arena-button--full" href={`/text/${personaId}`}>Not ready to talk? Type instead</Link> : null}<Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} /><TrainingWheelsOffModal open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /><MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} /></main>
 }
 
 export function RepLiveScreen({ personaId, interview = false, live = null }: RepScreenProps) {
@@ -168,27 +173,62 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
   const connecting = session.status === 'connecting'
   const statusLine = connecting
     ? null
-    : speakingLabel(session.speaking, subject?.name ?? (interview ? 'interviewer' : 'her'), session.band)
+    : speakingLabel(session.speaking, subject?.name ?? (interview ? 'interviewer' : 'her'), session.band, session.userLevel)
   const loss = session.outcome && !session.outcome.won
   // Thirty seconds out — the same instant she is told to wind down. Gone once
   // the clock reads zero, because at that point she is finishing, not being
   // hurried.
   const wrapCue = !session.outcome && session.status === 'live'
     && session.msRemaining > 0 && session.msRemaining <= WRAP_UP_MS
+  // F-10. "Listening" was a label, not a signal: a whole rep could run with a
+  // muted headset, the wrong input device or a permission the browser quietly
+  // withheld, and the interface said the same thing throughout.
+  //
+  // Gated on never having been heard AT ALL, not on a recent silence, because
+  // letting a silence sit is something the format explicitly allows — telling
+  // somebody "we can't hear you" while they are deliberately holding a pause
+  // would be a worse bug than the one being fixed. It is also not coaching:
+  // it says nothing about the conversation (§05).
+  const silentFor = durationMs - session.msRemaining
+  const unheard = !session.outcome && session.status === 'live'
+    && !session.heardUser && silentFor >= SILENCE_NUDGE_MS
   const visualWarmth = session.outcome?.won ? 100 : loss ? 0 : session.warmth
-  return <main className={`rep-live${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label="End rep" disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{interview && session.question ? <p className="interview-question">{session.question}</p> : null}<section className="rep-center">{caption && subject ? <div className="rep-caption"><strong>{subject.name}</strong><span>{interview ? interviewer?.styleLabel : persona?.settingShort}</span></div> : null}<div className="orb-stage"><FluidPersona name={subject.name} personaId={subject.id} warmth={visualWarmth} announceWarmth speaking={loss ? 'thinking' : session.speaking} userLevel={session.userLevel} personaLevel={session.personaLevel} status={session.status === 'connecting' ? 'connecting' : 'live'} interactive fill /></div>{connecting ? <span className="label rep-connecting">Connecting · she can’t hear you yet</span> : null}{!connecting && level < 4 && !session.outcome ? <div className="band-readout"><span className="label" style={{ color: bandCss(session.band) }}>{displayBand}</span>{session.trainingWheels ? <strong className="data"><small>Warmth</small>{session.warmth}<i>/ {session.threshold}</i></strong> : null}</div> : null}{wrapCue ? <span className="wrap-cue label">30 seconds · land the conversation</span> : null}{session.outcome?.won && session.outcome.phoneNumber ? <PhoneNumberCard number={session.outcome.phoneNumber} /> : null}{loss ? <p className="exit-line">“{session.outcome?.exitLine}”</p> : null}<div className="mic-status" aria-live="polite">{statusLine}</div><div className="sr-only" aria-live="polite">{wrapCue ? 'Thirty seconds left. Land the conversation.' : bandAnnouncement(session.band, interview)}</div></section>{interview ? <span className="question-count data">Q{session.questionIndex} / {session.questionTotal}</span> : null}{resumeCount ? <div className="resume-count data">{resumeCount}</div> : null}<EndRepModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={() => { setEndOpen(false); session.end() }} /><MicLostModal open={micLost} onResume={() => { setMicLost(false); resume() }} onEnd={() => { setMicLost(false); session.end() }} /><MicBlockedSheet open={micBlocked} onClose={() => { setMicBlocked(false); session.end() }} onRetry={() => { setMicBlocked(false); session.retry() }} /><ConnectionLostModal open={session.error === 'connection'} attempt={session.retryAttempt} onRetry={session.retry} onEnd={session.end} /></main>
+  return <main className={`rep-live${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label="End rep" disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{interview && session.question ? <p className="interview-question">{session.question}</p> : null}<section className="rep-center">{caption && subject ? <div className="rep-caption"><strong>{subject.name}</strong><span>{interview ? interviewer?.styleLabel : persona?.settingShort}</span></div> : null}<div className="orb-stage"><FluidPersona name={subject.name} personaId={subject.id} warmth={visualWarmth} announceWarmth speaking={loss ? 'thinking' : session.speaking} userLevel={session.userLevel} personaLevel={session.personaLevel} status={session.status === 'connecting' ? 'connecting' : 'live'} interactive fill /></div>{connecting ? <span className="label rep-connecting">Connecting · she can’t hear you yet</span> : null}{!connecting && level < 4 && !session.outcome ? <div className="band-readout"><span className="label" style={{ color: bandCss(session.band) }}>{displayBand}</span>{session.trainingWheels ? <strong className="data"><small>Warmth</small>{session.warmth}<i>/ {session.threshold}</i></strong> : null}</div> : null}{wrapCue ? <span className="wrap-cue label">30 seconds · land the conversation</span> : null}{session.outcome?.won && session.outcome.phoneNumber ? <PhoneNumberCard number={session.outcome.phoneNumber} /> : null}{loss ? <p className="exit-line">“{session.outcome?.exitLine}”</p> : null}{unheard ? <p className="silence-nudge" role="status"><MicOff size={15} strokeWidth={1.5} /> We can&apos;t hear you. Check your microphone and input device.</p> : null}<div className="mic-status" aria-live="polite">{statusLine}</div><div className="sr-only" aria-live="polite">{wrapCue ? 'Thirty seconds left. Land the conversation.' : bandAnnouncement(session.band, interview)}</div></section>{interview ? <span className="question-count data">Q{session.questionIndex} / {session.questionTotal}</span> : null}{resumeCount ? <div className="resume-count data">{resumeCount}</div> : null}<EndRepModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={() => { setEndOpen(false); session.end() }} /><MicLostModal open={micLost} onResume={() => { setMicLost(false); resume() }} onEnd={() => { setMicLost(false); session.end() }} /><MicBlockedSheet open={micBlocked} onClose={() => { setMicBlocked(false); session.end() }} onRetry={() => { setMicBlocked(false); session.retry() }} /><ConnectionLostModal open={session.error === 'connection'} attempt={session.retryAttempt} onRetry={session.retry} onEnd={session.end} /></main>
 }
 
 function BriefGate({ title, description, href, locked = false }: { title: string; description: string; href: string; locked?: boolean }) {
   return <main className="brief-page"><section className="brief-shell brief-gate">{locked ? <LockKeyhole size={34} strokeWidth={1.5} /> : <WifiOff size={34} strokeWidth={1.5} />}<span className="label">Rep unavailable</span><h1 className="display-lg">{title}</h1><p className="brief-hook">{description}</p><Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href={href}>Go back</Link></section></main>
 }
 
-function speakingLabel(speaking: SpeakingState, name: string, band: Band) {
+/** How long a rep may hear nothing before it says so (F-10). */
+const SILENCE_NUDGE_MS = 15_000
+
+function speakingLabel(speaking: SpeakingState, name: string, band: Band, level: number) {
   if (speaking === 'thinking') return null
-  if (speaking === 'none') return <><i style={{ background: 'var(--volt)' }} /> listening</>
-  if (speaking === 'user') return <><i style={{ background: 'var(--cool)' }} /> you</>
   if (speaking === 'persona') return <><b style={{ background: bandCss(band) }} /> {name.toLowerCase()}</>
-  return <><i style={{ background: 'var(--volt)' }} /> listening</>
+  // "Listening" used to be a word beside a dot that never moved. It is now the
+  // input stream itself — the same analyser the avatar reads — so a
+  // microphone that is not working is visible rather than merely claimed.
+  return <><InputMeter level={level} /> {speaking === 'user' ? 'you' : 'listening'}</>
+}
+
+/**
+ * The live input level (F-10).
+ *
+ * Four hairlines rather than a number: this is a signal that something is
+ * arriving, not a measurement anybody should read. It sits inside the status
+ * line it replaces, so nothing new competes with the bloom (§05).
+ */
+function InputMeter({ level }: { level: number }) {
+  const bars = 4
+  const lit = Math.min(bars, Math.round(level * bars * 1.6))
+  return (
+    <span className="input-meter" aria-hidden="true">
+      {Array.from({ length: bars }, (_, index) => (
+        <i key={index} className={index < lit ? 'is-live' : undefined} />
+      ))}
+    </span>
+  )
 }
 
 function bandCss(band: Band) { return `var(--band-${band.toLowerCase()})` }
@@ -206,18 +246,24 @@ function bandAnnouncement(band: Band, interview: boolean) { if (interview) retur
  * a briefing that turns into a lesson is the same mistake moved thirty seconds
  * earlier — the moment before the mic opens stays a single action.
  *
- * Silent before the first graded rep. Advice about a rep nobody has run yet is
- * not advice.
+ * Before the first graded rep it falls back to the onboarding answer, which is
+ * the only thing we know about somebody who has not trained yet — and which
+ * used to buy them nothing at all. It is still advice about a rep they have
+ * run, in the world; it is just their word for it rather than a grader's.
+ *
+ * Silent when there is neither. Advice invented out of nothing is not advice.
  */
-function TechniqueOfTheSession() {
-  const { data: focus, loading } = useLatestFocus()
-  const weakest = focus[0]
-  const card = weakest ? techniqueForSubScore(weakest) : null
+function TechniqueOfTheSession({ focus }: { focus: 'opening' | 'sustaining' | 'flirting' | 'rejection' | null }) {
+  const { data: graded, loading } = useLatestFocus()
+  const weakest = graded[0]
+  const fromGrade = weakest ? techniqueForSubScore(weakest) : null
+  const plan = focusPlan(focus)
+  const card = fromGrade ?? (plan ? techniqueBySlug(plan.cardSlug) : null)
   if (loading || !card) return null
   return (
     <Link href={`/library/${card.slug}`} className="brief-technique">
-      <span className="label">Work on · {card.title}</span>
-      <p>{card.summary}</p>
+      <span className="label">{fromGrade ? 'Work on' : 'You said the hard part is'} · {fromGrade ? card.title : plan?.label}</span>
+      <p>{fromGrade ? card.summary : `${card.title}. ${card.summary}`}</p>
     </Link>
   )
 }

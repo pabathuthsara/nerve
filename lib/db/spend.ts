@@ -38,7 +38,7 @@ import { supabaseAdmin } from './admin'
  * to keep talking. The failure that shares a bucket is the one where a bug in
  * a screen nobody is looking at silences the character mid-sentence.
  */
-export type SpendBucket = 'token' | 'grade' | 'warmth' | 'llm' | 'tts'
+export type SpendBucket = 'token' | 'grade' | 'warmth' | 'llm' | 'tts' | 'text'
 
 interface BucketPolicy {
   /** Requests allowed inside the window. */
@@ -68,6 +68,12 @@ const POLICY: Record<SpendBucket, BucketPolicy> = {
   warmth: { limit: 40, windowSeconds: 60 },
   llm: { limit: 60, windowSeconds: 60 },
   tts: { limit: 60, windowSeconds: 60 },
+  // Text mode (P1). One call per message somebody types, and nobody types
+  // faster than this — but it gets its own allowance rather than sharing the
+  // live rep's, because the whole point of one bucket per route family is that
+  // a loop in the cheap unmetered thing cannot silence the expensive metered
+  // one. Text costs no voice minutes and no quota; it still costs tokens.
+  text: { limit: 30, windowSeconds: 60 },
 }
 
 /**
@@ -113,6 +119,18 @@ function projectHalted(): boolean {
 export type SpendDecision = { ok: true } | { ok: false; response: Response }
 
 /**
+ * The same verdict, before it is dressed as an HTTP response.
+ *
+ * Server Actions need this shape: they return `{ ok, message }` rather than
+ * throwing (a thrown Server Action error reaches the client as an opaque
+ * digest), so handing one a `Response` to unpack would mean serialising a
+ * refusal only to parse it back. `maySpend` is this plus the wrapper.
+ */
+export type SpendVerdict =
+  | { ok: true }
+  | { ok: false; status: number; message: string; retryAfter?: number }
+
+/**
  * May this caller spend on this route, right now?
  *
  * Returns a union rather than throwing, the same shape and for the same reason
@@ -131,6 +149,25 @@ export async function maySpend(
   userId: string,
   bucket: SpendBucket,
 ): Promise<SpendDecision> {
+  const verdict = await spendVerdict(userId, bucket)
+  if (verdict.ok) return { ok: true }
+  const headers = verdict.status === 429 && verdict.retryAfter
+    ? { 'Retry-After': String(verdict.retryAfter) }
+    : undefined
+  return {
+    ok: false,
+    response: NextResponse.json(
+      { error: verdict.message },
+      { status: verdict.status, ...(headers ? { headers } : {}) },
+    ),
+  }
+}
+
+/** The decision itself. See `SpendVerdict`. */
+export async function spendVerdict(
+  userId: string,
+  bucket: SpendBucket,
+): Promise<SpendVerdict> {
   // Internal callers are the calibration harnesses, which drive the deployed
   // routes on purpose so they measure the route rather than a re-implementation
   // of it. They authenticate with `INTERNAL_API_SECRET`, which is not set in
@@ -140,10 +177,8 @@ export async function maySpend(
   if (projectHalted()) {
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: 'Training is paused right now. Nothing is wrong with your account.' },
-        { status: 503 },
-      ),
+      status: 503,
+      message: 'Training is paused right now. Nothing is wrong with your account.',
     }
   }
 
@@ -175,30 +210,24 @@ export async function maySpend(
   if (verdict.reason === 'halted') {
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: 'This account is paused. Get in touch and we will sort it out.' },
-        { status: 503 },
-      ),
+      status: 503,
+      message: 'This account is paused. Get in touch and we will sort it out.',
     }
   }
 
   if (verdict.reason === 'cap') {
     return {
       ok: false,
-      response: NextResponse.json(
-        { error: 'You have hit today’s limit. It resets at midnight your time.' },
-        { status: 429 },
-      ),
+      status: 429,
+      message: 'You have hit today’s limit. It resets at midnight your time.',
     }
   }
 
-  const retryAfter = Math.max(1, Math.round(verdict.retry_after ?? 1))
   return {
     ok: false,
-    response: NextResponse.json(
-      { error: 'Too fast. Give it a moment.' },
-      { status: 429, headers: { 'Retry-After': String(retryAfter) } },
-    ),
+    status: 429,
+    message: 'Too fast. Give it a moment.',
+    retryAfter: Math.max(1, Math.round(verdict.retry_after ?? 1)),
   }
 }
 

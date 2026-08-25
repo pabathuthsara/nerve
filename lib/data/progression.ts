@@ -16,6 +16,7 @@
  */
 
 import { ARM_THRESHOLD, KEEP_THRESHOLD } from './rep-rules'
+import { personaRankFor, type FocusArea } from './focus'
 import type { Band, Level } from './types'
 
 /**
@@ -242,11 +243,19 @@ export function wonFromRep(input: {
  * to pick from every morning is a decision before the hard part, and the hard
  * part is the point. The rule: the hardest tier you have unlocked, and inside
  * it the character you have faced least, oldest first.
+ *
+ * `focus` is the onboarding answer, and it is deliberately the LAST tie-break
+ * rather than the first. On a fresh account nobody has been faced yet, so it
+ * decides the first rep — which is the whole complaint it answers. After that
+ * the rotation has real numbers in it and this stops mattering, because a
+ * questionnaire answer that pinned somebody to one character forever would be
+ * a worse bug than the one being fixed.
  */
 export function chooseTodayPersona<T extends { id: string; level: Level; locked: boolean }>(
   personas: T[],
   progress: { personaId: string; attempts: number; lastAttemptAt: string | null }[],
   currentLevel: Level,
+  focus?: FocusArea | null,
 ): T | null {
   const available = personas.filter((persona) => !persona.locked && persona.level <= currentLevel)
   const pool = available.length > 0 ? available : personas.filter((persona) => !persona.locked)
@@ -258,7 +267,11 @@ export function chooseTodayPersona<T extends { id: string; level: Level; locked:
   const attemptsFor = (id: string) => progress.find((entry) => entry.personaId === id)?.attempts ?? 0
   const lastFor = (id: string) => progress.find((entry) => entry.personaId === id)?.lastAttemptAt ?? ''
 
-  return [...contenders].sort((a, b) => attemptsFor(a.id) - attemptsFor(b.id) || lastFor(a.id).localeCompare(lastFor(b.id)))[0] ?? null
+  return [...contenders].sort((a, b) =>
+    attemptsFor(a.id) - attemptsFor(b.id)
+    || personaRankFor(focus, a.id) - personaRankFor(focus, b.id)
+    || lastFor(a.id).localeCompare(lastFor(b.id)),
+  )[0] ?? null
 }
 
 /** The band tone a level card wears. Cosmetic, and consistent everywhere. */

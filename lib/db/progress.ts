@@ -16,6 +16,7 @@ import 'server-only'
 
 import { supabaseAdmin } from './admin'
 import { daysBetween, localDay } from '@/lib/data/day'
+import { repsAllowedToday } from '@/lib/data/allowance'
 import { engineRung, qualifyingByLevel, uiLevel, unlockedLevels, UNLOCK_RULES } from '@/lib/data/progression'
 import { rankFor } from '@/lib/data/rank'
 import { unlockedTier, type FieldHistory } from '@/lib/field/assignment'
@@ -31,6 +32,32 @@ export interface QuotaResult {
 async function timezoneFor(userId: string): Promise<string | null> {
   const { data } = await supabaseAdmin().from('profiles').select('timezone').eq('id', userId).maybeSingle()
   return data?.timezone ?? null
+}
+
+/** The columns every quota question needs. Day one is one of the answers. */
+const QUOTA_COLUMNS = 'reps_per_day, reps_used_today, reps_day, created_at'
+
+interface QuotaRow {
+  reps_per_day: number
+  reps_used_today: number
+  reps_day: string
+  created_at: string
+}
+
+/**
+ * What this account may run today — the plan's number, or day one's.
+ *
+ * Every quota question goes through here rather than reading `reps_per_day`
+ * directly, because three places asking the same question three ways is how a
+ * user gets handed a credential for a rep the counter then refuses to spend.
+ * See `lib/data/allowance.ts` for why day one is three.
+ */
+function allowanceFor(row: QuotaRow, zone: string | null, today: string): number {
+  return repsAllowedToday({
+    repsPerDay: row.reps_per_day,
+    createdOn: row.created_at ? localDay(new Date(row.created_at), zone) : null,
+    today,
+  })
 }
 
 /**
@@ -52,7 +79,7 @@ export async function consumeRep(userId: string): Promise<QuotaResult> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const { data: row } = await admin
       .from('entitlements')
-      .select('reps_per_day, reps_used_today, reps_day')
+      .select(QUOTA_COLUMNS)
       .eq('user_id', userId)
       .maybeSingle()
 
@@ -61,8 +88,9 @@ export async function consumeRep(userId: string): Promise<QuotaResult> {
     // train at all, and the ledger still records what it cost.
     if (!row) return { ok: true, message: null, remaining: null }
 
+    const allowed = allowanceFor(row, zone, today)
     const used = row.reps_day === today ? row.reps_used_today : 0
-    if (used >= row.reps_per_day) {
+    if (used >= allowed) {
       return { ok: false, message: 'You are out of reps for today.', remaining: 0 }
     }
 
@@ -72,16 +100,74 @@ export async function consumeRep(userId: string): Promise<QuotaResult> {
       .eq('user_id', userId)
       .eq('reps_day', row.reps_day)
       .eq('reps_used_today', row.reps_used_today)
-      .select('reps_per_day, reps_used_today')
+      .select('reps_used_today')
       .maybeSingle()
 
     if (updated) {
-      return { ok: true, message: null, remaining: Math.max(0, updated.reps_per_day - updated.reps_used_today) }
+      return { ok: true, message: null, remaining: Math.max(0, allowed - updated.reps_used_today) }
     }
     // Somebody else moved the row between the read and the write. Read again.
   }
 
   return { ok: false, message: 'Could not reserve a rep. Try again.', remaining: null }
+}
+
+/**
+ * Gives a rep back.
+ *
+ * The quota is spent when the transport connects, which is before anybody
+ * knows whether the microphone was actually working. A rep that recorded no
+ * user speech is not a rep the user had — it is a rep that happened to them —
+ * and charging a free account's only daily attempt for one is the difference
+ * between a first session that recovers and a first session that ends.
+ *
+ * Same conditional-UPDATE shape as `consumeRep`, and the same refusal to care
+ * if it loses: the counter is allowed to be generous, never stingy. Only
+ * today's counter can be credited — yesterday's is already reset by the day
+ * key, so there is nothing there to give back.
+ */
+export async function refundRep(userId: string): Promise<QuotaResult> {
+  const admin = supabaseAdmin()
+  const zone = await timezoneFor(userId)
+  const today = localDay(new Date(), zone)
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { data: row } = await admin
+      .from('entitlements')
+      .select(QUOTA_COLUMNS)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    // No row means nothing was metered in the first place.
+    if (!row) return { ok: true, message: null, remaining: null }
+
+    const allowed = allowanceFor(row, zone, today)
+
+    if (row.reps_day !== today || row.reps_used_today <= 0) {
+      const remaining = row.reps_day === today
+        ? Math.max(0, allowed - row.reps_used_today)
+        : allowed
+      return { ok: true, message: null, remaining }
+    }
+
+    const { data: updated } = await admin
+      .from('entitlements')
+      .update({ reps_used_today: row.reps_used_today - 1 })
+      .eq('user_id', userId)
+      .eq('reps_day', row.reps_day)
+      .eq('reps_used_today', row.reps_used_today)
+      .select('reps_used_today')
+      .maybeSingle()
+
+    if (updated) {
+      return { ok: true, message: null, remaining: Math.max(0, allowed - updated.reps_used_today) }
+    }
+    // Somebody else moved the row between the read and the write. Read again.
+  }
+
+  // A refund that could not land costs the user one rep, which is bad, but it
+  // is not worth failing the finish path over. The caller does not branch.
+  return { ok: false, message: null, remaining: null }
 }
 
 /**
@@ -102,7 +188,7 @@ export async function mayOpenSession(userId: string): Promise<{ ok: boolean; mes
 
   const { data: row } = await admin
     .from('entitlements')
-    .select('reps_per_day, reps_used_today, reps_day')
+    .select(QUOTA_COLUMNS)
     .eq('user_id', userId)
     .maybeSingle()
 
@@ -110,7 +196,7 @@ export async function mayOpenSession(userId: string): Promise<{ ok: boolean; mes
   if (!row) return { ok: true, message: null }
 
   const used = row.reps_day === today ? row.reps_used_today : 0
-  if (used < row.reps_per_day) return { ok: true, message: null }
+  if (used < allowanceFor(row, zone, today)) return { ok: true, message: null }
 
   const since = new Date(Date.now() - RECONNECT_WINDOW_MS).toISOString()
   const { count } = await admin

@@ -289,6 +289,99 @@ the shape. It is the only number that decides anything.
 
 ---
 
+## Phase E · The activation path · **shipped 25 Aug**
+
+Not in the original plan, and it should have been. The app was walked cold —
+sign up, one rep, every signed-in route — and the eight defects that fell out
+all sit between the sign-up form and the first score. They are recorded in full
+as **B13** in `LAUNCH-GAP.md`; the short version is that the worst realistic
+first session ended with an unheard microphone, a rep spent on it, a result
+screen blaming the user for it, no grade, and a locked home screen.
+
+What landed: onboarding resumes at the first unanswered step instead of
+restarting; the mic gate has a pending state, a twelve-second timeout, recovery
+copy and a real escape; sign-out exists inside onboarding; the duplicated brief
+is gone; a rep that recorded no user speech is refunded and says so; the
+transcript's zero-turn case no longer contradicts its own header; `Win rate` is
+replaced by mean composite (§07); and both dead Upgrade buttons now record
+demand instead of doing nothing.
+
+**Owed by hand:** the silent-rep result copy has not been seen against a real
+three-minute rep, because that needs a working microphone rather than a stub.
+
+**Found while testing, fixed, and one thing corrected.** Every read in
+`lib/data/queries.ts` opened with its own `supabase.auth.getUser()` — six call
+sites, and `getUser()` is a network round-trip to `/auth/v1/user` rather than a
+local token decode. One screen fired four of them before fetching a row. That is
+now a single memoised lookup per browser client (`lib/data/session.ts`), dropped
+only when the identity actually changes, with twelve tests in
+`lib/data/session.test.ts` — the load-bearing one asserts that six concurrent
+readers produce one call. `useUserState` also now sends a genuinely signed-out
+client to `/login` rather than leaving it on a page whose every read returns
+nothing. Recorded as **B14** in `LAUNCH-GAP.md`.
+
+The correction: the symptom that led there — screens sitting in skeletons that
+never resolve — was **not** a product defect. It was the automated browser
+window being occluded: the page runs but never paints, and React never begins
+hydrating, so nothing is attached, no reads are issued and every control is
+inert. Timers and `MessageChannel` resolve normally, which is precisely what
+made it read as a data-layer problem, and no exception is raised anywhere —
+hydration is not failing, it never starts. It does not reproduce in a visible
+tab.
+
+---
+
+## Phase F · Earn the second session · **shipped 25 Aug**
+
+The other half of the cold walk. Phase E fixed the session that could end with
+nothing; this is the day that could contain nothing — seven items between "the
+first rep is over" and "why would I open this again". Recorded in full as
+**B15** in `LAUNCH-GAP.md`.
+
+What landed:
+
+- **Day one is three reps on every plan** (`lib/data/allowance.ts`). Keyed off
+  `entitlements.created_at`, which has no user write path, so a second day one
+  cannot be minted; the ceiling after that is unchanged. Recorded as drift
+  **D11**, because §14 says one a day on free and this deliberately does not.
+- **Text mode** — `/text/[personaId]`, the same character and contract with no
+  microphone, no clock, no meter, no score and no quota. It is the on-ramp for
+  a first session and the thing that is still open when the day's reps are
+  gone, which is why `/train`'s primary action stops being a dead OUT OF REPS.
+  Unmetered to the user is not unmetered to us: its own `text` spend bucket,
+  and a warmth curve capped below `ARM_THRESHOLD` so the number a voice rep
+  exists to earn can never be farmed here.
+- **Character memory reaches both arms.** The Realtime mint read it; the
+  assembled pipeline never did. One module now (`lib/db/persona-context.ts`),
+  carrying the memory line and the user's first name, resolved from the
+  authenticated user rather than from anything a client sent.
+- **The onboarding answers spend.** `focus_area` decides the first character,
+  the first field challenge and the brief's technique card before any rep is
+  graded (`lib/data/focus.ts`). Last tie-break in the persona choice, so it
+  settles the first rep and then leaves the rotation alone.
+- **A first name**, asked skippably in onboarding, and a contract that is told
+  when she may know it. §08's `usesYourName` dial finally has something to open.
+- **The library goes back to the gym.** "Run a rep on this" on every card wired
+  to an authored character rule (`lib/techniques/scenario.ts`), next/previous
+  inside the section, a read mark, and one card per section
+  (`lib/techniques/grouping.ts`) so fourteen stop reading as eighteen.
+- **A real input meter and a silence nudge** on the live rep. Gated on never
+  having been heard at all, so a deliberate pause is never mistaken for a dead
+  microphone.
+
+**Owed by hand:** the input meter and the nudge have not been seen against a
+real three-minute rep — same reason as Phase E's silent-rep copy, it needs a
+working microphone rather than a stub. The `personaSlugs` preference in
+`lib/data/focus.ts` frequently has nothing to choose between while the roster
+is three characters; it is the mechanism the roster is being filled for.
+
+**What is still owed from the same teardown, and is P2 rather than P1:** share
+cards for the rejection ledger, the warmth curve and rank promotions; streak
+freeze and repair; delivery analytics; surfacing memory in the *voice* brief
+beyond the line already there; repricing on capability; filling the roster.
+
+---
+
 ## The order, in one list
 
 1. **A1** Blind provider A/B — ten people *(unblocks M3's sound work and M4's pricing)*
@@ -300,7 +393,10 @@ the shape. It is the only number that decides anything.
 7. **B5** `grade:calibrate` green → **M2 closes**
 8. ~~**C1–C5** Ranks, library, progress, orphaned overlays, interview decision~~
    **shipped 24 Aug** — except sourcing the room beds, which is procurement
-9. **Phase D** — M3
+9. ~~**Phase E** The activation path~~ **shipped 25 Aug**
+10. ~~**Phase F** Earn the second session — day one, text mode, the onboarding
+    answers, the name, the library, the input meter~~ **shipped 25 Aug**
+11. **Phase D** — M3
 
 ### What is left before M3
 

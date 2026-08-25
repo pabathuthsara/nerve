@@ -350,6 +350,67 @@ async function main(): Promise<void> {
     const { data: bSeesSafety } = await b.from('safety_events').select('id').eq('user_id', aId)
     check((bSeesSafety ?? []).length === 0, 'B cannot read A\'s safety events')
 
+    console.log('\ntext mode (P1)')
+    // The one training surface that costs no quota. It is still per-account,
+    // and it is still the user's own — all four verbs, like `persona_memory`,
+    // because starting fresh is theirs and nobody would pay to change what
+    // they themselves typed.
+    const { error: threadError } = await a
+      .from('text_threads')
+      .insert({
+        user_id: aId,
+        persona_slug: 'nadia',
+        turns: [{ speaker: 'user', text: 'that shelf looks like it wronged you', at: new Date().toISOString() }],
+      })
+    check(!threadError, `A can start her own text thread${threadError ? ` (${threadError.message})` : ''}`)
+
+    const { data: bSeesThread } = await b.from('text_threads').select('id').eq('user_id', aId)
+    check((bSeesThread ?? []).length === 0, "B cannot read A's text thread")
+
+    const { error: threadForgery } = await b
+      .from('text_threads')
+      .insert({ user_id: aId, persona_slug: 'maya', turns: [] })
+    check(!!threadForgery, 'B cannot start a thread attributed to A')
+
+    const { data: bWrote } = await b
+      .from('text_threads')
+      .update({ turns: [] })
+      .eq('user_id', aId)
+      .select('id')
+    check((bWrote ?? []).length === 0, "B cannot rewrite A's thread")
+
+    const { data: bDeletedThread } = await b
+      .from('text_threads')
+      .delete()
+      .eq('user_id', aId)
+      .select('id')
+    check((bDeletedThread ?? []).length === 0, "B cannot delete A's thread")
+
+    // One rolling conversation per character, not a list of past chats. The
+    // continuity rule is that this is ONE encounter a later hello does not
+    // restart, and the unique index is what makes that true of the data.
+    const { error: secondThread } = await a
+      .from('text_threads')
+      .insert({ user_id: aId, persona_slug: 'nadia', turns: [] })
+    check(!!secondThread, 'a second thread against the same character is refused')
+
+    // The promise the whole mode is built on: typing at her never touches the
+    // counter. Read back rather than assumed.
+    const { data: afterText } = await a
+      .from('entitlements')
+      .select('reps_used_today')
+      .eq('user_id', aId)
+      .maybeSingle()
+    check(afterText?.reps_used_today === 0, 'a text thread spends no rep')
+
+    const { data: clearedThread } = await a
+      .from('text_threads')
+      .delete()
+      .eq('user_id', aId)
+      .eq('persona_slug', 'nadia')
+      .select('id')
+    check((clearedThread ?? []).length === 1, 'start fresh clears the thread')
+
     console.log('\nthe interview setup and the CV bucket')
     const { error: setupError } = await a
       .from('interview_setups')
@@ -369,6 +430,10 @@ async function main(): Promise<void> {
     const bundle = (exported ?? {}) as Record<string, unknown>
     check(!exportError && !!exported, `A can export everything we hold${exportError ? ` (${exportError.message})` : ''}`)
     check(Array.isArray(bundle['field_logs']) && (bundle['field_logs'] as unknown[]).length === 1, 'the export carries her field log')
+    // §16.7 says everything we hold. A table of things the user typed is
+    // exactly that, and the export has to move when a table like this arrives.
+    check(Array.isArray(bundle['text_threads']), 'the export knows about text mode')
+    check(Array.isArray(bundle['persona_memory']), 'and about what characters remember')
     // The other half of §18's cost story: the routes that spend money can ask
     // what today has already cost before spending more.
     const { data: spentToday } = await a.rpc('spend_today_cents')

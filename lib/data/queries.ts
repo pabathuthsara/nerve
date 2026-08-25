@@ -15,13 +15,15 @@
  */
 
 import { supabaseBrowser } from '@/lib/db/client'
+import { currentUser } from './session'
 import { anxietySeries } from '@/lib/field/anxiety'
 import { daysSinceBaseline, findRetest, retestDue, type BaselineRep } from './baseline'
 import { EMPTY_WEEK, type WeekStats } from './weekly'
 import { nextTierRequirement, unlockedTier } from '@/lib/field/assignment'
 import { milestoneFor, type Milestone } from '@/lib/field/milestones'
-import { MEMORY_BEAT_FLAG } from './ui-flags'
+import { LIBRARY_READ_PREFIX, MEMORY_BEAT_FLAG, planWaitlistFlag } from './ui-flags'
 import { localDay, nextLocalMidnight } from './day'
+import { isDayOne, repsAllowedToday } from './allowance'
 import { qualifyingByLevel, uiBand, uiLevel, uiWarmth, unlockRequirement, unlockedLevels, wonFromOutcome } from './progression'
 import { toScorecard, type StoredMetricScore, type StoredWarmthEvent } from './scorecard'
 import { RANKS, type Rank } from './rank'
@@ -72,8 +74,7 @@ function fallbackName(email: string | undefined): string {
 
 export async function fetchUserState(): Promise<UserState | null> {
   const supabase = supabaseBrowser()
-  const { data: auth } = await supabase.auth.getUser()
-  const user = auth.user
+  const user = await currentUser()
   if (!user) return null
 
   const [{ data: profile }, { data: entitlement }, { data: streak }] = await Promise.all([
@@ -84,7 +85,7 @@ export async function fetchUserState(): Promise<UserState | null> {
       .maybeSingle(),
     supabase
       .from('entitlements')
-      .select('plan, reps_per_day, reps_used_today, reps_day, renews_at')
+      .select('plan, reps_per_day, reps_used_today, reps_day, renews_at, created_at')
       .eq('user_id', user.id)
       .maybeSingle(),
     supabase.from('streaks').select('current').eq('user_id', user.id).maybeSingle(),
@@ -96,7 +97,13 @@ export async function fetchUserState(): Promise<UserState | null> {
   // simply not this day's counter, so the first read after midnight rolls it
   // without anything having had to run at midnight.
   const usedToday = entitlement && entitlement.reps_day === today ? entitlement.reps_used_today : 0
-  const perDay = entitlement?.reps_per_day ?? 0
+  // Not `reps_per_day`. Day one is three reps on every plan, and the pill, the
+  // brief screen's gate and the Server Action that spends the counter all have
+  // to be reading the same number — see `lib/data/allowance.ts`.
+  const createdOn = entitlement?.created_at ? localDay(new Date(entitlement.created_at), timezone) : null
+  const perDay = entitlement
+    ? repsAllowedToday({ repsPerDay: entitlement.reps_per_day, createdOn, today })
+    : 0
   const plan = entitlement && isPlan(entitlement.plan) ? entitlement.plan : 'free'
   const activeTrack = profile && isTrack(profile.active_track) ? profile.active_track : 'dating'
   const focus = profile?.focus_area
@@ -118,6 +125,7 @@ export async function fetchUserState(): Promise<UserState | null> {
     repsRemainingToday: Math.max(0, perDay - usedToday),
     repsPerDay: perDay,
     repsResetAt: nextLocalMidnight(new Date(), timezone).toISOString(),
+    dayOne: isDayOne(createdOn, today),
     streakDays: streak?.current ?? 0,
     plan,
     trainingWheels: profile?.training_wheels ?? true,
@@ -410,10 +418,9 @@ export async function fetchPersonaProgress(): Promise<PersonaProgress[]> {
 /** The profile header. Six figures, all of them counted rather than assumed. */
 export async function fetchLifetimeStats(): Promise<LifetimeStats> {
   const supabase = supabaseBrowser()
-  const { data: auth } = await supabase.auth.getUser()
-  const user = auth.user
+  const user = await currentUser()
 
-  const [{ data: rows }, { data: streak }] = await Promise.all([
+  const [{ data: rows }, { data: streak }, { data: scoreRows }] = await Promise.all([
     supabase
       .from('sessions')
       .select('duration_s, outcome, won, start_warmth, final_warmth')
@@ -421,6 +428,7 @@ export async function fetchLifetimeStats(): Promise<LifetimeStats> {
     user
       ? supabase.from('streaks').select('current, longest').eq('user_id', user.id).maybeSingle()
       : Promise.resolve({ data: null }),
+    supabase.from('scores').select('composite'),
   ])
 
   const sessions = rows ?? []
@@ -434,9 +442,14 @@ export async function fetchLifetimeStats(): Promise<LifetimeStats> {
     .filter((row) => typeof row.start_warmth === 'number' && typeof row.final_warmth === 'number')
     .map((row) => (row.final_warmth as number) - (row.start_warmth as number))
 
+  // Only graded reps count towards the average. An ungraded one is a missing
+  // measurement, not a zero — averaging zeros in would punish a user for a
+  // model call that failed on them.
+  const composites = (scoreRows ?? []).map((row) => row.composite).filter((value): value is number => typeof value === 'number')
+
   return {
     totalReps: sessions.length,
-    winRate: sessions.length ? Math.round((wins.length / sessions.length) * 100) : null,
+    averageScore: composites.length ? Math.round(composites.reduce((sum, value) => sum + value, 0) / composites.length) : null,
     bestTimeMs: winTimes.length ? Math.min(...winTimes) : null,
     averageWarmthGain: gains.length ? Math.round(gains.reduce((sum, gain) => sum + gain, 0) / gains.length) : null,
     currentStreak: streak?.current ?? 0,
@@ -489,8 +502,7 @@ export async function fetchFieldLog(limit = 100): Promise<FieldLogEntry[]> {
  */
 export async function fetchFieldStats(): Promise<FieldStats> {
   const supabase = supabaseBrowser()
-  const { data: auth } = await supabase.auth.getUser()
-  const user = auth.user
+  const user = await currentUser()
 
   const [{ data: logs }, { data: profile }, { data: challenges }] = await Promise.all([
     supabase
@@ -556,8 +568,7 @@ export async function fetchPersonaMemory(slug: string): Promise<PersonaMemory | 
   if (!slug) return null
 
   const supabase = supabaseBrowser()
-  const { data: auth } = await supabase.auth.getUser()
-  const user = auth.user
+  const user = await currentUser()
   if (!user) return null
 
   const { data: persona } = await supabase
@@ -585,6 +596,39 @@ export async function fetchPersonaMemory(slug: string): Promise<PersonaMemory | 
     && (flags as Record<string, unknown>)[MEMORY_BEAT_FLAG])
 
   return { line, lastSeenAt: memory?.last_seen_at ?? null, firstEver: !seen }
+}
+
+/** Which paid plans this user has already asked to be told about. */
+export async function fetchPlanWaitlist(): Promise<string[]> {
+  const supabase = supabaseBrowser()
+  const user = await currentUser()
+  if (!user) return []
+
+  const { data: profile } = await supabase.from('profiles').select('ui_flags').eq('id', user.id).maybeSingle()
+  const flags = profile?.ui_flags
+  if (!flags || typeof flags !== 'object' || Array.isArray(flags)) return []
+  const record = flags as Record<string, unknown>
+  return (['pro', 'elite'] as const).filter((plan) => !!record[planWaitlistFlag(plan)])
+}
+
+/**
+ * Which library cards this person has already read (§10 D).
+ *
+ * Slugs, off the same `ui_flags` blob the one-time beats use. A card with no
+ * read mark is not "new" — it is simply unread, which is the only state worth
+ * drawing on a fourteen-card library.
+ */
+export async function fetchLibraryReads(): Promise<string[]> {
+  const supabase = supabaseBrowser()
+  const user = await currentUser()
+  if (!user) return []
+
+  const { data: profile } = await supabase.from('profiles').select('ui_flags').eq('id', user.id).maybeSingle()
+  const flags = profile?.ui_flags
+  if (!flags || typeof flags !== 'object' || Array.isArray(flags)) return []
+  return Object.keys(flags as Record<string, unknown>)
+    .filter((key) => key.startsWith(LIBRARY_READ_PREFIX))
+    .map((key) => key.slice(LIBRARY_READ_PREFIX.length))
 }
 
 /**
@@ -645,8 +689,7 @@ export async function fetchWeeklyReview(): Promise<WeeklyReview | null> {
  */
 export async function fetchBaseline(): Promise<BaselineState | null> {
   const supabase = supabaseBrowser()
-  const { data: auth } = await supabase.auth.getUser()
-  const user = auth.user
+  const user = await currentUser()
   if (!user) return null
 
   const { data: profile } = await supabase

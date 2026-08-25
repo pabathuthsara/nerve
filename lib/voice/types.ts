@@ -295,6 +295,16 @@ export interface Persona {
   outcomeWeights: OutcomeWeights
   /** One line about the user's last attempt, injected on return visits. */
   memorySummary?: string
+
+  /**
+   * What the user is called (§08's `usesYourName` gate).
+   *
+   * First name only, and absent when they never gave one — the onboarding step
+   * that asks for it is skippable. Resolved server-side from the authenticated
+   * profile, never accepted from a client, for the same reason the contract is:
+   * a client that can post its own name can post its own character.
+   */
+  userName?: string
 }
 
 /* ------------------------------------------------------------------ *

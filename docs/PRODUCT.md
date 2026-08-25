@@ -47,6 +47,42 @@ adding the interview track is characters and a setup flow, not a second engine.
   filler control, longest monologue, response latency, plus the judgement layer
   — and the win is a story, not a grade (§07).
 
+## Text mode is the same character without the microphone
+
+`/text/[personaId]`. The same compiled contract, the same steering vocabulary,
+the same one line she carries between reps — typed.
+
+- **No microphone, no clock, no meter, no score, and no quota.** It is the
+  on-ramp for somebody who is not ready to speak out loud yet, and it is what is
+  still open when the day's voice reps are gone. When they are, `/train`'s
+  primary action becomes this rather than a dead OUT OF REPS.
+- **It can never produce a number.** Warmth in text follows the character's own
+  authored trajectory and is capped below `ARM_THRESHOLD`
+  (`lib/text/warmth.ts`), so she cannot be armed and there is no win to take.
+  The offer is the voice rep's payoff, and a payoff farmable in a mode with no
+  cost is a payoff worth nothing.
+- **It does not judge what was said.** Neither warmth pass runs: the model one
+  costs money in a mode that promises not to, and the local one reads pause
+  length, filler rate and hesitation off timings a typed message does not have.
+  Text tracks only that the conversation is continuing, which is the one thing
+  it can honestly observe.
+- **She remembers, and start fresh is two promises, not one.** The memory line
+  is shown at the top. Start fresh clears the conversation, and offers
+  separately to clear what she remembers — restarting a chat that went badly is
+  not the same as asking her to forget the bookshop.
+
+## Day one is three reps
+
+On every plan. The arc the gym teaches is fail, adjust, succeed, and it cannot
+happen inside one attempt — rationing day one to a single rep meant a new user's
+only evidence about whether this works was one conversation that probably went
+badly, with the next attempt tomorrow.
+
+The grant is keyed off `entitlements.created_at`, which has no user write path,
+so a second day one cannot be minted. The ceiling after that is exactly what §14
+says. Recorded as drift **D11** in `LAUNCH-GAP.md`, because §14's own text is
+one rep a day on free.
+
 ## The ladder
 
 Three characters, one per rung, one rung per visible tier:
@@ -122,12 +158,20 @@ at three different turn counts.
 
 1. **Landing** — what this is, and the one honest sentence about it.
 2. **Sign up** — email + password, or Google.
-3. **The questionnaire, four screens.** What are you training for → what is the
-   hard part → how often do you do this for real → microphone check. Every
-   answer is written to the profile as it is given, not batched at the end.
-4. **Straight into a rep.** Nadia, level 1, framed as a measurement rather than
-   a test. Level 1 is nearly impossible to fail on purpose: first-session
-   drop-off is where apps in this category die.
+3. **The questionnaire, five screens.** What are you training for → what is the
+   hard part → how often do you do this for real → what should she call you →
+   microphone check. Every answer is written to the profile as it is given, not
+   batched at the end, and the guard resumes at the first unanswered step.
+
+   **Every one of them is spent.** The hard part decides the first character,
+   the first field challenge and the technique card on the brief before any rep
+   is graded (`lib/data/focus.ts`). The name is what §08's `usesYourName` dial
+   opens onto — she learns it the ordinary way, when he says it or when they
+   have met before. The name step is skippable; the skip is recorded so it is
+   never asked twice.
+4. **Straight into a rep** — or into text, from the same screen. Nadia, level 1,
+   framed as a measurement rather than a test. Level 1 is nearly impossible to
+   fail on purpose: first-session drop-off is where apps in this category die.
 5. **Result → scorecard.** The number or the exit line, then the breakdown.
 
 Then, from that point on, five sections and nothing else:
@@ -137,7 +181,7 @@ Then, from that point on, five sections and nothing else:
 | **Train** | Today's rep, chosen for you. Plus today's field move and your last result. | The decision about who to face is the part people use to avoid the rep. One action, one screen. |
 | **Roster** | The progression map: three characters, three tiers, locked ones showing what they cost. | The thing to come back for. Also the only place difficulty is ever discussed. |
 | **Field** | One real-world move a day, hand-written, tiered. Plus rejections collected, the predicted-versus-actual chart, and the log. | The sim is practice; the field is the point. The chart is the one place a number is allowed to argue with the user, because it is their own. |
-| **Library** | Fourteen hand-written cards, grouped by the sub-score each one moves. | Where the scorecard's advice goes. Nobody opens this wanting "an opener" — they open it having just scored 42 on signal reading, which is why it is filed by score and not by kind. |
+| **Library** | Fourteen hand-written cards, grouped by the sub-score each one moves — one card, one section — with next/previous, a read mark, and "Run a rep on this" at the bottom of every one. | Where the scorecard's advice goes, and where it comes back from. Nobody opens this wanting "an opener" — they open it having just scored 42 on signal reading, which is why it is filed by score and not by kind. Read the technique, immediately try it, against the character that card is actually for. |
 
 **The field's four tiers no longer ride on the sim ladder alone.** T1 is day
 one, T2 opens on rung 2, T3 on rung 4 — and **T4 is earned in the field**: the

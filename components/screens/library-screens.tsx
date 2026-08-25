@@ -8,31 +8,38 @@
  * two links §07 promises: the scorecard names your weakest sub-scores, and each
  * one has to lead somewhere.
  *
- * Grouped by the sub-score it improves rather than by kind, because that is the
- * question somebody arrives with. Nobody opens this wanting "an opener"; they
- * open it having just scored 42 on signal reading.
+ * Four things this screen used not to do, all of them the same complaint —
+ * the library was a dead end that never sent anybody back to the gym:
+ *
+ *   one card, one place   a card targeting two sub-scores was drawn in both
+ *                         sections, which made fourteen cards feel like
+ *                         eighteen and a small library feel padded
+ *   read state            so a second visit is a shorter list than the first
+ *   next / previous       inside the section, so reading two is one tap
+ *   run a rep on this     the single most natural conversion in the product
+ *
+ * The grouping and the reading order are in `lib/techniques/grouping.ts`, so
+ * they are content decisions with tests rather than layout in a component.
  */
 
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
-import { useLibrary, useLibraryCard } from '@/lib/data'
-import type { LibraryCard } from '@/lib/data/types'
+import { useEffect, useMemo } from 'react'
+import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
+import { useLibrary, useLibraryCard, useLibraryReads, usePersonas, useUserState } from '@/lib/data'
+import type { LibraryCard, Persona } from '@/lib/data/types'
+import { markUiFlag } from '@/app/profile/actions'
+import { libraryReadFlag } from '@/lib/data/ui-flags'
+import { personaForCard } from '@/lib/techniques/scenario'
+import { groupLibrary } from '@/lib/techniques/grouping'
 import { AppShell } from '@/components/app-shell'
 import { Card, Chip, EmptyState, Skeleton } from '@/components/ui'
 import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
 
-/** The six, in §07's own order, so the library reads like the scorecard does. */
-const GROUPS: { key: string; title: string; blurb: string }[] = [
-  { key: 'opening', title: 'Opening', blurb: 'Getting a conversation started at all.' },
-  { key: 'curiosity', title: 'Curiosity', blurb: 'Asking about her, and going past the first answer.' },
-  { key: 'listening', title: 'Listening', blurb: 'Using what she actually gave you.' },
-  { key: 'signalReading', title: 'Signal reading', blurb: 'Reading her interest correctly, and adjusting.' },
-  { key: 'composure', title: 'Composure', blurb: 'Staying steady. Recovering counts for more than never wobbling.' },
-  { key: 'close', title: 'Close', blurb: 'How it ends — including when the answer is no.' },
-]
-
 export function LibraryScreen() {
   const { data: cards, loading } = useLibrary()
+  const { data: read } = useLibraryReads()
+  const groups = useMemo(() => groupLibrary(cards), [cards])
+  const unread = cards.length - cards.filter((card) => read.includes(card.slug)).length
 
   if (loading) {
     return <AppShell title="Library"><div className="library-grid">{[1, 2, 3, 4].map((n) => <Skeleton key={n} height={132} />)}</div></AppShell>
@@ -50,33 +57,33 @@ export function LibraryScreen() {
         <span className="label">Technique</span>
         <h1 className="display-lg">Library</h1>
         <p>Grouped by the score it moves. Start with whatever the last scorecard told you.</p>
+        {/* A count rather than a badge on every tile: fourteen cards is a
+            reading list, and knowing how much of it is left is the only thing
+            worth saying about progress through it. */}
+        <span className="label mute">{unread === 0 ? 'You have read all of them.' : `${unread} of ${cards.length} still unread`}</span>
       </div>
       <div className="library-stack">
-        {GROUPS.map((group) => {
-          const matching = cards.filter((card) => card.targets.includes(group.key))
-          if (matching.length === 0) return null
-          return (
-            <section key={group.key} className="library-group">
-              <div className="library-group__head">
-                <h2 className="display-md">{group.title}</h2>
-                <p>{group.blurb}</p>
-              </div>
-              <div className="library-grid">
-                {matching.map((card) => <CardTile key={card.slug} card={card} />)}
-              </div>
-            </section>
-          )
-        })}
+        {groups.map((group) => (
+          <section key={group.key} className="library-group">
+            <div className="library-group__head">
+              <h2 className="display-md">{group.title}</h2>
+              <p>{group.blurb}</p>
+            </div>
+            <div className="library-grid">
+              {group.cards.map((card) => <CardTile key={card.slug} card={card} read={read.includes(card.slug)} />)}
+            </div>
+          </section>
+        ))}
       </div>
     </AppShell>
   )
 }
 
-function CardTile({ card }: { card: LibraryCard }) {
+function CardTile({ card, read }: { card: LibraryCard; read: boolean }) {
   return (
-    <Link href={`/library/${card.slug}`} className="library-tile">
+    <Link href={`/library/${card.slug}`} className={`library-tile${read ? ' library-tile--read' : ''}`}>
       <Card>
-        <span className="label">{KIND_LABELS[card.kind]}{card.setting ? ` · ${card.setting}` : ''}</span>
+        <span className="label">{KIND_LABELS[card.kind]}{card.setting ? ` · ${card.setting}` : ''}{read ? <> · <Check size={11} strokeWidth={2} /> Read</> : null}</span>
         <strong className="display-sm">{card.title}</strong>
         <p>{card.summary}</p>
       </Card>
@@ -94,6 +101,26 @@ const KIND_LABELS: Record<LibraryCard['kind'], string> = {
 
 export function LibraryCardScreen({ slug }: { slug: string }) {
   const { data: card, loading } = useLibraryCard(slug)
+  const { data: cards } = useLibrary()
+  const { data: personas } = usePersonas()
+  const { data: user } = useUserState()
+
+  // Marked on arrival rather than on some scroll depth. The flag is a note
+  // about what has been shown, and `markUiFlag` is idempotent, so the second
+  // visit costs one no-op write and nothing else.
+  useEffect(() => {
+    if (!card) return
+    void markUiFlag(libraryReadFlag(card.slug))
+  }, [card])
+
+  const siblings = useMemo(() => {
+    if (!card) return []
+    return groupLibrary(cards).find((group) => group.key === card.targets[0])?.cards ?? []
+  }, [card, cards])
+
+  const index = card ? siblings.findIndex((entry) => entry.slug === card.slug) : -1
+  const previous = index > 0 ? siblings[index - 1] : undefined
+  const next = index >= 0 && index < siblings.length - 1 ? siblings[index + 1] : undefined
 
   if (loading) return <AppShell title="Library"><Skeleton height={420} /></AppShell>
   if (!card) {
@@ -129,10 +156,63 @@ export function LibraryCardScreen({ slug }: { slug: string }) {
           <section>
             <h2 className="display-md">The drill</h2>
             <Card className="try-next"><p>{card.drill}</p></Card>
-            <Link className="arena-button arena-button--primary" href="/train" style={{ marginTop: 12 }}>Run a rep</Link>
           </section>
         ) : null}
+        <PractiseThis card={card} personas={personas} repsLeft={user?.repsRemainingToday ?? null} />
+        <CardPager previous={previous} next={next} />
       </div>
     </AppShell>
+  )
+}
+
+/**
+ * Read the technique, immediately try it.
+ *
+ * The card used to end with a drill and no way to run it. Which character it
+ * sends you to is authored (`lib/techniques/scenario.ts`): the room the card
+ * names when the roster has one, and otherwise the character who genuinely
+ * trains that sub-score.
+ *
+ * When the day's voice reps are gone, this is where text mode earns its
+ * keep — it is the same character and the same technique, without the meter
+ * and without the microphone, and it is the answer to a home screen whose
+ * only verb was "wait".
+ */
+function PractiseThis({ card, personas, repsLeft }: { card: LibraryCard; personas: Persona[]; repsLeft: number | null }) {
+  const unlocked = personas.filter((persona) => !persona.locked).map((persona) => persona.id)
+  const slug = personaForCard(card, unlocked)
+  if (!slug) return null
+  const persona = personas.find((entry) => entry.id === slug)
+  const spent = repsLeft !== null && repsLeft <= 0
+
+  return (
+    <section className="library-practise">
+      <span className="label">Try it now</span>
+      {/* The drill is not repeated here. It has its own section directly
+          above when a card has one, and printing it twice in fifty pixels
+          reads as a template that ran out of things to say. */}
+      <p>{persona ? `${persona.name} — ${persona.settingShort.toLowerCase()}.` : 'Take it into a rep.'} {card.drill ? 'Run that drill against her.' : 'Run the technique in a live conversation.'}</p>
+      <div className="library-practise__actions">
+        {spent
+          ? <Link className="arena-button arena-button--primary" href={`/text/${slug}`}>Run it in text</Link>
+          : <Link className="arena-button arena-button--primary" href={`/rep/${slug}/brief`}>Run a rep on this</Link>}
+        <Link className="arena-button arena-button--ghost" href={spent ? '/train' : `/text/${slug}`}>{spent ? 'Back to training' : 'Or try it in text'}</Link>
+      </div>
+    </section>
+  )
+}
+
+/** Next and previous inside the section. Reading two should be one tap. */
+function CardPager({ previous, next }: { previous?: LibraryCard; next?: LibraryCard }) {
+  if (!previous && !next) return null
+  return (
+    <nav className="library-pager" aria-label="More in this section">
+      {previous
+        ? <Link href={`/library/${previous.slug}`} className="library-pager__link"><span className="label"><ArrowLeft size={13} strokeWidth={1.6} /> Previous</span><strong>{previous.title}</strong></Link>
+        : <span />}
+      {next
+        ? <Link href={`/library/${next.slug}`} className="library-pager__link library-pager__link--next"><span className="label">Next <ArrowRight size={13} strokeWidth={1.6} /></span><strong>{next.title}</strong></Link>
+        : <span />}
+    </nav>
   )
 }

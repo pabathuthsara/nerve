@@ -112,6 +112,20 @@ export interface RepSessionState {
   lastDelta: number
   paused: boolean
   retryAttempt: number
+  /**
+   * Whether this rep has ever heard a word from the user (F-10).
+   *
+   * Not "is there a user turn" — a character talking into silence produces
+   * plenty of those, which is exactly how a rep with a dead microphone used to
+   * reach the result screen and be reported as a rejection. This is a user
+   * turn that carried text, which is the same test `finishSession` uses to
+   * decide whether the rep is refunded.
+   *
+   * The screen raises a nudge off it. Once it is true it stays true, so a
+   * deliberate silence later in a rep — which the format explicitly allows —
+   * can never be mistaken for a microphone that stopped working.
+   */
+  heardUser: boolean
   error: 'mic' | 'connection' | null
   /** The database row, once it exists. The result screen is keyed to it. */
   sessionId: string
@@ -173,6 +187,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   const [warmth, setWarmth] = useState(0)
   const [band, setBand] = useState<Band>('CLOSED')
   const [speaking, setSpeaking] = useState<SpeakingState>('none')
+  const [heardUser, setHeardUser] = useState(false)
   const [levels, setLevels] = useState({ user: 0, persona: 0 })
   const [msRemaining, setMsRemaining] = useState(durationMs)
   const [outcome, setOutcome] = useState<RepOutcome | null>(null)
@@ -406,6 +421,10 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     agentSpeakingRef.current = false
     numberRef.current = ''
     turnsRef.current = []
+    // A retry is a fresh attempt at being heard, so the nudge gets to fire
+    // again — the microphone that was not working may be the thing they just
+    // went and fixed.
+    setHeardUser(false)
     setError(null)
     setStatus('connecting')
 
@@ -454,6 +473,8 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       voice.on('user.transcript', ({ turn, final }) => {
         if (!final) return
         turnsRef.current.push(turn)
+        // The first word we actually heard. See `heardUser`.
+        if (turn.text.trim().length > 0) setHeardUser(true)
         warmthRef.current?.onUserTurn(turn)
         publish(voice)
       })
@@ -666,6 +687,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     lastDelta,
     paused,
     retryAttempt,
+    heardUser,
     error,
     sessionId,
     // Interview reps are M4. The fields stay so the screen keeps one shape.

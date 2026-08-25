@@ -295,3 +295,8 @@ export function techniqueForSubScore(subScore: string): Technique | null {
     ) ?? null
   )
 }
+
+/** One card by slug, from the same authored registry. */
+export function techniqueBySlug(slug: string): Technique | null {
+  return TECHNIQUES.find((card) => card.slug === slug) ?? null
+}

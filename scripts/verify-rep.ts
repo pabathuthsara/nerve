@@ -17,7 +17,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { asJson } from '@/lib/db/json'
 import type { Database } from '@/lib/db/types'
-import { consumeRep, mayOpenSession, recordTrainingDay, syncLevel } from '@/lib/db/progress'
+import { consumeRep, mayOpenSession, recordTrainingDay, refundRep, syncLevel } from '@/lib/db/progress'
 import { momentsFrom, toScorecard, type StoredWarmthEvent } from '@/lib/data/scorecard'
 import { qualifyingByLevel, uiBand, uiLevel, unlockedLevels, wonFromRep } from '@/lib/data/progression'
 import { rankFor, type Rank } from '@/lib/data/rank'
@@ -26,6 +26,8 @@ import { announceUnlock, recordUnlocks } from '@/lib/db/unlocks'
 import { ARM_THRESHOLD, KEEP_THRESHOLD, resultReading } from '@/lib/data/rep-rules'
 import { memoryLineFrom } from '@/lib/grade/memory'
 import { retestDue } from '@/lib/data/baseline'
+import { DAY_ONE_REPS } from '@/lib/data/allowance'
+import { localDay, shiftDays } from '@/lib/data/day'
 import { loadEnvLocal } from './env'
 
 let failures = 0
@@ -91,13 +93,63 @@ async function main(): Promise<void> {
     const { error: signInError } = await user.auth.signInWithPassword({ email, password })
     if (signInError) throw new Error(`could not sign in: ${signInError.message}`)
 
-    console.log('\nthe daily quota (§14)')
+    console.log('\nday one (P1) — three reps on every plan')
     const first = await consumeRep(userId)
     check(first.ok, 'a fresh account can spend its first rep')
-    check(first.remaining === 0, 'free is one rep a day, and this was it')
+    check(first.remaining === DAY_ONE_REPS - 1, `day one is ${DAY_ONE_REPS} reps, not the plan's one`)
 
     const second = await consumeRep(userId)
-    check(!second.ok, 'the second rep of the day is refused')
+    check(
+      second.ok && second.remaining === DAY_ONE_REPS - 2,
+      'the second rep of day one is allowed — fail, adjust and succeed in one sitting',
+    )
+
+    const third = await consumeRep(userId)
+    check(third.ok && third.remaining === 0, 'the third spends the last of day one')
+
+    const fourth = await consumeRep(userId)
+    check(!fourth.ok, 'the fourth is refused — day one is generous, not unlimited')
+
+    console.log('\nthe refund — a rep that recorded no speech (§14)')
+    const refund = await refundRep(userId)
+    check(refund.ok && refund.remaining === 1, 'a rep nobody spoke in is given back')
+
+    const respent = await consumeRep(userId)
+    check(respent.ok && respent.remaining === 0, 'and the returned rep can actually be spent again')
+
+    const backAgain = await refundRep(userId)
+    check(backAgain.ok && backAgain.remaining === 1, 'the credit lands a second time')
+
+    // Down to an unspent counter, then one more. The floor is what stops a
+    // refund loop minting reps out of nothing.
+    await refundRep(userId)
+    await refundRep(userId)
+    const floor = await refundRep(userId)
+    check(
+      floor.ok && floor.remaining === DAY_ONE_REPS,
+      'refunding an unspent counter cannot mint reps past the cap',
+    )
+
+    console.log('\nday two — back to the plan')
+    // `entitlements.created_at` is what decides day one, and it has no user
+    // write path, so moving it is the only way to see the other side of the
+    // rule — and it is the same column `repsAllowedToday` reads.
+    const { data: zone } = await admin.from('profiles').select('timezone').eq('id', userId).maybeSingle()
+    const yesterday = shiftDays(localDay(new Date(), zone?.timezone ?? null), -1)
+    await admin
+      .from('entitlements')
+      .update({
+        created_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+        reps_day: yesterday,
+        reps_used_today: 0,
+      })
+      .eq('user_id', userId)
+
+    const dayTwo = await consumeRep(userId)
+    check(dayTwo.ok && dayTwo.remaining === 0, 'day two is the plan again: free is one rep')
+
+    const dayTwoSecond = await consumeRep(userId)
+    check(!dayTwoSecond.ok, 'and the second is refused')
 
     console.log('\nthe session row')
     const { data: persona } = await user.from('personas').select('id').eq('slug', 'nadia').maybeSingle()
@@ -115,6 +167,8 @@ async function main(): Promise<void> {
     check(!openError && !!session, `the rep opens a row when the transport connects${openError ? ` (${openError.message})` : ''}`)
     const sessionId = session?.id ?? ''
 
+    // The account is out of reps at this point (day two, one spent), so this
+    // is the in-flight branch and not the counter's.
     const reconnect = await mayOpenSession(userId)
     check(reconnect.ok, 'a rep already in flight may reconnect on the quota it spent')
 

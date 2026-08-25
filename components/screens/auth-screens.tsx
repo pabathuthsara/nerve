@@ -45,7 +45,53 @@ export interface AuthScreenProps {
 }
 
 export function AuthScreen({ route, query, recoverySession = false, devLoginEmail = null }: AuthScreenProps) {
-  return <main className="auth-page"><div className="auth-panel"><Link href="/" className="wordmark auth-wordmark">NERVE</Link>{route === '/login' ? <LoginForm devLoginEmail={devLoginEmail} /> : null}{route === '/signup' ? <SignupForm /> : null}{route === '/verify-email' ? <VerifyEmail email={query.email ?? ''} /> : null}{route === '/forgot-password' ? <ForgotPassword /> : null}{route === '/reset-password' ? <ResetPassword ready={recoverySession} /> : null}</div></main>
+  // The two cold doors. Every other screen here is reached from inside a flow
+  // somebody is already in, and putting the pitch on a password-reset screen
+  // would be selling to a person who has already bought.
+  const pitch = route === '/login' || route === '/signup'
+  return <main className={`auth-page${pitch ? ' auth-page--pitch' : ''}`}>{pitch ? <AuthPitch /> : null}<div className="auth-panel">{pitch ? null : <Link href="/" className="wordmark auth-wordmark">NERVE</Link>}{route === '/login' ? <LoginForm devLoginEmail={devLoginEmail} /> : null}{route === '/signup' ? <SignupForm /> : null}{route === '/verify-email' ? <VerifyEmail email={query.email ?? ''} /> : null}{route === '/forgot-password' ? <ForgotPassword /> : null}{route === '/reset-password' ? <ResetPassword ready={recoverySession} /> : null}</div></main>
+}
+
+/**
+ * What this is, for somebody who has only been sent a link.
+ *
+ * There is no marketing site and there does not need to be one — but the auth
+ * screen was doing zero selling: a stranger was asked for an email address
+ * before being told what a rep is, who it is for, or what three minutes buys.
+ * The word NERVE and "Start training" were the entire pitch.
+ *
+ * Three things and no more: what a rep is, what it costs in time, and the one
+ * line that separates this from every reply generator in the category. The
+ * rule block is the product's own best asset and is the same component the
+ * brief screen uses, so what is promised here is literally what arrives.
+ *
+ * No numbers about users, results or outcomes. There are none to quote yet,
+ * and the one claim made below — that the score is about how you talked and
+ * never about whether she said yes — is a rule the code actually enforces
+ * (§07), which is the only kind of proof worth putting on this screen.
+ */
+function AuthPitch() {
+  return (
+    <section className="auth-pitch">
+      <Link href="/" className="wordmark auth-pitch__mark">NERVE</Link>
+      <span className="label">Conversation gym</span>
+      <h2 className="display-lg auth-pitch__head">Three minutes.<br />One stranger.<br />No script.</h2>
+      <p className="auth-pitch__body">
+        A rep is a timed conversation, out loud, with someone who can lose interest,
+        get distracted and say no. You are scored on how you talked — never on whether
+        she said yes. A clean rep that ends in rejection can score 92.
+      </p>
+      <div className="rule-block auth-pitch__rules">
+        {[['Time', '3:00'], ['Goal', 'Get her number'], ['She leaves', 'When time runs out']].map(([label, value]) => (
+          <div key={label}><span>{label}</span><strong>{value}</strong></div>
+        ))}
+      </div>
+      <p className="auth-pitch__proof">
+        Then one small thing to do in the real world, and you log what actually happened.
+        Every one of them is a rep. Nobody keeps score of the yeses.
+      </p>
+    </section>
+  )
 }
 
 /**

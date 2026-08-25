@@ -28,9 +28,9 @@ import {
 import { CREDITS_HEADER, FORMAT_HEADER } from './tts'
 import { EXIT_SENTINEL } from './llm'
 import { DEFAULT_CALIBRATION, clamp, type Calibration } from '../types'
+import { chatApiKey, streamChat, type ChatMessage } from '../chat'
 import { readSubscription } from './mint'
 
-const CHAT_ENDPOINT = 'https://api.openai.com/v1/chat/completions'
 const TTS_ENDPOINT = 'https://api.elevenlabs.io/v1/text-to-speech'
 
 /** Longer than this is not a spoken reply, it is someone probing the proxy. */
@@ -60,9 +60,29 @@ interface LlmBody {
   calibration?: unknown
 }
 
-export async function handleLlmRequest(request: Request): Promise<Response> {
-  const apiKey = process.env['OPENAI_API_KEY']
-  if (!apiKey) return json({ error: 'OPENAI_API_KEY is not set.' }, 500)
+/**
+ * What the caller knows about the person and this route does not.
+ *
+ * Resolved by the route from the authenticated user (`lib/db/persona-context.ts`)
+ * and passed in, never read off the request body — the same rule the persona
+ * id follows. Optional so the calibration harnesses can drive this route as
+ * nobody.
+ *
+ * This is the hop the pipeline arm was missing entirely. The Realtime arm read
+ * character memory at its mint; this one compiled the contract from the bare
+ * roster record, so on ElevenLabs no character had ever remembered anybody.
+ */
+export interface PersonaOverlay {
+  memorySummary?: string
+  userName?: string
+}
+
+export async function handleLlmRequest(
+  request: Request,
+  overlay: PersonaOverlay = {},
+): Promise<Response> {
+  const key = chatApiKey()
+  if (!key.ok) return json({ error: key.error.message }, 500)
 
   let body: LlmBody
   try {
@@ -71,8 +91,10 @@ export async function handleLlmRequest(request: Request): Promise<Response> {
     return json({ error: 'Malformed request body.' }, 400)
   }
 
-  const persona = getPersona(typeof body.personaId === 'string' ? body.personaId : '')
-  if (!persona) return json({ error: 'No such persona.' }, 404)
+  const base = getPersona(typeof body.personaId === 'string' ? body.personaId : '')
+  if (!base) return json({ error: 'No such persona.' }, 404)
+
+  const persona = { ...base, ...overlay }
 
   const config = resolvePipelineConfig(env())
   const compiled = new ElevenLabsPersonaCompiler(config).compile(
@@ -82,7 +104,7 @@ export async function handleLlmRequest(request: Request): Promise<Response> {
 
   // The contract is compiled here, from an id. It is never accepted from the
   // client — same rule as the token route, same reason.
-  const messages: { role: string; content: string }[] = [
+  const messages: ChatMessage[] = [
     { role: 'system', content: compiled.llm.systemPrompt },
     {
       role: 'system',
@@ -99,29 +121,16 @@ export async function handleLlmRequest(request: Request): Promise<Response> {
   const steering = typeof body.steering === 'string' ? body.steering.trim() : ''
   if (steering) messages.push({ role: 'system', content: steering })
 
-  let upstream: Response
-  try {
-    upstream = await fetch(CHAT_ENDPOINT, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: compiled.llm.model,
-        messages,
-        temperature: compiled.llm.temperature,
-        max_tokens: compiled.llm.maxTokens,
-        stream: true,
-        stream_options: { include_usage: true },
-      }),
-      signal: request.signal,
-    })
-  } catch (cause) {
-    return json({ error: `Character model unreachable. ${String(cause)}` }, 502)
-  }
+  const upstream = await streamChat({
+    apiKey: key.key,
+    model: compiled.llm.model,
+    messages,
+    temperature: compiled.llm.temperature,
+    maxTokens: compiled.llm.maxTokens,
+    signal: request.signal,
+  })
 
-  if (!upstream.ok || !upstream.body) {
-    const detail = await upstream.text().catch(() => '')
-    return json({ error: `Character model refused (${upstream.status}). ${detail.slice(0, 400)}` }, 502)
-  }
+  if (!upstream.ok) return json({ error: upstream.error.message }, 502)
 
   return new Response(upstream.body, {
     headers: {
@@ -131,7 +140,7 @@ export async function handleLlmRequest(request: Request): Promise<Response> {
   })
 }
 
-function parseHistory(raw: unknown): { role: string; content: string }[] {
+function parseHistory(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw)) return []
   return raw
     .slice(-MAX_HISTORY_TURNS)
@@ -143,7 +152,7 @@ function parseHistory(raw: unknown): { role: string; content: string }[] {
       if (typeof content !== 'string' || !content.trim()) return null
       return { role, content: content.slice(0, 2000) }
     })
-    .filter((entry): entry is { role: string; content: string } => entry !== null)
+    .filter((entry): entry is ChatMessage => entry !== null)
 }
 
 function parseCalibration(input: unknown): Calibration {

@@ -31,6 +31,7 @@ import { fieldHistory, recordTrainingDay, syncFieldTier } from '@/lib/db/progres
 import { announceMilestone, recordRejectionMilestones } from '@/lib/db/unlocks'
 import { localDay, shiftDays } from '@/lib/data/day'
 import { chooseChallenge, unlockedTier } from '@/lib/field/assignment'
+import { focusPlan, type FocusArea } from '@/lib/data/focus'
 import { milestoneRef, REJECTION_MILESTONES } from '@/lib/field/milestones'
 import type { FieldAssignment, FieldChallenge, FieldOutcome, FieldStatus } from '@/lib/data/types'
 
@@ -112,7 +113,7 @@ export async function assignToday(): Promise<FieldResult> {
   const supabase = await supabaseServer()
   const { data: profile } = await supabase
     .from('profiles')
-    .select('timezone, current_level')
+    .select('timezone, current_level, focus_area')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -121,7 +122,13 @@ export async function assignToday(): Promise<FieldResult> {
   const existing = await liveAssignment(supabase, user.id, today)
   if (existing) return { ok: true, message: null, assignment: existing }
 
-  return createAssignment({ supabase, userId: user.id, today, level: profile?.current_level ?? 1 })
+  return createAssignment({
+    supabase,
+    userId: user.id,
+    today,
+    level: profile?.current_level ?? 1,
+    focus: (profile?.focus_area ?? null) as FocusArea | null,
+  })
 }
 
 async function liveAssignment(
@@ -150,6 +157,8 @@ async function createAssignment(input: {
   today: string
   level: number
   attempt?: number
+  /** The onboarding answer, which decides the FIRST challenge only. */
+  focus?: FocusArea | null
 }): Promise<FieldResult> {
   const { supabase, userId, today, level } = input
   // T4 is earned in the field rather than in the gym, so assigning today's
@@ -166,7 +175,19 @@ async function createAssignment(input: {
   ])
 
   const rows = (challenges ?? []) as ChallengeRow[]
-  const chosen = chooseChallenge({
+
+  // The onboarding answer, on the very first challenge and nowhere else.
+  //
+  // Step two asks what the hard part is and the field is the most visible
+  // place that answer can be spent — but only once. After the first one the
+  // ladder is the thing that decides, because exposure is graded and a
+  // preference that kept steering it would be a preference overriding a safety
+  // rule. A swap is not the first look either, so it walks the pool as usual.
+  const preferred = input.attempt === undefined && (await isFirstChallenge(supabase, userId))
+    ? rows.find((row) => row.slug === focusPlan(input.focus)?.challengeSlug && row.tier <= tier)
+    : undefined
+
+  const chosen = preferred ?? chooseChallenge({
     challenges: rows.map((row) => ({ id: row.id, tier: row.tier })),
     tier,
     recentIds: (recent ?? []).map((row) => row.challenge_id).filter((id): id is string => id !== null),
@@ -198,6 +219,24 @@ async function createAssignment(input: {
   return { ok: true, message: null, assignment: toAssignment(data, toChallenge(row)) }
 }
 
+
+/**
+ * Has this account ever been dealt a challenge?
+ *
+ * Counted rather than stored, like everything else in the field: a flag saying
+ * "first one done" can disagree with a table that has rows in it, and this one
+ * decides whether an onboarding answer is still allowed to steer the ladder.
+ */
+async function isFirstChallenge(
+  supabase: Awaited<ReturnType<typeof supabaseServer>>,
+  userId: string,
+): Promise<boolean> {
+  const { count } = await supabase
+    .from('field_assignments')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+  return (count ?? 0) === 0
+}
 
 /**
  * Accepting captures the prediction.

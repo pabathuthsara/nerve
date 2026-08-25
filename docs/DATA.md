@@ -38,6 +38,7 @@ eleventh anything.
 | `safety_events` | incident | Boundary hits, distress flags, moderation, user reports |
 | `interview_setups` | user | Role, JD, CV pointer, custom questions (M4) |
 | `rate_limits` | user × bucket | The spend ceiling's counter. **No policies at all** — see below |
+| `text_threads` | user × character | Text mode's one rolling conversation. Owner-writable, unmetered, and never reaches `sessions` — see below |
 
 `profiles.rank` is a mirror, not an authority: `lib/data/rank.ts` derives the
 rank from the same qualifying counts that drive the unlocks, and `syncLevel`
@@ -55,10 +56,17 @@ no separate `unlocks` source of truth — see below.
 "should we spend more on them?", so a signed-in user could post transcripts to
 `/api/grade` in a loop and a leaked cookie could do it faster.
 
-Five routes now go through `maySpend` (`lib/db/spend.ts`): `/api/grade`,
+Five routes go through `maySpend` (`lib/db/spend.ts`): `/api/grade`,
 `/api/warmth/score`, `/api/voice/llm`, `/api/voice/tts` and `/api/voice/token`.
 `/api/voice/credits` deliberately does not — it reads the vendor's own balance
 and buys nothing.
+
+Text mode's `sendTextTurn` Server Action goes through the same gate on the
+`text` bucket, via `spendVerdict` — the same decision before it is dressed as an
+HTTP response, because a Server Action returns `{ ok, message }` rather than a
+`Response`. **Free of quota is not free of cost**, and the bucket is its own so
+a loop in the cheap unmetered thing cannot eat the allowance the expensive
+metered one needs to keep talking.
 
 **One round trip, not three.** `spend_allowance(user, bucket, limit, window,
 cap)` checks the kill switch, then the daily cap, then the rate limit, and
@@ -435,6 +443,17 @@ clamps (±6 on start, ±0.25 on gain) are CHECK constraints as well as code. A b
 that wrote -40 would turn Level 6 into Level 2 permanently *and silently*, and
 silence is exactly what §12 requires of the downward path, so the database
 refuses the value rather than trusting the caller to.
+
+**`text_threads`** is the exception that proves the rule, and it is genuinely
+different. §14's test is "could a user pay to change this?", and nobody would
+pay to change what they themselves typed: a text thread spends no quota, appends
+nothing to `usage_ledger` at a per-minute rate, moves no streak, produces no
+scorecard and reaches no unlock. So it gets all four verbs, like
+`persona_memory` — including DELETE, because **start fresh** has to actually
+clear the row or it is a lie. One thread per person per character, rolled
+forward in place under a unique index: the continuity rule is that this is ONE
+encounter a later hello does not restart, and a list of past chats would be a
+different feature making a different promise.
 
 **`share_cards`** has one policy: its owner may read their own, in order to
 revoke them. Creation is a Server Action, so a user cannot mint a card claiming

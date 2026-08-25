@@ -3,7 +3,9 @@ import 'server-only'
 import { redirect } from 'next/navigation'
 import { currentUser, supabaseServer } from '@/lib/db/server'
 
-const protectedPrefixes = ['/train', '/roster', '/field', '/library', '/progress', '/profile', '/rep', '/session', '/interview', '/onboarding']
+// `/text` is text mode (P1). Protected like every other training surface — it
+// costs no quota, which is not the same as being open to anybody.
+const protectedPrefixes = ['/train', '/roster', '/field', '/library', '/progress', '/profile', '/rep', '/text', '/session', '/interview', '/onboarding']
 
 /**
  * Signed in and these are pointless — except /reset-password, which is only
@@ -29,7 +31,7 @@ export async function enforceFrontendGuard(path: string) {
   const supabase = await supabaseServer()
   const { data: profile } = await supabase
     .from('profiles')
-    .select('onboarding_complete, unlocked_tracks')
+    .select('onboarding_complete, unlocked_tracks, focus_area, experience, ui_flags')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -51,6 +53,41 @@ export async function enforceFrontendGuard(path: string) {
 
   // A missing profile row means the sign-up trigger has not landed yet. Send
   // them through onboarding rather than into a rep against nothing.
-  if (!profile?.onboarding_complete && !onboardingRoute) redirect('/onboarding/track')
+  //
+  // Sent to where they stopped, not back to the beginning. Every answer is
+  // written the moment it is given, so restarting at step one asked people to
+  // re-answer questions we already had — and made a refresh feel like losing
+  // work when nothing had actually been lost.
+  if (!profile?.onboarding_complete && !onboardingRoute) redirect(onboardingResumePath(profile))
   if (profile?.onboarding_complete && onboardingRoute) redirect('/train')
 }
+
+/**
+ * The first step this person has not answered.
+ *
+ * `active_track` cannot be the marker for step one — the column carries a
+ * default, so it is set for everybody before they have chosen anything. The
+ * step stamps a `ui_flags` key instead, which is the pattern the profile
+ * already uses for one-time beats: adding the next one is a string rather than
+ * a migration.
+ */
+export function onboardingResumePath(profile: { focus_area: string | null; experience: string | null; ui_flags: unknown } | null): string {
+  if (!profile) return '/onboarding/track'
+  const flags = profile.ui_flags && typeof profile.ui_flags === 'object' && !Array.isArray(profile.ui_flags)
+    ? (profile.ui_flags as Record<string, unknown>)
+    : {}
+  if (!flags[ONBOARDING_TRACK_FLAG]) return '/onboarding/track'
+  if (!profile.focus_area) return '/onboarding/focus'
+  if (!profile.experience) return '/onboarding/experience'
+  // Same problem as step one, for the opposite reason: `display_name` can be
+  // legitimately empty, because the name step is skippable. A flag is what
+  // separates "not asked yet" from "asked, and they would rather not say".
+  if (!flags[ONBOARDING_NAME_FLAG]) return '/onboarding/name'
+  return '/onboarding/mic'
+}
+
+/** Stamped by the track step, read by the resume above. */
+export const ONBOARDING_TRACK_FLAG = 'onboarding:track'
+
+/** Stamped by the name step whether it was answered or skipped. */
+export const ONBOARDING_NAME_FLAG = 'onboarding:name'

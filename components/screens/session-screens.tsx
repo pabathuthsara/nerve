@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, ChevronDown, ChevronUp, Crosshair, Flame, RotateCcw } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Crosshair, Flame, MicOff, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useInterviewers, usePendingUnlock, usePersonas, useScorecard, useSession, useTranscript, useUserState } from '@/lib/data'
 import type { Band, JudgementBand, MetricBand, Moment, SessionSummary, TranscriptTurn } from '@/lib/data/types'
@@ -36,6 +36,7 @@ function ResultScreen({ session }: { session: SessionSummary }) {
   const [firstWin, setFirstWin] = useState(false)
   const { data: personas } = usePersonas()
   const { data: interviewers } = useInterviewers()
+  const { data: turns, loading: turnsLoading } = useTranscript(session.id)
   const subject = [...personas, ...interviewers].find((item) => item.id === session.personaId)
   // The number the outcome actually turned on, which is not where the meter
   // finished — see `resultReading`. This screen used to show `finalWarmth`
@@ -66,6 +67,24 @@ function ResultScreen({ session }: { session: SessionSummary }) {
     return () => window.clearTimeout(timer)
   }, [session.track, session.won])
   const closeFirstWin = () => { window.localStorage.setItem('nerve:first-win-seen', '1'); setFirstWin(false) }
+
+  /**
+   * A rep nobody spoke in is not a rep she was unmoved by.
+   *
+   * Without this the screen said "She wasn't interested from the start" to a
+   * user whose microphone was muted, whose input device was wrong, or whose
+   * browser had quietly withheld the permission — the three most likely things
+   * to go wrong on somebody's very first attempt. It scored the equipment and
+   * told the user it was them.
+   *
+   * `finishSession` has already put the rep back on the counter by the time
+   * this renders; this is the half that says so.
+   */
+  const heardUser = turns.some((turn) => turn.speaker === 'user' && turn.text.trim().length > 0)
+  if (!turnsLoading && !heardUser) {
+    return <main className="result-page result-page--loss"><MicOff size={52} strokeWidth={1.25} className="amber" /><h1 className="display-xl">We didn&apos;t hear you</h1><p>Nothing came through on your microphone, so this one does not count against you — the rep is back on your counter.</p><div className="result-actions"><Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href={repHref}><RotateCcw size={17} strokeWidth={1.5} /> Try that again</Link><Link className="arena-button arena-button--ghost arena-button--full" href="/profile/settings">Check your microphone</Link></div></main>
+  }
+
   return <main className={`result-page result-page--${session.won ? 'win' : 'loss'}`}><FluidPersona name={subject?.name ?? session.personaName} personaId={session.personaId} warmth={session.finalWarmth} announceWarmth size={148} dimmed={!session.won} /><h1 className={`display-xl${session.won ? ' volt' : ''}`}>{headline}</h1>{session.won ? <><span className="result-time data">{formatDuration(session.durationMs)}</span><Chip tone="band" band={session.finalBand}>{session.track === 'interview' ? interviewBand(session.finalBand) : session.finalBand}</Chip></> : <><div className="result-warmth"><span className="label">Warmth</span><strong className="data">{decided}<i>/ {threshold}</i></strong></div><span className="label mute">{usingFallback ? 'Where the meter finished' : 'Where the meter was when she decided'}</span><p>{context}</p></>}<div className="result-actions"><Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href={`/session/${session.id}/scorecard`}>See breakdown</Link><Link className="arena-button arena-button--ghost arena-button--full" href={repHref}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Link></div><FirstWinSheet open={firstWin} onClose={closeFirstWin} /></main>
 }
 
@@ -101,7 +120,7 @@ function ScorecardScreen({ session }: { session: SessionSummary }) {
   if (loading) return <AppShell title="Scorecard"><div className="scorecard-grid"><Skeleton height={490} /><Skeleton height={490} /></div></AppShell>
   // Grading runs once, after the rep, on a model call that can fail. A rep
   // with no grade says so; it does not draw an empty card that reads as zero.
-  if (!scorecard) return <AppShell title="Scorecard"><EmptyState title="This rep was not graded" description="The transcript is saved. Grading runs once after a rep and did not complete for this one." action={<Link className="arena-button arena-button--primary" href={`/session/${session.id}/transcript`}>Read the transcript</Link>} /></AppShell>
+  if (!scorecard) return <AppShell title="Scorecard"><EmptyState title="This rep was not graded" description="Grading runs once after a rep and did not complete for this one. Your rep has been given back — run another and this page will have something to say." action={<div className="empty-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link><Link className="arena-button arena-button--ghost" href={`/session/${session.id}/transcript`}>Read the transcript</Link></div>} /></AppShell>
   const verdict = scorecard.composite < 50 ? 'Sloppy' : scorecard.composite < 70 ? 'Solid' : scorecard.composite < 85 ? 'Sharp' : 'Clean'
   const audit = scorecard.metrics.reduce((sum, metric) => sum + metric.points, 0) + (scorecard.judgement?.points ?? 0)
   const parts = [...scorecard.metrics.map((metric) => String(metric.points)), ...(scorecard.judgement ? [String(scorecard.judgement.points)] : [])]
@@ -154,7 +173,14 @@ function TranscriptScreen({ session }: { session: SessionSummary }) {
   const filtered = useMemo(() => turns.filter((turn) => filter === 'ALL' || Math.abs(turn.delta ?? 0) >= 3), [filter, turns])
   const signalLabel = session.track === 'interview' ? 'Impression' : 'Warmth'
   const scrollToTurn = (index: number) => refs.current[index]?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' })
-  return <AppShell title="Transcript"><div className="screen-heading compact"><span className="label">Turn by turn</span><h1 className="display-lg">Transcript</h1><p>{session.personaName} · {formatDuration(session.durationMs)} · {signalLabel} {session.finalWarmth}</p></div><Card className="sparkline-card"><WarmthSparkline turns={turns} label={signalLabel} onPoint={scrollToTurn} /></Card><Tabs items={['ALL', 'BIG MOVES'] as const} value={filter} onChange={setFilter} label="Transcript filter" />{loading ? <div className="transcript-list">{Array.from({ length: 7 }, (_, index) => <Skeleton key={index} height={96} />)}</div> : filtered.length ? <div className="transcript-list">{filtered.map((turn) => <div key={turn.index} ref={(node) => { refs.current[turn.index] = node }}><TranscriptTurnRow turn={turn} persona={session.personaName} /></div>)}</div> : <EmptyState title="No turns match" description="Try the full transcript view." /> }<div className="transcript-sticky"><Link className="arena-button arena-button--primary arena-button--full" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Link></div></AppShell>
+  const repHref = session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`
+  // Nothing was said at all — which is a different screen from "your filter
+  // matched nothing", and used to be shown as the latter. The trajectory card
+  // is suppressed with it: an empty sparkline reads "0 → 0" and sat directly
+  // under a header printing this session's final warmth, so the one screen
+  // stated two different numbers for the same rep.
+  const silent = !loading && turns.length === 0
+  return <AppShell title="Transcript"><div className="screen-heading compact"><span className="label">Turn by turn</span><h1 className="display-lg">Transcript</h1><p>{session.personaName} · {formatDuration(session.durationMs)}{silent ? ' · nothing was said' : ` · ${signalLabel} ${session.finalWarmth}`}</p></div>{silent ? <EmptyState title="This rep has no transcript" description="No speech was recorded on either side, so there is nothing to read back. Your rep was not counted — run it again." action={<Link className="arena-button arena-button--primary" href={repHref}>Run it back</Link>} /> : <><Card className="sparkline-card"><WarmthSparkline turns={turns} label={signalLabel} onPoint={scrollToTurn} /></Card><Tabs items={['ALL', 'BIG MOVES'] as const} value={filter} onChange={setFilter} label="Transcript filter" />{loading ? <div className="transcript-list">{Array.from({ length: 7 }, (_, index) => <Skeleton key={index} height={96} />)}</div> : filtered.length ? <div className="transcript-list">{filtered.map((turn) => <div key={turn.index} ref={(node) => { refs.current[turn.index] = node }}><TranscriptTurnRow turn={turn} persona={session.personaName} /></div>)}</div> : <EmptyState title="No turns match" description="Every turn is in the full transcript — switch back to ALL." action={<Button variant="secondary" onClick={() => setFilter('ALL')}>Show all turns</Button>} />}<div className="transcript-sticky"><Link className="arena-button arena-button--primary arena-button--full" href={repHref}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Link></div></>}</AppShell>
 }
 
 function WarmthSparkline({ turns, label, onPoint }: { turns: TranscriptTurn[]; label: string; onPoint: (index: number) => void }) {

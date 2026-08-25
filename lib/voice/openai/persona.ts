@@ -229,6 +229,24 @@ export function compileInstructions(
     ...(persona.memorySummary
       ? ['', `# You have met before`, persona.memorySummary]
       : []),
+    // §08's `usesYourName` dial finally has something to open. The gate has
+    // always been on every character and the steering item — "You may use his
+    // name." — has always been compiled, into contracts that were never told
+    // what the name was. Nobody had ever been asked for one.
+    //
+    // The rule about WHEN she knows it is the load-bearing half. A stranger who
+    // uses a name she was never given is not warm, she is a model reading a
+    // profile, and that is the exact frame break the absolute rules above exist
+    // to prevent. So the name is supplied and its provenance is constrained:
+    // he says it, or they have met before.
+    ...(persona.userName
+      ? [
+          ``,
+          `# His name`,
+          `He is called ${persona.userName}. You do not know that yet. You learn it if he tells you, or you already have it if you have met him before.`,
+          `Once you know it, use it the way people use a name they have just been given: occasionally, never twice in a row, and never as a way of being warm at him.`,
+        ]
+      : []),
   ]
     .join('\n')
     .trim()

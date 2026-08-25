@@ -461,6 +461,240 @@ rather than a day, and one (B12) deferred rather than decided.
 > thing standing between here and the merchant-of-record application, which is
 > the sole item on this list with external lead time that can fail.
 
+### B13 · The first session could end with nothing  ·  **cleared 25 Aug**
+
+Found by walking the deployed app as a cold user rather than by reading the
+code: sign up, one rep, every signed-in route. Eight defects, all of them on the
+path between the sign-up form and the first score, and they compounded — the
+worst realistic first session was a microphone the app never heard, a rep spent
+on it, a result screen blaming the user for it, no grade, and a home screen
+whose primary button read OUT OF REPS above a ten-hour timer.
+
+**Was → Now**, in the order a user meets them:
+
+1. **Onboarding restarted from step one.** Every answer was already written the
+   moment it was given, but `/`, `/train` and `/login` all redirected an
+   unfinished account to `/onboarding/track`, so a refresh looked like losing
+   work that had not been lost. Now the guard resumes at the first unanswered
+   step. `active_track` could not be the marker for step one — it carries a
+   default and is therefore set before anybody has chosen anything — so the
+   track step stamps `ui_flags['onboarding:track']`, the pattern the profile
+   already uses for one-time beats. `app/page.tsx` shares the same resolver
+   rather than keeping its own copy of the answer.
+
+2. **The microphone gate was a silent dead end.** `getUserMedia` does not settle
+   while the browser's permission bubble is open, and never settles at all if
+   the bubble is dismissed or suppressed — so the button was pressed, the
+   promise hung, and the screen showed exactly what it had shown before. There
+   were only four states and no pending one. Now there are six: `requesting`
+   says the browser is being waited on, and a twelve-second timer promotes it to
+   `waiting`, which names the address-bar control and offers a retry. The
+   priming sentence says why the permission is needed before the dialog appears.
+
+3. **Onboarding had no exit.** With onboarding incomplete every protected route
+   bounced back to it and there was no sign-out anywhere inside it, so the only
+   way out of a step somebody could not complete was clearing cookies. Sign-out
+   now sits in the onboarding chrome, and the mic step offers *Look around
+   first*, which completes onboarding and lands on `/train` — anything less is a
+   skip button that does not skip, because the guard would send them straight
+   back. The rep brief asks again, with its own primer (B10).
+
+4. **The brief was shown twice.** `/onboarding/ready` is the brief — same
+   character, same rule block, same Start — and Start routed to
+   `/rep/nadia/brief?calibration=1`, which rendered the identical card at a new
+   URL and asked for Start again. The query parameter was read by nothing. It
+   now goes straight to the rep.
+
+5. **A rep nobody spoke in still cost a rep.** The quota is spent when the
+   transport connects, which is before anybody knows whether the microphone was
+   working. `finishSession` now asks whether any *user* turn carried text —
+   `turns.length` counts her side too, so a character talking into silence for
+   three minutes looked like a rep — and calls `refundRep` when none did. The
+   streak now hangs off the same answer, which is stricter than the old
+   `turns.length > 0` and more honest. `refundRep` mirrors `consumeRep`: service
+   role, conditional UPDATE, today's counter only, floors at zero used.
+
+6. **The result screen blamed the user for it.** A silent rep produced "She
+   wasn't interested from the start. Some aren't." — a sentence about the user's
+   charm, printed because their headset was muted. The result screen now reads
+   the transcript and, when no user turn carried text, says we could not hear
+   them, that the rep is back on their counter, and offers an immediate retry
+   plus a link to the mic test. The ungraded scorecard leads with *Run it back*
+   rather than offering only a transcript that is empty.
+
+7. **The transcript contradicted itself.** The header printed the session's
+   final warmth while the trajectory beneath it printed `0 → 0`, and the
+   zero-turn case reused the filter's empty state — "No turns match · Try the
+   full transcript view" — while the ALL tab was already selected. Silence is
+   now its own state with the sparkline suppressed, and the filter's empty state
+   says something true and offers the switch back.
+
+8. **`Win rate` was a headline lifetime stat.** §07 is explicit that outcome is
+   never scored, and the profile's second figure was the percentage of reps that
+   ended in a number — reading 0% to anybody on their first day. Replaced with
+   mean composite across graded reps; ungraded reps are excluded rather than
+   averaged in as zeros, because a model call that failed is a missing
+   measurement and not a bad performance.
+
+9. **Both Upgrade buttons did nothing.** No navigation, no message, on the one
+   screen where somebody is deciding whether this product can be trusted with a
+   card. Until B2 lands they record the ask instead — `ui_flags['waitlist:pro']`
+   / `['waitlist:elite']` — and the sheet says plainly that checkout is still
+   being built. That is the honest button and it is also the only demand signal
+   available before launch.
+
+**Verified.** `npm run db:rep` carries four new assertions for the refund: a
+rep nobody spoke in is given back, the returned rep can be spent again, the
+credit lands twice, and refunding an unspent counter cannot mint reps past the
+cap. Items 1–4 were re-walked in a browser on a fresh account.
+
+**Still owed by hand.** The silent-rep copy was verified end to end, but
+against a rep ended early rather than a full three minutes.
+
+**A correction, recorded because the first version of this entry was wrong.**
+While testing, screens were repeatedly seen sitting in skeletons that never
+resolved, with every client hook falling back to empty. That was written up
+here as a pre-existing product defect. It is not one. The cause was the
+automated browser window being occluded. In that state React never begins
+hydrating: no fibers are attached, no effects run, no reads are issued, and
+every control is inert — which is indistinguishable, from the outside, from a
+data layer returning nothing. The evidence is consistent and was gathered
+rather than assumed: `document.visibilityState` is `hidden` and
+`requestAnimationFrame` never fires, while `setTimeout` and `MessageChannel`
+resolve in under a millisecond, so the page is running but never painting. No
+exception is raised anywhere — `window.onerror`, `unhandledrejection` and
+`console.error` were all instrumented and stayed empty — so hydration is not
+failing, it is never starting. Polyfilling `requestAnimationFrame` onto timers
+did not change it, so rAF is a symptom of the same non-painting rather than the
+gate itself; the precise mechanism inside React was not chased further because
+the boundary is clear enough. The identical build hydrates and behaves normally
+in a visible tab, which is where every other check in B13 was carried out. It
+"reproduced on the deployed build" because the same occluded window was pointed
+at it. **Nothing to fix, and nothing a user can hit.**
+
+**What was real, and is now fixed (B14).** The thing that survived that
+investigation is the read layer's identity lookup — see below.
+### B14 · Six auth round-trips per screen  ·  **cleared 25 Aug**
+
+**Was:** every read in `lib/data/queries.ts` opened with its own
+`supabase.auth.getUser()` — six call sites. `getUser()` is not a local token
+decode; it posts the access token to `/auth/v1/user` so the server can say
+whether it is still valid. So a single screen fired four of those concurrently
+before it fetched a single row, and every navigation repeated the set. The reads
+were cheap; the identity lookup in front of each one was not.
+
+**Now:** one memoised lookup per browser client, in `lib/data/session.ts`.
+Concurrent callers share the in-flight promise and later callers get the
+resolved value. The memo is dropped when the identity actually changes —
+`SIGNED_IN`, `SIGNED_OUT`, `USER_UPDATED` — and deliberately not on
+`TOKEN_REFRESHED` (same person) or `INITIAL_SESSION` (describes the lookup
+already running). It is a cache of *who*, never of *still allowed*: the token is
+re-validated by PostgREST on every query and RLS is what authorises the row.
+Server-side sign-out cannot fire the browser's auth listener, so the two
+sign-out forms clear the memo themselves.
+
+A failed lookup is not cached at all. `sessionStatus()` distinguishes
+`signed-out` — the auth server answering "that is not a session" — from
+`unavailable`, which is not reaching it, and the next read retries rather than
+inheriting a verdict it never got.
+
+**And the one behaviour change that came with it:** `useUserState` now sends a
+`signed-out` client to `/login` instead of leaving it on a page rendering empty.
+The route guard is server-side only, so a client whose session had gone — signed
+out in another tab, cookies cleared, token revoked — kept rendering a page the
+server had already approved, with every read returning nothing. It redirects
+only on `signed-out`; `unavailable` is left alone, because bouncing somebody to
+a login screen over a dropped connection is worse than the problem. No `next`
+parameter: `/` already decides where a signed-in person lands, and a redirect
+target read off the URL is an open redirect waiting to be found.
+
+**Verified.** `lib/data/session.test.ts` — twelve assertions, and the one that
+matters is the call count: six concurrent readers produce one `getUser()`. It
+also covers signed-out via error, signed-out via null user, unavailable on a
+thrown fetch, retry-after-unavailable, and each of the four auth events.
+
+---
+
+### B15 · Nothing brings anybody back on day two  ·  **cleared 25 Aug**
+
+The second half of the same cold walk that produced B13. B13 fixed the session
+that could end with nothing; this is the day that could contain nothing. Seven
+items, all of them between "the first rep is over" and "why would I open this
+again", and one of them — text mode — is the answer to four of the others.
+
+**Was → Now:**
+
+1. **One rep a day, on day one.** Three minutes of product, and on day one those
+   three minutes could produce nothing at all. A user cannot feel improvement
+   without a second attempt, and the rank card was already naming a target —
+   "score 70+ in 2 reps at level 1" — that a free account needed two calendar
+   days to attempt. Day one is now **three reps on every plan**
+   (`lib/data/allowance.ts`), keyed off `entitlements.created_at`, which has no
+   user write path — so a second day one cannot be minted. The ceiling after
+   that is unchanged, and the copy on `/train` says which day it is rather than
+   silently reading 3 / 3 today and 1 / 1 tomorrow.
+
+2. **Voice was the only way in, and the only thing to do.** Text mode
+   (`/text/[personaId]`) runs the same character, the same compiled contract and
+   the same memory with no microphone, no clock, no meter, no score and **no
+   quota**. It removes the permission from the critical path for a nervous first
+   session, and it is what is still open when the day's reps are gone — which is
+   why `/train`'s primary action is now "Talk to her in text" instead of a dead
+   OUT OF REPS in amber.
+
+   It is unmetered to the user and not to us: it has its own `text` spend bucket
+   so a loop there cannot eat the allowance a live rep needs to keep talking
+   (§14). `text_threads` is one rolling conversation per person per character,
+   owner-writable for the same reason `persona_memory` is — nobody would pay to
+   change what they themselves typed. **Start fresh** clears the thread, and
+   offers separately to clear the memory line, because those are two different
+   promises.
+
+3. **Character memory reached one arm of two.** The Realtime mint read it; the
+   assembled pipeline compiled the contract from the bare roster record, so on
+   ElevenLabs no character had ever remembered anybody. Both now resolve it — and
+   the user's first name — through one module (`lib/db/persona-context.ts`), from
+   the authenticated user rather than from anything a client sent.
+
+4. **Three onboarding answers that bought nothing.** `focus_area` now decides the
+   first character, the first field challenge and the technique card on the brief
+   before there is a graded rep to draw one from (`lib/data/focus.ts`). It is the
+   *last* tie-break in the persona choice, so it settles the first rep and then
+   gets out of the way of the rotation — an answer that pinned somebody to one
+   character forever would be a worse bug than the one being fixed.
+
+5. **Nobody was ever asked their name.** §08's `usesYourName` dial has been on
+   every character since M1, and the steering item that opens it — "You may use
+   his name." — was compiling into contracts that were never told what the name
+   was, while `/profile` rendered an email local-part in display caps. Onboarding
+   now asks, skippably, and the contract is told when she may know it: he tells
+   her, or they have met before.
+
+6. **The library never sent anyone to a rep.** Every card now ends in "Run a rep
+   on this", wired to an authored character-per-card rule
+   (`lib/techniques/scenario.ts`) — the room the card names when the roster has
+   one, otherwise the character who trains that sub-score. Plus next/previous
+   inside the section, a read mark, and the deduplication: a card's first target
+   is its home, so fourteen cards stop reading as eighteen.
+
+7. **"Listening" was a label, not a signal.** A whole rep could run with a muted
+   headset and the status line said the same thing throughout. The dot is now the
+   real input stream, and a rep that has heard nothing at all for fifteen seconds
+   says so. Gated on never having been heard rather than on a recent silence,
+   because letting a silence sit is something the format explicitly allows.
+
+**Verified.** `npm run db:rep` carries the day-one quota end to end — three
+spent, the fourth refused, the refund, and day two back to one — and
+`npm run db:verify` carries eight new text-mode assertions including "a text
+thread spends no rep" read back off `entitlements`. Text mode itself was walked
+in a browser on a fresh account: memory line shown, reply in character, start
+fresh clearing the thread and leaving the memory, and `/train` reorganising
+around text once the quota was spent.
+
+**Owed by hand:** the input meter and the silence nudge have not been seen
+against a real three-minute rep, for the same reason B13's silent-rep copy has
+not — it needs a working microphone rather than a stub.
+
 ---
 
 ## 2b. What the database pass added
@@ -480,6 +714,8 @@ Applied through the Supabase MCP, one migration per change, each committed to
 | `m3_interview` | `interview_setups` and the private `cv` bucket |
 | `m3_account_data` | `export_my_data()` and `spend_today_cents()` |
 | `m3_index_foreign_keys` | The four covering indexes the linter asked for |
+| `p1_text_threads` | `text_threads` — one rolling typed conversation per person per character, owner-writable, unmetered |
+| `p1_export_text_threads` | `export_my_data()` learns about `text_threads` and `persona_memory` (§16.7) |
 
 And, seeded from the repo by `npm run db:content`: 24 field challenges and 14
 library cards.
@@ -745,6 +981,7 @@ somebody has to say which is right.
 | D7 | 34 routes, `/home` + `/train` + `/sessions` + `/progress` + `/library` | Four sections: Train, Roster, Field, Profile | Deliberate (`PRODUCT.md`). The spec's inventory should be restated against it so the two stop diverging silently |
 | D8 | Unlock at two sessions scoring 70+ | Unlock on wins at the tier below | See §3. Worth fixing toward the spec: it scores process, ours scores outcome. **Sharper than it looked** — until 23 Aug the "win" itself was partly the grader's outcome, so the gate was scoring outcome twice over. That half is fixed (D8a); the rule is still wins rather than 70+ |
 | D9 | "Volt is the ONLY accent"; Cool, Amber and Red are data or semantic, never branding (Arena) | Persona avatars carry a per-character hue on a constrained material ramp | **Decided 24 Aug — resolved in favour of the build, with a rule.** Characters have to be told apart at a glance on the roster, and shape alone was not enough — the argument was made when there were eight and holds with three, since the hue IS the warmth meter rather than decoration. The concession is bounded and enforced in code rather than in a style note: hues avoid the 60–115° band where Volt lives, no avatar colour comes within an RGB distance of 60 of Volt, Cool, Amber or Red, and chroma is floored at 0.34 and ceilinged at 0.86 so an avatar can never reach an accent's saturation. `lib/personas/visual.test.ts` holds all three. The Arena section of `CLAUDE.md` now records the carve-out |
+| D11 | One rep a day on free, and voice as the only way to train (§01, §14) | Day one is three reps on every plan; text mode runs the same character unmetered, on any day | **Decided 25 Aug — deliberate, and both halves earn their keep.** The arc the gym teaches is fail, adjust, succeed, and it cannot happen inside one attempt: rationing day one to a single rep meant a new user's only evidence was one conversation that probably went badly. The grant is bounded by `entitlements.created_at`, which has no user write path, so a second day one cannot be minted, and the ceiling after day one is exactly what §14 says. Text mode is the larger divergence and the more defensible one — it costs no voice minutes, has no meter and no score, and is capped below `ARM_THRESHOLD` so it can never produce the number a voice rep exists to earn. §14's own reasoning applies to it directly: running out must never break the habit, or the paywall is also a churn event |
 | D10 | Eight characters, one per level, and level 8 unwinnable by construction (§06) | Three characters on rungs 1, 2 and 4; the other five retired; no unwinnable rung | **Decided 24 Aug — deliberate, and the one entry here that gives something up.** See D10a |
 
 ### D10a · Three characters instead of eight  ·  **decided 24 Aug**
@@ -986,7 +1223,7 @@ anything.
 | `/legal/privacy` | Partial — `/privacy`, placeholder copy |
 | `/legal/safety` | **Missing** |
 | `/auth/sign-in` · `/auth/sign-up` · `/auth/verify` · `/auth/callback` | Done as `/login`, `/signup`, `/verify-email`, `/auth/callback`, plus `/forgot-password` and `/reset-password` |
-| `/start/goal` · `/start/mic` · `/start/brief` · `/start/rep` | Done as `/onboarding/*` → first rep |
+| `/start/goal` · `/start/mic` · `/start/brief` · `/start/rep` | Done as `/onboarding/*` → first rep, now five steps: track, focus, experience, **name**, mic |
 | `/start/baseline` self-assessment | **Missing** |
 | `/start/result` baseline shown | **Missing** |
 | `/home` | Done as `/train` |
@@ -996,8 +1233,9 @@ anything.
 | `/sessions` | Done as `/profile/history` |
 | `/field` | **Done** — today's challenge, the predicted-vs-actual chart, counters, tier rail and history, all real |
 | `/field/browse` · `/field/[id]` · `/field/log` · `/field/log/new` | **Missing** |
-| `/progress` · `/progress/week/[id]` | **Missing** |
-| `/library` · `/library/[slug]` · `/library/openers` | **Missing** |
+| `/progress` · `/progress/week/[id]` | **Done** (shipped 24 Aug, Phase C) — trends, sub-score lines and the stored Sunday letters |
+| `/library` · `/library/[slug]` · `/library/openers` | **Done** — one surface for all five kinds rather than a separate openers route; grouped by sub-score, with read state, next/previous and a rep link on every card |
+| *(not in §11)* `/text/[persona]` | **Added 25 Aug** — text mode. Same character, no microphone, no quota (B15) |
 | `/settings` · `/settings/session` | Done as `/profile/settings` |
 | `/settings/billing` | Partial — `/profile/subscription`, no portal |
 | `/settings/usage` | **Missing** |
@@ -1016,6 +1254,7 @@ anything.
 | `persona_memory` | **Written** — one filtered line per user per character, cleared by its owner |
 | `usage_ledger` | Done, append-only and trigger-protected |
 | `entitlements` (not in §13) | Added — plan and quota, read-only to the user |
+| `text_threads` (not in §13) | Added — text mode's rolling conversation. Owner-writable, unmetered, never reaches `sessions` |
 | `streaks` | **Added** — a rep or a logged ask, read-only to the user |
 | `unlocks` | **Added and written** — when the celebration was shown; what is unlocked stays derived. Carries `milestone` since `m4_milestone_unlocks`; `level` and `tier` are not written yet |
 | `techniques` | **Added and seeded** — 14 cards |

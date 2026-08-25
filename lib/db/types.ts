@@ -830,6 +830,33 @@ export type Database = {
         }
         Relationships: []
       }
+      text_threads: {
+        Row: {
+          id: string
+          persona_slug: string
+          started_at: string
+          turns: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          persona_slug: string
+          started_at?: string
+          turns?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          persona_slug?: string
+          started_at?: string
+          turns?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       transcripts: {
         Row: {
           created_at: string
