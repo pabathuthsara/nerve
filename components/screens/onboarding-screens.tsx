@@ -5,17 +5,25 @@ import { Check, ChevronLeft, LogOut, Mic, MicOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { usePersona } from '@/lib/data'
-import { finishOnboarding, saveOnboardingChoice, saveVadOffset } from '@/app/profile/actions'
+import { confirmAge, finishOnboarding, saveOnboardingChoice, saveVadOffset } from '@/app/profile/actions'
 import { signOut } from '@/app/auth/actions'
 import { forgetCurrentUser } from '@/lib/data/session'
 import { PauseMeter, offsetFromPause } from '@/lib/voice/calibration'
 import { DEFAULT_CALIBRATION } from '@/lib/voice/types'
 import { Button, Chip, Input, Sheet } from '@/components/ui'
+import { latestEligibleDob, MIN_AGE } from '@/lib/safety/age'
 import { FluidPersona } from '@/components/fluid-persona'
 
-type OnboardingRoute = '/onboarding/track' | '/onboarding/focus' | '/onboarding/experience' | '/onboarding/name' | '/onboarding/mic' | '/onboarding/ready'
+type OnboardingRoute = '/onboarding/age' | '/onboarding/track' | '/onboarding/focus' | '/onboarding/experience' | '/onboarding/name' | '/onboarding/mic' | '/onboarding/ready'
 
-/** The order, once. The progress rail and the back arrow both read it. */
+/**
+ * The order, once. The progress rail and the back arrow both read it.
+ *
+ * The age step is not in it. It is a gate rather than a step: it is reached by
+ * people who finished this run months ago, there is no step before it to go
+ * back to, and a progress rail reading "1 of 7" on a screen that refuses
+ * everybody under eighteen would frame a rule as a formality.
+ */
 const STEPS: readonly OnboardingRoute[] = [
   '/onboarding/track',
   '/onboarding/focus',
@@ -30,6 +38,9 @@ const stepMap: Record<OnboardingRoute, number> = Object.fromEntries(
 ) as Record<OnboardingRoute, number>
 
 export function OnboardingScreen({ route }: { route: OnboardingRoute }) {
+  // See STEPS. The gate stands on its own: no rail, no back arrow, nothing
+  // that suggests it can be skipped past.
+  if (route === '/onboarding/age') return <main className="onboarding-page"><OnboardingSignOut /><div className="onboarding-shell"><AgeStep /></div></main>
   const step = stepMap[route]
   return <main className="onboarding-page"><OnboardingProgress step={step} />{step > 0 ? <Link className="onboarding-back" aria-label="Back" href={previous(route)}><ChevronLeft size={24} strokeWidth={1.5} /></Link> : null}<OnboardingSignOut /><div className="onboarding-shell">{route === '/onboarding/track' ? <TrackStep /> : null}{route === '/onboarding/focus' ? <FocusStep /> : null}{route === '/onboarding/experience' ? <ExperienceStep /> : null}{route === '/onboarding/name' ? <NameStep /> : null}{route === '/onboarding/mic' ? <MicStep /> : null}{route === '/onboarding/ready' ? <ReadyStep /> : null}</div></main>
 }
@@ -52,6 +63,39 @@ function previous(route: OnboardingRoute): string {
 
 function OnboardingProgress({ step }: { step: number }) {
   return <div className="onboarding-progress" aria-label={`Step ${step + 1} of ${STEPS.length}`}>{STEPS.map((route, index) => <i key={route} className={index <= step ? 'done' : ''} />)}</div>
+}
+
+/**
+ * The age gate for the doors that could not carry one (§16.4).
+ *
+ * Google sign-in has no fields, and every account created before this shipped
+ * has no date on file. The guard sends both here and lets nothing else render
+ * until this is answered.
+ *
+ * A refusal is final and says so once. There is no second attempt offered, no
+ * hint about what date would have worked, and no lecture — a screen that
+ * coaches somebody through an age gate is a screen that defeats it. Signing
+ * out is the only thing left on it, which is honest: terms clause 02 closes
+ * the account if we learn it belongs to somebody under eighteen, and this is
+ * us having learnt.
+ */
+function AgeStep() {
+  const router = useRouter()
+  const [value, setValue] = useState('')
+  const [max, setMax] = useState('')
+  const [message, setMessage] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { setMax(latestEligibleDob(new Date())) }, [])
+  const submit = () => {
+    setBusy(true)
+    setMessage(null)
+    void confirmAge(value).then((result) => {
+      setBusy(false)
+      if (result.ok) { router.push('/'); return }
+      setMessage(result.message)
+    })
+  }
+  return <section className="onboarding-question onboarding-age"><h1 className="display-lg">One thing before you start.</h1><p>Nerve is for adults. We ask once and we keep the date, nothing else.</p><Input label="Date of birth" type="date" value={value} max={max || undefined} onChange={(event) => setValue(event.target.value)} hint={`${MIN_AGE}+ only.`} />{message ? <div className="form-error" role="alert">{message}</div> : null}<Button fullWidth size="lg" loading={busy} disabled={!value} onClick={submit}>Continue</Button></section>
 }
 
 function TrackStep() {

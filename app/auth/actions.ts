@@ -19,6 +19,8 @@
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { supabaseServer } from '@/lib/db/server'
+import { supabaseAdmin } from '@/lib/db/admin'
+import { checkAge } from '@/lib/safety/age'
 
 export interface AuthResult {
   ok: boolean
@@ -146,11 +148,20 @@ export async function signUpWithPassword(_prev: AuthResult, form: FormData): Pro
   const email = String(form.get('email') ?? '').trim().toLowerCase()
   const password = String(form.get('password') ?? '')
   const zone = String(form.get('timezone') ?? '')
+  const dateOfBirth = String(form.get('date_of_birth') ?? '')
 
   if (!looksLikeEmail(email)) return { ok: false, message: 'That does not look like an email address.' }
   if (password.length < MIN_PASSWORD) {
     return { ok: false, message: `A password needs at least ${MIN_PASSWORD} characters.` }
   }
+
+  // §16.4, and BEFORE the account exists. An age gate that runs after sign-up
+  // has already created the thing it was supposed to prevent, and leaves us
+  // deleting a minor's account rather than never having opened one. The date
+  // attribute on the field is a courtesy to the browser's picker; this is the
+  // check.
+  const age = checkAge(dateOfBirth, new Date())
+  if (!age.ok) return { ok: false, message: age.message }
 
   const supabase = await supabaseServer()
   const { data, error } = await supabase.auth.signUp({
@@ -160,6 +171,8 @@ export async function signUpWithPassword(_prev: AuthResult, form: FormData): Pro
   })
 
   if (error) return { ok: false, message: error.message }
+
+  if (data.user) await rememberAge(data.user.id, age.dob)
 
   // Confirmation off (or already confirmed): there is a session, so go
   // straight in. `/` decides between onboarding and training.
@@ -172,6 +185,29 @@ export async function signUpWithPassword(_prev: AuthResult, form: FormData): Pro
   // not the address already has an account, and this does not undo that —
   // an account existing is not something a signup form should confirm.
   return { ok: true, message: null }
+}
+
+/**
+ * The date the form was given, once the account exists.
+ *
+ * With the service role, because there is usually no session yet: email
+ * confirmation is on, and `signUp` hands back a user with no cookie attached
+ * to it. Waiting for the confirmation link to be clicked would mean the gate
+ * we just ran had nowhere to write its answer.
+ *
+ * Best-effort. The profile row is created by a trigger and this update can
+ * lose the race with it — which costs nothing, because `/onboarding/age` asks
+ * again for anybody with no stamp on file, and that is the same gate.
+ */
+async function rememberAge(userId: string, dateOfBirth: string): Promise<void> {
+  try {
+    await supabaseAdmin()
+      .from('profiles')
+      .update({ date_of_birth: dateOfBirth, age_confirmed_at: new Date().toISOString() })
+      .eq('id', userId)
+  } catch {
+    // See above. The onboarding gate is the backstop and it is not optional.
+  }
 }
 
 export async function signInWithPassword(_prev: AuthResult, form: FormData): Promise<AuthResult> {

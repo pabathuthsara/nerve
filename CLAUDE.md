@@ -15,6 +15,12 @@ the real world and log the outcome.
 3. **`docs/LAUNCH-GAP.md` is what is blocking launch.** Ten numbered blockers,
    the product-promise gaps, and nine pieces of spec drift that need a
    decision rather than a ticket.
+   **`docs/PAYMENTS-APPROVAL.md` is the one blocker that is not code.** Getting
+   a merchant of record to approve us: who we apply to, what a human reviewer
+   opens when they look at the site, and the three things still in the way.
+   Read it before touching anything public-facing — every provider on the
+   shortlist bans dating products by name, so the landing page is an
+   application document.
 4. **`docs/NERVE-SPEC.md` is the specification.** Section numbers (§04, §07,
    §14…) are cited throughout the code and the docs; when a rule here says
    "§07", that is where it comes from. Read it before implementing anything
@@ -78,6 +84,11 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    a pull request, and reach the database through `npm run db:seed` and
    `npm run db:content`. For field challenges this is a safety rule, not a
    preference: the worst realistic outcome of any challenge is a polite no. (§09, §16)
+   **The landing page's hero rep inverts this, and only there.** His half of it
+   is authored and read aloud verbatim; **hers is captured from the real persona
+   and must never be hand-written**, because what she says is the product and a
+   written version of it would be advertising our own prose. `npm run hero:audio`
+   records both. It spends money, so it is run by hand and never from a build.
 9. **Anything a user could pay to change has no user write path.** Plan, quota,
    streak, unlocks, difficulty offsets and subscriptions are read-only to their
    owner and written by the service role. The ledger is append-only and the
@@ -88,7 +99,16 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    may spend. Adding a paid route means adding a bucket. `npm run db:spend`.
 10. **No clinical claims anywhere.** "Confidence training", never "treatment". (§16)
 11. **PG-13, enforced by moderation on both streams.** Payment-processor survival. (§16)
-    Moderation is specified and **not yet built** — `LAUNCH-GAP.md` B3.
+    Built, in `lib/safety/`. The verdict mapping, the escalation sequence and the
+    age arithmetic are pure functions with tests — change them there, not in the
+    hook or the route. First breach is an in-frame decline and the rep continues;
+    a second ends it; content involving minors ends it on sight from either
+    stream. Distress is read only off the user's stream, ends the rep and drops
+    the training frame (§16.8). **Moderation fails open** and that is deliberate:
+    §05 does not allow a vendor outage to cut off a live rep. The reasoning is in
+    `lib/safety/assess.ts` and asserted in its tests.
+    **A change to what the product refuses is a change to what the legal pages
+    claim** — `components/site/legal-pages.tsx` is part of the same edit.
 
 ## Design system — Arena
 

@@ -35,6 +35,8 @@ import { getPersona } from '@/lib/personas'
 import { characterReply } from '@/lib/text/reply'
 import { appendTurn, readMessage, readTurns, type TextTurn } from '@/lib/text/thread'
 import { forgetPersona } from '@/app/profile/actions'
+import { assessTurn } from '@/lib/safety/assess'
+import { DECLINE_DIRECTIVE } from '@/lib/safety/escalation'
 
 export interface TextResult {
   ok: boolean
@@ -56,6 +58,15 @@ export interface ThreadState extends TextResult {
   memory: string | null
   /** True once she has ended the scene. The screen offers to start fresh. */
   ended: boolean
+  /**
+   * The thread stopped being an exercise (§16.8).
+   *
+   * Separate from `ended` because it is a different screen and a different
+   * obligation: `ended` means she has gone and the offer is to start fresh,
+   * and this means the training frame is dropped entirely and what the screen
+   * owes is real help, not another conversation.
+   */
+  distress: boolean
 }
 
 /** Refused before the thread was read. See `turns`. */
@@ -65,6 +76,7 @@ const UNREAD: ThreadState = {
   turns: null,
   memory: null,
   ended: false,
+  distress: false,
 }
 
 /**
@@ -98,6 +110,7 @@ export async function openThread(personaSlug: string): Promise<ThreadState> {
     turns: readTurns(row?.turns),
     memory: context.memorySummary ?? null,
     ended: false,
+    distress: false,
   }
 }
 
@@ -149,9 +162,63 @@ export async function sendTextTurn(input: {
   // sent from the browser — the same rule the token route follows. This is the
   // hop that makes her the same person she was in the last voice rep.
   const context = await personaContext(user.id, input.personaSlug)
+
+  /**
+   * §16.3, on the typed stream.
+   *
+   * Text mode is not a lesser surface for this. It is the same character, the
+   * same open-ended input and the same payment account, and it is the one a
+   * person reaches for when they do not want to be heard — which is not a
+   * reason to watch it less closely.
+   *
+   * His turn is already saved when this runs. That ordering is deliberate: a
+   * message that is refused is still a message he sent, and quietly dropping
+   * it would leave a thread that does not match the conversation.
+   *
+   * The scope is the thread rather than a session id, because a text thread
+   * has no `sessions` row to point a foreign key at. See `AssessInput.scope`.
+   */
+  const scope = `text:${input.personaSlug}`
+  const check = await assessTurn({
+    userId: user.id,
+    sessionId: null,
+    scope,
+    speaker: 'user',
+    text: verdict.text,
+  })
+
+  if (check.action === 'distress') {
+    // The frame is dropped. She does not answer, because answering in
+    // character is the thing §16.8 rules out.
+    return {
+      ok: true,
+      message: null,
+      turns: withUser,
+      memory: context.memorySummary ?? null,
+      ended: true,
+      distress: true,
+    }
+  }
+
+  if (check.action === 'end') {
+    // Second strike, or the one category that never gets a first. She is gone
+    // and the screen offers to start fresh, which is the same ending the scene
+    // has when she simply leaves — no lecture, and nothing to argue with.
+    return {
+      ok: true,
+      message: null,
+      turns: withUser,
+      memory: context.memorySummary ?? null,
+      ended: true,
+      distress: false,
+    }
+  }
+
   const reply = await characterReply({
     persona: { ...persona, ...context },
     turns: withUser,
+    // First strike: she declines it herself, in her own words (§16.3).
+    ...(check.action === 'decline' ? { directive: DECLINE_DIRECTIVE } : {}),
   })
 
   if (!reply.ok) {
@@ -161,6 +228,30 @@ export async function sendTextTurn(input: {
       turns: withUser,
       memory: context.memorySummary ?? null,
       ended: false,
+      distress: false,
+    }
+  }
+
+  // Her stream too (§16.3), and here it is cheaper than in a rep: a typed
+  // reply has not been spoken yet, so a reply that crosses the line is never
+  // stored and never shown rather than being corrected after the fact. His
+  // turn is already saved, so sending again is the whole of the recovery.
+  const hers = await assessTurn({
+    userId: user.id,
+    sessionId: null,
+    scope,
+    speaker: 'agent',
+    text: reply.text,
+  })
+
+  if (hers.action !== 'none') {
+    return {
+      ok: false,
+      message: 'She did not answer. Try that again in a moment.',
+      turns: withUser,
+      memory: context.memorySummary ?? null,
+      ended: hers.action === 'end',
+      distress: false,
     }
   }
 
@@ -177,6 +268,7 @@ export async function sendTextTurn(input: {
     turns: withReply,
     memory: context.memorySummary ?? null,
     ended: reply.ended,
+    distress: false,
   }
 }
 

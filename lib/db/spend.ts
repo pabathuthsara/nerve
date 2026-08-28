@@ -38,7 +38,7 @@ import { supabaseAdmin } from './admin'
  * to keep talking. The failure that shares a bucket is the one where a bug in
  * a screen nobody is looking at silences the character mid-sentence.
  */
-export type SpendBucket = 'token' | 'grade' | 'warmth' | 'llm' | 'tts' | 'text'
+export type SpendBucket = 'token' | 'grade' | 'warmth' | 'llm' | 'tts' | 'text' | 'safety'
 
 interface BucketPolicy {
   /** Requests allowed inside the window. */
@@ -74,6 +74,15 @@ const POLICY: Record<SpendBucket, BucketPolicy> = {
   // a loop in the cheap unmetered thing cannot silence the expensive metered
   // one. Text costs no voice minutes and no quota; it still costs tokens.
   text: { limit: 30, windowSeconds: 60 },
+  // Moderation (§16.3, B3). The widest bucket in the table, because it is the
+  // only route called on BOTH streams: a three-minute rep is ~15 of his turns
+  // and ~15 of hers, and the one limit that must never be the thing that
+  // silences the safety layer is the safety layer's own.
+  //
+  // The vendor call behind it is free. The bucket exists so the kill switches
+  // reach the route at all — a halt that leaves one endpoint answering is not
+  // a halt — and so a stuck client cannot hold a connection open forever.
+  safety: { limit: 120, windowSeconds: 60 },
 }
 
 /**

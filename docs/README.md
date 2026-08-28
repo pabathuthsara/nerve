@@ -22,6 +22,7 @@ markers, and both are meant to be updated by whoever does the work.
 | [`M3-PLAN.md`](M3-PLAN.md) | **The current plan.** Everything owed between here and the premium layer, in the order it has to happen — the two milestone gates that never passed, the MVP scope §17 forgot, and M3 itself |
 | [`M2-PLAN.md`](M2-PLAN.md) | The record of M2's nine items, all shipped. Superseded by `M3-PLAN.md` as "what to do next", kept as history |
 | [`LAUNCH-GAP.md`](LAUNCH-GAP.md) | The build measured against the spec: what is done, the ten launch blockers, the product-promise gaps, and nine pieces of spec drift that need a decision |
+| [`PAYMENTS-APPROVAL.md`](PAYMENTS-APPROVAL.md) | **Getting approved to take money.** The merchant-of-record application: who we apply to and in what order, what a reviewer opens, and the three things that still block submitting. Not code, and nobody can start it on our behalf |
 | [`INTEGRATION-GAPS.md`](INTEGRATION-GAPS.md) | The frontend seam specifically — which screens read real data and which are still fixtures |
 
 ## How the parts work
@@ -58,6 +59,11 @@ what to touch when:
 | A product rule — rep length, thresholds, what a section is for | `PRODUCT.md`, and record the drift in `LAUNCH-GAP.md` §4 if it now disagrees with the spec |
 | A persona dial or contract | `PERSONA.md` |
 | The audio graph | `AUDIO.md` |
+| A price, a plan's rep count, or what a plan includes | `lib/site/plans.ts` — one record feeds `/pricing` and `/profile/subscription`, and §14 has a merchant-of-record reviewer reading the public one. Then `LAUNCH-GAP.md` D2 |
+| The hero rep on `/` — its script, its voices, or the audio behind it | `scripts/hero-audio.ts` and `LAUNCH-GAP.md` B1. The two sides are captured differently on purpose: his lines are authored and read aloud verbatim, hers must come from the real persona and never from a keyboard |
+| Anything a payment reviewer would read — the public pitch, pricing, the legal pages, the safety position | `PAYMENTS-APPROVAL.md` §4, and re-read its §3. A human opens the site during MoR onboarding, and every provider on the shortlist bans dating products by name |
+| Anything on the public site — the landing, the method, pricing, the three legal pages | `LAUNCH-GAP.md` B1 and B4. The site is the second audience §14 names, so a claim added there is a claim somebody will check against the build |
+| A safety rule — what moderation acts on, how the escalation runs, what the age gate accepts | `lib/safety/` is the code and the tests are the argument; then `LAUNCH-GAP.md` B3 and `PAYMENTS-APPROVAL.md` §5.1. A change to what the product refuses is a change to what the three legal pages claim, so `components/site/legal-pages.tsx` is part of the same edit |
 | A persona's avatar — its form, its motion, or its place on the colour ramp | `AVATAR-AUDIT.md`, and run `npx vitest run lib/personas/visual.test.ts`: the palette bounds are assertions, not a style note |
 
 `NERVE-SPEC.md` is **not** edited as the build moves. It is v1.0 and it is the

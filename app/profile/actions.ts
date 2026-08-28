@@ -26,6 +26,7 @@ import { ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG } from '@/lib/data/guards'
 import type { TablesUpdate } from '@/lib/db/types'
 import type { Track } from '@/lib/data/types'
 import { OFFSET_MAX_MS, OFFSET_MIN_MS } from '@/lib/voice/calibration'
+import { checkAge } from '@/lib/safety/age'
 
 export interface SaveResult {
   ok: boolean
@@ -53,6 +54,28 @@ export async function saveDisplayName(name: string): Promise<SaveResult> {
   const trimmed = name.trim().slice(0, 60)
   if (!trimmed) return { ok: false, message: 'A name cannot be empty.' }
   return updateProfile({ display_name: trimmed })
+}
+
+/**
+ * The age gate, for the accounts the sign-up form could not ask (§16.4).
+ *
+ * Google's button has no fields on it, and every account created before this
+ * shipped has no date on file either. Both land on `/onboarding/age`, and this
+ * is what that step writes.
+ *
+ * `age_confirmed_at` is stamped here, after `checkAge` has agreed with the
+ * date — never from anything the form posted. The date itself is self-declared
+ * and the migration says so plainly; the stamp is not. It means "the server
+ * did the arithmetic and the answer was 18 or over", which is the thing terms
+ * clause 02 acts on.
+ */
+export async function confirmAge(dateOfBirth: string): Promise<SaveResult> {
+  const check = checkAge(dateOfBirth, new Date())
+  if (!check.ok) return { ok: false, message: check.message }
+  return updateProfile({
+    date_of_birth: check.dob,
+    age_confirmed_at: new Date().toISOString(),
+  })
 }
 
 export async function saveTrainingWheels(on: boolean): Promise<SaveResult> {

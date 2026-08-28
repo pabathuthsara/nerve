@@ -11,10 +11,9 @@ import { InterviewScreen, type InterviewRoute } from './screens/interview-screen
 import NotFound from '@/app/not-found'
 import Link from 'next/link'
 import { AlertTriangle } from 'lucide-react'
-import { LegalScreen } from './screens/legal-screens'
 
 const authRoutes = new Set<AuthRoute>(['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password'])
-const onboardingRoutes = new Set<OnboardingRoute>(['/onboarding/track', '/onboarding/focus', '/onboarding/experience', '/onboarding/name', '/onboarding/mic', '/onboarding/ready'])
+const onboardingRoutes = new Set<OnboardingRoute>(['/onboarding/age', '/onboarding/track', '/onboarding/focus', '/onboarding/experience', '/onboarding/name', '/onboarding/mic', '/onboarding/ready'])
 const sessionViews = new Set<SessionView>(['result', 'scorecard', 'transcript'])
 
 /**
@@ -63,6 +62,5 @@ export function RouteView({ path, query = {}, auth }: { path: string; query?: Re
     return <AuthScreen route={path as AuthRoute} query={query} recoverySession={auth?.recoverySession ?? false} devLoginEmail={auth?.devLoginEmail ?? null} />
   }
   if (onboardingRoutes.has(path as OnboardingRoute)) return <OnboardingScreen route={path as OnboardingRoute} />
-  if (path === '/terms' || path === '/privacy') return <LegalScreen kind={path === '/privacy' ? 'privacy' : 'terms'} />
   return <NotFound />
 }

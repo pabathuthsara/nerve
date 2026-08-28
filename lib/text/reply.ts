@@ -49,6 +49,17 @@ export interface TextReplyInput {
   persona: Persona
   /** The thread so far, oldest first, INCLUDING the turn just typed. */
   turns: readonly TextTurn[]
+  /**
+   * A one-off direction for this reply only (§16.3).
+   *
+   * Today there is exactly one caller: the moderation layer, telling her that
+   * the message she is about to answer crossed a line and that she should
+   * decline it in her own words. It is a direction rather than a scripted
+   * sentence for the same reason every other reinforcement in this product is
+   * — a canned line here would be the one message in the thread that sounds
+   * like an app, at the exact moment it must not.
+   */
+  directive?: string
 }
 
 /**
@@ -91,6 +102,9 @@ export async function characterReply(input: TextReplyInput): Promise<TextReplyRe
     // The band direction, last, so it is the most recent thing she reads —
     // exactly where the pipeline arm puts it, and for the same reason.
     { role: 'system', content: composeSteering({ persona: input.persona, warmth }) },
+    // After the steering, so it is the very last thing she reads. A decline
+    // has to outrank the band direction it contradicts.
+    ...(input.directive ? [{ role: 'system' as const, content: input.directive }] : []),
   ]
 
   const completion = await completeChat({

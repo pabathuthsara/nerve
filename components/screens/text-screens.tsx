@@ -29,6 +29,7 @@ import { MAX_MESSAGE_CHARS, type TextTurn } from '@/lib/text/thread'
 import { usePersona, useUserState } from '@/lib/data'
 import { Button, Sheet, Skeleton, useToast } from '@/components/ui'
 import { FluidPersona } from '@/components/fluid-persona'
+import { DistressModal } from '@/components/modals'
 
 export function TextRepScreen({ personaId }: { personaId: string }) {
   const { data: persona, loading: personaLoading } = usePersona(personaId)
@@ -38,6 +39,9 @@ export function TextRepScreen({ personaId }: { personaId: string }) {
   const [turns, setTurns] = useState<TextTurn[]>([])
   const [memory, setMemory] = useState<string | null>(null)
   const [ended, setEnded] = useState(false)
+  // §16.8. Not folded into `ended`: that offers to start fresh, and this owes
+  // real help instead.
+  const [distress, setDistress] = useState(false)
   const [loading, setLoading] = useState(true)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -55,6 +59,7 @@ export function TextRepScreen({ personaId }: { personaId: string }) {
     if (state.turns !== null) setTurns(state.turns)
     setMemory(state.memory)
     setEnded(state.ended)
+    if (state.distress) setDistress(true)
   }, [])
 
   useEffect(() => {
@@ -161,7 +166,7 @@ export function TextRepScreen({ personaId }: { personaId: string }) {
 
         {sending ? <p className="text-bubble text-bubble--persona text-bubble--typing" aria-live="polite">{persona.name} is typing<i /><i /><i /></p> : null}
 
-        {ended ? (
+        {ended && !distress ? (
           <div className="text-rep__ended">
             <span className="label">She has gone</span>
             <p>That is the scene over. Start fresh to run it again, or take it into a real rep.</p>
@@ -221,6 +226,10 @@ export function TextRepScreen({ personaId }: { personaId: string }) {
           <Button variant="ghost" fullWidth disabled={clearing} onClick={() => setFreshOpen(false)}>Keep it</Button>
         </div>
       </Sheet>
+
+      {/* §16.8. Closing it leaves for /train rather than back to the thread:
+          the frame is dropped, and the thread is the frame. */}
+      <DistressModal open={distress} onClose={() => { window.location.href = '/train' }} />
     </main>
   )
 }

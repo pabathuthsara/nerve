@@ -26,7 +26,7 @@ need a decision rather than a ticket.
 | M1 — the loop | **Done.** Auth, eight-table schema with RLS, brief → live → scorecard → transcript, deterministic + judgement scoring |
 | M2 — progression & field | **Built.** All nine plan items: the three-minute format, the field end to end, the predicted-versus-actual chart, character memory, the §08 unlock rule with its once-ever moment, adaptive difficulty, the baseline and week-four re-test, share cards and the Sunday review. **Not closed:** §17's gate is twenty hand-scored transcripts and none are scored — the harness is built and ten are collected |
 | M3 — the premium layer | **Half.** Arena visual system, skeletons, real analysers, reduced motion. No sound kit, haptics, PWA, score choreography |
-| M4 — billing & safety | **Schema, plus the spend ceiling.** `subscriptions` and `safety_events` exist and are proven, and the five paid routes now sit behind `maySpend` with two kill switches and a per-plan daily cap (B9, cleared 24 Aug). Still no merchant of record, no age gate, no moderation, no distress path |
+| M4 — billing & safety | **Safety done, billing not.** The whole of §16's app layer shipped 28 Aug — moderation on both streams, the age gate, the boundary sequence, the distress path and the report control (B3) — on top of the schema and the spend ceiling (B9, cleared 24 Aug). What is left is money: no merchant of record, no checkout, no webhook |
 | M5 — private beta | Blocked by M4, and by having nothing instrumented to learn from |
 
 Feature inventory (§10), counted honestly against the 69 MVP features:
@@ -40,8 +40,13 @@ Feature inventory (§10), counted honestly against the 69 MVP features:
 | E · Insight & data (7) | 6 | 0 | 1 |
 | F · Premium craft (12) | 5 | 2 | 5 |
 | G · Account & billing (8) | 2 | 1 | 5 |
-| H · Safety (6) | 0 | 0 | 6 |
-| **Total** | **42** | **5** | **22** |
+| H · Safety (6) | 6 | 0 | 0 |
+| **Total** | **48** | **5** | **16** |
+
+27 August adds the public half of §11 — six routes that were the only thing
+standing between the build and a merchant-of-record application (B1, B4). It
+changes none of the numbers above, because none of the 69 MVP features is a
+marketing page: what it changes is that the application can now be made.
 
 The shape of that table is the finding, and 24 August moved it for the first
 time: groups D and E — the coaching content and the insight surface, which §17
@@ -51,9 +56,10 @@ remains missing in both is one `[V2]` feature each.
 The product is real: the training loop, the field, progression, memory,
 adaptive difficulty, the library, the trends, the retention hooks and the
 artefacts that carry organic distribution. What is still not built is everything
-that makes it a *business* — billing, safety, legal, instrumentation. **Groups G
-and H are 2 done out of 14**, and that is where the remaining launch risk
-lives.
+that makes it a *business* — billing, safety, legal, instrumentation. **Group G is 2 done out of 8**, and
+that is where the remaining launch risk lives. Group H was 0 of 6 until 28
+August and is now 6 of 6, which moves the risk from "two empty groups" to one:
+billing.
 
 ---
 
@@ -62,24 +68,140 @@ lives.
 Ordered by what stops what. Sizes are working days for one person who knows
 this codebase.
 
-### B1 · There is no public site  ·  ~3 days
+### B1 · The public site  ·  **cleared 27 Aug**
 **Spec:** §11 lists six public routes — landing with a live demo rep,
 `/how-it-works`, `/pricing`, and three legal pages.
-**Built:** `/` redirects straight to `/login`. `/how-it-works` and `/pricing`
-render the 404 screen.
-**Why it blocks:** two independent reasons. Nobody can find out what this is
-without an account, so there is no acquisition surface at all. And §14 is
-explicit that a human at the merchant of record reviews the site during
-onboarding — "if the landing page leads with getting her number, we are
-declined by every provider on this list". Right now there is no landing page to
-review, which is its own kind of decline.
+**Built:** all six, plus `sitemap.xml`, `robots.txt` and permanent redirects
+from the old `/terms` and `/privacy` addresses. `/` renders the landing for a
+signed-out visitor and still routes a signed-in one to where they left off,
+which is what it was doing before. Everything but `/` prerenders static.
 
-**Hosting is no longer the missing part (24 Aug).** The app is deployed to
-production at `https://nerve-henna.vercel.app` — Vercel project `nerve`, linked
-to the GitHub repo, Hobby plan, no deployment protection. What B1 still needs is
-entirely content: the six §11 routes do not exist, and a merchant-of-record
-reviewer landing on that URL today is bounced to `/login` with nothing to read.
-Deploying moved this from "no site and no host" to "a host serving no site".
+**What is on them.** The landing opens on the rep format, plays a rep, and
+states the §07 law immediately after it; then the loop, the roster, the four
+things Nerve is not, a pricing summary and a FAQ. `/how-it-works` is the method
+end to end — the anatomy of the three minutes, the 60/40 split of the composite,
+why the ending is worth nothing, the memory rule with the line the code refuses,
+the four field tiers, the rejection milestones and the four ranks. `/pricing`
+quotes `lib/site/plans.ts`.
+
+**The hero is the live rep screen, not a transcript.** §11 asks for "a live
+30-second demo rep with no sign-up", and that cannot be built: it needs a
+microphone, a WebRTC session, and an unauthenticated route that spends money on
+a stranger — which is the thing `maySpend` exists to prevent. So it is a rep
+played back, on the real clock.
+
+**The first attempt got this wrong and it is worth recording why.** It rendered
+the rep as a scrolling column of chat bubbles, and the result was that the first
+thing a stranger understood about a *voice* product was that it was a messaging
+app. The mistake was not styling. It was that `/rep/[persona]/live` has no
+thread at all — it is the orb, a clock and one caption at a time — so the hero
+was showing an interface that does not exist. It now matches the real screen:
+orb centre, `rep-caption` one line at a time, a turn meter for each side, and
+the warmth band underneath. Crossing 65 is silent on it, because arming is
+silent (§05) and a demo that announced it would teach the wrong thing on the one
+screen where somebody is deciding.
+
+**The voices are the point, and there is a script for it.** `npm run hero:audio`
+records both sides into `public/hero/manifest.json` plus one mp3 per turn. With
+that file present the hero plays them and both meters are real `AnalyserNode`
+readings over the audio — §02 rule 3 satisfied rather than dodged — and the stamp
+prints each side's provenance from the manifest rather than from a hardcoded
+string, so the page can never name a model that did not speak. Without it the
+hero runs silently on the authored script and says `muted preview · demo script`.
+
+**The two sides are captured differently, and that asymmetry is the argument.**
+Her replies are generated: his lines go into the real provider as real turns
+against the real compiled persona in her real voice (`marin`), and whatever comes
+back is what ships. His are read: they are authored, so there is nothing for a
+conversational model to decide and improvising them would only risk it departing
+from the script the page is built around. His half goes through `gpt-4o-mini-tts`
+in `ash` — the same voice `VOICE_BY_TIMBRE.masculine` already picks inside the
+product — with delivery direction that pushes away from performance, because a
+voice that sounds like an advertisement is the one thing this page cannot have.
+The stamp says which is which: `her gpt-realtime, unscripted · his
+gpt-4o-mini-tts, read`.
+
+**Both captures are run and a take is kept** (28 Aug 2026, five exchanges,
+47.9s). What is deployed is real audio on both sides. Her side was recorded
+first — the expensive half fails before the cheap half has been paid for. Three
+things had to be fixed to get there:
+
+- **The beta subprotocol is dead.** The socket opened with
+  `openai-beta.realtime-v1`, and OpenAI now refuses it outright — *"The Realtime
+  Beta API is no longer supported."* GA is the bare endpoint with no beta
+  subprotocol; the session shape `OpenAIPersonaCompiler` already emits
+  (`type: 'realtime'`) is the GA one, so nothing else moved.
+- **`end_scene` produced a silent turn.** Her contract tells her to speak a
+  final line *and* invoke the tool in the same response; on the goodbye she
+  invoked it and skipped the line, which is a legal reading and a useless
+  recording. The capture drives its own turns and ends when the authored lines
+  run out, so the tool has nothing to decide — it is removed for the capture
+  only, with the contract recompiled identically minus that one paragraph. This
+  is not a softer Nadia.
+- **A streamed WAV lies about its own length.** The speech endpoint returns a
+  `data` chunk declaring `0xFFFFFFFF` bytes, because the length was not known
+  when the header went out. Trusting it put every one of his turns on screen for
+  eighty-nine thousand seconds. The bytes actually present now win over the
+  declaration.
+
+**And the hero was silent on every desktop load, twice.** The auto-start effect
+exists so that a hero with no capture still moves; it is gated on `hasAudio`.
+But the manifest arrives over the network, so on the first pass `hasAudio` is
+false whether or not a capture exists — and the effect runs long before the
+fetch settles. On any viewport where the hero is on screen at load, which is
+every desktop one, it won the race, started the *muted* fallback, and left
+`phase` at `playing`, so "Hear a rep" never rendered. A whole silent rep, no
+control to hear it, and the stamp reading `Recorded` throughout. It is now
+gated on a `probed` flag set when the fetch settles either way: wait for the
+answer before assuming there is none. This is also why it survived review twice
+— a headless viewport of 800×600 puts the button below the fold, so the bug
+disappears exactly where it was being looked for.
+
+The script also transcodes to mp3 itself and writes the manifest pointing at the
+result — 176KB of audio rather than 973KB of WAV. Without ffmpeg on PATH it
+leaves the WAVs and says so: a heavy hero, never a broken one.
+
+Two rules are load-bearing in that script. His five lines are authored, because
+he is the demo and the arc has to build. **Hers are not, and must not be** — what
+she says is the product, and a hand-written version of it would be advertising
+prose instead of the thing being sold. And it is run by hand, never from a
+build: it is the one script in the repo that spends money without a user asking
+it to. Budget by the model actually configured — `.env.local` sets
+`OPENAI_REALTIME_MODEL=gpt-realtime` at $0.16/minute, not the mini's $0.065
+(`lib/voice/rates.ts`), so a take is tens of cents, not six.
+
+**The §07 proof moved down.** The rep that ends in her leaving and scores 87 is
+still the sharpest statement of "outcome is never scored" available, but it is a
+document rather than a demonstration — so it is now a static scorecard in the
+`/` scoring section, which costs no JavaScript and reads better there. The
+hero's job is *this sounds like a person*; the scorecard's job is *and here is
+what we measure*.
+
+**Text mode got its own section**, with the bubbles it is actually entitled to.
+Sold honestly as the lesser mode: same characters, no microphone, no quota, and
+warmth capped below `ARM_THRESHOLD` so it can never produce the ending a voice
+rep can (`TEXT_WARMTH_CEILING`, enforced in code).
+
+**Three things it deliberately does not claim.** Every sentence on the site is a
+rule the code enforces: no user counts, no success rates, no testimonials, and
+no control that is not built. The PG-13 paragraph said characters are written to
+decline and that steering a rep there breaches the terms, and deliberately
+claimed nothing about automated moderation — **which shipped on 28 August**, so
+that paragraph now states the control in the present tense. The rule is
+unchanged: what the site claims is what the code does.
+
+**Also fixed on the way past.** The sign-up and log-in screens are public pages
+and their pitch block led with `Goal — get her number`, which is close to the
+exact sentence §14 says gets an application declined. It now reads the format
+and the scoring law. And the in-app plan comparison advertised "Level 1 personas"
+on Free and "every persona" above it, a gate that has never existed in this
+codebase — `unlockedLevels` counts reps scoring 70+ and has never read a plan.
+Both surfaces now read `lib/site/plans.ts`, so the public price and the in-app
+price cannot drift.
+
+**Still owed:** a real `og.png` for the new pages (the existing one predates
+them), and a decision on D2 before checkout opens — the site quotes the built
+$24/$39 reps-a-day plans, not §14's $19/$39 minutes.
 
 ### B2 · No billing exists  ·  ~4 days + review lead time  ·  `DB done`
 **Spec:** §14, and §10 G.
@@ -93,36 +215,129 @@ handoff, the webhook that writes the mirror, plan switching, and the six money
 overlays in §12. Plans are still granted from a terminal by `npm run db:plan`.
 **Why it blocks:** no revenue, obviously — but the real risk is lead time.
 §17 says apply at the *start* of M4 because approval takes days and can fail,
-and it can only be applied for once B1 exists.
+and it can only be applied for once B1 exists. **B1 exists as of 27 Aug**, so
+the application is no longer waiting on anything in this repo — what a reviewer
+would now open is a landing page, a pricing page and three real policies.
 
-### B3 · The safety layer  ·  ~3 days  ·  `DB done`
+**The application itself is tracked in [`PAYMENTS-APPROVAL.md`](PAYMENTS-APPROVAL.md)**,
+because it is not code and nobody in this repo can finish it. **B3's moderation
+shipped on 28 August**, which was the last of its three blockers that was a build
+task; what remains is a support mailbox that actually receives mail, and an
+entity with a bank account to be paid into. That page is also where the log of what we told a provider, and when,
+belongs. Everything in *this* entry is what happens after they say yes.
+
+### B3 · The safety layer  ·  **shipped 28 Aug**
 **Spec:** §16, and §10 H — six MVP features.
-**Built (database):** `safety_events` with the five kinds, `profiles.date_of_birth`
-and `age_confirmed_at` for the gate, and `profiles.keep_recordings` for the
-retention toggle. A user can file a report and read what was recorded about
-them; a user cannot forge a moderation event, which is asserted from a second
-account.
-**Still missing (app):** the moderation call itself on both streams, the age
-gate at sign-up, the in-frame decline and the second-strike end, distress
-detection, and the report control on the session screen.
-**Missing, specifically:**
-- Age gate at sign-up (18+, §16.4). The category attracts teenagers.
-- Moderation on both streams (§16.3). This is not prudishness — every MoR in
-  §14 bans adult content outright, so an unmoderated voice product is a
-  payment account waiting to be closed.
-- Content-boundary intervention: in-frame decline, then the rep ends.
-- Distress detection and a resource sheet that diagnoses nothing.
-- Report-a-problem on every session.
-**Why it blocks:** B2 depends on it, and the first user who steers a rep
-somewhere ugly has no path that ends well.
+**Built (database, 23 Aug):** `safety_events` with the five kinds,
+`profiles.date_of_birth` and `age_confirmed_at` for the gate, and
+`profiles.keep_recordings` for the retention toggle. A user can file a report
+and read what was recorded about them; a user cannot forge a moderation event,
+which is asserted from a second account.
 
-### B4 · The legal pages are placeholders  ·  ~1 day (plus a lawyer's eye)
-**Built:** `/terms` and `/privacy` render three short sections each, and the
-privacy page currently says *"Production retention is not enabled by this
-frontend preview"* — text written for a mock that is now shipping real audio to
-real storage. `/legal/safety` (the not-therapy statement, §16.2) does not exist.
-**Why it blocks:** we record people's voices. A privacy policy that describes a
-product we no longer are is worse than none, and the MoR reviewer reads it.
+**Built (app, 28 Aug).** Five of the six §10 H features; the sixth — the
+challenge library review workflow — was already the rule the library shipped
+under (§16.5, and rule 8 in `CLAUDE.md`). **No migration was needed**, which is
+the good news the database pass bought: every column and every event kind this
+uses was already there.
+
+- **Moderation on both streams.** `lib/safety/` — a classifier verdict mapped
+  onto four outcomes (`moderation.ts`), the escalation sequence as a pure state
+  machine (`escalation.ts`), the server call and the record it leaves
+  (`assess.ts`), and a client queue that never blocks a rep (`monitor.ts`).
+  `/api/safety` is called once per committed turn from either side, behind
+  `requireUser` **and** `maySpend` with its own bucket. The vendor call is free
+  today; the gate is there so the kill switches reach the route at all.
+- **Content-boundary intervention.** First strike is an in-frame decline: she is
+  handed a direction and declines in her own words, and the rep continues. A
+  second ends it, and she is given a bounded moment to close the scene on the
+  same `isClosingOver` rule the clock uses. A rep the safety layer ended can
+  never be a win, whatever the meter said — checked ahead of `givesNumber`
+  rather than folded into it.
+- **The one category that gets no first chance.** Sexual content involving
+  minors ends a rep on sight, from either stream, with no strike and no
+  in-character answer. It is a separate verdict at the *classification* so that
+  no state machine downstream can be the thing that gets it wrong.
+- **Distress detection.** Read only off the user's stream — the same words from
+  the character are a break, not a person in trouble, and a helpline offered for
+  a model's mistake is the product diagnosing its user. It ends the rep with no
+  goodbye, drops the frame, and shows `DistressModal`: no persona, no score, no
+  "run it back", and a list of real helplines authored in
+  `lib/safety/resources.ts` rather than written in a component.
+- **Age gate at sign-up.** A date of birth on the sign-up form, checked by
+  `checkAge` on the server *before* the account is created. Google's button has
+  no fields and older accounts have no date, so both are caught by
+  `/onboarding/age`, which the route guard puts ahead of everything including a
+  finished onboarding.
+- **Report-a-problem.** On the result, scorecard and transcript screens of every
+  rep. Written through the user's own client, because `safety_events` grants
+  exactly one insert policy — your own row, `kind = 'report'` — so RLS is the
+  authorisation rather than a check in application code.
+- **Text mode too**, which §16.3 does not mention because text mode did not
+  exist when it was written. Same function, called from the Server Action: his
+  message is classified before she is asked for a reply, and her reply is
+  classified before it is stored, so nothing that trips moderation is ever
+  written into a thread.
+- **The §16.2 signpost** now sits in settings as well as on `/legal/safety`.
+
+**The uncomfortable decision, recorded.** Moderation **fails open**: an
+unreachable classifier returns `ok` and the rep carries on. The alternative
+converts a vendor blip into every live conversation in the product being cut off
+mid-sentence, which §05 forbids outright — and a safety layer that reads as
+"the thing that breaks reps" is one somebody eventually switches off. The
+exposure is bounded by the character contract, the PG-13 instruction in every
+persona prompt, and the report control. It is asserted in `assess.test.ts` with
+the reasoning attached, so reversing it is a decision rather than an edit.
+
+**Also: the three legal pages now describe controls that exist.** They were
+written honestly in the future tense — "an age confirmation is being added",
+"automated moderation is being added", "a report control is being built" — and
+every one of those sentences is now present tense. Privacy gains the date of
+birth, the safety record and the classifier as a named use of OpenAI. That is
+B4's other half and it is the thing a merchant-of-record reviewer checks the
+product against.
+
+**Still owed by hand:**
+- **Verify the helpline numbers in `lib/safety/resources.ts` before launch.** A
+  stale number is worse than no number. They are checked into the repo so that
+  checking them is a reviewable task rather than an assumption.
+- **Watch the thresholds.** `THRESHOLDS` in `moderation.ts` sits deliberately
+  above the provider's own `flagged`, and the flags that fall under our floors
+  are written down as `kind = 'moderation'` precisely so the gap can be read off
+  the table rather than argued about. Nobody has looked at that table yet
+  because nothing has run.
+- **`keep_recordings` still has no UI.** That is B6, not this.
+
+### B4 · The legal pages  ·  **written 27 Aug** · `lawyer's eye still owed`
+**Was:** `/terms` and `/privacy` rendered three short sections each, and the
+privacy page said *"Production retention is not enabled by this frontend
+preview"* — text written for a mock that is now shipping real audio to real
+storage. `/legal/safety` did not exist.
+**Built:** three real documents at the §11 addresses, written against what the
+build actually does. Terms cover eligibility, acceptable use, content standards,
+the merchant-of-record arrangement, refunds and Sri Lankan governing law.
+Privacy names every processor, states the thirty-day audio window and the fact
+that the expiry is stamped at upload, and describes RLS as the thing enforcing
+who can read a rep. Safety carries the §16.2 not-therapy signposting, the 18+
+line, the PG-13 bound and the rule every field challenge is written against.
+**Where a commitment existed but the code did not**, all three said so in those
+words rather than in the present tense: automated moderation, the age gate and
+the in-product report control were each described as being added, with the
+current path (character design, the support inbox, account action) stated. A
+policy that describes a control we have not built is the one thing on these
+pages that could not be walked back.
+
+**All three of those shipped on 28 August (B3), and the pages were rewritten to
+match.** Safety clause 02 now describes the date-of-birth gate and says plainly
+that a date is a claim rather than a proof; clause 03 describes moderation on
+both sides, the decline-then-end sequence, the category that gets no first
+chance, and what the event record does *not* contain; clause 06 describes the
+distress path; clause 07 points at the report control instead of at an inbox.
+Terms clause 02 gained the same gate. Privacy gained three things it now has to
+name: the date of birth, the safety record, and the classifier as a use of
+OpenAI. The rule did not change — the pages say what the code does — the code
+simply caught up with what they were promising.
+**Still owed:** a solicitor's pass before paid accounts open, and a company
+entity name once one exists — the documents currently trade as "Nerve".
 
 ### B5 · Email cannot carry a beta  ·  ~0.5 days
 **Built:** Supabase's built-in sender, which has a hard low hourly limit and
@@ -447,19 +662,24 @@ free, preserves the design, adds a second place that has to hold the secret; a
 Pro upgrade, which unlocks the expression as authored; or a daily cron and an
 accepted drift. Deferred rather than decided.
 
-**Blocker total: roughly 13.5 working days**, down from 21 after the database
-pass, 16 with B8 cleared, 15 with B9, 14 with B10, and back down as B11's half
-day was spent — plus merchant-of-record review time, which runs in parallel and
-can fail. **Nine of the twelve blockers remain**, one of them (B11) now
-mitigated and instrumented but still owed its explanation, which costs a rep
-rather than a day, and one (B12) deferred rather than decided.
+**Blocker total: roughly 10.5 working days**, down from 21 after the database
+pass, 16 with B8 cleared, 15 with B9, 14 with B10, back down as B11's half day
+was spent, and down again with B1 and B3 — plus merchant-of-record review time,
+which runs in parallel and can fail. **Seven of the twelve blockers remain**,
+one of them (B11) now mitigated and instrumented but still owed its explanation,
+which costs a rep rather than a day, and one (B12) deferred rather than decided.
 
-> **B9 was the one to take next, and it is done (24 Aug).** The grader,
-> the live scorer, both pipeline hops and the Realtime token now sit behind
-> `maySpend`. With the money leak closed, **B1 (there is no public site) is the
-> one to take next** — not because it is the biggest, but because it is the only
-> thing standing between here and the merchant-of-record application, which is
-> the sole item on this list with external lead time that can fail.
+> **B9 was the one to take next, and it is done (24 Aug).** B1 followed on 27
+> August and B3 on 28 August, which between them clear everything on this list
+> that the merchant-of-record application was waiting on. **What to take next is
+> not on this list: it is the application itself**, tracked in
+> [`PAYMENTS-APPROVAL.md`](PAYMENTS-APPROVAL.md). Its two remaining blockers —
+> a mailbox that answers, and an entity with a bank account — are founder tasks,
+> and they are now the only things with external lead time that can fail.
+>
+> The largest code item left is **B2 (billing)**, and none of it can start
+> before approval. **B5 (email cannot carry a beta, ~0.5 days)** is the useful
+> thing to do while waiting, because it overlaps the mailbox question.
 
 ### B13 · The first session could end with nothing  ·  **cleared 25 Aug**
 
@@ -973,7 +1193,7 @@ somebody has to say which is right.
 | # | Spec says | Build does | Note |
 |---|---|---|---|
 | D1 | "No password fields anywhere" (§04, §11) | Password sign-up and sign-in, alongside OTP and Google | The frontend brief asked for passwords. Either the spec line goes, or the screens do |
-| D2 | Free = 3 reps ≈ 9 min, then paywall; $19 / 60 min and $39 / 150 min | Free = 1 rep/day; $24 / 3 a day; $39 / 6 a day | Three inconsistencies at once: price, unit and generosity. The reps-per-day framing is better than minutes (§14 agrees) but the numbers need choosing. **Now costed** — see D2a |
+| D2 | Free = 3 reps ≈ 9 min, then paywall; $19 / 60 min and $39 / 150 min | Free = 1 rep/day; $24 / 3 a day; $39 / 6 a day | Three inconsistencies at once: price, unit and generosity. The reps-per-day framing is better than minutes (§14 agrees) but the numbers need choosing. **Now costed** — see D2a. **Now also public (27 Aug):** `/pricing` quotes the built numbers, from `lib/site/plans.ts`, which is the single record both it and `/profile/subscription` read. Changing the answer is one file, but it is a price on a public page now rather than a number in a component — decide before checkout opens |
 | D3 | Bill per second, minutes framed as reps | Both: an append-only per-second ledger *and* a reps/day counter that actually gates | Fine as a design, but only one is enforced. If a rep can run 2 minutes, reps/day and minutes are interchangeable — say so once, in the spec |
 | ~~D4~~ | Streaks run on asks made, never on asks accepted (§09) | ~~Streak counts days with a voice rep~~ | **Resolved 23 Aug.** A logged ask calls `recordTrainingDay`, so the field carries the day when the voice quota is gone (§14), and `npm run db:field` asserts a streak starting with no rep anywhere near it |
 | D5 | Robin at a gallery opening; Alex at a bar, alone (§06) | Robin in a hotel lobby; Alex at a gallery opening | Alex was authored and tuned first and kept her room. Level 7 is `signalClarity: 20`, not the venue |
@@ -982,6 +1202,7 @@ somebody has to say which is right.
 | D8 | Unlock at two sessions scoring 70+ | Unlock on wins at the tier below | See §3. Worth fixing toward the spec: it scores process, ours scores outcome. **Sharper than it looked** — until 23 Aug the "win" itself was partly the grader's outcome, so the gate was scoring outcome twice over. That half is fixed (D8a); the rule is still wins rather than 70+ |
 | D9 | "Volt is the ONLY accent"; Cool, Amber and Red are data or semantic, never branding (Arena) | Persona avatars carry a per-character hue on a constrained material ramp | **Decided 24 Aug — resolved in favour of the build, with a rule.** Characters have to be told apart at a glance on the roster, and shape alone was not enough — the argument was made when there were eight and holds with three, since the hue IS the warmth meter rather than decoration. The concession is bounded and enforced in code rather than in a style note: hues avoid the 60–115° band where Volt lives, no avatar colour comes within an RGB distance of 60 of Volt, Cool, Amber or Red, and chroma is floored at 0.34 and ceilinged at 0.86 so an avatar can never reach an accent's saturation. `lib/personas/visual.test.ts` holds all three. The Arena section of `CLAUDE.md` now records the carve-out |
 | D11 | One rep a day on free, and voice as the only way to train (§01, §14) | Day one is three reps on every plan; text mode runs the same character unmetered, on any day | **Decided 25 Aug — deliberate, and both halves earn their keep.** The arc the gym teaches is fail, adjust, succeed, and it cannot happen inside one attempt: rationing day one to a single rep meant a new user's only evidence was one conversation that probably went badly. The grant is bounded by `entitlements.created_at`, which has no user write path, so a second day one cannot be minted, and the ceiling after day one is exactly what §14 says. Text mode is the larger divergence and the more defensible one — it costs no voice minutes, has no meter and no score, and is capped below `ARM_THRESHOLD` so it can never produce the number a voice rep exists to earn. §14's own reasoning applies to it directly: running out must never break the habit, or the paywall is also a churn event |
+| D12 | Free is "Level 1 personas", paid is "every persona" (the in-app plan comparison, and §14's tier table) | Nothing has ever gated a character by plan | **Resolved 27 Aug in favour of the build, by making the copy true.** `unlockedLevels` counts reps scoring 70+ and has never read a plan; `entitlements.plan` touches exactly two things, `reps_per_day` and the daily spend cap. The comparison was advertising a gate that did not exist, which is a promise to build one. Both the public and in-app plan lists now say volume and nothing else — and that is the better argument anyway, since a free tier that withholds the mechanism is a demo with a price attached |
 | D10 | Eight characters, one per level, and level 8 unwinnable by construction (§06) | Three characters on rungs 1, 2 and 4; the other five retired; no unwinnable rung | **Decided 24 Aug — deliberate, and the one entry here that gives something up.** See D10a |
 
 ### D10a · Three characters instead of eight  ·  **decided 24 Aug**
@@ -1185,11 +1406,16 @@ So the list above is read in proportion.
 
 Nothing here is sequenced by size. It is sequenced by what unblocks what.
 
-**Phase 1 — make it lawful and legible (≈ 8 days).** The public site, the real
-legal pages, the age gate, moderation on both streams, custom SMTP, the mic
-primer, Sentry and PostHog, and rate limits on the grader. At the end of this
-the merchant-of-record application can go in — and it should, on the first day
-it can, because it is the only item with external lead time.
+**Phase 1 — make it lawful and legible (≈ 8 days).** ~~The public site, the real
+legal pages,~~ **(both done 27 Aug)** the age gate, moderation on both streams,
+custom SMTP, the mic primer, Sentry and PostHog, and rate limits on the grader.
+At the end of this the merchant-of-record application can go in — and it should,
+on the first day it can, because it is the only item with external lead time.
+
+The site being up moves the application from "cannot be made" to "should wait on
+one thing": moderation. Every merchant of record on the §14 shortlist bans adult
+content by name, and a reviewer who asks how the PG-13 bound is enforced should
+get an answer better than the honest one the safety page currently gives.
 
 **Phase 2 — close the loop (≈ 8 days).** The field: challenges table with
 hand-written content, the log with both anxiety ratings, the predicted-vs-actual
@@ -1216,12 +1442,13 @@ anything.
 
 | Spec route | State |
 |---|---|
-| `/` landing | **Missing** — redirects to `/login` |
-| `/how-it-works` | **Missing** |
-| `/pricing` | **Missing** (plan comparison exists inside the app) |
-| `/legal/terms` | Partial — `/terms`, placeholder copy |
-| `/legal/privacy` | Partial — `/privacy`, placeholder copy |
-| `/legal/safety` | **Missing** |
+| `/` landing | **Done** (27 Aug) — hero replays a rep rather than running a live one; see B1 |
+| `/how-it-works` | **Done** (27 Aug) |
+| `/pricing` | **Done** (27 Aug) — quotes `lib/site/plans.ts`, the same record the in-app screen reads |
+| `/legal/terms` | **Done** (27 Aug) — `/terms` permanently redirects here |
+| `/legal/privacy` | **Done** (27 Aug) — `/privacy` permanently redirects here |
+| `/legal/safety` | **Done** (27 Aug) |
+| *(not in §11)* `/sitemap.xml`, `/robots.txt` | **Added 27 Aug** — public routes crawlable, the product disallowed |
 | `/auth/sign-in` · `/auth/sign-up` · `/auth/verify` · `/auth/callback` | Done as `/login`, `/signup`, `/verify-email`, `/auth/callback`, plus `/forgot-password` and `/reset-password` |
 | `/start/goal` · `/start/mic` · `/start/brief` · `/start/rep` | Done as `/onboarding/*` → first rep, now five steps: track, focus, experience, **name**, mic |
 | `/start/baseline` self-assessment | **Missing** |

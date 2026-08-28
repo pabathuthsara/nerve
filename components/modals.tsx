@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, LockKeyhole, Mic, MicOff, Radio, Trophy, WifiOff } from 'lucide-react'
+import { Check, LifeBuoy, LockKeyhole, Mic, MicOff, Radio, Trophy, WifiOff } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button, Modal, Sheet, Stat } from './ui'
 import type { FieldTier, Level, PendingUnlock } from '@/lib/data/types'
 import { detectBrowser, micRecovery, type Browser } from '@/lib/data/mic'
+import { DISTRESS_COPY, DISTRESS_RESOURCES } from '@/lib/safety/resources'
 
 interface OpenProps { open: boolean; onClose: () => void }
 
@@ -122,6 +123,23 @@ export function MicBlockedSheet({ open, onClose, onRetry }: OpenProps & { onRetr
   // screen a user is already having trouble with.
   useEffect(() => { setBrowser(detectBrowser(navigator.userAgent)) }, [])
   return <Sheet open={open} onClose={onClose} title="Microphone blocked"><div className="sheet-stack"><MicOff size={34} strokeWidth={1.5} className="danger" /><p>Your browser is refusing the microphone for this site. Nothing is wrong with your account.</p><p className="muted">{micRecovery(browser)}</p><Button fullWidth onClick={onRetry}>Try again</Button></div></Sheet>
+}
+
+/**
+ * The rep stopped being an exercise (§16.8).
+ *
+ * A modal rather than a sheet, and not dismissible by tapping past it: this is
+ * the one moment in the product where continuing to be an app that gets out of
+ * your way is the wrong behaviour. The training frame is gone — no persona, no
+ * score, no meter, no "run it back", nothing that reads as a game — and the
+ * only thing on the screen besides the words is a list of places to call.
+ *
+ * The resources and the copy are authored in `lib/safety/resources.ts`. They
+ * are not written here, because a helpline number buried in a component is a
+ * helpline number nobody reviews.
+ */
+export function DistressModal({ open, onClose }: OpenProps) {
+  return <Modal open={open} onClose={onClose} title={DISTRESS_COPY.title}><div className="sheet-stack distress-sheet"><LifeBuoy size={34} strokeWidth={1.5} className="amber" /><p>{DISTRESS_COPY.body}</p><p className="distress-offer">{DISTRESS_COPY.offer}</p><ul className="distress-list">{DISTRESS_RESOURCES.map((resource) => <li key={resource.name}><a href={resource.href} target="_blank" rel="noreferrer"><strong>{resource.name}</strong><span className="data">{resource.contact}</span></a><small>{resource.detail}</small></li>)}</ul><Button fullWidth onClick={onClose}>{DISTRESS_COPY.close}</Button></div></Modal>
 }
 
 export function MicLostModal({ open, onResume, onEnd }: { open: boolean; onResume: () => void; onEnd: () => void }) { return <Modal open={open} onClose={onResume} title="We can&apos;t hear you"><div className="sheet-stack"><MicOff size={34} strokeWidth={1.5} className="amber" /><p>The clock is paused. Restore microphone access to keep going.</p><Button fullWidth onClick={onResume}>Resume</Button><Button variant="danger" fullWidth onClick={onEnd}>End rep</Button></div></Modal> }

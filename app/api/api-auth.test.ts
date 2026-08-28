@@ -121,6 +121,12 @@ const ROUTES: {
     request: () => post('http://t/api/voice/tts', { text: 'hello' }),
   },
   {
+    name: '/api/safety',
+    load: () => import('./safety/route'),
+    call: (m, r) => m.POST!(r),
+    request: () => post('http://t/api/safety', { speaker: 'user', text: 'Hello.' }),
+  },
+  {
     name: '/api/voice/credits',
     load: () => import('./voice/credits/route'),
     call: (m, r) => m.GET!(r),

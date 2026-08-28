@@ -1,0 +1,77 @@
+{
+  "persona": "nadia",
+  "recordedAt": "2026-08-28T10:07:49.130Z",
+  "her": {
+    "voice": "marin",
+    "model": "gpt-realtime",
+    "scripted": false
+  },
+  "his": {
+    "voice": "ash",
+    "model": "gpt-4o-mini-tts",
+    "scripted": true
+  },
+  "totalMs": 47900,
+  "turns": [
+    {
+      "who": "you",
+      "text": "That's the third one you've picked up and put back.",
+      "ms": 3970,
+      "audio": "/hero/you-01.mp3"
+    },
+    {
+      "who": "her",
+      "text": "Yeah. Nothing's quite right.",
+      "ms": 3870,
+      "audio": "/hero/nadia-01.mp3"
+    },
+    {
+      "who": "you",
+      "text": "What does she actually read? Not what you think she should read.",
+      "ms": 5370,
+      "audio": "/hero/you-02.mp3"
+    },
+    {
+      "who": "her",
+      "text": "Mm, she reads those big historical novels. Bit of romance, sometimes. You know the ones.",
+      "ms": 7120,
+      "audio": "/hero/nadia-02.mp3"
+    },
+    {
+      "who": "you",
+      "text": "Then don't buy her literature. Buy her the thing she'd be embarrassed to be seen with.",
+      "ms": 6620,
+      "audio": "/hero/you-03.mp3"
+    },
+    {
+      "who": "her",
+      "text": "Heh. Yeah, maybe that’s the right idea. Just go full ridiculous and lean into it.",
+      "ms": 5870,
+      "audio": "/hero/nadia-03.mp3"
+    },
+    {
+      "who": "you",
+      "text": "I've got a shelf of those. I keep them behind the good ones.",
+      "ms": 4120,
+      "audio": "/hero/you-04.mp3"
+    },
+    {
+      "who": "her",
+      "text": "Yeah, that sounds familiar. We all do that a bit, don’t we?",
+      "ms": 4070,
+      "audio": "/hero/nadia-04.mp3"
+    },
+    {
+      "who": "you",
+      "text": "Anyway — good luck with the sister. I'll let you get on.",
+      "ms": 4770,
+      "audio": "/hero/you-05.mp3"
+    },
+    {
+      "who": "her",
+      "text": "Alright. See you.",
+      "ms": 2120,
+      "audio": "/hero/nadia-05.mp3"
+    }
+  ]
+}

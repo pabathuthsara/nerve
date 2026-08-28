@@ -42,6 +42,13 @@ import {
   type RepIncidents,
 } from '@/lib/voice/incidents'
 import { compileReinforcement } from '@/lib/voice/reinforcement'
+import { SafetyMonitor } from '@/lib/safety/monitor'
+import {
+  CLOSE_DIRECTIVE,
+  CORRECT_DIRECTIVE,
+  DECLINE_DIRECTIVE,
+  type SafetyAction,
+} from '@/lib/safety/escalation'
 import { StabilityMeter } from '@/lib/metrics/stability'
 import { RepRecorder } from '@/lib/audio/recorder'
 import { uploadRepAudio } from '@/lib/db/audio'
@@ -98,6 +105,22 @@ export interface RepSessionOptions {
   config?: LiveRepConfig | null
 }
 
+/**
+ * What the safety layer has done to this rep (§16.3, §16.8).
+ *
+ * Three flags rather than one status, because they are three different
+ * screens. `declined` is deliberately not one of them: the first strike is
+ * answered in frame, by her, and the interface is told nothing — a banner
+ * saying "we intervened" would break §05 and would step on the decline she is
+ * in the middle of delivering.
+ */
+export interface RepSafety {
+  /** The rep was ended on a content boundary. Never a win, whatever the meter said. */
+  ended: boolean
+  /** The training frame has been dropped (§16.8). The screen owes real help. */
+  distress: boolean
+}
+
 export interface RepSessionState {
   status: RepStatus
   warmth: number
@@ -127,6 +150,8 @@ export interface RepSessionState {
    */
   heardUser: boolean
   error: 'mic' | 'connection' | null
+  /** What moderation has done to this rep, if anything. See `RepSafety`. */
+  safety: RepSafety
   /** The database row, once it exists. The result screen is keyed to it. */
   sessionId: string
   questionIndex: number
@@ -196,6 +221,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   const [error, setError] = useState<'mic' | 'connection' | null>(null)
   const [retryAttempt, setRetryAttempt] = useState(0)
   const [sessionId, setSessionId] = useState('')
+  const [safety, setSafety] = useState<RepSafety>({ ended: false, distress: false })
 
   const providerRef = useRef<VoiceProvider | null>(null)
   const warmthRef = useRef<WarmthSession | null>(null)
@@ -237,6 +263,28 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   const decisionWarmthRef = useRef<number | null>(null)
   /** When the clock hit zero. Null while the rep is still running. */
   const timeUpAtRef = useRef<number | null>(null)
+  /**
+   * Moderation on both streams (§16.3). Null outside a live rep.
+   */
+  const safetyRef = useRef<SafetyMonitor | null>(null)
+  /**
+   * When the safety layer told her to close, or null.
+   *
+   * She gets the same bounded moment to finish a sentence that the clock
+   * running out gives her — `isClosingOver`, the same function, deliberately.
+   * Cutting the transport dead on the word "end" produces a black screen with
+   * no explanation, which reads as a crash and is the reading that gets a
+   * safety control blamed for a bug.
+   */
+  const safetyCloseAtRef = useRef<number | null>(null)
+  /**
+   * A rep ended on a boundary cannot be a win.
+   *
+   * The meter is not consulted and the wind-down decision, if it already
+   * fired, does not stand. Somebody who was at warmth 80 and then said
+   * something explicit does not get her number for the first eighty seconds.
+   */
+  const safetyEndedRef = useRef(false)
   const incidentsRef = useRef<RepIncidents>(emptyIncidents())
   const incidentsStopRef = useRef<(() => void) | null>(null)
   const agentSpeakingRef = useRef(false)
@@ -276,6 +324,9 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       warmthRef.current?.dispose()
       warmthRef.current = null
 
+      safetyRef.current?.stop()
+      safetyRef.current = null
+
       incidentsStopRef.current?.()
       incidentsStopRef.current = null
       const incidents = incidentsRef.current
@@ -298,13 +349,18 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         decisionWarmthRef.current = telemetry?.end ?? 0
       }
 
-      const won = closingDecisionRef.current === 'number'
-        || (closingDecisionRef.current === null
-          && givesNumber({
-            armed: armedRef.current,
-            warmth: telemetry?.end ?? 0,
-            interview,
-          }))
+      // A rep the safety layer ended is a loss, full stop — see
+      // `safetyEndedRef`. It is checked before the decision rather than folded
+      // into it so that no path through `givesNumber` can reach a number card
+      // on a rep that ended because of what was said in it.
+      const won = !safetyEndedRef.current
+        && (closingDecisionRef.current === 'number'
+          || (closingDecisionRef.current === null
+            && givesNumber({
+              armed: armedRef.current,
+              warmth: telemetry?.end ?? 0,
+              interview,
+            })))
 
       if (won && !numberRef.current) numberRef.current = inventNumber()
 
@@ -313,9 +369,15 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         ...(won ? { phoneNumber: numberRef.current } : {}),
         exitLine: won
           ? 'Message me. I have to get on.'
-          : reason === 'character'
-            ? 'I should get back to it. Take care.'
-            : 'Anyway — I should get going. Take care.',
+          // She left because of what was said, and the line says so without
+          // the app stepping in to explain it. Still her voice, still in
+          // frame: §16.6's register rules out a lecture here as much as
+          // anywhere else.
+          : safetyEndedRef.current
+            ? "I'm done. Don't."
+            : reason === 'character'
+              ? 'I should get back to it. Take care.'
+              : 'Anyway — I should get going. Take care.',
       })
       setStatus('ended')
 
@@ -421,6 +483,9 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     agentSpeakingRef.current = false
     numberRef.current = ''
     turnsRef.current = []
+    safetyCloseAtRef.current = null
+    safetyEndedRef.current = false
+    setSafety({ ended: false, distress: false })
     // A retry is a fresh attempt at being heard, so the nudge gets to fire
     // again — the microphone that was not working may be the thing they just
     // went and fixed.
@@ -442,6 +507,47 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
 
       const voice = createVoiceProvider({ envDefault: config.provider, openai: { model: config.model } })
       providerRef.current = voice
+
+      /**
+       * The five things moderation can ask for, and what each one costs.
+       *
+       * `decline` and `correct` are directions to her and nothing else — the
+       * screen is not told, because §05 allows the timer, the ring and her
+       * voice on a live rep and a safety banner is none of the three.
+       */
+      function applySafetyAction(action: SafetyAction): void {
+        const live = providerRef.current
+        if (!live || finishedRef.current) return
+
+        if (action === 'decline') { live.reinforce(DECLINE_DIRECTIVE); return }
+        if (action === 'correct') { live.reinforce(CORRECT_DIRECTIVE); return }
+
+        if (action === 'distress') {
+          // The frame is dropped, not wound down (§16.8). She does not get a
+          // goodbye and the scene does not get an ending: continuing to play a
+          // character at somebody who has just said something real is the
+          // failure this branch exists to prevent.
+          safetyEndedRef.current = true
+          setSafety({ ended: true, distress: true })
+          void stopRef.current?.('user')
+          return
+        }
+
+        if (action === 'end') {
+          if (safetyCloseAtRef.current !== null) return
+          safetyEndedRef.current = true
+          safetyCloseAtRef.current = performance.now()
+          setSafety({ ended: true, distress: false })
+          // She closes the scene herself, bounded — see `safetyCloseAtRef`.
+          live.reinforce(CLOSE_DIRECTIVE)
+        }
+      }
+
+      // §16.3. Both streams, every committed turn, decided on the server.
+      // Nothing here awaits it: the action arrives a beat after the turn and
+      // the rep never waits on a classifier (`lib/safety/monitor.ts`).
+      safetyRef.current?.stop()
+      safetyRef.current = new SafetyMonitor({ onAction: applySafetyAction })
 
       voice.on('user.speech.start', () => {
         setSpeaking('user')
@@ -467,12 +573,18 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         if (timeUpAtRef.current !== null && !finishedRef.current) {
           void stopRef.current?.('cap')
         }
+        // Same rule for a rep the safety layer closed: she has just finished
+        // the goodbye it asked her for, and there is nothing after it.
+        if (safetyCloseAtRef.current !== null && !finishedRef.current) {
+          void stopRef.current?.('character')
+        }
       })
       voice.on('character.exit', () => { void stopRef.current?.('character') })
 
       voice.on('user.transcript', ({ turn, final }) => {
         if (!final) return
         turnsRef.current.push(turn)
+        safetyRef.current?.observe('user', turn.text)
         // The first word we actually heard. See `heardUser`.
         if (turn.text.trim().length > 0) setHeardUser(true)
         warmthRef.current?.onUserTurn(turn)
@@ -482,6 +594,10 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       voice.on('agent.transcript', ({ turn, final }) => {
         if (!final) return
         turnsRef.current.push(turn)
+        // Her stream too (§16.3). A character who wanders is the failure a
+        // merchant-of-record reviewer is actually asking about: nobody is
+        // reassured that the *user* was well behaved.
+        safetyRef.current?.observe('agent', turn.text)
         warmthRef.current?.onAgentTurn(turn)
         publish(voice)
 
@@ -540,7 +656,12 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       })
         .then((result) => {
           sessionIdRef.current = result.sessionId
-          if (result.sessionId) setSessionId(result.sessionId)
+          if (result.sessionId) {
+            setSessionId(result.sessionId)
+            // The first turns were classified before this landed and were
+            // counted against the user instead. See `setSessionId`.
+            safetyRef.current?.setSessionId(result.sessionId)
+          }
           return result.sessionId
         })
         .catch(() => null)
@@ -573,6 +694,19 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         const elapsed = performance.now() - startedAtRef.current
         const remaining = Math.max(0, durationMs - elapsed)
         setMsRemaining(remaining)
+
+        // The safety ending, on the same bound the clock's ending uses — and
+        // FIRST, ahead of everything else the tick does. A rep closed on a
+        // boundary must not also reach the wind-down: being told to leave and
+        // to offer him her number in the same five seconds is the one way this
+        // could end with a number card on a rep that ended over what was said.
+        if (safetyCloseAtRef.current !== null) {
+          const msSinceClose = performance.now() - safetyCloseAtRef.current
+          if (isClosingOver({ msSinceTimeUp: msSinceClose, agentSpeaking: agentSpeakingRef.current })) {
+            void stopRef.current?.('character')
+          }
+          return
+        }
 
         // THE DECISION POINT. Thirty seconds out, once, she is told exactly
         // one thing — and which one is settled here, on the meter as it stands
@@ -669,6 +803,12 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   useEffect(() => () => {
     clearLoops()
     if (providerRef.current) void stopRef.current?.('user')
+    // Belt and braces: `stop` disposes the monitor, but it returns early when
+    // there is no provider to end, and a queue still posting turns from a
+    // screen nobody is on is exactly the standing invoice `maySpend` exists
+    // to stop.
+    safetyRef.current?.stop()
+    safetyRef.current = null
     warmthRef.current?.dispose()
     recorderRef.current?.dispose()
   }, [clearLoops])
@@ -689,6 +829,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     retryAttempt,
     heardUser,
     error,
+    safety,
     sessionId,
     // Interview reps are M4. The fields stay so the screen keeps one shape.
     questionIndex: 0,

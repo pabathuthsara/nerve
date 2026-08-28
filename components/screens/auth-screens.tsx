@@ -20,6 +20,7 @@ import { Eye, EyeOff, MailCheck, ShieldAlert } from 'lucide-react'
 import { useActionState, useEffect, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Hairline, Input } from '@/components/ui'
+import { latestEligibleDob, MIN_AGE } from '@/lib/safety/age'
 import {
   devSignIn,
   resendConfirmation,
@@ -65,6 +66,13 @@ export function AuthScreen({ route, query, recoverySession = false, devLoginEmai
  * rule block is the product's own best asset and is the same component the
  * brief screen uses, so what is promised here is literally what arrives.
  *
+ * The middle rule used to read "Goal — get her number". Both cold doors are
+ * public pages, and §14 is specific that a merchant-of-record reviewer reading
+ * that sentence on a public page is a declined application: it reads as a
+ * dating product rather than a training one. The rep's mission is unchanged
+ * and the brief still states it; what is advertised on the way in is the
+ * format and the scoring law, which is the more accurate pitch anyway.
+ *
  * No numbers about users, results or outcomes. There are none to quote yet,
  * and the one claim made below — that the score is about how you talked and
  * never about whether she said yes — is a rule the code actually enforces
@@ -82,7 +90,7 @@ function AuthPitch() {
         she said yes. A clean rep that ends in rejection can score 92.
       </p>
       <div className="rule-block auth-pitch__rules">
-        {[['Time', '3:00'], ['Goal', 'Get her number'], ['She leaves', 'When time runs out']].map(([label, value]) => (
+        {[['Time', '3:00'], ['She can', 'Lose interest and leave'], ['Scored on', 'How you played']].map(([label, value]) => (
           <div key={label}><span>{label}</span><strong>{value}</strong></div>
         ))}
       </div>
@@ -106,6 +114,24 @@ function TimezoneField() {
     try { setZone(Intl.DateTimeFormat().resolvedOptions().timeZone ?? '') } catch { setZone('') }
   }, [])
   return <input type="hidden" name="timezone" value={zone} readOnly />
+}
+
+/**
+ * The age gate, on the public door (§16.4).
+ *
+ * A date rather than a tick box, for the reason `lib/safety/age.ts` sets out:
+ * a box asking "are you 18?" is ticked by everybody and records nothing, and a
+ * date is a claim the terms can act on.
+ *
+ * `max` is computed in an effect rather than at render because the answer
+ * depends on today's date, and a server-rendered attribute would be baked into
+ * the HTML and then cached. It is a convenience for the browser's own picker
+ * either way — `checkAge` on the server is the gate.
+ */
+function DateOfBirthField() {
+  const [max, setMax] = useState('')
+  useEffect(() => { setMax(latestEligibleDob(new Date())) }, [])
+  return <Input label="Date of birth" name="date_of_birth" type="date" required max={max || undefined} hint={`Nerve is ${MIN_AGE}+. We ask once.`} />
 }
 
 function LoginForm({ devLoginEmail }: { devLoginEmail: string | null }) {
@@ -137,7 +163,7 @@ function SignupForm() {
   useEffect(() => { if (state.ok) router.push(`/verify-email?email=${encodeURIComponent(email)}`) }, [email, router, state.ok])
   const strength = password.length === 0 ? 'Use at least 8 characters.' : password.length < 8 ? 'Keep going — 8 characters minimum.' : password.length < 12 ? 'Good enough. Longer is stronger.' : 'Strong.'
   const error = state.message ?? google.message
-  return <><AuthHeading title="Start training" /><form action={googleAction}><button className="oauth-button" type="submit" disabled={googleBusy}><span className="google-mark">G</span> {googleBusy ? 'Opening Google…' : 'Continue with Google'}</button></form><Or /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} value={password} onChange={setPasswordValue} hint={strength} autoComplete="new-password" /><Button type="submit" size="lg" fullWidth loading={busy} disabled={password.length < 8}>Create account</Button></form><AuthFoot>Already training? <Link href="/login" className="volt-link">Log in</Link></AuthFoot><p className="auth-fine">By continuing, you agree to the <Link href="/terms">terms</Link> and <Link href="/privacy">privacy policy</Link>.</p></>
+  return <><AuthHeading title="Start training" /><form action={googleAction}><button className="oauth-button" type="submit" disabled={googleBusy}><span className="google-mark">G</span> {googleBusy ? 'Opening Google…' : 'Continue with Google'}</button></form><Or /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} /><DateOfBirthField /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} value={password} onChange={setPasswordValue} hint={strength} autoComplete="new-password" /><Button type="submit" size="lg" fullWidth loading={busy} disabled={password.length < 8}>Create account</Button></form><AuthFoot>Already training? <Link href="/login" className="volt-link">Log in</Link></AuthFoot><p className="auth-fine">By continuing, you agree to the <Link href="/legal/terms">terms</Link> and <Link href="/legal/privacy">privacy policy</Link>.</p></>
 }
 
 function PasswordField({ label, name, show, onToggle, value, onChange, hint, autoComplete = 'current-password' }: { label: string; name: string; show: boolean; onToggle: () => void; value?: string; onChange?: (value: string) => void; hint?: string; autoComplete?: 'current-password' | 'new-password' }) {

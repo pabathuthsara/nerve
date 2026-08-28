@@ -31,9 +31,29 @@ export async function enforceFrontendGuard(path: string) {
   const supabase = await supabaseServer()
   const { data: profile } = await supabase
     .from('profiles')
-    .select('onboarding_complete, unlocked_tracks, focus_area, experience, ui_flags')
+    .select('onboarding_complete, unlocked_tracks, focus_area, experience, ui_flags, age_confirmed_at')
     .eq('id', user.id)
     .maybeSingle()
+
+  /**
+   * §16.4, and ahead of everything else this function does.
+   *
+   * The sign-up form asks and `signUpWithPassword` writes the answer, so a
+   * password account arrives here already stamped and never sees this step.
+   * Two kinds of account do not: one created through Google, whose button has
+   * no fields on it, and every account that existed before the gate shipped.
+   * They are asked here, once, and nothing in the product opens until they
+   * answer — which is the difference between a gate and a form.
+   *
+   * Checked before the onboarding gate rather than folded into it, because a
+   * user who finished onboarding months ago is exactly the case that has no
+   * date on file, and `onboarding_complete` would let them straight past.
+   */
+  const ageRoute = path === '/onboarding/age'
+  if (!profile?.age_confirmed_at && !ageRoute) redirect('/onboarding/age')
+  if (profile?.age_confirmed_at && ageRoute) {
+    redirect(profile.onboarding_complete ? '/train' : onboardingResumePath(profile))
+  }
 
   // The interview track is screens and fixtures: no interviewer characters, no
   // CV bucket, nothing writing `interview_setups`. Finishing it is M4-and-after
@@ -49,7 +69,10 @@ export async function enforceFrontendGuard(path: string) {
     if (!tracks.includes('interview')) redirect('/train')
   }
 
-  const onboardingRoute = path === '/onboarding' || path.startsWith('/onboarding/')
+  // The age step is deliberately NOT one of these. It is reached by people who
+  // have already finished onboarding, and the rule below would bounce them
+  // straight back to /train — into the redirect that sent them here, forever.
+  const onboardingRoute = (path === '/onboarding' || path.startsWith('/onboarding/')) && !ageRoute
 
   // A missing profile row means the sign-up trigger has not landed yet. Send
   // them through onboarding rather than into a rep against nothing.
