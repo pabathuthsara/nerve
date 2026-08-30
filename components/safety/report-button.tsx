@@ -21,7 +21,8 @@
 import { useState } from 'react'
 import { Flag } from 'lucide-react'
 import { Button, Sheet, Textarea } from '@/components/ui'
-import { REPORT_REASONS, reportSession } from '@/app/safety/actions'
+import { reportSession } from '@/app/safety/actions'
+import { REPORT_REASONS } from '@/lib/safety/reasons'
 
 export function ReportButton({ sessionId }: { sessionId: string | null }) {
   const [open, setOpen] = useState(false)

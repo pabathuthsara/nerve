@@ -21,28 +21,12 @@
 
 import { currentUser, supabaseServer } from '@/lib/db/server'
 import { asJson } from '@/lib/db/json'
+import { REPORT_REASONS } from '@/lib/safety/reasons'
 
 export interface ReportResult {
   ok: boolean
   message: string | null
 }
-
-/**
- * The reasons, authored here and rendered from here.
- *
- * A fixed list rather than a free-text box alone, because the categories are
- * what make a pile of reports readable — and one of them has to be "something
- * else" or the list quietly teaches people that anything not on it does not
- * count.
- */
-export const REPORT_REASONS = [
-  { value: 'content', label: 'She said something that crossed a line' },
-  { value: 'behaviour', label: 'The rep went somewhere it should not have' },
-  { value: 'broken', label: 'Something was broken — audio, transcript or score' },
-  { value: 'other', label: 'Something else' },
-] as const
-
-export type ReportReason = (typeof REPORT_REASONS)[number]['value']
 
 const VALUES: readonly string[] = REPORT_REASONS.map((reason) => reason.value)
 
