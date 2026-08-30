@@ -1,6 +1,6 @@
 import { TrainScreen } from './screens/train-screen'
 import { AuthScreen, type AuthRoute } from './screens/auth-screens'
-import { OnboardingScreen, type OnboardingRoute } from './screens/onboarding-screens'
+import { OnboardingScreen, type OnboardingContext, type OnboardingRoute } from './screens/onboarding-screens'
 import { FieldScreen, PersonaDetailScreen, RosterScreen } from './screens/core-screens'
 import { LibraryCardScreen, LibraryScreen } from './screens/library-screens'
 import { ProgressScreen, WeeklyReviewScreen } from './screens/progress-screens'
@@ -13,8 +13,15 @@ import Link from 'next/link'
 import { AlertTriangle } from 'lucide-react'
 
 const authRoutes = new Set<AuthRoute>(['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password'])
-const onboardingRoutes = new Set<OnboardingRoute>(['/onboarding/age', '/onboarding/track', '/onboarding/focus', '/onboarding/experience', '/onboarding/name', '/onboarding/mic', '/onboarding/ready'])
+const onboardingRoutes = new Set<OnboardingRoute>(['/onboarding/age', '/onboarding/track', '/onboarding/focus', '/onboarding/name', '/onboarding/mic', '/onboarding/ready'])
 const sessionViews = new Set<SessionView>(['result', 'scorecard', 'transcript'])
+
+/**
+ * The shape a signed-out render gets. The guard redirects before this can be
+ * reached in practice; it exists so the route table stays synchronous and
+ * never has to reason about a missing prop.
+ */
+const EMPTY_ONBOARDING: OnboardingContext = { track: null, focusArea: null, displayName: null, roster: [], currentLevel: 1, resumeRoute: '/onboarding/track' }
 
 /**
  * The two things an auth screen cannot answer for itself.
@@ -35,11 +42,21 @@ export function isAuthRoute(path: string): boolean {
 }
 
 /**
+ * Onboarding needs what only the server can answer, the same way an auth
+ * screen does: the answers already on file, so a revisited question opens
+ * answered, and the character the first rep is against, so the last screen
+ * before that rep does not open on a skeleton.
+ */
+export function isOnboardingRoute(path: string): boolean {
+  return onboardingRoutes.has(path as OnboardingRoute)
+}
+
+/**
  * The route table. A plain switch, deliberately synchronous: everything it
  * needs that only the server can answer arrives as a prop from the page, so
  * this file never awaits and never grows a data dependency of its own.
  */
-export function RouteView({ path, query = {}, auth }: { path: string; query?: Record<string, string | undefined>; auth?: AuthContext }) {
+export function RouteView({ path, query = {}, auth, onboarding }: { path: string; query?: Record<string, string | undefined>; auth?: AuthContext; onboarding?: OnboardingContext }) {
   if (path === '/train') return <TrainScreen />
   if (path === '/not-found') return <NotFound />
   if (path === '/error') return <main className="error-page"><AlertTriangle size={36} strokeWidth={1.5} className="amber" /><h1 className="display-lg">Something broke</h1><p className="data">DEMO_ERROR · The request could not be completed.</p><div className="error-actions"><Link className="arena-button arena-button--primary" href="/error">Try again</Link><Link className="arena-button arena-button--ghost" href="/train">Go home</Link></div></main>
@@ -61,6 +78,8 @@ export function RouteView({ path, query = {}, auth }: { path: string; query?: Re
   if (authRoutes.has(path as AuthRoute)) {
     return <AuthScreen route={path as AuthRoute} query={query} recoverySession={auth?.recoverySession ?? false} devLoginEmail={auth?.devLoginEmail ?? null} />
   }
-  if (onboardingRoutes.has(path as OnboardingRoute)) return <OnboardingScreen route={path as OnboardingRoute} />
+  if (onboardingRoutes.has(path as OnboardingRoute)) {
+    return <OnboardingScreen route={path as OnboardingRoute} context={onboarding ?? EMPTY_ONBOARDING} />
+  }
   return <NotFound />
 }

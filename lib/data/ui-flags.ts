@@ -40,3 +40,19 @@ export const planWaitlistFlag = (plan: 'pro' | 'elite') => `waitlist:${plan}` as
  */
 export const LIBRARY_READ_PREFIX = 'library:'
 export const libraryReadFlag = (slug: string) => `${LIBRARY_READ_PREFIX}${slug}` as const
+
+/**
+ * A track somebody asked for before it existed.
+ *
+ * The onboarding track step offers interview training, which is M4 by §17's
+ * own ordering. It used to answer that ask with a screen reading "Demand
+ * recorded" over a `setTimeout` and nothing else — a sentence about a write
+ * that was never made, on the one screen in the product that could tell us
+ * whether the track is worth building.
+ *
+ * Same shape and same argument as `planWaitlistFlag`: a flag rather than a
+ * table, because the ask is worth counting and is worth nothing to a user who
+ * clears it. Countable with one `ui_flags ? 'waitlist:track:interview'` when
+ * M4 is scheduled.
+ */
+export const trackWaitlistFlag = (track: 'interview' | 'english') => `waitlist:track:${track}` as const

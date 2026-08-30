@@ -38,9 +38,32 @@ export const MIN_AGE = 18
  */
 export const MAX_AGE = 120
 
+/**
+ * Why a date was refused, so a caller can tell a typo from a verdict.
+ *
+ * The messages alone could not: a screen that has to decide whether to offer
+ * another attempt was reading four refusals that all arrived as one shape, and
+ * `/onboarding/age` therefore offered a retry on every one of them — including
+ * the one that terms clause 02 acts on.
+ *
+ * Only `under-age` is a verdict. The other three are the field saying it does
+ * not yet have a date, and every one of them must stay retryable, because
+ * refusing to accept a corrected typo would turn a mis-scrolled wheel into a
+ * closed account.
+ */
+export type AgeRefusal =
+  /** Nothing usable in the field yet — the wheel has a blank row in it. */
+  | 'incomplete'
+  /** Three numbers that do not name a day. `2007-02-31`. */
+  | 'malformed'
+  /** A real date nobody was born on: the future, or more than `MAX_AGE` ago. */
+  | 'implausible'
+  /** The verdict. §16.4, and the one refusal that is final. */
+  | 'under-age'
+
 export type AgeCheck =
   | { ok: true; dob: string; age: number }
-  | { ok: false; message: string }
+  | { ok: false; reason: AgeRefusal; message: string }
 
 /** Whole years elapsed, with the birthday counting on the day itself. */
 export function ageOn(dob: Date, today: Date): number {
@@ -62,7 +85,11 @@ export function ageOn(dob: Date, today: Date): number {
  */
 export function checkAge(value: string, today: Date): AgeCheck {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim())
-  if (!match) return { ok: false, message: 'Enter your date of birth to continue.' }
+  // Every caller of this drives a three-segment control that opens blank, so
+  // the overwhelmingly common way to arrive here is an unfinished date rather
+  // than a malformed one. Anything else the regex rejects gets the same
+  // sentence, because "that is not an ISO 8601 date" is not a sentence.
+  if (!match) return { ok: false, reason: 'incomplete', message: 'Enter your date of birth to continue.' }
 
   const [, yearText = '', monthText = '', dayText = ''] = match
   const year = Number(yearText)
@@ -77,33 +104,18 @@ export function checkAge(value: string, today: Date): AgeCheck {
     || dob.getUTCMonth() !== month - 1
     || dob.getUTCDate() !== day
   ) {
-    return { ok: false, message: 'That is not a real date.' }
+    return { ok: false, reason: 'malformed', message: 'That is not a real date.' }
   }
 
   const age = ageOn(dob, today)
-  if (age < 0) return { ok: false, message: 'That date is in the future.' }
-  if (age > MAX_AGE) return { ok: false, message: 'Check the year on that one.' }
+  if (age < 0) return { ok: false, reason: 'implausible', message: 'That date is in the future.' }
+  if (age > MAX_AGE) return { ok: false, reason: 'implausible', message: 'Check the year on that one.' }
   if (age < MIN_AGE) {
     // No shaming, no lecture, and no hint about what would have worked. The
     // sentence states the rule and stops (§16.6's register, and §01's).
-    return { ok: false, message: `Nerve is ${MIN_AGE}+. Come back when you are.` }
+    return { ok: false, reason: 'under-age', message: `Nerve is ${MIN_AGE}+. Come back when you are.` }
   }
 
   return { ok: true, dob: value.trim(), age }
 }
 
-/**
- * The latest date of birth that passes, as `YYYY-MM-DD`.
- *
- * The `max` attribute on the date field, so a browser's own picker refuses
- * before the form is posted. Convenience only — `checkAge` is the gate, on the
- * server, and an attribute is a suggestion to whoever is holding the browser.
- */
-export function latestEligibleDob(today: Date): string {
-  const date = new Date(Date.UTC(
-    today.getUTCFullYear() - MIN_AGE,
-    today.getUTCMonth(),
-    today.getUTCDate(),
-  ))
-  return date.toISOString().slice(0, 10)
-}

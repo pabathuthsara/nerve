@@ -29,7 +29,21 @@ export const SITE_LINKS = {
   safety: '/legal/safety',
 } as const
 
-export const SUPPORT_EMAIL = 'support@nerve.training'
+/**
+ * The one address the product publishes, in one place.
+ *
+ * On the domain the product actually runs on, which is not a cosmetic point:
+ * it was `support@nerve.training` until 30 August, and `nerve.training` had no
+ * DNS at all — no A record and no MX — so every message to the address printed
+ * in this footer, in all three legal pages and in Settings bounced. A privacy
+ * policy naming an undeliverable contact is a compliance problem before it is
+ * a support problem, and §14's reviewer reads that policy.
+ *
+ * Everything that shows an address imports this. `profile-screens.tsx` used to
+ * spell it out instead, which is how three of the four copies went stale
+ * together.
+ */
+export const SUPPORT_EMAIL = 'support@hellonerve.com'
 
 export function SiteHeader({ cta = 'Start training' }: { cta?: string }) {
   return (

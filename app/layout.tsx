@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import './globals.css'
 import { displayFont, monoFont, sansFont } from '@/lib/fonts'
@@ -16,6 +16,24 @@ export const metadata: Metadata = {
     images: [{ url: '/og.png', width: 1731, height: 909, alt: 'NERVE — Practice the conversations you usually avoid.' }],
   },
   twitter: { card: 'summary_large_image', title: 'NERVE — Conversation training', description: 'Practice the conversations you usually avoid.', images: ['/og.png'] },
+}
+
+/**
+ * The phone's own chrome, in the product's colours.
+ *
+ * Without `themeColor` the browser paints its toolbar in default light chrome
+ * directly above a `#0B0C0A` page, and that seam is the loudest "this is a
+ * website, not an app" tell there is. The value is Ground from the Arena
+ * palette; there is no light mode to give a second one to.
+ *
+ * `interactiveWidget: 'resizes-content'` makes the software keyboard shrink
+ * the viewport rather than sliding it, which is what keeps a centred form from
+ * jumping the moment somebody taps a field.
+ */
+export const viewport: Viewport = {
+  themeColor: '#0B0C0A',
+  colorScheme: 'dark',
+  interactiveWidget: 'resizes-content',
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -228,7 +228,13 @@ export function personalityClauses(persona: Persona, warmth: number): string[] {
   return clauses
 }
 
-const EXPRESSION_CLAUSE: Record<Persona['personality']['expression'], string> = {
+/**
+ * Layer 2's expression, as its steering clause. Exported for the same reason
+ * as `EXPRESSION_TAG`: the tests assert that the clause is constant across
+ * every warmth band, which is a claim about the composition and not about any
+ * one character's current dial.
+ */
+export const EXPRESSION_CLAUSE: Record<Persona['personality']['expression'], string> = {
   playful: 'Light.',
   dry: 'Dry.',
   earnest: 'Straight, no irony.',

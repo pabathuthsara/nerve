@@ -414,6 +414,26 @@ suppress a moment they did not earn. The count behind it is read off
 is *dismissed* rather than when it renders, so closing the tab on the tenth ask
 means the moment lands next time instead of being lost.
 
+### The keys `profiles.ui_flags` carries
+
+The column is `jsonb`, user-writable, and holds notes about what has been
+*displayed* or *asked* — never anything earned. The names live in code, not
+here: `lib/data/ui-flags.ts` for the ones any screen stamps, and
+`lib/data/guards.ts` for the three the route guard reads.
+
+| Key | Written by | Read by |
+|---|---|---|
+| `onboarding:track` | the track step | `onboardingResumePath`, and the step itself, to tell an answer from `active_track`'s database default |
+| `onboarding:name` | the name step, answered **or skipped** | `onboardingResumePath` — an empty `display_name` is a legitimate answer |
+| `onboarding:deferred` | *Look around first* on the mic step | `enforceFrontendGuard` and `app/page.tsx`, which let a deferred run move as freely as a finished one while leaving `onboarding_complete` false — that is what makes the step returnable, and what puts the *Finish setup* row on `/train` |
+| `waitlist:track:interview` | the track step's interview option | nothing yet; it is the demand signal M4 is scheduled against |
+| `waitlist:pro` · `waitlist:elite` | `/pricing` and `/profile/subscription` | nothing yet; the same argument, for plans that cannot be sold |
+| `memory_intro` · `library:<slug>` | the first memory beat, a card being read | the screens that must not repeat themselves |
+
+The boundary is the point. Clearing any of these costs the user an explainer
+shown twice. Anything that records something *earned* — a level, a field tier,
+a rejection milestone — goes to `unlocks`, which is service-role write.
+
 ## Content is authored in the repo, seeded downstream
 
 Three libraries now follow the persona pattern — `lib/personas/`,

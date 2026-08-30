@@ -128,20 +128,20 @@ export const nadia: Persona = {
   personality: {
     sharpness: 20,
     sharpnessLowWarmthBoost: 15,
-    humour: 60,
-    talkativeness: 35,
+    humour: 69,
+    talkativeness: 56,
     patience: 80,
-    expression: 'dry',
+    expression: 'playful',
     distraction: 15,
     signalClarity: 90,
   },
 
   // LAYER 3 — what she opens up to, and when.
   gated: {
-    flirtiness: { ceiling: 60, unlocksAt: 55 },
+    flirtiness: { ceiling: 100, unlocksAt: 35 },
     personalDisclosure: { ceiling: 70, unlocksAt: 40 },
-    initiatesTopics: { unlocksAt: 60 },
-    usesYourName: { unlocksAt: 45 },
+    initiatesTopics: { unlocksAt: 43 },
+    usesYourName: { unlocksAt: 41 },
   },
 
   // LAYER 4 — quiet and acoustically dead. Because nothing masks her voice

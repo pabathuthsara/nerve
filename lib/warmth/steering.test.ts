@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { composeSteering, personalityClauses, gateClauses, STEERING_BUDGET } from './steering'
+import { composeSteering, personalityClauses, gateClauses, EXPRESSION_CLAUSE, STEERING_BUDGET } from './steering'
 import { nadia } from '@/lib/personas/nadia'
 import { alex } from '@/lib/personas/alex'
 import { erin } from '@/lib/personas/erin'
@@ -36,13 +36,26 @@ describe('composition across the four layers', () => {
   })
 
   it('carries who she is, in every band', () => {
-    // Layer 2 is constant. A dry character is dry at 5 and at 85; only how much
-    // she gives changes.
-    for (const warmth of [5, 32, 60, 85]) {
-      expect(at(nadia, warmth)).toContain('Dry.')
+    // Layer 2 is constant. Whatever a character's expression is, it reads the
+    // same at 5 and at 85; only how much she gives changes. Read off the
+    // persona rather than restated, so a tuning pass moves the character
+    // without moving this test — which is the claim, not the value.
+    for (const persona of [nadia, alex]) {
+      const clause = EXPRESSION_CLAUSE[persona.personality.expression]
+      for (const warmth of [5, 32, 60, 85]) {
+        expect(at(persona, warmth)).toContain(clause)
+      }
     }
-    for (const warmth of [5, 30, 45]) {
-      expect(at(alex, warmth)).toContain('Flat.')
+  })
+
+  it('has a clause for every expression the schema allows', () => {
+    // The table above is only worth reading off if it is total. A new
+    // expression with no clause would drop layer 2 out of the steering line
+    // silently, and every assertion that reads the table would still pass.
+    for (const [expression, clause] of Object.entries(EXPRESSION_CLAUSE)) {
+      expect(clause.trim()).not.toBe('')
+      const persona = { ...nadia, personality: { ...nadia.personality, expression: expression as typeof nadia.personality.expression } }
+      expect(at(persona, 40)).toContain(clause)
     }
   })
 

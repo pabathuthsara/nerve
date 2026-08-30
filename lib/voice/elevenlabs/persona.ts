@@ -131,7 +131,13 @@ export function compileDeliveryTags(persona: Persona, warmth?: number): string[]
   return tags
 }
 
-const EXPRESSION_TAG: Record<Persona['personality']['expression'], string> = {
+/**
+ * Layer 2's expression, as an audio tag. Exported so the conformance tests can
+ * assert the *mapping* rather than restate whichever expression a character
+ * happens to carry today — a tuning pass moves those, and a test that breaks
+ * when a persona is retuned is a test that argues against retuning personas.
+ */
+export const EXPRESSION_TAG: Record<Persona['personality']['expression'], string> = {
   playful: '[playful]',
   dry: '[dry]',
   earnest: '[earnest]',

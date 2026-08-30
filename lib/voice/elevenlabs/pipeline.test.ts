@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest'
 
 import { nadia } from '../../personas/nadia'
 import { DEFAULT_CALIBRATION, resolveSilenceMs } from '../types'
-import { ElevenLabsPersonaCompiler, compileDeliveryTags } from './persona'
+import { ElevenLabsPersonaCompiler, compileDeliveryTags, EXPRESSION_TAG } from './persona'
 import { SpokenTurn, proportionalPrefix, snapToWordBoundary } from './truncate'
 import { VadDetector, frameRms } from './vad'
 import { PipelineMeter, CreditGuard } from './telemetry'
@@ -462,9 +462,14 @@ describe('the TTS model dial', () => {
     })
     expect(flash.compile(nadia, DEFAULT_CALIBRATION).delivery_tags).toEqual([])
     expect(v3.compile(nadia, DEFAULT_CALIBRATION).delivery_tags.length).toBeGreaterThan(0)
-    // Layer 2 decides how she sounds; warmth decides how much she gives. Nadia
-    // is dry at every point on the meter.
-    expect(compileDeliveryTags(nadia)).toContain('[dry]')
+    // Layer 2 decides how she sounds; warmth decides how much she gives — so
+    // her expression tag is there whatever the meter says, and whatever she has
+    // most recently been tuned to.
+    const expression = EXPRESSION_TAG[nadia.personality.expression]
+    for (const warmth of [0, 40, 100]) {
+      expect(compileDeliveryTags(nadia, warmth)).toContain(expression)
+    }
+    expect(compileDeliveryTags(nadia)).toContain(expression)
   })
 
   it('lets the ear override the persona on the tuning dials', () => {

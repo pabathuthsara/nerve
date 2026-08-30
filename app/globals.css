@@ -166,6 +166,98 @@ button { color: inherit; }
 .arena-textarea { min-height: 128px; resize: vertical; }
 .field__hint { color: var(--text-mute); font-size: 12px; }
 .field__error { margin: 0; color: var(--red); font-size: 12px; }
+
+/* Date of birth. One frame, three boxes, and the frame is what reads as the
+   field — the boxes carry no border of their own, so a caret moving between
+   them looks like a caret moving inside one input rather than a tab across
+   three. The focused box is marked by its ground, not by a second accent. */
+.dob { display: flex; align-items: stretch; min-height: 52px; border: 1px solid var(--line); border-radius: 2px; padding: 0 6px; background: var(--surface-2); cursor: text; transition: border-color 120ms; }
+.dob:hover { border-color: var(--line-bright); }
+.dob:focus-within { border-color: var(--volt); }
+.dob--error { border-color: var(--red); }
+.dob__cell { display: flex; align-items: center; }
+.dob__sep { padding: 0 2px; color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 16px; user-select: none; }
+.dob__seg { min-width: 0; height: 100%; border: 0; border-radius: 2px; padding: 0 8px; outline: 0; background: transparent; color: var(--text); font-family: var(--font-mono), monospace; font-size: 17px; font-variant-numeric: tabular-nums; letter-spacing: .04em; text-align: center; transition: background-color 120ms, color 120ms; }
+.dob__seg::placeholder { color: var(--text-mute); letter-spacing: .06em; }
+.dob__seg.is-active { background: var(--surface-3); }
+/* Sized from the mono advance, which is exactly what `ch` measures when the
+   font is fixed-width: MMM is 3ch and cannot be anything else. The month box
+   used to set the display face and a `ch` width together, and `ch` resolves
+   against the element's OWN font — so a condensed zero bought about half the
+   room three capitals need and the label collided with its own box. */
+.dob__seg--day { width: calc(2ch + 20px); }
+.dob__seg--month { width: calc(3ch + 22px); }
+.dob__seg--year { width: calc(4ch + 20px); }
+/* The month stays a word — that is what kills the 12/06 ambiguity — but it is
+   set in mono like the digits beside it. A date is data, and one line of a
+   date rendered in a second face reads as a different field. */
+.dob__seg--month { letter-spacing: .06em; }
+.dob__seg::selection { background: color-mix(in srgb, var(--volt) 26%, transparent); color: var(--text); }
+.dob__foot { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-height: 16px; }
+/* The echo. It confirms that the 04 you typed was April, which is the one
+   thing a numeric date field cannot tell you about itself. */
+.dob__echo { color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 12px; letter-spacing: .03em; text-align: right; }
+@media (prefers-reduced-motion: no-preference) {
+  .dob__echo:not(:empty) { animation: dob-echo 160ms cubic-bezier(.2,0,0,1) both; }
+}
+@keyframes dob-echo { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+
+/* Two surfaces, one value. A thumb gets the wheel, a keyboard gets the boxes,
+   and the swap is a media query rather than a `matchMedia` call in an effect —
+   the server cannot know what is holding the page, so a JS answer means a
+   visible flip on every phone after hydration. */
+.dob-wheel-wrap { display: none; }
+@media (pointer: coarse) {
+  .dob-field > .dob { display: none; }
+  .dob-wheel-wrap { display: block; }
+}
+
+/* The wheel. Five rows visible, the middle one under the band; the band is a
+   hairline pair over --surface-3 and NOT volt, because the Continue button on
+   the same screen is the primary action and volt appears once. */
+.wheel {
+  --wheel-row: 40px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1.35fr 1.5fr;
+  height: calc(var(--wheel-row) * 5);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.wheel__band { position: absolute; z-index: 1; inset: calc(var(--wheel-row) * 2) 0 auto; height: var(--wheel-row); border-block: 1px solid var(--line-bright); background: var(--surface-3); pointer-events: none; }
+.wheel__col {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  padding-block: calc(var(--wheel-row) * 2);
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  outline: 0;
+  /* The curve, without a shadow: rows fade toward the top and bottom edges. */
+  mask-image: linear-gradient(to bottom, transparent, #000 26%, #000 74%, transparent);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.wheel__col::-webkit-scrollbar { display: none; }
+.wheel__col:focus-visible { background: color-mix(in srgb, var(--volt) 7%, transparent); }
+.wheel__row {
+  height: var(--wheel-row);
+  display: grid;
+  place-items: center;
+  scroll-snap-align: center;
+  color: var(--text-dim);
+  font-family: var(--font-mono), monospace;
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+  transition: color 120ms;
+}
+.wheel__col--month .wheel__row { letter-spacing: .1em; }
+.wheel__row--blank { color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 15px; font-weight: 400; letter-spacing: .06em; }
+.wheel__row[aria-selected='true'] { color: var(--text); }
+@media (prefers-reduced-motion: reduce) { .wheel__col { scroll-behavior: auto; } .wheel__row { transition: none; } }
 .file-drop { min-height: 180px; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 16px; border: 1px dashed var(--line-bright); border-radius: 2px; padding: 20px; background: var(--surface); color: var(--text-dim); }
 .file-drop > div { display: grid; min-width: 0; gap: 3px; }
 .file-drop strong { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
@@ -347,24 +439,23 @@ button { color: inherit; }
 
 .offline-bar { position: fixed; z-index: 60; inset: 56px 0 auto; min-height: 32px; display: flex; align-items: center; justify-content: center; background: var(--amber); color: var(--ground); font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 
-.auth-page { min-height: 100dvh; display: grid; place-items: center; padding: 48px 20px; }
+/* Centred when there is room, top-anchored when there is not. A grid that
+   re-centres as the software keyboard opens slides the field being typed into
+   out from under the thumb, and every phone in portrait with a keyboard up is
+   under 700px. The safe-area inset is the same one the sheets and the tab bar
+   already use. */
+.auth-page { min-height: 100dvh; display: grid; place-items: center; padding: 48px 20px calc(48px + env(safe-area-inset-bottom)); }
+@media (max-height: 700px) { .auth-page { align-items: start; padding-top: 28px; } }
 .auth-panel { width: min(100%, 420px); }
 
-/* The cold door. Stacked on a phone — pitch first, form under it, which is the
-   order the whole review argues for — and two columns once there is room. */
-.auth-page--pitch { align-content: center; gap: 44px; }
-.auth-pitch { width: min(100%, 420px); display: grid; gap: 18px; }
-.auth-pitch__mark { font-size: 26px; }
-.auth-pitch__head { margin: 0; }
-.auth-pitch__body { max-width: 46ch; margin: 0; color: var(--text-dim); font-size: 15px; line-height: 1.66; }
-.auth-pitch__rules { margin: 4px 0; }
-.auth-pitch__proof { max-width: 46ch; margin: 0; color: var(--text-mute); font-size: 13.5px; line-height: 1.6; }
+/* Where you are in signup, and the way back. */
+.auth-steps { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 34px; margin-bottom: 18px; }
+.auth-steps__back { display: inline-flex; align-items: center; gap: 3px; min-height: 34px; border: 0; padding: 0 6px 0 0; background: transparent; color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; cursor: pointer; }
+.auth-steps__back:hover { color: var(--text); }
+.auth-steps__marks { display: flex; gap: 8px; }
+.auth-steps__marks i { width: 18px; height: 3px; background: var(--line-bright); }
+.auth-steps__marks i.done { background: var(--volt); }
 
-@media (min-width: 940px) {
-  .auth-page--pitch { grid-template-columns: minmax(0, 460px) minmax(0, 420px); gap: 88px; place-items: center start; padding: 64px 32px; }
-  .auth-pitch { width: 100%; }
-  .auth-page--pitch .auth-panel { width: 100%; }
-}
 .auth-wordmark { display: block; width: max-content; margin: 0 auto 48px; font-size: 26px; }
 .auth-title { margin-bottom: 28px; }
 .auth-intro { max-width: 360px; margin: -12px 0 24px; color: var(--text-dim); font-size: 15px; }
@@ -386,29 +477,78 @@ button { color: inherit; }
 .legal-document header p, .legal-document section p { max-width: 620px; margin: 0; color: var(--text-dim); line-height: 1.75; }
 .legal-document section { display: grid; gap: 8px; }
 .legal-document footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid var(--line); padding-top: 24px; }
-.password-wrap { position: relative; }
-.password-wrap > button { position: absolute; top: 29px; right: 4px; width: 40px; height: 40px; display: grid; place-items: center; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; }
-.password-wrap .arena-input { padding-right: 44px; }
+/* Anchored to the input, not to a guessed distance from the top of the label:
+   the eye lives inside the field's own control wrapper, so it stays put
+   whatever the label wraps to and whether or not there is a hint below. */
+.field__control { position: relative; display: grid; }
+.field__eye { position: absolute; top: 50%; right: 0; width: 44px; height: 44px; display: grid; place-items: center; border: 0; padding: 0; background: transparent; color: var(--text-dim); transform: translateY(-50%); cursor: pointer; }
+.field__eye:hover { color: var(--text); }
+.field__control .arena-input { padding-right: 46px; }
 .form-error { border: 1px solid var(--red); border-radius: 2px; padding: 11px 12px; background: var(--surface); color: var(--red); font-size: 13px; }
 .auth-state { display: grid; gap: 18px; justify-items: start; }
 .auth-state .auth-title { margin: 0; }
 .auth-state > p { margin: 0 0 10px; color: var(--text-dim); font-size: 16px; }
 .auth-state > p strong { color: var(--text); font-weight: 500; }
 
+/* The door back into a deferred onboarding run, on /train. The quietest row
+   on the screen: they asked to look around, so this is held open rather than
+   asked again. */
+.finish-setup { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; margin: 0 0 18px; border: 1px solid var(--line); border-radius: 2px; padding: 13px 14px; background: var(--surface); color: var(--text-dim); transition: border-color 120ms, color 120ms; }
+.finish-setup:hover { border-color: var(--line-bright); color: var(--text); }
+.finish-setup span { display: grid; gap: 2px; }
+.finish-setup strong { color: var(--text); font-size: 14.5px; font-weight: 500; }
+.finish-setup small { font-size: 12.5px; }
+
 .onboarding-page { position: relative; min-height: 100dvh; display: grid; place-items: center; padding: 104px 20px 52px; }
-.onboarding-progress { position: absolute; top: 32px; left: 50%; display: flex; gap: 8px; transform: translateX(-50%); }
-.onboarding-progress i { width: 18px; height: 3px; background: var(--line-bright); }
-.onboarding-progress i.done { background: var(--volt); }
-.onboarding-back { position: absolute; top: 20px; left: 16px; width: 44px; height: 44px; display: grid; place-items: center; color: var(--text-dim); }
+
+/* Where you are, not just how far you have come. Volt is the current step —
+   the design system's own definition of what volt marks — and a completed step
+   is a hairline that is merely brighter than one not yet reached. Every tick
+   used to read `index <= step`, so the step under your feet looked exactly
+   like the ones behind it. */
+.onboarding-progress { position: absolute; top: 32px; left: 50%; display: flex; align-items: center; gap: 8px; transform: translateX(-50%); }
+.onboarding-progress i { width: 18px; height: 3px; background: var(--line); transition: background-color 180ms, width 180ms; }
+.onboarding-progress i.done { background: var(--line-bright); }
+.onboarding-progress i.current { width: 28px; background: var(--volt); }
+@media (prefers-reduced-motion: reduce) { .onboarding-progress i { transition: none; } }
+
+.onboarding-back { position: absolute; top: 20px; left: 16px; width: 44px; height: 44px; display: grid; place-items: center; border: 0; padding: 0; background: none; color: var(--text-dim); cursor: pointer; transition: color 120ms; }
+.onboarding-back:hover { color: var(--text); }
 .onboarding-signout { position: absolute; top: 20px; right: 16px; }
 .onboarding-signout button { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 10px; background: none; border: 0; color: var(--text-mute); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; font-family: var(--font-mono); cursor: pointer; transition: color 120ms; }
 .onboarding-signout button:hover { color: var(--text-dim); }
-.mic-skip { justify-self: start; min-height: 44px; padding: 0; background: none; border: 0; color: var(--text-mute); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; transition: color 120ms; }
+.mic-skip { justify-self: center; min-height: 44px; padding: 0; background: none; border: 0; color: var(--text-mute); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; transition: color 120ms; }
 .mic-skip:hover:not(:disabled) { color: var(--text-dim); }
 .mic-skip:disabled { opacity: .5; cursor: not-allowed; }
 .onboarding-shell { width: min(100%, 480px); }
-.onboarding-question { display: grid; gap: 40px; }
-.onboarding-sub { max-width: 42ch; margin: -26px 0 0; color: var(--text-dim); font-size: 15px; }
+
+/* The step transition the run could not have while every step was a document
+   navigation and the chrome was rebuilt each time. Enter only: an exit that
+   had to finish before the next question appeared would put a delay back where
+   one was just removed. */
+@media (prefers-reduced-motion: no-preference) {
+  .onboarding-step { animation: onboarding-step-in 190ms cubic-bezier(.2,0,0,1) both; }
+}
+@keyframes onboarding-step-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* The heading is focused on the way in (see the run), so it must not draw a
+   ring for somebody who arrived by pointer and must draw one for somebody who
+   arrived by keyboard. */
+[data-step-heading] { outline: none; }
+[data-step-heading]:focus-visible { outline: 2px solid var(--volt); outline-offset: 5px; }
+
+/* The screen-heading pattern every other screen in the product opens with:
+   eyebrow, display, and one line saying what the answer changes. Onboarding
+   was the only run without it, which is what made it read as a survey bolted
+   onto the front of a different product. */
+.onboarding-question { display: grid; gap: 10px; }
+.onboarding-question > h1 { margin: 0; }
+.onboarding-sub { max-width: 44ch; margin: 0; color: var(--text-dim); font-size: 15px; line-height: 1.5; }
+.onboarding-question .option-stack { margin-top: 22px; }
+.onboarding-error { margin-bottom: 20px; }
+/* The brief is narrower than the run's shell, so it needs centring the shell's
+   own block layout will not give it. */
+.onboarding-shell .brief-shell { margin-inline: auto; }
 .option-stack { display: grid; gap: 10px; }
 
 /* Report a problem (§10 H). Deliberately the quietest control on the screen —
@@ -422,24 +562,51 @@ button { color: inherit; }
 
 /* The age gate (§16.4). Tighter than a question step because it is one thing
    asked once, not a choice being weighed. */
-.onboarding-age { gap: 20px; }
-.onboarding-age > p { max-width: 42ch; margin: -12px 0 0; color: var(--text-dim); font-size: 15px; }
+.onboarding-age { gap: 16px; }
+.onboarding-age > p { max-width: 42ch; margin: 0 0 6px; color: var(--text-dim); font-size: 15px; }
 .option-card { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 2px; padding: 14px 16px; background: var(--surface); color: var(--text); text-align: left; cursor: pointer; transition: 120ms; }
 .option-card:hover:not(:disabled) { border-color: var(--line-bright); background: var(--surface-2); }
 .option-card--selected { border-color: var(--volt); background: linear-gradient(90deg, var(--volt) 0 2px, var(--surface) 2px); }
 .option-card--selected strong { color: var(--volt); }
 .option-card:disabled { opacity: .36; cursor: not-allowed; }
+/* The one control on the run that waits for a write, saying so itself rather
+   than through a spinner (§02). Ordered after `:disabled` because it sets one. */
+.option-card--busy, .option-card--busy:disabled { opacity: .78; cursor: progress; border-color: var(--volt); background: linear-gradient(90deg, var(--volt) 0 2px, var(--surface) 2px); }
 .option-card > span:first-child { display: grid; gap: 3px; }
 .option-card strong { font-size: 16px; font-weight: 400; }
 .option-card small { color: var(--text-dim); font-size: 13px; }
-.onboarding-state, .mic-check { display: grid; gap: 22px; }
-.onboarding-state > p, .mic-check > p { margin: 0; color: var(--text-dim); font-size: 16px; }
-.mic-check { justify-items: start; }
-.mic-meter { width: 100%; display: grid; grid-template-columns: repeat(12, 1fr); gap: 5px; }
-.mic-meter i { height: 34px; border: 1px solid var(--line); background: var(--surface-2); transition: 80ms; }
-.mic-meter i.active { border-color: rgba(196,248,42,.5); background: var(--volt); }
-.mic-transcript { width: 100%; border-left: 2px solid var(--volt); padding: 14px 16px; background: var(--surface); color: var(--text); }
-.device-picker { width: 100%; display: grid; gap: 7px; }
+/* Centred, like the brief it runs into. These two screens are consecutive and
+   used to be left-aligned then centred, so the composition jumped at the last
+   transition before the rep. */
+.onboarding-state, .mic-check { display: grid; justify-items: center; gap: 22px; text-align: center; }
+.onboarding-state > p, .mic-check > p { max-width: 44ch; margin: 0; color: var(--text-dim); font-size: 16px; }
+.onboarding-state > .arena-button, .mic-check > .arena-button { justify-self: stretch; }
+/* One volt per screen. Volt belongs to the meter — the data — and to the
+   primary action; the glyph above them is not either of those. The amber and
+   red states keep their colour, which is semantic rather than decorative. */
+.mic-glyph { color: var(--text-dim); }
+.mic-meter { --level: 0; width: 100%; display: grid; grid-template-columns: repeat(12, 1fr); gap: 5px; }
+.mic-meter i { position: relative; height: 34px; border: 1px solid var(--line); background: var(--surface-2); }
+/* Each bar fills against the container's `--level` and its own index, so the
+   level is one custom property written per frame rather than a React render
+   per frame — and the leading bar fades in instead of snapping. `.active` is
+   the class form, still used by the Settings mic test. */
+.mic-meter i::after { content: ''; position: absolute; inset: 0; background: var(--volt); opacity: clamp(0, calc(var(--level) - var(--i, 0)), 1); }
+.mic-meter i.active::after { opacity: 1; }
+.mic-meter i.active { border-color: rgba(196,248,42,.5); }
+
+/* What the check established, in the face the product uses for measurements.
+   It replaces a quotation of the phrase the user was asked to say, set in the
+   same mono face under "We can hear you" — which read as a transcript of
+   speech nothing had transcribed. */
+.mic-readout { width: 100%; border-block: 1px solid var(--line); text-align: left; }
+.mic-readout > div { min-height: 44px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; border-top: 1px solid var(--line); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+.mic-readout > div:first-child { border-top: 0; }
+.mic-readout span { color: var(--text-dim); }
+.mic-readout strong { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.mic-readout > p { margin: 12px 0 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.5; text-transform: none; letter-spacing: 0; }
+
+.device-picker { width: 100%; display: grid; gap: 7px; text-align: left; }
 .device-picker select { min-height: 44px; border: 1px solid var(--line); border-radius: 2px; padding: 0 10px; background: var(--ground); color: var(--text-dim); }
 .brief-shell { width: min(100%, 380px); display: grid; justify-items: center; gap: 14px; text-align: center; }
 .brief-hook { max-width: 320px; margin: 4px 0 8px; color: var(--text-dim); font-size: 16px; }
@@ -691,6 +858,9 @@ button { color: inherit; }
 .setting-row span { color: var(--text-dim); font-size: 12px; }
 .setting-row > svg { color: var(--text-mute); }
 .setting-row select, .inline-edit { max-width: 190px; min-height: 38px; border: 1px solid var(--line); border-radius: 2px; padding: 0 9px; background: var(--surface); color: var(--text-dim); text-align: right; }
+/* The focus answer's options are sentences rather than words, so this one gets
+   the room the shorter controls above it do not need. */
+.setting-row select.setting-select { max-width: min(280px, 62vw); text-align: left; }
 .inline-edit { width: 180px; }
 .text-action { color: var(--volt); font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
 .toggle { position: relative; width: 42px; height: 24px; flex: 0 0 auto; border: 1px solid var(--line-bright); border-radius: 2px; padding: 2px; background: var(--surface-2); cursor: pointer; }
@@ -1667,3 +1837,57 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
   .stage__caption { min-height: 108px; }
   .scorecard__subs li { grid-template-columns: 92px minmax(0, 1fr) 26px; }
 }
+
+/* ---------------------------------------------------------------- admin
+   The persona bench. Instrumentation, not a user surface — so it is denser
+   than the product and does not pretend otherwise. Volt appears once, on the
+   primary action; the character hues come off the authored avatar ramp and
+   are used as identity marks at chip size, never as accents. */
+.admin-page { min-height: 100dvh; display: grid; align-content: start; gap: 22px; padding: 36px 20px calc(56px + env(safe-area-inset-bottom)); }
+.admin-head { display: grid; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 20px; }
+.admin-note { max-width: 74ch; margin: 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.6; }
+.admin-roster { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; border: 1px solid var(--line); border-radius: 2px; padding: 0 12px; background: var(--surface); color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 12px; cursor: pointer; transition: border-color 120ms, color 120ms; }
+.admin-chip:hover { border-color: var(--line-bright); color: var(--text); }
+.admin-chip.is-on { border-color: var(--line-bright); background: var(--surface-2); color: var(--text); }
+.admin-chip i { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: var(--chip-hue, var(--line-bright)); }
+.admin-chip small { color: var(--text-mute); font-size: 10px; letter-spacing: .06em; }
+.admin-chip em { color: var(--amber); font-style: normal; }
+.admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+.admin-col { display: grid; gap: 16px; align-content: start; }
+.admin-card { border: 1px solid var(--line); border-radius: 2px; background: var(--surface); padding: 18px; display: grid; gap: 14px; }
+.admin-card > header { display: grid; gap: 4px; }
+.admin-card > header h2 { margin: 0; }
+.admin-want { margin: 0; color: var(--text-dim); font-size: 13.5px; }
+.admin-want strong { color: var(--text); font-weight: 500; }
+.admin-controls { display: grid; gap: 9px; }
+.admin-gate { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.admin-gate:first-child { border-top: 0; padding-top: 0; }
+.admin-slider { display: grid; grid-template-columns: minmax(0, 1fr) 1.5fr auto; align-items: center; gap: 10px; }
+.admin-slider > span { overflow: hidden; color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.admin-slider > strong { min-width: 4.5ch; color: var(--text); font-family: var(--font-mono), monospace; font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 500; text-align: right; }
+.admin-slider input[type='range'] { width: 100%; height: 22px; accent-color: var(--volt-dim); background: transparent; cursor: pointer; }
+.admin-select { display: grid; grid-template-columns: minmax(0, 1fr) 1.5fr; align-items: center; gap: 10px; }
+.admin-select > span { color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 11px; }
+.admin-select select { min-height: 34px; border: 1px solid var(--line); border-radius: 2px; padding: 0 8px; background: var(--surface-2); color: var(--text); font-family: var(--font-mono), monospace; font-size: 12px; }
+.admin-readout { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.admin-readout__row { display: grid; grid-template-columns: 4.5rem 7rem minmax(0, 1fr); gap: 10px; padding: 7px 10px; background: var(--surface-2); font-family: var(--font-mono), monospace; font-size: 11.5px; color: var(--text-dim); }
+.admin-readout__row--head { color: var(--text-mute); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+.admin-readout__row .data { color: var(--text); font-variant-numeric: tabular-nums; }
+.admin-gates { display: flex; flex-wrap: wrap; gap: 4px; }
+.admin-gates i { border: 1px solid var(--line-bright); padding: 0 5px; color: var(--text-dim); font-size: 10px; font-style: normal; }
+.admin-gates em { color: var(--text-mute); font-style: normal; }
+.admin-export { gap: 12px; }
+.admin-source { max-height: 420px; overflow: auto; margin: 0; border: 1px solid var(--line); border-radius: 2px; padding: 14px; background: var(--ground); color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 12px; line-height: 1.6; white-space: pre; }
+.admin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-fine { margin: 0; color: var(--text-mute); font-size: 12px; line-height: 1.6; }
+.admin-fine code, .admin-card code { color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 11.5px; }
+.admin-fine kbd { border: 1px solid var(--line-bright); border-radius: 2px; padding: 1px 4px; color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 10px; }
+.admin-fine--ok { color: var(--volt-dim); }
+.admin-source-toggle { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.admin-source-toggle > summary { color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; list-style: none; }
+.admin-source-toggle > summary::-webkit-details-marker { display: none; }
+.admin-source-toggle > summary::before { content: '+ '; }
+.admin-source-toggle[open] > summary::before { content: '− '; }
+.admin-source-toggle > summary:hover { color: var(--text-dim); }
+@media (prefers-reduced-motion: reduce) { .admin-chip { transition: none; } }

@@ -16,11 +16,11 @@
  */
 
 import Link from 'next/link'
-import { Eye, EyeOff, MailCheck, ShieldAlert } from 'lucide-react'
+import { ChevronLeft, Eye, EyeOff, MailCheck, ShieldAlert } from 'lucide-react'
 import { useActionState, useEffect, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button, Hairline, Input } from '@/components/ui'
-import { latestEligibleDob, MIN_AGE } from '@/lib/safety/age'
+import { Button, DateOfBirth, Hairline, Input } from '@/components/ui'
+import { checkAge, MIN_AGE } from '@/lib/safety/age'
 import {
   devSignIn,
   resendConfirmation,
@@ -46,60 +46,7 @@ export interface AuthScreenProps {
 }
 
 export function AuthScreen({ route, query, recoverySession = false, devLoginEmail = null }: AuthScreenProps) {
-  // The two cold doors. Every other screen here is reached from inside a flow
-  // somebody is already in, and putting the pitch on a password-reset screen
-  // would be selling to a person who has already bought.
-  const pitch = route === '/login' || route === '/signup'
-  return <main className={`auth-page${pitch ? ' auth-page--pitch' : ''}`}>{pitch ? <AuthPitch /> : null}<div className="auth-panel">{pitch ? null : <Link href="/" className="wordmark auth-wordmark">NERVE</Link>}{route === '/login' ? <LoginForm devLoginEmail={devLoginEmail} /> : null}{route === '/signup' ? <SignupForm /> : null}{route === '/verify-email' ? <VerifyEmail email={query.email ?? ''} /> : null}{route === '/forgot-password' ? <ForgotPassword /> : null}{route === '/reset-password' ? <ResetPassword ready={recoverySession} /> : null}</div></main>
-}
-
-/**
- * What this is, for somebody who has only been sent a link.
- *
- * There is no marketing site and there does not need to be one — but the auth
- * screen was doing zero selling: a stranger was asked for an email address
- * before being told what a rep is, who it is for, or what three minutes buys.
- * The word NERVE and "Start training" were the entire pitch.
- *
- * Three things and no more: what a rep is, what it costs in time, and the one
- * line that separates this from every reply generator in the category. The
- * rule block is the product's own best asset and is the same component the
- * brief screen uses, so what is promised here is literally what arrives.
- *
- * The middle rule used to read "Goal — get her number". Both cold doors are
- * public pages, and §14 is specific that a merchant-of-record reviewer reading
- * that sentence on a public page is a declined application: it reads as a
- * dating product rather than a training one. The rep's mission is unchanged
- * and the brief still states it; what is advertised on the way in is the
- * format and the scoring law, which is the more accurate pitch anyway.
- *
- * No numbers about users, results or outcomes. There are none to quote yet,
- * and the one claim made below — that the score is about how you talked and
- * never about whether she said yes — is a rule the code actually enforces
- * (§07), which is the only kind of proof worth putting on this screen.
- */
-function AuthPitch() {
-  return (
-    <section className="auth-pitch">
-      <Link href="/" className="wordmark auth-pitch__mark">NERVE</Link>
-      <span className="label">Conversation gym</span>
-      <h2 className="display-lg auth-pitch__head">Three minutes.<br />One stranger.<br />No script.</h2>
-      <p className="auth-pitch__body">
-        A rep is a timed conversation, out loud, with someone who can lose interest,
-        get distracted and say no. You are scored on how you talked — never on whether
-        she said yes. A clean rep that ends in rejection can score 92.
-      </p>
-      <div className="rule-block auth-pitch__rules">
-        {[['Time', '3:00'], ['She can', 'Lose interest and leave'], ['Scored on', 'How you played']].map(([label, value]) => (
-          <div key={label}><span>{label}</span><strong>{value}</strong></div>
-        ))}
-      </div>
-      <p className="auth-pitch__proof">
-        Then one small thing to do in the real world, and you log what actually happened.
-        Every one of them is a rep. Nobody keeps score of the yeses.
-      </p>
-    </section>
-  )
+  return <main className="auth-page"><div className="auth-panel"><Link href="/" className="wordmark auth-wordmark">NERVE</Link>{route === '/login' ? <LoginForm devLoginEmail={devLoginEmail} /> : null}{route === '/signup' ? <SignupForm /> : null}{route === '/verify-email' ? <VerifyEmail email={query.email ?? ''} /> : null}{route === '/forgot-password' ? <ForgotPassword /> : null}{route === '/reset-password' ? <ResetPassword ready={recoverySession} /> : null}</div></main>
 }
 
 /**
@@ -114,24 +61,6 @@ function TimezoneField() {
     try { setZone(Intl.DateTimeFormat().resolvedOptions().timeZone ?? '') } catch { setZone('') }
   }, [])
   return <input type="hidden" name="timezone" value={zone} readOnly />
-}
-
-/**
- * The age gate, on the public door (§16.4).
- *
- * A date rather than a tick box, for the reason `lib/safety/age.ts` sets out:
- * a box asking "are you 18?" is ticked by everybody and records nothing, and a
- * date is a claim the terms can act on.
- *
- * `max` is computed in an effect rather than at render because the answer
- * depends on today's date, and a server-rendered attribute would be baked into
- * the HTML and then cached. It is a convenience for the browser's own picker
- * either way — `checkAge` on the server is the gate.
- */
-function DateOfBirthField() {
-  const [max, setMax] = useState('')
-  useEffect(() => { setMax(latestEligibleDob(new Date())) }, [])
-  return <Input label="Date of birth" name="date_of_birth" type="date" required max={max || undefined} hint={`Nerve is ${MIN_AGE}+. We ask once.`} />
 }
 
 function LoginForm({ devLoginEmail }: { devLoginEmail: string | null }) {
@@ -152,8 +81,57 @@ function DevDoor({ email }: { email: string }) {
   return <div className="auth-dev"><Hairline /><form action={action}><Button type="submit" variant="ghost" size="sm" fullWidth loading={busy}>Dev sign-in as {email}</Button></form>{state.message ? <p className="auth-fine">{state.message}</p> : null}</div>
 }
 
+/**
+ * Signup, in two steps and one route.
+ *
+ * Two *steps* rather than two routes on purpose: a route would be a URL
+ * somebody can land on cold, a back button that walks out of signup, and a
+ * half-filled form to restore. A step is local state and a transition.
+ *
+ * Date of birth comes first. §16.4 requires the gate to run before the account
+ * exists, and any order satisfies that on its own — nothing is created until
+ * the final submit, where `checkAge` runs ahead of `auth.signUp`. Asking first
+ * is a product decision on top of that rule: it makes the gate behave like a
+ * gate, and it means somebody it turns away never typed a password first.
+ *
+ * Google sits on the second step, which means a person who chooses it there
+ * has answered an age question we then hand to nobody — the OAuth redirect
+ * creates the account without it and the route guard asks again at
+ * `/onboarding/age`. One extra screen, for Google users only, and the gate
+ * still closes. Carrying the answer across the redirect is possible and is
+ * not worth the machinery.
+ */
 function SignupForm() {
   const router = useRouter()
+  const [step, setStep] = useState<'age' | 'account'>('age')
+  const [dateOfBirth, setDateOfBirth] = useState('')
+  return step === 'age'
+    ? <SignupAge value={dateOfBirth} onChange={setDateOfBirth} onDone={() => setStep('account')} />
+    : <SignupAccount dateOfBirth={dateOfBirth} onBack={() => setStep('age')} router={router} />
+}
+
+/**
+ * Step one. One question, one control, one button.
+ *
+ * The button is never disabled. `checkAge` owns every refusal on this screen,
+ * including the empty one — "Enter your date of birth to continue." — so a
+ * tap always produces a sentence rather than a control that quietly ignores
+ * you. It is the same function, with the same messages, that the server runs
+ * on submit; this only saves somebody a round trip and a password.
+ */
+function SignupAge({ value, onChange, onDone }: { value: string; onChange: (value: string) => void; onDone: () => void }) {
+  const [message, setMessage] = useState<string | null>(null)
+  const submit = () => {
+    const verdict = checkAge(value, new Date())
+    if (!verdict.ok) { setMessage(verdict.message); return }
+    setMessage(null)
+    onDone()
+  }
+  return <><AuthSteps step={0} /><AuthHeading title="Your date of birth" /><p className="auth-intro">Nerve is {MIN_AGE}+. We ask once, and the date is the only thing we keep.</p><div className="auth-form">{message ? <FormError>{message}</FormError> : null}<DateOfBirth label="Date of birth" value={value} onChange={onChange} /><Button size="lg" fullWidth onClick={submit}>Continue</Button></div><AuthFoot>Already training? <Link href="/login" className="volt-link">Log in</Link></AuthFoot></>
+}
+
+/** Step two. The account itself, with the answer from step one riding along. */
+function SignupAccount({ dateOfBirth, onBack, router }: { dateOfBirth: string; onBack: () => void; router: ReturnType<typeof useRouter> }) {
   const [state, action, busy] = useActionState(signUpWithPassword, EMPTY)
   const [google, googleAction, googleBusy] = useActionState(async () => signInWithGoogle(), EMPTY)
   const [show, setShow] = useState(false)
@@ -163,11 +141,22 @@ function SignupForm() {
   useEffect(() => { if (state.ok) router.push(`/verify-email?email=${encodeURIComponent(email)}`) }, [email, router, state.ok])
   const strength = password.length === 0 ? 'Use at least 8 characters.' : password.length < 8 ? 'Keep going — 8 characters minimum.' : password.length < 12 ? 'Good enough. Longer is stronger.' : 'Strong.'
   const error = state.message ?? google.message
-  return <><AuthHeading title="Start training" /><form action={googleAction}><button className="oauth-button" type="submit" disabled={googleBusy}><span className="google-mark">G</span> {googleBusy ? 'Opening Google…' : 'Continue with Google'}</button></form><Or /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} /><DateOfBirthField /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} value={password} onChange={setPasswordValue} hint={strength} autoComplete="new-password" /><Button type="submit" size="lg" fullWidth loading={busy} disabled={password.length < 8}>Create account</Button></form><AuthFoot>Already training? <Link href="/login" className="volt-link">Log in</Link></AuthFoot><p className="auth-fine">By continuing, you agree to the <Link href="/legal/terms">terms</Link> and <Link href="/legal/privacy">privacy policy</Link>.</p></>
+  return <><AuthSteps step={1} onBack={onBack} /><AuthHeading title="Create your account" /><form action={googleAction}><button className="oauth-button" type="submit" disabled={googleBusy}><span className="google-mark">G</span> {googleBusy ? 'Opening Google…' : 'Continue with Google'}</button></form><Or /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><input type="hidden" name="date_of_birth" value={dateOfBirth} readOnly /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} value={password} onChange={setPasswordValue} hint={strength} autoComplete="new-password" /><Button type="submit" size="lg" fullWidth loading={busy}>Create account</Button></form><p className="auth-fine">By continuing, you agree to the <Link href="/legal/terms">terms</Link> and <Link href="/legal/privacy">privacy policy</Link>.</p></>
+}
+
+/**
+ * Where you are, and the way back.
+ *
+ * Two marks rather than a count. "Step 1 of 2" on a two-step form is a label
+ * telling you something the two marks already show.
+ */
+function AuthSteps({ step, onBack }: { step: number; onBack?: () => void }) {
+  return <div className="auth-steps">{onBack ? <button type="button" className="auth-steps__back" onClick={onBack}><ChevronLeft size={18} strokeWidth={1.5} /> Back</button> : <span />}<span className="auth-steps__marks" aria-label={`Step ${step + 1} of 2`}>{[0, 1].map((mark) => <i key={mark} className={mark <= step ? 'done' : ''} />)}</span></div>
 }
 
 function PasswordField({ label, name, show, onToggle, value, onChange, hint, autoComplete = 'current-password' }: { label: string; name: string; show: boolean; onToggle: () => void; value?: string; onChange?: (value: string) => void; hint?: string; autoComplete?: 'current-password' | 'new-password' }) {
-  return <div className="password-wrap"><Input label={label} name={name} type={show ? 'text' : 'password'} autoComplete={autoComplete} minLength={8} required value={value} onChange={onChange ? (event) => onChange(event.target.value) : undefined} hint={hint} /><button type="button" aria-label={show ? 'Hide password' : 'Show password'} onClick={onToggle}>{show ? <EyeOff size={18} strokeWidth={1.5} /> : <Eye size={18} strokeWidth={1.5} />}</button></div>
+  const eye = <button type="button" className="field__eye" aria-label={show ? 'Hide password' : 'Show password'} onClick={onToggle}>{show ? <EyeOff size={18} strokeWidth={1.5} /> : <Eye size={18} strokeWidth={1.5} />}</button>
+  return <Input label={label} name={name} type={show ? 'text' : 'password'} autoComplete={autoComplete} minLength={8} required value={value} onChange={onChange ? (event) => onChange(event.target.value) : undefined} hint={hint} adornment={eye} />
 }
 
 function VerifyEmail({ email }: { email: string }) {

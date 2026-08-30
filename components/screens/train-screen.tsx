@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, RotateCcw, X } from 'lucide-react'
+import { Check, ChevronRight, Mic, RotateCcw, X } from 'lucide-react'
 import { useState } from 'react'
 import { useBaseline, useFieldToday, usePersonaProgress, usePersonas, useSessionHistory, useUserState, useWeeklyReview } from '@/lib/data'
 import type { PersonaProgress, SessionSummary } from '@/lib/data/types'
@@ -17,6 +17,30 @@ import { FluidPersona } from '@/components/fluid-persona'
 
 export function TrainScreen() {
   return <AppShell title="Train"><TrainContent /></AppShell>
+}
+
+/**
+ * The way back into a deferred run.
+ *
+ * *Look around first* on the mic step used to call `finishOnboarding`, which
+ * made the escape hatch a trapdoor: somebody whose browser would not grant a
+ * microphone in that moment permanently skipped the check, the brief and the
+ * "How a rep works" sheet, and nothing in the product ever offered them again.
+ * It stamps a deferred flag now (`lib/data/guards.ts`), which lets them move
+ * freely and leaves `onboarding_complete` false — so this row can exist.
+ *
+ * Quiet on purpose. They asked to look around; this is a door held open, not
+ * a screen asking again. It disappears the moment the run is finished, because
+ * being complete is the only thing it is reading.
+ */
+function FinishSetup() {
+  return (
+    <Link className="finish-setup" href="/onboarding/mic">
+      <Mic size={18} strokeWidth={1.5} />
+      <span><strong>Finish setup</strong><small>Check your microphone, then meet your first character</small></span>
+      <ChevronRight size={18} strokeWidth={1.5} />
+    </Link>
+  )
 }
 
 function TrainContent() {
@@ -57,6 +81,7 @@ function TrainContent() {
           <div className="train-meta-row">
             {userLoading || !user ? <><Skeleton width={108} height={32} /><Skeleton width={108} height={20} /></> : <><RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} /><StreakCounter days={user.streakDays} /></>}
           </div>
+          {user && !user.onboardingComplete ? <FinishSetup /> : null}
           {loading || !persona ? <Skeleton height={430} /> : (
             <article className="today-card">
               <div className="today-card__visual" />

@@ -35,6 +35,7 @@ markers, and both are meant to be updated by whoever does the work.
 | [`PIPELINE.md`](PIPELINE.md) | The ElevenLabs adapter — the assembled STT → LLM → TTS path behind the same `VoiceProvider` interface |
 | [`NERVE-FRONTEND-GUIDE.md`](NERVE-FRONTEND-GUIDE.md) | The Arena frontend brief every screen was built from. Long, and the reference for visual detail |
 | [`AVATAR-AUDIT.md`](AVATAR-AUDIT.md) | The WebGL persona avatar: how one shared context draws every avatar on the page, the nineteen numbered defects that rebuild answered, the one that was declined and why, and the palette carve-out it forced (D9) |
+| [`ONBOARDING-AUDIT.md`](ONBOARDING-AUDIT.md) | The run between the sign-up form and the first spoken word, audited: twenty-seven defects in what it asks, what the answers buy, how fast it feels and how it reads, and the twenty-four fixes in leverage order. Nothing in it touches a persona, and §5 says why |
 
 ## History
 
@@ -65,6 +66,7 @@ what to touch when:
 | Anything on the public site — the landing, the method, pricing, the three legal pages | `LAUNCH-GAP.md` B1 and B4. The site is the second audience §14 names, so a claim added there is a claim somebody will check against the build |
 | A safety rule — what moderation acts on, how the escalation runs, what the age gate accepts | `lib/safety/` is the code and the tests are the argument; then `LAUNCH-GAP.md` B3 and `PAYMENTS-APPROVAL.md` §5.1. A change to what the product refuses is a change to what the three legal pages claim, so `components/site/legal-pages.tsx` is part of the same edit |
 | A persona's avatar — its form, its motion, or its place on the colour ramp | `AVATAR-AUDIT.md`, and run `npx vitest run lib/personas/visual.test.ts`: the palette bounds are assertions, not a style note |
+| Anything on the onboarding run — a step, its copy, what an answer buys, or the guard that resumes it | `ONBOARDING-AUDIT.md` — mark the item shipped with what landed and what is still owed. A step that is removed or that changes what it collects is also an edit to `components/site/legal-pages.tsx`, because that page lists the setup answers we keep |
 
 `NERVE-SPEC.md` is **not** edited as the build moves. It is v1.0 and it is the
 thing we are measuring against; where the build has deliberately diverged, that

@@ -1,6 +1,11 @@
 'use client'
 
 import Image from 'next/image'
+
+// Its own file. The date-of-birth field is a small state machine rather than a
+// styled tag, and the rules it runs on live in `lib/safety/dob-field.ts`.
+export { DateOfBirth } from './date-of-birth'
+
 import { AnimatePresence, motion } from 'framer-motion'
 import { FileText, Inbox, LockKeyhole, Upload, X } from 'lucide-react'
 import {
@@ -114,12 +119,20 @@ interface FieldProps {
   label: string
   error?: string
   hint?: ReactNode
+  /**
+   * A control sitting inside the input — the password eye, and nothing else so
+   * far. It renders in a wrapper around the input rather than beside the whole
+   * field, so it is anchored to the box it belongs to instead of to a guessed
+   * distance from the top of the label.
+   */
+  adornment?: ReactNode
 }
 
-export function Input({ label, error, hint, id: providedId, className = '', ...props }: InputHTMLAttributes<HTMLInputElement> & FieldProps) {
+export function Input({ label, error, hint, adornment, id: providedId, className = '', ...props }: InputHTMLAttributes<HTMLInputElement> & FieldProps) {
   const generated = useId()
   const id = providedId ?? generated
-  return <label className="field" htmlFor={id}><span className="label">{label}</span><input id={id} className={`arena-input${error ? ' arena-input--error' : ''} ${className}`} {...props} />{hint ? <span className="field__hint">{hint}</span> : null}{error ? <span className="field__error">{error}</span> : null}</label>
+  const input = <input id={id} className={`arena-input${error ? ' arena-input--error' : ''} ${className}`} {...props} />
+  return <label className="field" htmlFor={id}><span className="label">{label}</span>{adornment ? <span className="field__control">{input}{adornment}</span> : input}{hint ? <span className="field__hint">{hint}</span> : null}{error ? <span className="field__error">{error}</span> : null}</label>
 }
 
 export function Textarea({ label, error, hint, id: providedId, className = '', ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & FieldProps) {

@@ -84,6 +84,16 @@ why the ending is worth nothing, the memory rule with the line the code refuses,
 the four field tiers, the rejection milestones and the four ranks. `/pricing`
 quotes `lib/site/plans.ts`.
 
+**The auth doors were carrying a second copy of the landing page, and it is
+gone (30 Aug).** `/login` and `/signup` each rendered an `AuthPitch` block whose
+own comment justified it with *"There is no marketing site and there does not
+need to be one"* — written before this blocker was cleared. Its headline was
+character-for-character the landing hero's, so anybody arriving from the landing
+CTA read the same three lines twice, and on a phone the pitch stacked above the
+form: six blocks to scroll past before the email field on `/login`, a screen
+only people who already have an account ever see. Both doors are now the door
+and nothing else. The landing page is the only place the pitch lives.
+
 **The hero is the live rep screen, not a transcript.** §11 asks for "a live
 30-second demo rep with no sign-up", and that cannot be built: it needs a
 microphone, a WebRTC session, and an unauthenticated route that spends money on
@@ -268,6 +278,19 @@ uses was already there.
   no fields and older accounts have no date, so both are caught by
   `/onboarding/age`, which the route guard puts ahead of everything including a
   finished onboarding.
+  **Corrected 30 Aug**: that screen was unreachable for exactly the accounts it
+  exists for. The guard exempted every onboarding route *except* the age gate
+  from the rule that sends an unfinished run to its resume step — deliberately,
+  to stop a user who had finished onboarding and had no date from being bounced
+  to `/train` and back forever — and in doing so sent every new Google account
+  from the gate to `/onboarding/track`, which had no date either and sent it
+  back. An infinite redirect, on the only door that does not collect a date of
+  birth. The guard now returns on the age route, because past its two rules the
+  date is missing and this screen is the only thing allowed to render. Found by
+  walking the deployed run as a cold user; recorded in `ONBOARDING-AUDIT.md`
+  §7.1 N1. `checkAge` also says *why* it refused now, so the gate can offer a
+  retry on a mis-scrolled wheel and refuse one on a verdict — the behaviour its
+  own comment had been describing without implementing.
 - **Report-a-problem.** On the result, scorecard and transcript screens of every
   rep. Written through the user's own client, because `safety_events` grants
   exactly one insert policy — your own row, `kind = 'report'` — so RLS is the
@@ -339,7 +362,36 @@ simply caught up with what they were promising.
 **Still owed:** a solicitor's pass before paid accounts open, and a company
 entity name once one exists — the documents currently trade as "Nerve".
 
-### B5 · Email cannot carry a beta  ·  ~0.5 days
+### B5 · Email cannot carry a beta  ·  **receiving + sending fixed 30 Aug, undeployed**
+
+**Fixed.** `support@hellonerve.com` is a real mailbox with a catch-all behind
+it, so `hello@`, `privacy@` and `abuse@` all land somewhere. Resend is verified
+on `send.hellonerve.com` — SPF and the bounce MX sit on the subdomain and DKIM
+at `resend._domainkey`, so the root MX and root SPF that carry receiving are
+untouched and there is no second SPF record at the apex, which is the usual way
+this is broken. DMARC is published at `p=none`. Supabase Auth sends through
+Resend now instead of its own sender, which was the hourly limit this entry was
+about. `SUPPORT_EMAIL` is one constant and every surface imports it.
+
+**Still owed:** the Private Email DKIM record (`default._domainkey`) is enabled
+in the Namecheap panel and not published in DNS, so mail sent *from* the mailbox
+— a reply to a customer, or to a merchant-of-record reviewer — is SPF-signed
+and not DKIM-signed. One TXT record. And none of this is live until the tree is
+pushed (`PAYMENTS-APPROVAL.md` §5.3).
+
+**What it was.**
+`support@nerve.training` is printed in the footer, in Settings, and in all three
+legal documents — and `nerve.training` has no DNS records at all: no A, no MX.
+Every message to it bounces. The product runs on `hellonerve.com`, which does
+have working mail (privateemail.com MX, SPF present, no DMARC record).
+
+So this entry is two problems, not one. The *sending* half is what it always
+said — no custom SMTP, no sending domain, Supabase's built-in limits. The
+*receiving* half is new and is a one-line change in
+`components/site/site-chrome.tsx` (`SUPPORT_EMAIL`) plus the three legal pages
+and the Settings row. Until it is made, the contact address on our privacy
+policy does not exist, and the only offered route to account deletion (B6) goes
+to it. `PAYMENTS-APPROVAL.md` §5.2.
 **Built:** Supabase's built-in sender, which has a hard low hourly limit and
 puts its own domain on the envelope. `DATA.md` already records this: *"It will
 not carry a private beta. Wire a real sender before M5, not during it."*
@@ -363,7 +415,7 @@ and therefore cannot be a SQL function.
 **Why it blocks:** it is the one promise in §16 that a user can check on day
 one, and "email support to delete your account" is not the promise.
 
-### B7 · Nothing is instrumented  ·  ~1 day
+### B7 · Nothing is instrumented  ·  ~1 day  ·  **re-checked 30 Aug: neither package is in `package.json`**
 **Spec:** §04 — PostHog for funnels and week-4 cohorts, Sentry for errors with
 replay off on the live route.
 **Built:** neither package is installed.
@@ -461,7 +513,7 @@ callable by the user it is about. Plus route-level tests in
 `app/api/api-auth.test.ts` asserting each of the five refuses **before** the
 paid call, because the failure mode is a handler forgetting to ask.
 
-### B9a · Leaked-password protection is off  ·  ~5 minutes
+### B9a · Leaked-password protection is off  ·  ~5 minutes  ·  **still off, re-checked 30 Aug**
 
 Found by the Supabase security advisor while clearing B9, unrelated to it.
 Supabase Auth can check new passwords against HaveIBeenPwned and refuse the
@@ -639,6 +691,14 @@ it makes the hole audible again without explaining it.
 
 ### B12 · The Sunday letter has no scheduler  ·  ~0 days on Pro, ~0.5 days on Actions  ·  `deferred 24 Aug`
 
+**The deferral is now a public claim, re-checked 30 Aug.** `/pricing` lists "the
+Sunday review letter" among what a Free account gets and `/how-it-works`
+describes it. `vercel.json` carries exactly one cron — the audio purge — so
+nothing fires it. A merchant-of-record reviewer compares the pitch to the
+product (`PAYMENTS-APPROVAL.md` §5.6), and this is one of three places where
+the two currently disagree. Either schedule it or take it off the pricing page;
+leaving a paid-page promise unscheduled is the worse of the two.
+
 `/api/cron/weekly-review` is written hourly on purpose: Vercel crons run in UTC
 and "Sunday morning" is the user's Sunday, so the route asks each user's own
 clock and leans on the `(user_id, week_start)` unique constraint to write the
@@ -715,9 +775,16 @@ whose primary button read OUT OF REPS above a ten-hour timer.
    bounced back to it and there was no sign-out anywhere inside it, so the only
    way out of a step somebody could not complete was clearing cookies. Sign-out
    now sits in the onboarding chrome, and the mic step offers *Look around
-   first*, which completes onboarding and lands on `/train` — anything less is a
-   skip button that does not skip, because the guard would send them straight
-   back. The rep brief asks again, with its own primer (B10).
+   first*, which lands on `/train` — anything less is a skip button that does
+   not skip, because the guard would send them straight back. The rep brief asks
+   again, with its own primer (B10).
+   **Revised 30 Aug**: it used to get there by calling `finishOnboarding`, which
+   turned the escape hatch into a trapdoor — the brief and the "How a rep works"
+   sheet were skipped permanently, with nothing in the product that would ever
+   offer them again. It stamps `ui_flags['onboarding:deferred']` now, which the
+   guard treats exactly as it treats a finished run while leaving
+   `onboarding_complete` false, so `/train` can carry one quiet *Finish setup*
+   row back to the step. `ONBOARDING-AUDIT.md` R20.
 
 4. **The brief was shown twice.** `/onboarding/ready` is the brief — same
    character, same rule block, same Start — and Start routed to
@@ -876,7 +943,11 @@ again", and one of them — text mode — is the answer to four of the others.
    the user's first name — through one module (`lib/db/persona-context.ts`), from
    the authenticated user rather than from anything a client sent.
 
-4. **Three onboarding answers that bought nothing.** `focus_area` now decides the
+4. **Three onboarding answers that bought nothing.** *(Closed 30 Aug — the third
+   answer, `experience`, was cut rather than wired: nothing downstream ever read
+   the column, and the tempting wiring is a difficulty adjustment, which §08 and
+   §12 forbid announcing. `focus_area` can now be changed in Settings.
+   `ONBOARDING-AUDIT.md` R3, R21.)* `focus_area` now decides the
    first character, the first field challenge and the technique card on the brief
    before there is a graded rep to draw one from (`lib/data/focus.ts`). It is the
    *last* tie-break in the persona choice, so it settles the first rep and then
@@ -1110,7 +1181,9 @@ possible moment to restart the round-6 argument.
 **Turn-taking calibration was specified, had a column, and had no write path.**
 `profiles.vad_offset_ms` was read on every live rep and written by nothing; the
 onboarding mic step showed a level meter and a hard-coded "testing, one two
-three" it never timed. Everyone ran at a flat 600ms — a confident speaker's
+three" it never timed — and printed that phrase back in the mono data face under
+"We can hear you", which read as a transcript of speech nothing had transcribed.
+The step reports the measurement itself now (`ONBOARDING-AUDIT.md` R4). Everyone ran at a flat 600ms — a confident speaker's
 pause — which is why a hesitant user's sentence arrived as two turns drawing two
 separate one-word answers. `lib/voice/calibration.ts` measures the real
 inter-clause pause off the meter that was already running. `resolveSilenceMs`
@@ -1450,7 +1523,7 @@ anything.
 | `/legal/safety` | **Done** (27 Aug) |
 | *(not in §11)* `/sitemap.xml`, `/robots.txt` | **Added 27 Aug** — public routes crawlable, the product disallowed |
 | `/auth/sign-in` · `/auth/sign-up` · `/auth/verify` · `/auth/callback` | Done as `/login`, `/signup`, `/verify-email`, `/auth/callback`, plus `/forgot-password` and `/reset-password` |
-| `/start/goal` · `/start/mic` · `/start/brief` · `/start/rep` | Done as `/onboarding/*` → first rep, now five steps: track, focus, experience, **name**, mic |
+| `/start/goal` · `/start/mic` · `/start/brief` · `/start/rep` | Done as `/onboarding/*` → first rep. **Rebuilt 30 Aug**: one client route holding the step, four questions and a gate — age, track, focus, name, mic, ready. `experience` cut (nothing read it); the URLs remain resume targets and the run opens at the first unanswered step. `ONBOARDING-AUDIT.md` |
 | `/start/baseline` self-assessment | **Missing** |
 | `/start/result` baseline shown | **Missing** |
 | `/home` | Done as `/train` |

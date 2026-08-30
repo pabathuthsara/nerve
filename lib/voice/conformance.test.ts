@@ -29,7 +29,7 @@ import { OpenAIResponseGate } from './openai/response-gate'
 import { compileReinforcement } from './reinforcement'
 import { priceUsageSample, summarizeUsage } from './rates'
 import { ElevenLabsVoiceProvider } from './elevenlabs'
-import { ElevenLabsPersonaCompiler, compileDeliveryTags } from './elevenlabs/persona'
+import { ElevenLabsPersonaCompiler, compileDeliveryTags, EXPRESSION_TAG } from './elevenlabs/persona'
 import { VoiceEmitter } from './emitter'
 import { TurnAssembler, makeTurn, sortTurns } from './transcript'
 import { createVoiceProvider, resolveProviderId } from './index'
@@ -223,11 +223,15 @@ describe('persona compilation', () => {
     expect(tags).toContain('[clipped]')
     expect(tags).toContain('[distracted]')
     expect(tags).toContain('[polite]')
-    expect(compileDeliveryTags(nadia)).toContain('[dry]')
-    expect(compileDeliveryTags({
-      ...nadia,
-      personality: { ...nadia.personality, expression: 'playful' },
-    })).toContain('[playful]')
+    expect(compileDeliveryTags(nadia)).toContain(EXPRESSION_TAG[nadia.personality.expression])
+    // The mapping itself, pinned on a persona built for the purpose rather
+    // than on whatever a shipped character is currently tuned to.
+    for (const [expression, tag] of Object.entries(EXPRESSION_TAG)) {
+      expect(compileDeliveryTags({
+        ...nadia,
+        personality: { ...nadia.personality, expression: expression as typeof nadia.personality.expression },
+      })).toContain(tag)
+    }
   })
 
   it('forces flat voice stability for cold characters, which OpenAI cannot', () => {

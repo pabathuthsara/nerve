@@ -22,7 +22,9 @@
 import { revalidatePath } from 'next/cache'
 import { currentUser, supabaseServer } from '@/lib/db/server'
 import { announceUnlock } from '@/lib/db/unlocks'
-import { ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG } from '@/lib/data/guards'
+import { ONBOARDING_DEFERRED_FLAG, ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG } from '@/lib/data/guards'
+import { trackWaitlistFlag } from '@/lib/data/ui-flags'
+import type { FocusArea } from '@/lib/data/focus'
 import type { TablesUpdate } from '@/lib/db/types'
 import type { Track } from '@/lib/data/types'
 import { OFFSET_MAX_MS, OFFSET_MIN_MS } from '@/lib/voice/calibration'
@@ -37,7 +39,17 @@ const SIGNED_OUT: SaveResult = { ok: false, message: 'Not saved — you are sign
 
 type ProfilePatch = TablesUpdate<'profiles'>
 
-async function updateProfile(patch: ProfilePatch): Promise<SaveResult> {
+/**
+ * `revalidate: false` for writes made from a screen the shell is not behind.
+ *
+ * The default revalidates the whole layout, because everything the shell draws
+ * — name, track, reps — comes from the profile. Onboarding is the one run in
+ * the product where that is pure cost: the shell is not rendered on any step,
+ * and paying for a full layout revalidation on each of five answers is a
+ * measurable part of why the run felt slow. `finishOnboarding` revalidates,
+ * which is the one write on the run the shell actually has to see.
+ */
+async function updateProfile(patch: ProfilePatch, options: { revalidate?: boolean } = {}): Promise<SaveResult> {
   const user = await currentUser()
   if (!user) return SIGNED_OUT
 
@@ -45,9 +57,35 @@ async function updateProfile(patch: ProfilePatch): Promise<SaveResult> {
   const { error } = await supabase.from('profiles').update(patch).eq('id', user.id)
   if (error) return { ok: false, message: `Not saved — ${error.message}` }
 
-  // Everything the shell draws — name, track, reps — comes from the profile.
-  revalidatePath('/', 'layout')
+  if (options.revalidate !== false) revalidatePath('/', 'layout')
   return { ok: true, message: null }
+}
+
+/**
+ * Read `ui_flags`, merge, write. One round trip's worth of read-modify-write,
+ * shared by everything on this file that stamps a flag.
+ *
+ * Last write wins on a concurrent stamp, which is the right trade for a column
+ * whose worst failure is an explainer shown twice. Anything that records
+ * something *earned* goes to `unlocks` instead (§08, §14).
+ */
+async function stampFlags(
+  flags: readonly string[],
+  patch: ProfilePatch = {},
+  options: { revalidate?: boolean } = {},
+): Promise<SaveResult> {
+  const user = await currentUser()
+  if (!user) return SIGNED_OUT
+
+  const supabase = await supabaseServer()
+  const { data: profile } = await supabase.from('profiles').select('ui_flags').eq('id', user.id).maybeSingle()
+  const current = isFlagRecord(profile?.ui_flags) ? profile.ui_flags : {}
+  const stamp = new Date().toISOString()
+
+  return updateProfile(
+    { ...patch, ui_flags: flags.reduce<Record<string, string>>((carry, flag) => ({ ...carry, [flag]: stamp }), { ...current }) },
+    options,
+  )
 }
 
 export async function saveDisplayName(name: string): Promise<SaveResult> {
@@ -68,14 +106,25 @@ export async function saveDisplayName(name: string): Promise<SaveResult> {
  * and the migration says so plainly; the stamp is not. It means "the server
  * did the arithmetic and the answer was 18 or over", which is the thing terms
  * clause 02 acts on.
+ *
+ * `final` is what the gate needs and could not previously ask for. Every
+ * refusal used to arrive as one shape, so `/onboarding/age` offered another
+ * attempt on all of them — including the verdict, which made a rule the screen
+ * describes as absolute into one you retype your way past. Only `under-age` is
+ * final; a mis-scrolled wheel has to stay correctable.
  */
-export async function confirmAge(dateOfBirth: string): Promise<SaveResult> {
+export interface AgeResult extends SaveResult {
+  final: boolean
+}
+
+export async function confirmAge(dateOfBirth: string): Promise<AgeResult> {
   const check = checkAge(dateOfBirth, new Date())
-  if (!check.ok) return { ok: false, message: check.message }
-  return updateProfile({
+  if (!check.ok) return { ok: false, message: check.message, final: check.reason === 'under-age' }
+  const saved = await updateProfile({
     date_of_birth: check.dob,
     age_confirmed_at: new Date().toISOString(),
   })
+  return { ...saved, final: false }
 }
 
 export async function saveTrainingWheels(on: boolean): Promise<SaveResult> {
@@ -109,11 +158,22 @@ export async function setActiveTrack(track: Track): Promise<SaveResult> {
  * Not batched at the end: a person who closes the tab on step three has still
  * told us what they are here for, and asking again would be a worse first
  * impression than not having asked.
+ *
+ * Nothing here revalidates. The run holds its own state and the shell is not
+ * behind it, so the only thing a layout revalidation would buy on these five
+ * writes is latency between a tap and the next question.
+ *
+ * `experience` used to be one of these. It was written, and read by nothing:
+ * absent from `fetchUserState`, so it never reached a screen, a persona
+ * choice, a field assignment or the grader. The step is gone rather than
+ * wired, because the honest wiring for a self-reported experience level is a
+ * difficulty adjustment, and §08/§12 forbid announcing one — which makes it
+ * exactly the wrong thing to hang a user's own answer on. The column stays;
+ * dropping it would rewrite a migration that has run.
  */
 export async function saveOnboardingChoice(input: {
   track?: Track
-  focusArea?: 'opening' | 'sustaining' | 'flirting' | 'rejection'
-  experience?: 'never' | 'sometimes' | 'often'
+  focusArea?: FocusArea
   /**
    * The name step (§08's `usesYourName` dial).
    *
@@ -129,7 +189,6 @@ export async function saveOnboardingChoice(input: {
 
   if (input.track) patch.active_track = input.track
   if (input.focusArea) patch.focus_area = input.focusArea
-  if (input.experience) patch.experience = input.experience
 
   // The track step needs a marker of its own. `active_track` carries a default,
   // so it is already set for somebody who has answered nothing — which made it
@@ -143,21 +202,43 @@ export async function saveOnboardingChoice(input: {
   }
 
   if (Object.keys(patch).length === 0 && flags.length === 0) return { ok: true, message: null }
+  if (flags.length === 0) return updateProfile(patch, { revalidate: false })
+  return stampFlags(flags, patch, { revalidate: false })
+}
 
-  if (flags.length > 0) {
-    const user = await currentUser()
-    if (!user) return SIGNED_OUT
-    const supabase = await supabaseServer()
-    const { data: profile } = await supabase.from('profiles').select('ui_flags').eq('id', user.id).maybeSingle()
-    const current = isFlagRecord(profile?.ui_flags) ? profile.ui_flags : {}
-    const stamp = new Date().toISOString()
-    patch.ui_flags = flags.reduce<Record<string, string>>(
-      (carry, flag) => ({ ...carry, [flag]: stamp }),
-      { ...current },
-    )
-  }
+/**
+ * The focus answer, changed later (§07's sub-scores, `lib/data/focus.ts`).
+ *
+ * It steers three surfaces — the first character, the first field challenge
+ * and the technique card on the brief before a graded rep exists to draw one
+ * from — and until now it was set once, in the first ninety seconds somebody
+ * ever spent here, and then permanent.
+ *
+ * A preference, not an entitlement, so it goes through the user's own client
+ * like every other setting on this file. Nobody would pay to change what they
+ * said the hard part was — which is the line rule 9 actually draws.
+ */
+export async function saveFocusArea(focusArea: FocusArea): Promise<SaveResult> {
+  return updateProfile({ focus_area: focusArea })
+}
 
-  return updateProfile(patch)
+/**
+ * A track asked for before it exists.
+ *
+ * The interview option on the onboarding track step is M4 by §17's ordering.
+ * The screen that answered it used to say "Demand recorded" over a
+ * `setTimeout` and write nothing, which made a claim on the one screen that
+ * could actually tell us whether the track is worth building. This is the
+ * write that sentence was describing.
+ *
+ * Only the ask. It deliberately does NOT stamp the track step as answered or
+ * set `active_track`: wanting interview training is not choosing dating, and
+ * recording it as though it were would put a choice on the record that nobody
+ * made. Somebody who closes the tab on this screen resumes on the question,
+ * which is where they actually are.
+ */
+export async function recordTrackWaitlist(track: 'interview' | 'english'): Promise<SaveResult> {
+  return stampFlags([trackWaitlistFlag(track)], {}, { revalidate: false })
 }
 
 /**
@@ -167,9 +248,29 @@ export async function saveOnboardingChoice(input: {
  * it on every protected route, and auth metadata is writable by the user it
  * describes. Whether you have been through onboarding is not one of the things
  * you get to declare.
+ *
+ * This one DOES revalidate. It is the write the shell has to see — it is the
+ * moment the app opens.
  */
 export async function finishOnboarding(): Promise<SaveResult> {
   return updateProfile({ onboarding_complete: true })
+}
+
+/**
+ * *Look around first*, which is not *I am finished*.
+ *
+ * This used to call `finishOnboarding`, and that made the mic step's escape
+ * hatch a trapdoor: somebody whose browser would not grant a microphone in
+ * that moment permanently skipped the check, the brief and the "How a rep
+ * works" sheet, with nothing in the product that would ever offer them again.
+ *
+ * The flag buys the same freedom of movement without the claim. See the guard
+ * in `lib/data/guards.ts`: a deferred run is let past exactly as a finished
+ * one is, `onboarding_complete` stays false, and `/train` carries one quiet
+ * row back to the step they stopped on.
+ */
+export async function deferOnboarding(): Promise<SaveResult> {
+  return stampFlags([ONBOARDING_DEFERRED_FLAG])
 }
 
 /* ------------------------------------------------------------------ *
