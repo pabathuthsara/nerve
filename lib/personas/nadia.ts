@@ -1,10 +1,18 @@
 /**
- * Nadia — Level 1, Bookshop (§06).
+ * Nadia — Level 2, Bookshop (§06).
  *
  * "Level 1 must be nearly impossible to fail. A socially anxious person opening
  * their microphone for the first time is already at seven out of ten." Nadia is
  * pleased to be spoken to and will carry the conversation if she has to.
  * First-session drop-off is where apps in this category die.
+ *
+ * **She moved from rung 1 to rung 2 when Tess was authored.** Only the number
+ * moved. The sign-up rep needed a character below her — one authored to be won
+ * by somebody who has not yet decided whether this product is for them — and
+ * inserting that rung renumbered everything under Robin (see `./index.ts`).
+ * Her trajectory, her personality, her gates and her contract are untouched:
+ * she is still the character a first-timer cannot lose, and the paragraph
+ * below about the round-9 retune still describes the numbers in this file.
  *
  * Hand-authored. Every line of the contract is deliberate.
  */
@@ -90,7 +98,7 @@ export const nadia: Persona = {
   slug: 'nadia',
   name: 'Nadia',
   scene: 'A second-hand bookshop on a Saturday afternoon, quiet, near the fiction shelves.',
-  level: 1,
+  level: 2,
   track: 'dating',
 
   voice: {
@@ -179,7 +187,7 @@ export const nadia: Persona = {
     'They cross a real boundary. Be briefly unimpressed and leave.',
   ],
 
-  // Level 1 is receptive 90% of the time. There is always a real chance it goes
-  // well and always a real chance it does not (§05).
+  // Receptive 90% of the time. There is always a real chance it goes well and
+  // always a real chance it does not (§05).
   outcomeWeights: { receptive: 0.9, neutral: 0.09, rejecting: 0.01 },
 }

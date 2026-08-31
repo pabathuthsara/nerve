@@ -7,7 +7,7 @@ five screens do not each invent their own answer.
 
 | Track | Status | What a rep is | Win condition |
 |---|---|---|---|
-| **Dating** | Built. The product. | Three minutes against one of three characters | Her number, offered by her at the end when the meter earned it |
+| **Dating** | Built. The product. | Three minutes against one of four characters | Her number, offered by her at the end when the meter earned it |
 | **Interview** | Screens built, engine shared, characters unwritten (M4) | Eight minutes against an interviewer you configure | A callback, decided by the grade rather than in the room |
 | **English** | Later. Not started. | — | — |
 
@@ -71,55 +71,88 @@ the same one line she carries between reps — typed.
   separately to clear what she remembers — restarting a chat that went badly is
   not the same as asking her to forget the bookshop.
 
-## Day one is three reps
+## Voice is sold by the account, not by the day
 
-On every plan. The arc the gym teaches is fail, adjust, succeed, and it cannot
-happen inside one attempt — rationing day one to a single rep meant a new user's
-only evidence about whether this works was one conversation that probably went
-badly, with the next attempt tomorrow.
+**Free grants no voice reps.** It keeps every part of the product whose marginal
+cost is approximately zero — the field challenges, the log, the
+predicted-versus-actual chart, text mode against the same characters, the
+streak, the history, the transcripts and the Sunday letter — and it does not
+include a microphone. Pro is three voice reps a day at $19; Elite is six at $49.
 
-The grant is keyed off `entitlements.created_at`, which has no user write path,
-so a second day one cannot be minted. The ceiling after that is exactly what §14
-says. Recorded as drift **D11** in `LAUNCH-GAP.md`, because §14's own text is
-one rep a day on free.
+**The one exception is the sign-up rep: one voice rep, once per account.** It
+runs during onboarding, against Tess, who is authored to be won. Nobody should
+be asked to decide about a voice product they have never heard, and a written
+description of what she sounds like would be advertising our own prose.
+
+This replaces the day-one grant of three reps, which shipped on 25 August. That
+decision was right about the arc — fail, adjust, succeed cannot happen inside
+one attempt — and wrong about who pays for it: free was also one rep a day
+forever, so day one's three was the loud half of a recurring cost of about
+$2.64 a month for a user who never paid. The arc is what Pro is *for* now. The
+reasoning in full is `PAYMENTS-NEW-INTEGRATION.md`; the drift entry is **D11**
+in `LAUNCH-GAP.md`.
+
+The grant is held on `entitlements.onboarding_rep_used_at`, which has no user
+write path, so abandoning and resuming onboarding cannot mint a second one. It
+is additive and spent last, so refunding a rep that recorded no speech gives it
+back — a free account's only voice rep must not be lost to a muted microphone.
+
+**Running out still never breaks the streak** (§14). A field challenge keeps the
+day, on every plan, which is the difference between a paywall and a churn event.
+A paid plan starts with a seven-day free trial; the card is authorised at the
+start and charged at the end, the date is on screen the whole time, and
+cancelling is a button rather than an email.
 
 ## The ladder
 
-Three characters, one per rung, one rung per visible tier:
+Four characters, one per rung, one rung per visible tier:
 
 | Tier | Level | Character | Scene | Skill trained |
 |---|---|---|---|---|
-| 1 — Receptive | 1 | Nadia | Bookshop | Speaking out loud at all |
-| 2 — Neutral | 2 | Maya | Coffee shop | Not running dry at ninety seconds |
-| 3 — Ambiguous | 4 | Robin | Hotel lobby | Reading ambiguous interest correctly |
+| 1 — Open | 1 | Tess | Launderette | Saying the first thing at all |
+| 2 — Receptive | 2 | Nadia | Bookshop | Speaking out loud without help |
+| 3 — Neutral | 3 | Maya | Coffee shop | Not running dry at ninety seconds |
+| 4 — Ambiguous | 4 | Robin | Hotel lobby | Reading ambiguous interest correctly |
 
-**Why three and not §06's eight.** Eight thin characters is worse than three
-that hold up. The persona contracts are the one part of this product that can
-only be fixed by running reps against them — schema, RLS, grading and the field
-loop are all verifiable at a desk, and a character is not. Eight characters is
-eight tuning surfaces, and §17's calibration gate is twenty transcripts in
-total, which spread across eight is two or three each and proves nothing about
-any of them. Concentrated on three it is roughly seven each. The other five are
-retired rather than deleted: still authored, still in the repo, unpublished in
-the database so every rep anybody ran against them stays readable. Filed as
-drift in `LAUNCH-GAP.md` §4.
+**Why four and not §06's eight.** Eight thin characters is worse than four that
+hold up. The persona contracts are the one part of this product that can only be
+fixed by running reps against them — schema, RLS, grading and the field loop are
+all verifiable at a desk, and a character is not. Eight characters is eight
+tuning surfaces, and §17's calibration gate is twenty transcripts in total,
+which spread across eight is two or three each and proves nothing about any of
+them. Concentrated on four it is about five each. The other five are retired
+rather than deleted: still authored, still in the repo, unpublished in the
+database so every rep anybody ran against them stays readable. Filed as drift in
+`LAUNCH-GAP.md` §4.
 
-**The rungs are 1, 2 and 4 of the engine's eight, and the gap is deliberate.**
-A level's difficulty curve IS the trajectory of the character who holds it, so
-the three rungs above are three authored, tuned, tested curves rather than a
-new scale nobody has run a rep against. Maya moved down from rung 3 to rung 2
-and Robin down from rung 7 to rung 4, taking the curves already authored for
-those rungs; both keep everything that makes them who they are, because
-difficulty is layer 1 and character is layer 2 (`PERSONA.md`). Robin sits at 4
-rather than 3 because §12 takes the warmth digits off the screen from level 4 —
-the top rung is where the user should be reading a person instead of a meter,
-which is precisely her skill.
+**The ladder is contiguous, and only became so on 31 August.** A level's
+difficulty curve IS the trajectory of the character who holds it, so a rung with
+nobody on it falls back to its nearest neighbour's curve rather than to an
+interpolation nobody designed — and the roster was 1, 2, 4 with nothing at 3.
+Tess was authored for the sign-up rep, took rung 1, and closed the gap: Nadia
+moved to 2 and Maya back to 3, which is the rung she was originally authored at.
+Nobody's numbers changed. `lib/warmth/levels.ts` builds the level→trajectory map
+off the roster rather than keeping a parallel table, so renumbering the
+characters renumbered the curves and nothing else, because difficulty is layer 1
+and character is layer 2 (`PERSONA.md`). Robin stays at 4 because §12 takes the
+warmth digits off the screen from level 4 — the top rung is where the user
+should be reading a person instead of a meter, which is precisely her skill, and
+that rule now lands on exactly the character it was written for.
 
 Tier 1 and tier 2 are open from the start. **Tier 3 costs two reps scoring 70+
-at tier 2** (§08) — the score, never the outcome. A clean rep that ended in
-rejection can score 92 and advance you; a lucky one that got her number and
-scored 54 does not. Unlocks are derived from the reps you have actually run,
-not stored, so they cannot disagree with your own history.
+at tier 2, and tier 4 two at tier 3** (§08) — the score, never the outcome. A
+clean rep that ended in rejection can score 92 and advance you; a lucky one that
+got her number and scored 54 does not. Unlocks are derived from the reps you
+have actually run, not stored, so they cannot disagree with your own history.
+Robin's gate is unchanged by the renumber: it was two qualifying reps against
+Maya before and it is two qualifying reps against Maya now.
+
+**Tier 1 is winnable by design, and still has to be won.** Tess arms four turns
+into a three-minute rep for somebody who says four real sentences. Fifteen turns
+of flat, dead-end replies leave her at 46.5 — under the 65 that arms a rep and
+under the 55 that keeps it — so a rep in which nothing was said produces no
+number even at the bottom of the ladder. If those two ever collapse into one,
+the win teaches nothing and the user knows it.
 
 **The top rung is hard, not sealed.** Robin's ceiling is 95 and the number is
 at 65, and eighteen turns of good play lands her at 59 — a merely competent rep
@@ -169,9 +202,12 @@ at three different turn counts.
    opens onto — she learns it the ordinary way, when he says it or when they
    have met before. The name step is skippable; the skip is recorded so it is
    never asked twice.
-4. **Straight into a rep** — or into text, from the same screen. Nadia, level 1,
+4. **Straight into a rep** — or into text, from the same screen. Tess, level 1,
    framed as a measurement rather than a test. Level 1 is nearly impossible to
    fail on purpose: first-session drop-off is where apps in this category die.
+   This is the one free voice rep the product gives away, and it is a real rep
+   at a real rung — which is what keeps the §08 week-four re-test comparing like
+   with like rather than measuring the gap between two characters.
 5. **Result → scorecard.** The number or the exit line, then the breakdown.
 
 Then, from that point on, five sections and nothing else:
@@ -179,7 +215,7 @@ Then, from that point on, five sections and nothing else:
 | Section | What it is | Why it exists |
 |---|---|---|
 | **Train** | Today's rep, chosen for you. Plus today's field move and your last result. | The decision about who to face is the part people use to avoid the rep. One action, one screen. |
-| **Roster** | The progression map: three characters, three tiers, locked ones showing what they cost. | The thing to come back for. Also the only place difficulty is ever discussed. |
+| **Roster** | The progression map: four characters, four tiers, locked ones showing what they cost. | The thing to come back for. Also the only place difficulty is ever discussed. |
 | **Field** | One real-world move a day, hand-written, tiered. Plus rejections collected, the predicted-versus-actual chart, and the log. | The sim is practice; the field is the point. The chart is the one place a number is allowed to argue with the user, because it is their own. |
 | **Library** | Fourteen hand-written cards, grouped by the sub-score each one moves — one card, one section — with next/previous, a read mark, and "Run a rep on this" at the bottom of every one. | Where the scorecard's advice goes, and where it comes back from. Nobody opens this wanting "an opener" — they open it having just scored 42 on signal reading, which is why it is filed by score and not by kind. Read the technique, immediately try it, against the character that card is actually for. |
 
@@ -189,7 +225,7 @@ top rung plus five distinct days on which a tier-3 ask was actually made. Days
 rather than asks, because five asks in one brave afternoon is one exposure and
 habituation is repetition over time. Asks made rather than accepted, per §09.
 
-Three sim rungs cannot earn four field tiers, and this is the better answer
+Gym rungs cannot earn the last field tier, and this is the better answer
 rather than the one that fitted: gating the hardest real-world ask on gym
 performance said that being good at talking to a synthetic character earns the
 right to approach a person. Doing the smaller thing, repeatedly, is what earns

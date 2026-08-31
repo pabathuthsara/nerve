@@ -1,5 +1,5 @@
 /**
- * Maya — Level 2, coffee shop (§06).
+ * Maya — Level 3, coffee shop (§06).
  *
  * The skill this level trains is **not running dry at ninety seconds**. She
  * gives less than Nadia and expects the conversation to have somewhere to go.
@@ -9,12 +9,13 @@
  * She is friendly and slightly guarded, which is the ordinary state of a
  * person who is out alone and not looking for company.
  *
- * **She moved from rung 3 to rung 2 when the roster went to three characters.**
- * Difficulty is layer 1 and layer 1 alone, so what moved is the trajectory
- * below — the authored rung-2 curve, which is the one a three-minute rep can
- * actually arm against. Everything that makes her Maya is layer 2 and is
- * untouched: she still gives less than the rung under her and still runs a
- * conversation dry if it is not fed. See docs/PERSONA.md.
+ * **She was authored at rung 3, moved to rung 2 when the roster went to three
+ * characters, and is back at 3 now that Tess holds the bottom.** Difficulty is
+ * layer 1 and layer 1 alone, so all three of those moves were the same
+ * trajectory carrying a different label — the numbers below have never
+ * changed. Everything that makes her Maya is layer 2 and is untouched: she
+ * still gives less than the rung under her and still runs a conversation dry
+ * if it is not fed. See docs/PERSONA.md.
  */
 
 import type { Persona } from '@/lib/voice/types'
@@ -54,7 +55,7 @@ export const maya: Persona = {
   slug: 'maya',
   name: 'Maya',
   scene: 'A coffee shop on a Sunday morning, at a table by the window.',
-  level: 2,
+  level: 3,
   track: 'dating',
 
   // `cedar` and `marin` are the two voices that shipped with `gpt-realtime`;
@@ -69,9 +70,10 @@ export const maya: Persona = {
     pace: 1.0,
   },
 
-  // The authored rung-2 curve. Hand-tuned and asserted at that rung: it is the
-  // hardest one a good three-minute rep can still arm against (`engine.test.ts`,
-  // "the ladder a good player can actually arm").
+  // The curve she was authored with, now standing at rung 3. Hand-tuned and
+  // asserted at that rung: it is the hardest one a good three-minute rep can
+  // still arm against (`engine.test.ts`, "the ladder a good player can
+  // actually arm").
   trajectory: {
     start: 28,
     startJitter: 6,

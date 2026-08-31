@@ -21,14 +21,15 @@ import { SiteSection, SITE_LINKS } from './site-chrome'
 import { PRESENTATION } from '@/lib/personas/presentation'
 import { PERSONA_VISUAL } from '@/lib/personas/visual'
 import { LEVEL_NAMES } from '@/lib/data/progression'
-import { PUBLIC_PLANS, repsLine } from '@/lib/site/plans'
+import { PUBLIC_PLANS, TRIAL_DAYS, repsLine } from '@/lib/site/plans'
 import type { CSSProperties } from 'react'
 
 /** The shipped roster, in rung order, with the tier name the app uses. */
 const ROSTER = [
-  { slug: 'nadia', tier: 1 as const, name: 'Nadia' },
-  { slug: 'maya', tier: 2 as const, name: 'Maya' },
-  { slug: 'robin', tier: 3 as const, name: 'Robin' },
+  { slug: 'tess', tier: 1 as const, name: 'Tess' },
+  { slug: 'nadia', tier: 2 as const, name: 'Nadia' },
+  { slug: 'maya', tier: 3 as const, name: 'Maya' },
+  { slug: 'robin', tier: 4 as const, name: 'Robin' },
 ]
 
 /** The six §07 dimensions, in the rubric's own words, shortened for a card. */
@@ -63,7 +64,7 @@ const FAQ = [
   },
   {
     q: 'What happens when I run out of reps?',
-    a: 'The field challenge is still there and still free, on every plan, forever. Running out of voice minutes never breaks a streak, because a paywall that is also a churn event is a badly designed paywall.',
+    a: 'The field challenge is still there and still free, on every plan, forever, and so are text mode, your log and your history. Running out of voice minutes never breaks a streak, because a paywall that is also a churn event is a badly designed paywall.',
   },
   {
     q: 'Will this work if dating is not the point for me?',
@@ -111,7 +112,7 @@ function Hero() {
           <Link href="/signup" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
           <Link href={SITE_LINKS.howItWorks} className="arena-button arena-button--secondary arena-button--lg">How it works</Link>
         </div>
-        <p className="hero__fine">One rep a day free — three on your first day. No card.</p>
+        <p className="hero__fine">Sign-up includes a voice rep. No card.</p>
       </div>
       <div className="hero__demo">
         <RepReplay />
@@ -141,7 +142,7 @@ function ScorecardArtifact() {
     <figure className="scorecard">
       <div className="scorecard__head">
         <div>
-          <span className="label">Maya · Tier 2 · She left</span>
+          <span className="label">Maya · Tier 3 · She left</span>
           <p>Warmth finished at 58 and she was never armed. None of that is in the number.</p>
         </div>
         <div className="scorecard__composite">
@@ -356,7 +357,7 @@ function PricingTeaser() {
     <SiteSection
       kicker="Pricing"
       title={<>Start free.<br />Stay free if it suits you.</>}
-      lede="Field work is unlimited on every plan, including the free one, forever. What you pay for is voice minutes against a live character — the only part of this that costs anything to run."
+      lede="Field work, text mode, your log and your streak are unlimited on every plan, including the free one, forever. What you pay for is voice minutes against a live character — the only part of this that costs anything to run."
       wide
     >
       <ul className="teaser-grid">
@@ -369,7 +370,7 @@ function PricingTeaser() {
             </div>
             <span className="data teaser-grid__reps">{repsLine(plan)}</span>
             <p>{plan.tagline}</p>
-            {plan.open ? null : <span className="arena-chip">Opens soon</span>}
+            {plan.id === 'free' ? null : <span className="arena-chip">{TRIAL_DAYS} days free</span>}
           </li>
         ))}
       </ul>
@@ -407,8 +408,8 @@ function FinalCall() {
       </p>
       <Link href="/signup" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
       <ul className="final-call__points">
-        <li><Check size={14} strokeWidth={2} aria-hidden="true" /> Three reps on your first day</li>
-        <li><Check size={14} strokeWidth={2} aria-hidden="true" /> No card, no trial countdown</li>
+        <li><Check size={14} strokeWidth={2} aria-hidden="true" /> A voice rep included with sign-up</li>
+        <li><Check size={14} strokeWidth={2} aria-hidden="true" /> No card to start, and none to stay free</li>
         <li><Check size={14} strokeWidth={2} aria-hidden="true" /> Recordings auto-delete after 30 days</li>
       </ul>
     </section>

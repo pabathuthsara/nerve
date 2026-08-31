@@ -29,6 +29,23 @@ export interface PersonaPresentation {
 }
 
 export const PRESENTATION: Record<string, PersonaPresentation> = {
+  /**
+   * Rung 1, and the first thing anybody reads about this product from the
+   * inside. Every word of it is chosen to describe a bored person in a
+   * launderette rather than a character with a disposition toward the reader —
+   * §14 has a merchant-of-record reviewer signing up and meeting her first,
+   * and "flirty" is a dial in her file, never a description on a screen.
+   */
+  tess: {
+    setting: 'Launderette, Sunday afternoon',
+    settingShort: 'Launderette',
+    hook: 'Nineteen minutes left on her machine and nothing to do for any of them.',
+    blurb:
+      'Quick, cheerful and completely stuck. She has read everything on her phone twice and would rather talk to somebody than watch the drum go round.',
+    respondsTo: ['saying anything at all', 'anything about the room you are both stuck in', 'a small opinion'],
+    shutsDownOn: ['sustained rudeness', 'crossing a real boundary'],
+    portraitUrl: '',
+  },
   nadia: {
     setting: 'Second-hand bookshop, Saturday afternoon',
     settingShort: 'Bookshop',

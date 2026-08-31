@@ -12,12 +12,12 @@ describe('ranks (§08)', () => {
     // Asserted through `qualifyingByLevel` rather than against `rankFor`'s
     // input directly, because that function is where "qualifying" is decided —
     // testing the rank in isolation would prove nothing about the rule.
-    const forty = Array.from({ length: 40 }, () => ({ level: 1 as const, composite: 60 }))
+    const forty = Array.from({ length: 40 }, () => ({ level: 2 as const, composite: 60 }))
     expect(rankFor(qualifyingByLevel(forty))).toBe('rookie')
 
     const two = [
-      { level: 1 as const, composite: UNLOCK_SCORE },
-      { level: 1 as const, composite: UNLOCK_SCORE + 12 },
+      { level: 2 as const, composite: UNLOCK_SCORE },
+      { level: 2 as const, composite: UNLOCK_SCORE + 12 },
     ]
     expect(rankFor(qualifyingByLevel(two))).toBe('regular')
   })
@@ -25,17 +25,26 @@ describe('ranks (§08)', () => {
   it('walks the rail one CLEARED tier at a time', () => {
     // Tiers 1 and 2 are open from the start, so a rank keyed on what is
     // unlocked would hand a brand-new account a rank it had not earned.
-    expect(rankFor({ 1: UNLOCK_REPS })).toBe('regular')
-    expect(rankFor({ 1: UNLOCK_REPS, 2: UNLOCK_REPS })).toBe('contender')
+    expect(rankFor({ 2: UNLOCK_REPS })).toBe('regular')
+    expect(rankFor({ 2: UNLOCK_REPS, 3: UNLOCK_REPS })).toBe('contender')
+  })
+
+  it('mints no rank for the on-ramp', () => {
+    // Tier 1 is Tess, authored to be won by somebody who has not yet decided
+    // whether this product is for them. A rank for clearing her would be the
+    // participation badge §08 rules out — and it would make Regular's own
+    // sentence ("someone who is pleased to see you") describe two different
+    // characters at two different difficulties.
+    expect(rankFor({ 1: UNLOCK_REPS * 5 })).toBe('rookie')
   })
 
   it('earns the last rank by clearing the top tier, not by opening one above', () => {
     // The reason this rank exists at all. There is no tier above the top one,
     // so Closer is the only thing left to be good at — two reps at 70+ against
     // the character who gives nothing away.
-    const contender = { 1: UNLOCK_REPS, 2: UNLOCK_REPS, 3: UNLOCK_REPS - 1 }
+    const contender = { 2: UNLOCK_REPS, 3: UNLOCK_REPS, 4: UNLOCK_REPS - 1 }
     expect(rankFor(contender)).toBe('contender')
-    expect(rankFor({ ...contender, 3: UNLOCK_REPS })).toBe('closer')
+    expect(rankFor({ ...contender, 4: UNLOCK_REPS })).toBe('closer')
   })
 
   it('never skips a rank, whatever order the reps arrive in', () => {
@@ -44,9 +53,9 @@ describe('ranks (§08)', () => {
     let previous = -1
     const ladder: Record<number, number>[] = [
       {},
-      { 1: UNLOCK_REPS },
-      { 1: UNLOCK_REPS, 2: UNLOCK_REPS },
-      { 1: UNLOCK_REPS, 2: UNLOCK_REPS, 3: UNLOCK_REPS },
+      { 2: UNLOCK_REPS },
+      { 2: UNLOCK_REPS, 3: UNLOCK_REPS },
+      { 2: UNLOCK_REPS, 3: UNLOCK_REPS, 4: UNLOCK_REPS },
     ]
     for (const counts of ladder) {
       const index = rankIndex(rankFor(counts))
@@ -56,9 +65,11 @@ describe('ranks (§08)', () => {
   })
 
   it('says what the next one costs, and stops at the top', () => {
-    expect(nextRankRequirement('rookie')).toContain('Level 1')
-    expect(nextRankRequirement('regular')).toContain('Level 2')
-    expect(nextRankRequirement('contender')).toContain('Level 3')
+    // Named after the character being cleared, not after the rung below the
+    // one you are on: Nadia, then Maya, then Robin.
+    expect(nextRankRequirement('rookie')).toContain('Level 2')
+    expect(nextRankRequirement('regular')).toContain('Level 3')
+    expect(nextRankRequirement('contender')).toContain('Level 4')
     expect(nextRankRequirement('closer')).toBeNull()
   })
 

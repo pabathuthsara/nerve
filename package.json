@@ -25,6 +25,7 @@
     "db:rep": "vite-node --config vitest.config.ts scripts/verify-rep.ts",
     "db:field": "vite-node --config vitest.config.ts scripts/verify-field.ts",
     "db:spend": "vite-node --config vitest.config.ts scripts/verify-spend.ts",
+    "db:billing": "vite-node --config vitest.config.ts scripts/verify-billing.ts",
     "db:user": "vite-node --config vitest.config.ts scripts/dev-user.ts",
     "db:repair-wins": "vite-node --config vitest.config.ts scripts/repair-wins.ts"
   },

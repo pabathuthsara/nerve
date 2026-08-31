@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ARM_THRESHOLD, KEEP_THRESHOLD } from './rep-rules'
 import {
+  engineRung,
   qualifyingByLevel,
   uiLevel,
   uiWarmth,
@@ -98,19 +99,30 @@ describe('unlocks are counted from scores, not wins', () => {
     expect(unlockedLevels({ 2: 2 }).has(3)).toBe(true)
   })
 
-  it('is the top tier at 3, and nothing above it opens', () => {
-    // The roster ships three characters, so tier 3 is the end of the ladder.
+  it('opens tier 4 on two qualifying reps at tier 3 and not before', () => {
+    // Robin's gate, unchanged by the renumber: it was two qualifying reps
+    // against Maya when Maya was tier 2, and it is two qualifying reps against
+    // Maya now that she is tier 3.
+    expect(unlockedLevels({ 3: 1 }).has(4)).toBe(false)
+    expect(unlockedLevels({ 3: 2 }).has(4)).toBe(true)
+  })
+
+  it('is the top tier at 4, and nothing above it opens', () => {
+    // The roster ships four characters, so tier 4 is the end of the ladder.
     // Qualifying reps at the top open nothing, rather than opening a tier with
     // nobody standing on it.
-    const everything = unlockedLevels({ 1: 9, 2: 9, 3: 9 })
-    expect([...everything].sort()).toEqual([1, 2, 3])
+    const everything = unlockedLevels({ 1: 9, 2: 9, 3: 9, 4: 9 })
+    expect([...everything].sort()).toEqual([1, 2, 3, 4])
   })
 
   it('has tiers 1 and 2 open from the start', () => {
+    // Tess and Nadia. A first session that has to be earned is a first session
+    // nobody has, and the two free tiers are the two receptive ones.
     const open = unlockedLevels({})
     expect(open.has(1)).toBe(true)
     expect(open.has(2)).toBe(true)
     expect(open.has(3)).toBe(false)
+    expect(open.has(4)).toBe(false)
   })
 
   it('advances a clean rep that ended in rejection', () => {
@@ -127,25 +139,36 @@ describe('unlocks are counted from scores, not wins', () => {
     expect(unlockRequirement(1)).toBeNull()
     expect(unlockRequirement(2)).toBeNull()
     expect(unlockRequirement(3)).toBe(`Score ${UNLOCK_SCORE}+ in ${UNLOCK_REPS} reps at Level 2`)
+    expect(unlockRequirement(4)).toBe(`Score ${UNLOCK_SCORE}+ in ${UNLOCK_REPS} reps at Level 3`)
   })
 })
 
 describe('presentation', () => {
   it('gives each shipped rung its own visible tier', () => {
-    // The roster holds engine rungs 1, 2 and 4. Halving them — which is what
-    // this did while eight rungs shared four tiers — put Nadia and Maya in one
-    // tier and left the top empty.
+    // The roster holds engine rungs 1 to 4 and the map is the identity across
+    // them. It was `ceil(level / 2)` while eight rungs shared four tiers, which
+    // put Nadia and Maya in one tier and left the top empty.
     expect(uiLevel(1)).toBe(1)
     expect(uiLevel(2)).toBe(2)
-    expect(uiLevel(4)).toBe(3)
+    expect(uiLevel(3)).toBe(3)
+    expect(uiLevel(4)).toBe(4)
+  })
+
+  it('round-trips a stored ladder position through both directions', () => {
+    // `syncLevel` writes `profiles.current_level` through `engineRung` and every
+    // read takes it back through `uiLevel`. If the two stop being inverses, a
+    // user's position lands on a tier they never earned.
+    for (const tier of [1, 2, 3, 4] as const) {
+      expect(uiLevel(engineRung(tier))).toBe(tier)
+    }
   })
 
   it('still places a rung nobody holds, so old sessions render', () => {
-    // A session row from before the roster shrank names the rung it was run at.
-    // Refusing to map it would blank a history row the user can still open.
-    expect([3, 5, 6, 7, 8].map(uiLevel)).toEqual([2, 3, 3, 3, 3])
+    // A session row from before the roster changed names the rung it was run
+    // at. Refusing to map it would blank a history row the user can still open.
+    expect([5, 6, 7, 8].map(uiLevel)).toEqual([4, 4, 4, 4])
     expect(uiLevel(0)).toBe(1)
-    expect(uiLevel(99)).toBe(3)
+    expect(uiLevel(99)).toBe(4)
   })
 
   it('clamps warmth for display without rescaling it', () => {

@@ -90,14 +90,21 @@ const POLICY: Record<SpendBucket, BucketPolicy> = {
  *
  * A three-minute rep costs ≈20 cents at the ceiling rate in `lib/voice/rates.ts`
  * — and that rate is itself a ceiling only reached when the provider reported no
- * usage at all. So free (1 rep) lands near 20, pro (3) near 60, elite (6) near
- * 120, and every cap below is roughly five times its plan's honest day.
+ * usage at all. So pro (3 reps) lands near 60 and elite (6) near 120, and each
+ * cap below is roughly five times its plan's honest day.
  *
  * Five times, deliberately. This is a backstop against a loop, not a second
  * quota: `entitlements.reps_per_day` is the quota and it is the thing a user is
  * told about. If anybody ever trips one of these numbers in normal use, the bug
  * is upstream and the cap is the alarm, which is why the reason is distinct
  * from the rate limit's in the response.
+ *
+ * **Free's cap did not follow free's quota to zero, and must not.** A free
+ * account grants no reps a day, but it still runs the one sign-up rep, and text
+ * mode, moderation and grading all spend on a plan that buys no voice at all.
+ * A cap of zero would halt the account the first time it typed a message. The
+ * ceiling stays where it was: five times a single rep, which comfortably covers
+ * the one voice rep a free account ever runs plus an evening of text.
  */
 const DAILY_CAP_CENTS: Record<string, number> = {
   free: 100,

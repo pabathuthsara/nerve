@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { Check, ChevronRight, Download, Headphones, LogOut, Mic, RotateCcw, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useFieldStats, useLifetimeStats, usePlanWaitlist, useSessionHistory, useUserState } from '@/lib/data'
-import type { FieldStats, Plan, SessionSummary } from '@/lib/data/types'
+import { useFieldStats, useLifetimeStats, usePlanWaitlist, useSessionHistory, useSubscription, useUserState } from '@/lib/data'
+import type { FieldStats, Plan, SessionSummary, SubscriptionState } from '@/lib/data/types'
 import { signOut } from '@/app/auth/actions'
 import { forgetAllMemory, markUiFlag, saveAudioPreferences, saveDisplayName, saveFocusArea, saveTrainingWheels } from '@/app/profile/actions'
 import { FOCUS_OPTIONS } from '@/components/screens/onboarding-screens'
@@ -14,7 +14,8 @@ import { FOCUS_OPTIONS } from '@/components/screens/onboarding-screens'
 import { SUPPORT_EMAIL } from '@/components/site/site-chrome'
 import type { FocusArea } from '@/lib/data/focus'
 import { planWaitlistFlag } from '@/lib/data/ui-flags'
-import { BILLING_NOTE, CHECKOUT_NOTE, PUBLIC_PLANS, repsLine, type PublicPlan } from '@/lib/site/plans'
+import { BILLING_NOTE, CHECKOUT_NOTE, CHECKOUT_UNCONFIGURED_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE, repsLine, type PublicPlan } from '@/lib/site/plans'
+import { openBillingPortal, startCheckout } from '@/app/profile/subscription/actions'
 import { forgetCurrentUser } from '@/lib/data/session'
 import { roomAcousticsEnabled } from '@/lib/audio/scenes'
 import { AppShell } from '@/components/app-shell'
@@ -25,10 +26,24 @@ import { ShareButton } from '@/components/share/share-button'
 
 export type ProfileRoute = '/profile' | '/profile/history' | '/profile/settings' | '/profile/subscription'
 
-export function ProfileScreen({ route }: { route: ProfileRoute }) {
+export function ProfileScreen({
+  route,
+  checkoutOpen = false,
+  bought = false,
+}: {
+  route: ProfileRoute
+  /**
+   * Whether this deployment can actually open a checkout. From the server —
+   * the answer depends on secrets that must not reach a client bundle. See
+   * `BillingContext` in `components/route-view.tsx`.
+   */
+  checkoutOpen?: boolean
+  /** Back from a completed checkout. The provider appends `?bought=1`. */
+  bought?: boolean
+}) {
   if (route === '/profile/history') return <HistoryScreen />
   if (route === '/profile/settings') return <SettingsScreen />
-  if (route === '/profile/subscription') return <SubscriptionScreen />
+  if (route === '/profile/subscription') return <SubscriptionScreen checkoutOpen={checkoutOpen} bought={bought} />
   return <ProfileHome />
 }
 
@@ -239,21 +254,84 @@ function MicTest() {
   return <div className="sheet-stack"><Headphones size={34} strokeWidth={1.5} className="volt" /><p>{status === 'denied' ? 'Microphone access is blocked. Allow it in Site settings, then try again.' : 'Speak normally. The meter should move without touching the end.'}</p><div className="mic-meter" aria-label={`Microphone level ${Math.round(level * 100)} percent`}>{Array.from({ length: 12 }, (_, index) => <i key={index} className={index < active ? 'active' : ''} />)}</div>{status === 'testing' ? <Button variant="secondary" fullWidth onClick={stop}>Stop test</Button> : <Button fullWidth onClick={() => void start()}>{status === 'denied' ? 'Try again' : 'Start mic test'}</Button>}</div>
 }
 
-function SubscriptionScreen() {
+/**
+ * `/profile/subscription` — the buy button, the trial, and the way out.
+ *
+ * Every one of those three is a §14 survival requirement rather than a feature.
+ * A card-required trial converts far better than a card-free one and buys part
+ * of that conversion with people who forget they subscribed; a
+ * merchant-of-record account that accumulates those disputes is an account that
+ * gets closed. So the countdown is visible, the renewal date and price are
+ * stated before the card is entered, and cancelling is a button on this screen
+ * that reaches the provider's own portal without anybody emailing us.
+ *
+ * Two answers about a plan are on this screen and only this screen: what the
+ * app ENFORCES (`useUserState().plan`, the number the paywall reads) and what
+ * the provider says was BOUGHT (`useSubscription()`, the webhook's mirror).
+ * They can legitimately differ for a few seconds while a webhook is in flight,
+ * which is exactly the moment somebody is staring at this page after paying —
+ * so the copy names the lag instead of pretending the two are one number.
+ *
+ * `checkoutOpen` is false when this deployment has no merchant-of-record
+ * configuration yet, which is the state the product is in until the account is
+ * approved (`docs/PAYMENTS-APPROVAL.md`). The screen falls back to the
+ * notify-me list it had before checkout existed rather than showing a button
+ * that errors — the demand is worth keeping either way.
+ */
+function SubscriptionScreen({ checkoutOpen, bought }: { checkoutOpen: boolean; bought: boolean }) {
   const { data: user, loading } = useUserState()
+  const { data: subscription, reload: reloadSubscription } = useSubscription()
   const current = user?.plan ?? 'free'
   const { data: waitlisted, reload: reloadWaitlist } = usePlanWaitlist()
+  const toast = useToast()
   const [asking, setAsking] = useState<'pro' | 'elite' | null>(null)
   const [saving, setSaving] = useState(false)
-  const renews = user?.renewsAt ? new Date(user.renewsAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : null
+  const [busy, setBusy] = useState<Plan | 'portal' | null>(null)
+
+  /**
+   * A checkout that has landed but whose webhook has not.
+   *
+   * The provider returns the buyer here with `?bought=1` the moment the payment
+   * clears, and the plan moves in `/api/webhooks/creem` a second or two later.
+   * Reloading once after a short pause is what turns "you are on Free" into the
+   * truth without the user having to refresh — and the banner says what is
+   * happening either way, because a page that silently disagrees with a receipt
+   * is how a support ticket starts.
+   */
+  useEffect(() => {
+    if (!bought) return
+    const timer = window.setTimeout(() => { reloadSubscription() }, 2500)
+    return () => window.clearTimeout(timer)
+  }, [bought, reloadSubscription])
+
+  const buy = async (plan: 'pro' | 'elite') => {
+    setBusy(plan)
+    const result = await startCheckout(plan)
+    if (result.ok && result.url) {
+      window.location.assign(result.url)
+      return
+    }
+    setBusy(null)
+    toast.push(result.message ?? 'Could not open checkout.', 'red')
+  }
+
+  const manage = async () => {
+    setBusy('portal')
+    const result = await openBillingPortal()
+    if (result.ok && result.url) {
+      window.location.assign(result.url)
+      return
+    }
+    setBusy(null)
+    toast.push(result.message ?? 'Could not open billing.', 'red')
+  }
 
   /**
    * Records the ask, then says so.
    *
-   * Both Upgrade buttons used to be inert — no navigation, no message, nothing
-   * — on the one screen where a user is deciding whether this product can be
-   * trusted with a card. Until billing is wired, the honest button is the one
-   * that admits what it does and keeps the demand.
+   * The fallback for a deployment with no merchant of record yet. Until
+   * checkout is open, the honest button is the one that admits what it does and
+   * keeps the demand.
    */
   const join = async (plan: 'pro' | 'elite') => {
     setSaving(true)
@@ -263,7 +341,93 @@ function SubscriptionScreen() {
   }
 
   const joined = asking ? waitlisted.includes(asking) : false
-  return <AppShell title="Subscription"><div className="screen-heading compact"><span className="label">Training access</span><h1 className="display-lg">Subscription</h1></div><Card className="current-plan">{loading || !user ? <Skeleton height={72} /> : <><div><Chip tone="volt">Current plan</Chip><h2 className="display-lg">{current}</h2><p><span className="data">{user.repsPerDay}</span> voice rep{user.repsPerDay === 1 ? '' : 's'} per day{renews ? <> · renews {renews}</> : null}</p></div><Button variant="secondary" disabled={current === 'free'}>Manage</Button></>}</Card><section className="plan-section"><span className="label">Compare plans</span><div className="plan-grid">{PUBLIC_PLANS.map((plan) => <PlanCard key={plan.id} plan={plan} current={current} waitlisted={waitlisted.includes(plan.id as 'pro' | 'elite')} onUpgrade={plan.open ? undefined : () => setAsking(plan.id as 'pro' | 'elite')} />)}</div></section><p className="billing-note">{CHECKOUT_NOTE} {BILLING_NOTE} <Link href="/pricing" className="text-action">Full comparison</Link></p><Sheet open={asking !== null} onClose={() => setAsking(null)} title={joined ? "You're on the list" : `${asking === 'elite' ? 'Elite' : 'Pro'} isn't open yet`}>{joined ? <div className="sheet-stack"><Check size={34} strokeWidth={1.5} className="volt" /><p>We&apos;ll email you at <strong>{user?.email}</strong> the day {asking === 'elite' ? 'Elite' : 'Pro'} opens, and founding members keep the launch price.</p><Button fullWidth onClick={() => setAsking(null)}>Back to training</Button></div> : <div className="sheet-stack"><p>Checkout is still being built. Put your name down and we&apos;ll email you at <strong>{user?.email}</strong> the day it opens — founding members keep the launch price.</p><Button fullWidth loading={saving} onClick={() => { if (asking) void join(asking) }}>Tell me when it opens</Button><Button variant="ghost" fullWidth onClick={() => setAsking(null)}>Not now</Button></div>}</Sheet></AppShell>
+  return <AppShell title="Subscription">
+    <div className="screen-heading compact"><span className="label">Training access</span><h1 className="display-lg">Subscription</h1></div>
+    {bought ? <Card className="billing-banner"><Check size={18} strokeWidth={1.5} className="volt" /><p>Payment received. Your plan updates here within a few seconds — the receipt is already on its way to your inbox.</p></Card> : null}
+    <CurrentPlan user={user} loading={loading} subscription={subscription} onManage={() => void manage()} busy={busy === 'portal'} />
+    <section className="plan-section">
+      <span className="label">Compare plans</span>
+      <div className="plan-grid">
+        {PUBLIC_PLANS.map((plan) => (
+          <PlanCard
+            key={plan.id}
+            plan={plan}
+            current={current}
+            checkoutOpen={checkoutOpen}
+            busy={busy === plan.id}
+            waitlisted={waitlisted.includes(plan.id as 'pro' | 'elite')}
+            trialAvailable={subscription === null}
+            onBuy={plan.id === 'free' ? undefined : () => void buy(plan.id as 'pro' | 'elite')}
+            onNotify={plan.id === 'free' ? undefined : () => setAsking(plan.id as 'pro' | 'elite')}
+          />
+        ))}
+      </div>
+    </section>
+    <p className="billing-note">{checkoutOpen ? TRIAL_NOTE : CHECKOUT_UNCONFIGURED_NOTE} {CHECKOUT_NOTE} {BILLING_NOTE} <Link href="/pricing" className="text-action">Full comparison</Link></p>
+    <Sheet open={asking !== null} onClose={() => setAsking(null)} title={joined ? "You're on the list" : `${asking === 'elite' ? 'Elite' : 'Pro'} isn't open yet`}>{joined ? <div className="sheet-stack"><Check size={34} strokeWidth={1.5} className="volt" /><p>We&apos;ll email you at <strong>{user?.email}</strong> the day {asking === 'elite' ? 'Elite' : 'Pro'} opens, and founding members keep the launch price.</p><Button fullWidth onClick={() => setAsking(null)}>Back to training</Button></div> : <div className="sheet-stack"><p>Checkout is not open yet. Put your name down and we&apos;ll email you at <strong>{user?.email}</strong> the day it is — founding members keep the launch price.</p><Button fullWidth loading={saving} onClick={() => { if (asking) void join(asking) }}>Tell me when it opens</Button><Button variant="ghost" fullWidth onClick={() => setAsking(null)}>Not now</Button></div>}</Sheet>
+  </AppShell>
+}
+
+/**
+ * What this account has right now, and when it changes.
+ *
+ * `renewsAt` on `UserState` is the enforced answer and comes off
+ * `entitlements`; the mirror carries the status and the cancel flag. Both are
+ * drawn, because "trialing until the 7th" and "active, renews the 7th" are the
+ * same date and completely different sentences — and the one people need to see
+ * before the first charge is the first one.
+ */
+function CurrentPlan({ user, loading, subscription, onManage, busy }: {
+  user: ReturnType<typeof useUserState>['data']
+  loading: boolean
+  subscription: SubscriptionState | null
+  onManage: () => void
+  busy: boolean
+}) {
+  if (loading || !user) return <Card className="current-plan"><Skeleton height={72} /></Card>
+
+  const day = (iso: string | null) => iso
+    ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+    : null
+  const periodEnd = day(subscription?.currentPeriodEnd ?? user.renewsAt)
+
+  // Hand-authored per state rather than assembled from fragments (§02 rule 12).
+  // The trial line is the one that has to be unambiguous: it names the day the
+  // card is charged, because a trial that ends quietly is the pattern §14 says
+  // closes a merchant account.
+  const detail = (() => {
+    if (subscription?.status === 'trialing') {
+      return periodEnd
+        ? `Free trial — your card is charged on ${periodEnd} unless you cancel first.`
+        : `Free trial, ${TRIAL_DAYS} days. Cancel any time before it ends and you are not charged.`
+    }
+    if (subscription?.cancelAtPeriodEnd) {
+      return periodEnd ? `Cancelled. Voice stays open until ${periodEnd}, then this drops to Free.` : 'Cancelled. Voice stays open until the end of the period you paid for.'
+    }
+    if (subscription?.status === 'past_due') {
+      return 'A payment did not go through. Your access is untouched while the provider retries — update the card to be sure.'
+    }
+    if (periodEnd) return `Renews ${periodEnd}.`
+    return 'No card on file. Nothing renews and nothing is charged.'
+  })()
+
+  return <Card className="current-plan">
+    <div>
+      <Chip tone="volt">Current plan</Chip>
+      <h2 className="display-lg">{user.plan}</h2>
+      <p>
+        {user.repsPerDay === 0
+          ? 'No voice reps'
+          : <><span className="data">{user.repsPerDay}</span> voice rep{user.repsPerDay === 1 ? '' : 's'} per day</>}
+      </p>
+      <span className="label mute">{detail}</span>
+    </div>
+    {/* The cancel path, and the card-and-invoice path with it. Disabled only
+        when there is genuinely nothing to manage — a subscription nobody has
+        bought. §8 of the payments plan: a cancel that needs an email becomes a
+        chargeback, and chargebacks are what close the account. */}
+    <Button variant="secondary" loading={busy} disabled={!subscription} onClick={onManage}>Manage</Button>
+  </Card>
 }
 
 /**
@@ -274,5 +438,48 @@ function SubscriptionScreen() {
  * Two copies of a price is how a product ends up charging one number and
  * advertising another — and §14 has a merchant-of-record reviewer reading the
  * public page. One record, both surfaces.
+ *
+ * Four button states, and each of them is a different truth:
+ *
+ *   current       this is what you have.
+ *   free          not something to buy. It is what you drop back to, and a
+ *                 "downgrade" button here would offer a cancel that belongs in
+ *                 the provider's portal beside the card and the invoices.
+ *   buy           checkout is configured. Says trial rather than price when the
+ *                 trial is still available, because the first thing that
+ *                 happens is seven free days and a button that says $19 would
+ *                 be describing the second thing.
+ *   notify        checkout is not configured yet. The honest button.
  */
-function PlanCard({ plan, current, waitlisted = false, onUpgrade }: { plan: PublicPlan; current: Plan; waitlisted?: boolean; onUpgrade?: () => void }) { const active = plan.id === current; return <Card className={`plan-card${active ? ' plan-card--current' : ''}`}><div className="plan-card__head"><div>{active ? <Chip tone="volt">Current</Chip> : <span className="label">Plan</span>}<h2 className="display-md">{plan.name}</h2></div><span className="data">{plan.price ? `${plan.price} / mo` : '$0'}</span></div><Stat label="Voice reps" value={repsLine(plan)} /><ul>{plan.features.map((feature) => <li key={feature}><Check size={15} strokeWidth={1.5} /> {feature}</li>)}</ul>{active ? <Button variant="secondary" fullWidth disabled>Current plan</Button> : plan.open ? <Button variant="secondary" fullWidth disabled>Included</Button> : waitlisted ? <Button variant="secondary" fullWidth onClick={onUpgrade}><Check size={15} strokeWidth={1.5} /> On the list</Button> : <Button fullWidth onClick={onUpgrade}>Notify me</Button>}</Card> }
+function PlanCard({ plan, current, checkoutOpen, busy = false, waitlisted = false, trialAvailable = false, onBuy, onNotify }: {
+  plan: PublicPlan
+  current: Plan
+  checkoutOpen: boolean
+  busy?: boolean
+  waitlisted?: boolean
+  /** No subscription has ever existed on this account, so the trial is unused. */
+  trialAvailable?: boolean
+  onBuy?: () => void
+  onNotify?: () => void
+}) {
+  const active = plan.id === current
+  const action = (() => {
+    if (active) return <Button variant="secondary" fullWidth disabled>Current plan</Button>
+    if (plan.id === 'free') return <Button variant="secondary" fullWidth disabled>Included</Button>
+    if (checkoutOpen) {
+      return <Button fullWidth loading={busy} onClick={onBuy}>{trialAvailable ? `Start ${TRIAL_DAYS} days free` : `Switch to ${plan.name}`}</Button>
+    }
+    if (waitlisted) return <Button variant="secondary" fullWidth onClick={onNotify}><Check size={15} strokeWidth={1.5} /> On the list</Button>
+    return <Button fullWidth onClick={onNotify}>Notify me</Button>
+  })()
+
+  return <Card className={`plan-card${active ? ' plan-card--current' : ''}`}>
+    <div className="plan-card__head">
+      <div>{active ? <Chip tone="volt">Current</Chip> : <span className="label">Plan</span>}<h2 className="display-md">{plan.name}</h2></div>
+      <span className="data">{plan.price ? `${plan.price} / mo` : '$0'}</span>
+    </div>
+    <Stat label="Voice reps" value={repsLine(plan)} />
+    <ul>{plan.features.map((feature) => <li key={feature}><Check size={15} strokeWidth={1.5} /> {feature}</li>)}</ul>
+    {action}
+  </Card>
+}

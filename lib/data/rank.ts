@@ -2,16 +2,25 @@
  * Ranks — the slow-moving standing on the home screen (§08).
  *
  * §08 asks for four ranks "spanning the eight levels … shown as a rail on the
- * home screen rather than as a badge shelf". The roster ships three rungs
- * (D10a), so four-over-eight does not divide, and the obvious fix — drop a rank
- * — throws away the one that means anything.
+ * home screen rather than as a badge shelf". The roster ships four rungs, so
+ * four-over-eight still does not divide, and the obvious fix — drop a rank —
+ * throws away the one that means anything.
  *
  * **The fourth rank is earned at the top rather than above it.** Three of them
- * mark a tier opening; Closer marks the top tier being *cleared* — two reps at
- * 70+ against Robin, which nothing else in the product unlocks and which is
+ * mark a tier being cleared; Closer marks the TOP tier being cleared — two reps
+ * at 70+ against Robin, which nothing else in the product unlocks and which is
  * therefore the only thing left to be good at. That keeps §08's four names, and
  * it keeps a rank from being a second word for the level a user is already
  * looking at.
+ *
+ * **Tier 1 is the on-ramp and mints no rank.** Tess was authored to be won by
+ * somebody who has not yet decided whether this product is for them
+ * (`lib/personas/tess.ts`), so a rank for clearing her would be a participation
+ * badge — precisely the badge shelf §08 rules out. The three earned ranks stay
+ * anchored to the three characters they were written about, which is also why
+ * the renumber moved nobody: an account that had cleared Nadia was a Regular
+ * when Nadia was tier 1 and is a Regular now that she is tier 2, and the blurbs
+ * below still describe the character actually being cleared.
  *
  * Derived, never stored as the source of truth, for the same reason unlocks are
  * (`progression.ts`): a rank is a fact about the reps you have run, and a
@@ -51,9 +60,9 @@ export const RANK_BLURBS: Record<Rank, string> = {
 
 /** What opens the next one, in the same words the roster uses. */
 export function nextRankRequirement(rank: Rank): string | null {
-  if (rank === 'rookie') return `Score ${UNLOCK_SCORE}+ in ${UNLOCK_REPS} reps at Level 1`
-  if (rank === 'regular') return `Score ${UNLOCK_SCORE}+ in ${UNLOCK_REPS} reps at Level 2`
-  if (rank === 'contender') return `Score ${UNLOCK_SCORE}+ in ${UNLOCK_REPS} reps at Level 3`
+  if (rank === 'rookie') return `Score ${UNLOCK_SCORE}+ in ${UNLOCK_REPS} reps at Level 2`
+  if (rank === 'regular') return `Score ${UNLOCK_SCORE}+ in ${UNLOCK_REPS} reps at Level 3`
+  if (rank === 'contender') return `Score ${UNLOCK_SCORE}+ in ${UNLOCK_REPS} reps at Level ${TOP_TIER}`
   return null
 }
 
@@ -72,8 +81,8 @@ export function rankFor(qualifyingByLevel: Record<number, number>): Rank {
   const cleared = (tier: Level) => (qualifyingByLevel[tier] ?? 0) >= UNLOCK_REPS
 
   if (cleared(TOP_TIER)) return 'closer'
-  if (cleared(2)) return 'contender'
-  if (cleared(1)) return 'regular'
+  if (cleared(3)) return 'contender'
+  if (cleared(2)) return 'regular'
   return 'rookie'
 }
 

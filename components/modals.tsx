@@ -7,12 +7,72 @@ import { Button, Modal, Sheet, Stat } from './ui'
 import type { FieldTier, Level, PendingUnlock } from '@/lib/data/types'
 import { detectBrowser, micRecovery, type Browser } from '@/lib/data/mic'
 import { DISTRESS_COPY, DISTRESS_RESOURCES } from '@/lib/safety/resources'
+import { TRIAL_DAYS, planById, repsLine } from '@/lib/site/plans'
 
 interface OpenProps { open: boolean; onClose: () => void }
 
 export function EndRepModal({ open, onClose, onEnd }: OpenProps & { onEnd: () => void }) { return <Modal open={open} onClose={onClose} title="End this rep?"><div className="sheet-stack"><p>It counts as an attempt.</p><Button variant="danger" fullWidth onClick={onEnd}>End rep</Button><Button fullWidth onClick={onClose}>Keep going</Button></div></Modal> }
 
-export function PaywallSheet({ open, onClose, reset = '04:12', reason = 'Your voice reps for today are done.' }: OpenProps & { reset?: string; reason?: string }) { return <Sheet open={open} onClose={onClose} title="Keep training"><div className="sheet-stack"><p>{reason}</p><div className="plan-mini"><Stat label="Pro" value="3 / day" /><Stat label="Elite" value="6 / day" /></div><span className="label">Resets in <span className="data">{reset}</span></span><Link className="arena-button arena-button--primary arena-button--full" href="/profile/subscription">Upgrade</Link><Button variant="ghost" fullWidth onClick={onClose}>Maybe later</Button></div></Sheet> }
+/**
+ * The upgrade moment (§14, docs/PAYMENTS-NEW-INTEGRATION.md §5.2).
+ *
+ * Two refusals arrive here and they are not the same screen.
+ *
+ * `locked` is an account with no voice on its plan at all. Nothing resets at
+ * midnight for these people, so a countdown would be a lie and "maybe later"
+ * would be the only true thing on the sheet. This is the highest-value screen
+ * in the funnel and it has one job: say what voice costs, say the trial is free
+ * and cancellable, and offer the thing that still works tonight.
+ *
+ * Not `locked` is a paying account at the end of its day. That one genuinely
+ * does reset, so it keeps the countdown and the softer framing — pushing Elite
+ * at somebody who is already paying and already trained today is how a plan
+ * limit turns into an advert.
+ *
+ * The plan names, prices and rep counts come from `lib/site/plans.ts` rather
+ * than being written out here, for the reason that file exists: two copies of a
+ * price is how a product ends up charging one number and advertising another.
+ *
+ * `personaId` is optional and worth passing. Text mode costs no quota and no
+ * money, so on the locked sheet it is a real second option rather than a
+ * consolation — §14's rule is that running out must never read as losing the
+ * account, and the way to prove that is to offer something that still works.
+ */
+export function PaywallSheet({
+  open,
+  onClose,
+  reset = '04:12',
+  reason,
+  locked = false,
+  personaId = null,
+}: OpenProps & { reset?: string; reason?: string; locked?: boolean; personaId?: string | null }) {
+  const pro = planById('pro')
+  const elite = planById('elite')
+  const body = reason ?? (locked
+    ? 'Voice reps are part of Pro. Your streak, your field log and text mode stay exactly where they are.'
+    : 'Your voice reps for today are done.')
+  return (
+    <Sheet open={open} onClose={onClose} title={locked ? 'Voice is on Pro' : 'Keep training'}>
+      <div className="sheet-stack">
+        <p>{body}</p>
+        <div className="plan-mini">
+          <Stat label={pro.name} value={repsLine(pro)} detail={pro.price ?? undefined} />
+          <Stat label={elite.name} value={repsLine(elite)} detail={elite.price ?? undefined} />
+        </div>
+        {locked
+          ? <span className="label">{TRIAL_DAYS} days free, then <span className="data">{pro.price}</span> a month. Cancel any time.</span>
+          : <span className="label">Resets in <span className="data">{reset}</span></span>}
+        <Link className="arena-button arena-button--primary arena-button--full" href="/profile/subscription">
+          {locked ? `Start the ${TRIAL_DAYS}-day trial` : 'Upgrade'}
+        </Link>
+        {locked && personaId
+          ? <Link className="arena-button arena-button--ghost arena-button--full" href={`/text/${personaId}`}>Type to her instead — always free</Link>
+          : null}
+        <Button variant="ghost" fullWidth onClick={onClose}>Maybe later</Button>
+      </div>
+    </Sheet>
+  )
+}
 
 export function HowItWorksSheet({ open, onClose }: OpenProps) { return <Sheet open={open} onClose={onClose} title="How a rep works"><div className="how-list">{['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end whether you get her number.'].map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet> }
 
@@ -39,6 +99,12 @@ const LEVEL_COPY: Record<Level, UnlockCopy> = {
   2: { title: 'Level 02 unlocked', body: 'Open from the start.', names: [], action: 'See the roster' },
   3: {
     title: 'Level 03 unlocked',
+    body: 'Maya came to the coffee shop on her own and meant it. She will answer what you ask and then stop, and the pause after that is yours to fill. This is the level where a strong opening followed by nothing stops being good enough.',
+    names: ['Maya'],
+    action: 'See her',
+  },
+  4: {
+    title: 'Level 04 unlocked',
     body: 'The last one. Robin is polite the whole way through and never says anything cutting, and that is the hard part — the work is deciding whether this is a no while she is still being perfectly nice about it. The warmth number is gone from here. You read her, or you guess.',
     names: ['Robin'],
     action: 'See her',

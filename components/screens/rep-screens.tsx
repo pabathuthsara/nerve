@@ -84,7 +84,7 @@ export function RepBriefScreen({ personaId, interview = false }: RepScreenProps)
     is deciding whether to grant it (P1). Same character, no permission,
     no quota — and it is a link rather than a modal because a person
     hesitating here should not have to answer another question. */}
-{!interview ? <Link className="arena-button arena-button--ghost arena-button--full" href={`/text/${personaId}`}>Not ready to talk? Type instead</Link> : null}<Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} /><TrainingWheelsOffModal open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /><MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} /></main>
+{!interview ? <Link className="arena-button arena-button--ghost arena-button--full" href={`/text/${personaId}`}>Not ready to talk? Type instead</Link> : null}<Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={interview ? null : personaId} /><TrainingWheelsOffModal open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /><MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} /></main>
 }
 
 export function RepLiveScreen({ personaId, interview = false, live = null }: RepScreenProps) {
@@ -165,7 +165,14 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
   if (loading) return <main className="rep-live"><span className="label rep-connecting">Preparing rep</span></main>
   if (!subject) return <BriefGate title="Rep not found" description="That training partner is not available." href={interview ? '/interview/interviewers' : '/roster'} />
   if (subject.locked) return <BriefGate title={`${subject.name} is locked`} description="This rep has not unlocked yet." href={interview ? '/interview/interviewers' : '/roster'} locked />
-  if (blockedByReps) return <BriefGate title="No reps left today" description="Your daily reps reset tonight." href="/profile/subscription" />
+  // Two refusals, two sentences. Telling a free account its reps reset tonight
+  // is a lie about a midnight that changes nothing, and it hides the only thing
+  // they can actually do — see `voiceRefusal` in `lib/data/allowance.ts`.
+  if (blockedByReps) {
+    return user?.voiceLocked
+      ? <BriefGate title="Voice is on Pro" description="Your streak, your field log and text mode all stay open. Voice reps come with Pro." href="/profile/subscription" />
+      : <BriefGate title="No reps left today" description="Your daily reps reset tonight." href="/profile/subscription" />
+  }
   if (!live) return <BriefGate title={interview ? 'Interview reps are not open yet' : `${subject.name} is not ready`} description={interview ? 'The interview track opens once its interviewers are written.' : 'This character has no session configured yet.'} href={interview ? '/interview' : '/roster'} />
   if (!online) return <BriefGate title="You're offline" description="Reconnect before starting or resuming this rep." href={interview ? '/interview' : '/train'} />
 

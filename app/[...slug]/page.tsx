@@ -1,9 +1,10 @@
-import { isAuthRoute, isOnboardingRoute, RouteView, type AuthContext } from '@/components/route-view'
+import { isAuthRoute, isBillingRoute, isOnboardingRoute, RouteView, type AuthContext } from '@/components/route-view'
 import type { OnboardingContext } from '@/components/screens/onboarding-screens'
 import { enforceFrontendGuard, ONBOARDING_TRACK_FLAG, onboardingResumePath, type GuardedProfile } from '@/lib/data/guards'
 import { fetchFirstRepCandidates } from '@/lib/data/first-rep'
 import { uiLevel } from '@/lib/data/progression'
 import { currentUser } from '@/lib/db/server'
+import { checkoutConfigured } from '@/lib/billing/plans'
 import type { FocusArea } from '@/lib/data/focus'
 import type { Track } from '@/lib/data/types'
 
@@ -72,6 +73,7 @@ export default async function FrontendRoute({ params, searchParams }: { params: 
       query={query}
       auth={isAuthRoute(path) ? await authContext(path) : undefined}
       onboarding={isOnboardingRoute(path) ? await onboardingContext(path, profile) : undefined}
+      billing={isBillingRoute(path) ? { checkoutOpen: checkoutConfigured() } : undefined}
     />
   )
 }

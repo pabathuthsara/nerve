@@ -280,6 +280,18 @@ path, delete and export, custom SMTP, PostHog and Sentry, and B9a
 (leaked-password protection — five minutes, and it matters as long as password
 sign-in exists).
 
+> **Shipped early, 31 Aug — the webhook and checkout (B2).** `lib/billing/` and
+> `app/api/webhooks/creem/route.ts`: signature verification, provider-neutral
+> event mapping, service-role entitlement writes, and a checkout session
+> carrying `metadata.user_id`. Proven by 51 unit assertions and
+> `npm run db:billing` (31 checks on the real tables).
+> **Still owed by hand:** the MoR account itself, which is the actual blocker
+> and is not code; a buy button in front of `startCheckout` and the
+> `/profile/subscription` screen; the portal handoff; the six money overlays;
+> and one real delivery from Creem against a public URL, which is the only part
+> of the loop no harness here can prove. The metering half of the gate below is
+> untouched.
+
 > **GATE — MoR account approved · metering reconciles to the cent against the
 > provider dashboard across fifty test sessions.**
 
@@ -340,10 +352,12 @@ first rep is over" and "why would I open this again". Recorded in full as
 
 What landed:
 
-- **Day one is three reps on every plan** (`lib/data/allowance.ts`). Keyed off
-  `entitlements.created_at`, which has no user write path, so a second day one
-  cannot be minted; the ceiling after that is unchanged. Recorded as drift
-  **D11**, because §14 says one a day on free and this deliberately does not.
+- ~~**Day one is three reps on every plan**~~ — **superseded 31 Aug.** It is one
+  sign-up rep, once per account, on `entitlements.onboarding_rep_used_at`, and
+  free grants no voice reps a day at all. The arc this item was defending —
+  fail, adjust, succeed — is what Pro is for rather than something given away in
+  front of it. `lib/data/allowance.ts` still holds the rule; drift entry **D11**;
+  the reasoning in full is `PAYMENTS-NEW-INTEGRATION.md`.
 - **Text mode** — `/text/[personaId]`, the same character and contract with no
   microphone, no clock, no meter, no score and no quota. It is the on-ramp for
   a first session and the thing that is still open when the day's reps are
@@ -372,8 +386,9 @@ What landed:
 **Owed by hand:** the input meter and the nudge have not been seen against a
 real three-minute rep — same reason as Phase E's silent-rep copy, it needs a
 working microphone rather than a stub. The `personaSlugs` preference in
-`lib/data/focus.ts` frequently has nothing to choose between while the roster
-is three characters; it is the mechanism the roster is being filled for.
+`lib/data/focus.ts` now genuinely chooses between Tess and Nadia on a fresh
+account, since both bottom tiers are open from the start; it had nothing to
+choose between while the roster was three.
 
 **What is still owed from the same teardown, and is P2 rather than P1:** share
 cards for the rejection ledger, the warmth curve and rank promotions; streak

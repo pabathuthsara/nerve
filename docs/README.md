@@ -13,7 +13,7 @@ markers, and both are meant to be updated by whoever does the work.
 | Doc | What it answers |
 |---|---|
 | [`NERVE-SPEC.md`](NERVE-SPEC.md) | **The specification.** What the product is, why every major decision was made, and the milestone order. Section numbers (§04, §07, §14…) are referenced from code comments and from every other doc |
-| [`PRODUCT.md`](PRODUCT.md) | The shape as built: three tracks, the rep format, the ladder, the four sections, and what a user sees in what order |
+| [`PRODUCT.md`](PRODUCT.md) | The shape as built: three tracks, the rep format, the four-rung ladder, how voice is sold, the four sections, and what a user sees in what order |
 
 ## What to do next
 
@@ -22,6 +22,7 @@ markers, and both are meant to be updated by whoever does the work.
 | [`M3-PLAN.md`](M3-PLAN.md) | **The current plan.** Everything owed between here and the premium layer, in the order it has to happen — the two milestone gates that never passed, the MVP scope §17 forgot, and M3 itself |
 | [`M2-PLAN.md`](M2-PLAN.md) | The record of M2's nine items, all shipped. Superseded by `M3-PLAN.md` as "what to do next", kept as history |
 | [`LAUNCH-GAP.md`](LAUNCH-GAP.md) | The build measured against the spec: what is done, the ten launch blockers, the product-promise gaps, and nine pieces of spec drift that need a decision |
+| [`PAYMENTS-NEW-INTEGRATION.md`](PAYMENTS-NEW-INTEGRATION.md) | **The pricing model, and the record of building it.** One free voice rep at sign-up, all other voice behind Pro, a card-backed seven-day trial, free kept alive on text and the field. What it costs, why, and — in §11 — exactly what shipped on 31 August and what is still owed. Everything left is gated on the merchant-of-record account |
 | [`PAYMENTS-APPROVAL.md`](PAYMENTS-APPROVAL.md) | **Getting approved to take money.** The merchant-of-record application: who we apply to and in what order, what a reviewer opens, and the three things that still block submitting. Not code, and nobody can start it on our behalf |
 | [`INTEGRATION-GAPS.md`](INTEGRATION-GAPS.md) | The frontend seam specifically — which screens read real data and which are still fixtures |
 
@@ -29,7 +30,7 @@ markers, and both are meant to be updated by whoever does the work.
 
 | Doc | What it answers |
 |---|---|
-| [`DATA.md`](DATA.md) | The twenty-one tables, the rules they enforce, why plan and quota have no user write path, the spend ceiling, and every `db:*` command |
+| [`DATA.md`](DATA.md) | The twenty-one tables, the rules they enforce, why plan and quota have no user write path, why `reps_per_day = 0` on free is the voice lock, the spend ceiling, and every `db:*` command |
 | [`PERSONA.md`](PERSONA.md) | The four-layer persona schema — trajectory, personality, gated, room — and why it replaced §05's flat record |
 | [`AUDIO.md`](AUDIO.md) | The room: ambient beds, reverb, the graph. Currently switched off for intelligibility; the note at the top says why and how to bring it back |
 | [`PIPELINE.md`](PIPELINE.md) | The ElevenLabs adapter — the assembled STT → LLM → TTS path behind the same `VoiceProvider` interface |
@@ -60,7 +61,9 @@ what to touch when:
 | A product rule — rep length, thresholds, what a section is for | `PRODUCT.md`, and record the drift in `LAUNCH-GAP.md` §4 if it now disagrees with the spec |
 | A persona dial or contract | `PERSONA.md` |
 | The audio graph | `AUDIO.md` |
-| A price, a plan's rep count, or what a plan includes | `lib/site/plans.ts` — one record feeds `/pricing` and `/profile/subscription`, and §14 has a merchant-of-record reviewer reading the public one. Then `LAUNCH-GAP.md` D2 |
+| A price, a plan's rep count, or what a plan includes | `lib/site/plans.ts` — one record feeds `/pricing` and `/profile/subscription`, and §14 has a merchant-of-record reviewer reading the public one. Then `PAYMENTS-NEW-INTEGRATION.md` §11 and `LAUNCH-GAP.md` D2. **`repsPerDay` is enforcement, not copy** — 0 on free is what `consumeRep` and `mayOpenSession` refuse on, and `entitlements.reps_per_day` has to move in the same commit |
+| The trial — its length, when the card is charged, or how somebody cancels | `TRIAL_DAYS` and `TRIAL_NOTE` in `lib/site/plans.ts`, the product setting at Creem, **and** `components/site/legal-pages.tsx` §07 in the same edit. All three are the same promise and the legal page is the one a disputing customer quotes back |
+| Who holds a rung, or a new character on the roster | `lib/personas/index.ts` and `npm run db:seed`, then `PERSONA.md`'s ladder table and `PRODUCT.md`. Renumbering the roster renumbers the difficulty curves, because `lib/warmth/levels.ts` reads the map off the roster — check `uiLevel`/`engineRung` stay inverses and that `rankFor` still names the characters its blurbs describe |
 | The hero rep on `/` — its script, its voices, or the audio behind it | `scripts/hero-audio.ts` and `LAUNCH-GAP.md` B1. The two sides are captured differently on purpose: his lines are authored and read aloud verbatim, hers must come from the real persona and never from a keyboard |
 | Anything a payment reviewer would read — the public pitch, pricing, the legal pages, the safety position | `PAYMENTS-APPROVAL.md` §4, and re-read its §3. A human opens the site during MoR onboarding, and every provider on the shortlist bans dating products by name |
 | Anything on the public site — the landing, the method, pricing, the three legal pages | `LAUNCH-GAP.md` B1 and B4. The site is the second audience §14 names, so a claim added there is a claim somebody will check against the build |

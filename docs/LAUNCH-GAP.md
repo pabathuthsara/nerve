@@ -26,7 +26,7 @@ need a decision rather than a ticket.
 | M1 — the loop | **Done.** Auth, eight-table schema with RLS, brief → live → scorecard → transcript, deterministic + judgement scoring |
 | M2 — progression & field | **Built.** All nine plan items: the three-minute format, the field end to end, the predicted-versus-actual chart, character memory, the §08 unlock rule with its once-ever moment, adaptive difficulty, the baseline and week-four re-test, share cards and the Sunday review. **Not closed:** §17's gate is twenty hand-scored transcripts and none are scored — the harness is built and ten are collected |
 | M3 — the premium layer | **Half.** Arena visual system, skeletons, real analysers, reduced motion. No sound kit, haptics, PWA, score choreography |
-| M4 — billing & safety | **Safety done, billing not.** The whole of §16's app layer shipped 28 Aug — moderation on both streams, the age gate, the boundary sequence, the distress path and the report control (B3) — on top of the schema and the spend ceiling (B9, cleared 24 Aug). What is left is money: no merchant of record, no checkout, no webhook |
+| M4 — billing & safety | **Safety done; billing wired, unsold.** The whole of §16's app layer shipped 28 Aug — moderation on both streams, the age gate, the boundary sequence, the distress path and the report control (B3) — on top of the schema and the spend ceiling (B9, cleared 24 Aug). The Creem pipe shipped 31 Aug: signed webhook, provider-neutral event mapping, service-role entitlement writes, checkout carrying the user id (B2). What is left is not code — no approved merchant-of-record account, so nothing can be sold; and no buy button in front of `startCheckout` |
 | M5 — private beta | Blocked by M4, and by having nothing instrumented to learn from |
 
 Feature inventory (§10), counted honestly against the 69 MVP features:
@@ -210,19 +210,59 @@ Both surfaces now read `lib/site/plans.ts`, so the public price and the in-app
 price cannot drift.
 
 **Still owed:** a real `og.png` for the new pages (the existing one predates
-them), and a decision on D2 before checkout opens — the site quotes the built
-$24/$39 reps-a-day plans, not §14's $19/$39 minutes.
+them). **D2 is closed as of 31 Aug** — the site quotes $19 and $49, free is
+voice-less, and both surfaces still read `lib/site/plans.ts`.
 
-### B2 · No billing exists  ·  ~4 days + review lead time  ·  `DB done`
+### B2 · No billing exists  ·  review lead time only  ·  `DB done` `pipe done` `screens done`
 **Spec:** §14, and §10 G.
 **Built (database):** `entitlements` with plan, quota and renewal date, plus
 `subscriptions` — the mirror of the merchant of record, with deliberately
 abstract provider identifiers so that being declined by one provider costs a
 migration rather than a rewrite (§14). Both read-only to the user; a user
 cannot write themselves a subscription, and that is asserted.
-**Still missing:** the merchant-of-record account itself, checkout, the portal
-handoff, the webhook that writes the mirror, plan switching, and the six money
-overlays in §12. Plans are still granted from a terminal by `npm run db:plan`.
+**Built (the pipe, 31 Aug):** the Creem loop, end to end and provider-neutral.
+`lib/billing/signature.ts` verifies the webhook HMAC — both the Standard
+Webhooks and legacy schemes — with no provider SDK in the app layer, for the
+same reason §14 keeps the identifiers abstract. `lib/billing/events.ts`
+normalises the vendor's twelve event names into `grant` / `revoke` / `record`,
+so the entitlement logic never learns a provider's vocabulary.
+`lib/billing/apply.ts` writes the mirror first and the plan second, on the
+service role, and `app/api/webhooks/creem/route.ts` is the only thing in the
+codebase that moves an account onto a paid plan. `lib/billing/checkout.ts`
+stamps `metadata.user_id` on every session — the sole link between a payment
+and an account. Product ids map to plans through `CREEM_PRODUCT_*`, because they
+differ between test and live; an unrecognised product records the money and
+grants nothing.
+Three decisions are asserted rather than assumed: `past_due` keeps access
+because the provider is still retrying, a scheduled cancel keeps it until the
+period ends, and a dispute revokes on sight. 51 unit assertions plus
+`npm run db:billing` — 31 checks against the real database, including that a
+late retry cannot resurrect a plan a later event revoked, and that the owner can
+read their subscription and cannot write it.
+**Built (the model and the screens, 31 Aug):** voice is sold by the account
+rather than by the day — see `PAYMENTS-NEW-INTEGRATION.md`, which is the plan of
+record for it. `entitlements.reps_per_day` is **0 on free**, which is the entire
+voice lock: `consumeRep` and `mayOpenSession` already refused at zero, so no new
+gate was added anywhere. The day-one grant of three reps is replaced by a single
+sign-up rep held on `entitlements.onboarding_rep_used_at`, a column with no user
+write path, so abandoning and resuming onboarding cannot mint a second one.
+`/profile/subscription` is a real screen: a buy button behind `startCheckout`, a
+trial countdown that names the day the card is charged, and a Manage button that
+opens the provider's own portal so cancelling never requires emailing us — the
+three §8 mitigations for the dispute risk a card-required trial carries. The
+refusal is a distinct `kind` from `consumeRep` all the way to the sheet, because
+"out of reps for today" is a lie to somebody whose reps do not reset.
+`checkoutConfigured()` keeps the buy button off a deployment with no
+merchant-of-record variables, so the screen falls back to the notify-me list
+rather than showing a button that errors.
+**Still missing:** the merchant-of-record account itself (the real blocker, and
+not code — `PAYMENTS-APPROVAL.md`), the two Creem products with `trialDays: 7`
+set on them, the four environment variables, the pre-charge email, and the six
+money overlays in §12. The webhook has never been called by Creem itself: it is
+proven against signed payloads and the real tables, not yet against a live
+delivery, which needs a public URL and a registered endpoint. Plans can still be
+granted from a terminal by `npm run db:plan`, which stays as the manual
+override.
 **Why it blocks:** no revenue, obviously — but the real risk is lead time.
 §17 says apply at the *start* of M4 because approval takes days and can fail,
 and it can only be applied for once B1 exists. **B1 exists as of 27 Aug**, so
@@ -924,11 +964,16 @@ again", and one of them — text mode — is the answer to four of the others.
    three minutes could produce nothing at all. A user cannot feel improvement
    without a second attempt, and the rank card was already naming a target —
    "score 70+ in 2 reps at level 1" — that a free account needed two calendar
-   days to attempt. Day one is now **three reps on every plan**
+   days to attempt. Day one became **three reps on every plan**
    (`lib/data/allowance.ts`), keyed off `entitlements.created_at`, which has no
-   user write path — so a second day one cannot be minted. The ceiling after
-   that is unchanged, and the copy on `/train` says which day it is rather than
-   silently reading 3 / 3 today and 1 / 1 tomorrow.
+   user write path — so a second day one could not be minted.
+   **Superseded 31 Aug (D11).** That grant was the loud half of a recurring cost
+   for users who never pay, and voice is sold by the account now: free grants
+   none, and the one free rep is the sign-up rep, held once per account on
+   `entitlements.onboarding_rep_used_at`. The rank card's own target — "score
+   70+ in 2 reps at level 2" — is now a Pro target rather than one a free
+   account is shown and cannot reach, which is the honest version of the
+   complaint this item raised.
 
 2. **Voice was the only way in, and the only thing to do.** Text mode
    (`/text/[personaId]`) runs the same character, the same compiled contract and
@@ -1275,7 +1320,7 @@ somebody has to say which is right.
 | # | Spec says | Build does | Note |
 |---|---|---|---|
 | D1 | "No password fields anywhere" (§04, §11) | Password sign-up and sign-in, alongside OTP. Google removed 30 Aug — never configured | The frontend brief asked for passwords. Either the spec line goes, or the screens do |
-| D2 | Free = 3 reps ≈ 9 min, then paywall; $19 / 60 min and $39 / 150 min | Free = 1 rep/day; $24 / 3 a day; $39 / 6 a day | Three inconsistencies at once: price, unit and generosity. The reps-per-day framing is better than minutes (§14 agrees) but the numbers need choosing. **Now costed** — see D2a. **Now also public (27 Aug):** `/pricing` quotes the built numbers, from `lib/site/plans.ts`, which is the single record both it and `/profile/subscription` read. Changing the answer is one file, but it is a price on a public page now rather than a number in a component — decide before checkout opens |
+| ~~D2~~ | Free = 3 reps ≈ 9 min, then paywall; $19 / 60 min and $39 / 150 min | Free = **no voice at all** past one sign-up rep; Pro $19 / 3 a day; Elite $49 / 6 a day | **Resolved 31 Aug — see `PAYMENTS-NEW-INTEGRATION.md`.** All three inconsistencies closed. Price: Pro is at §14's own $19, launched as an explicit founding-member price so it can be raised for later cohorts without breaking faith; Elite went to $49 because $39 with six reps a day lands at 53% gross after the merchant of record, under the 59% §14 had already rejected once. Unit: reps a day, which §14 agrees is the better framing, and the spec's minutes stay recorded as drift rather than being rewritten. Generosity: free was one rep a day *forever*, a recurring ≈$2.64/month for a user who never pays; it is now voice-less, and the one free rep happens once during sign-up. `lib/site/plans.ts` is still the single record both surfaces read, and `lib/site/plans.test.ts` asserts the ordering and the copy |
 | D3 | Bill per second, minutes framed as reps | Both: an append-only per-second ledger *and* a reps/day counter that actually gates | Fine as a design, but only one is enforced. If a rep can run 2 minutes, reps/day and minutes are interchangeable — say so once, in the spec |
 | ~~D4~~ | Streaks run on asks made, never on asks accepted (§09) | ~~Streak counts days with a voice rep~~ | **Resolved 23 Aug.** A logged ask calls `recordTrainingDay`, so the field carries the day when the voice quota is gone (§14), and `npm run db:field` asserts a streak starting with no rep anywhere near it |
 | D5 | Robin at a gallery opening; Alex at a bar, alone (§06) | Robin in a hotel lobby; Alex at a gallery opening | Alex was authored and tuned first and kept her room. Level 7 is `signalClarity: 20`, not the venue |
@@ -1283,14 +1328,23 @@ somebody has to say which is right.
 | D7 | 34 routes, `/home` + `/train` + `/sessions` + `/progress` + `/library` | Four sections: Train, Roster, Field, Profile | Deliberate (`PRODUCT.md`). The spec's inventory should be restated against it so the two stop diverging silently |
 | D8 | Unlock at two sessions scoring 70+ | Unlock on wins at the tier below | See §3. Worth fixing toward the spec: it scores process, ours scores outcome. **Sharper than it looked** — until 23 Aug the "win" itself was partly the grader's outcome, so the gate was scoring outcome twice over. That half is fixed (D8a); the rule is still wins rather than 70+ |
 | D9 | "Volt is the ONLY accent"; Cool, Amber and Red are data or semantic, never branding (Arena) | Persona avatars carry a per-character hue on a constrained material ramp | **Decided 24 Aug — resolved in favour of the build, with a rule.** Characters have to be told apart at a glance on the roster, and shape alone was not enough — the argument was made when there were eight and holds with three, since the hue IS the warmth meter rather than decoration. The concession is bounded and enforced in code rather than in a style note: hues avoid the 60–115° band where Volt lives, no avatar colour comes within an RGB distance of 60 of Volt, Cool, Amber or Red, and chroma is floored at 0.34 and ceilinged at 0.86 so an avatar can never reach an accent's saturation. `lib/personas/visual.test.ts` holds all three. The Arena section of `CLAUDE.md` now records the carve-out |
-| D11 | One rep a day on free, and voice as the only way to train (§01, §14) | Day one is three reps on every plan; text mode runs the same character unmetered, on any day | **Decided 25 Aug — deliberate, and both halves earn their keep.** The arc the gym teaches is fail, adjust, succeed, and it cannot happen inside one attempt: rationing day one to a single rep meant a new user's only evidence was one conversation that probably went badly. The grant is bounded by `entitlements.created_at`, which has no user write path, so a second day one cannot be minted, and the ceiling after day one is exactly what §14 says. Text mode is the larger divergence and the more defensible one — it costs no voice minutes, has no meter and no score, and is capped below `ARM_THRESHOLD` so it can never produce the number a voice rep exists to earn. §14's own reasoning applies to it directly: running out must never break the habit, or the paywall is also a churn event |
-| D12 | Free is "Level 1 personas", paid is "every persona" (the in-app plan comparison, and §14's tier table) | Nothing has ever gated a character by plan | **Resolved 27 Aug in favour of the build, by making the copy true.** `unlockedLevels` counts reps scoring 70+ and has never read a plan; `entitlements.plan` touches exactly two things, `reps_per_day` and the daily spend cap. The comparison was advertising a gate that did not exist, which is a promise to build one. Both the public and in-app plan lists now say volume and nothing else — and that is the better argument anyway, since a free tier that withholds the mechanism is a demo with a price attached |
-| D10 | Eight characters, one per level, and level 8 unwinnable by construction (§06) | Three characters on rungs 1, 2 and 4; the other five retired; no unwinnable rung | **Decided 24 Aug — deliberate, and the one entry here that gives something up.** See D10a |
+| ~~D11~~ | One rep a day on free, and voice as the only way to train (§01, §14) | Free has **no** voice reps; one sign-up rep, once per account; text mode runs the same character unmetered, on any day | **Superseded 31 Aug.** The day-one grant of three reps was decided on 25 Aug and was right about the arc — fail, adjust, succeed cannot happen inside one attempt — and wrong about who pays for it: free was also one rep a day forever, so day one's three was the loud half of a recurring cost for users who never paid. That arc is now the argument *for* Pro rather than something given away in front of it. What replaces it is a single sign-up rep on `entitlements.onboarding_rep_used_at`, which has no user write path, so abandoning and resuming onboarding cannot mint a second one; `lib/data/allowance.ts` holds the rule and `npm run db:rep` drives it. Text mode is unchanged and is now the larger half of what free is: no voice minutes, no meter, no score, capped below `ARM_THRESHOLD` so it can never produce the number a voice rep exists to earn. §14's rule still holds and matters more than before — running out must never break the habit, so a field challenge still keeps the day |
+| D12 | Free is "Level 1 personas", paid is "every persona" (the in-app plan comparison, and §14's tier table) | Nothing has ever gated a character by plan | **Resolved 27 Aug in favour of the build, by making the copy true.** **Second half closed 31 Aug:** the scorecard carried the mirror-image defect — four metric rows, the judgement row, both moments and the transcript link were drawn under a `LockOverlay` for a free account, while `/pricing` listed the full scorecard under what a plan never changes, and `/session/[id]/transcript` had no plan check on it at all. A claim rather than a gate, removed for the same reason. The paywall a free account meets is the microphone, and it is enough. `unlockedLevels` counts reps scoring 70+ and has never read a plan; `entitlements.plan` touches exactly two things, `reps_per_day` and the daily spend cap. The comparison was advertising a gate that did not exist, which is a promise to build one. Both the public and in-app plan lists now say volume and nothing else — and that is the better argument anyway, since a free tier that withholds the mechanism is a demo with a price attached |
+| D10 | Eight characters, one per level, and level 8 unwinnable by construction (§06) | **Four** characters on rungs 1–4; the other five retired; no unwinnable rung | **Decided 24 Aug — deliberate, and the one entry here that gives something up.** See D10a. **Narrowed 31 Aug:** Tess was authored for the sign-up rep and took rung 1, Nadia moved to 2 and Maya back to 3, so the ladder is contiguous for the first time and no rung falls back to a neighbour's curve. Robin stays at 4, which is where §12 takes the warmth digits off the screen — that rule finally lands on the character it was written for. Four rungs is four UI tiers, so `Level` widened and the rank rail stayed anchored to the characters it was written about: Nadia earns Regular, Maya Contender, Robin Closer, and the on-ramp mints nothing |
 
-### D10a · Three characters instead of eight  ·  **decided 24 Aug**
+### D10a · Four characters instead of eight  ·  **decided 24 Aug, narrowed 31 Aug**
 
-§06 authors eight rungs and the roster shipped all eight. It now ships three:
-Nadia on rung 1, Maya on rung 2, Robin on rung 4.
+§06 authors eight rungs and the roster shipped all eight. It shipped three from
+24 August — Nadia on rung 1, Maya on 2, Robin on 4 — and ships four from 31
+August: **Tess on rung 1, Nadia on 2, Maya on 3, Robin on 4.**
+
+Tess was authored for the sign-up rep (`PAYMENTS-NEW-INTEGRATION.md` §4) and
+everything below still applies at four: the calibration gate is about seven
+transcripts per character rather than two, and the difficulty curves are still
+authored per character rather than interpolated. What the fourth rung bought,
+beyond the sign-up rep itself, is a **contiguous** ladder — 1, 2, 4 had nothing
+at 3, so `levelTrajectory(3)` fell back to a neighbour's curve. It no longer
+falls back to anything below rung 5.
 
 **The argument for.** A persona contract is the only part of this product that
 cannot be verified at a desk. Schema, RLS, grading, the field loop and the rep
@@ -1421,13 +1475,16 @@ in two places the spec would not have chosen:
   once merchant-of-record fees and infrastructure come out". Take the MoR's ~7
   points off and it is ~52%. Six reps a day is a bigger promise than 150 minutes.
 - **Free at one rep a day is recurring, not a trial.** §14 budgets $0.72 *once*
-  before the paywall; an engaged free user on the built plan burns **$2.64 a
+  before the paywall; an engaged free user on the built plan burned **$2.64 a
   month, indefinitely**. §18's ~4% break-even conversion was computed against the
-  one-off figure and does not survive the change unexamined.
+  one-off figure and did not survive that unexamined.
 
-Neither is a launch blocker — both are cheaper than the spec feared in absolute
-terms. Both are reasons to resolve D2 by choosing numbers deliberately rather
-than letting the build's defaults stand. **Still owed:** the live ten-rep
+**Both were resolved on 31 August, and this section is the reason they were.**
+Elite went to $49, where six reps a day is 62% gross after the merchant of
+record rather than 53%. Free lost voice entirely: the recurring $2.64 becomes a
+one-off ≈$0.09 for the sign-up rep, which is inside §14's own $0.72 budget and
+restores §18's break-even arithmetic to the figure it was computed against.
+`PAYMENTS-NEW-INTEGRATION.md` is the plan of record and D2 is closed. **Still owed:** the live ten-rep
 measurement `M0.md` specifies, from the Colombo home connection at 7–9pm. This is
 a projection from measured runs, not a measurement.
 
@@ -1443,12 +1500,12 @@ So the list above is read in proportion.
   from the end she is told either to leave or to offer her number, her closing
   line is allowed to finish, and the whole thing is written down when it ends
   however it ends.
-- **Three characters**, one per rung, hand-authored against §06's table — with
-  five more authored, tuned and retired rather than deleted (D10a). The ladder
-  tests as monotonically harder, and since the three-minute retune a test pins
-  *which rungs a strong player can actually arm* at three different rep
-  lengths, because monotonic dials turned out not to be enough to keep a rung
-  meaning anything. Nothing on the roster is unwinnable by construction any
+- **Four characters**, one per rung and the ladder contiguous, hand-authored
+  against §06's table — with five more authored, tuned and retired rather than
+  deleted (D10a). The ladder tests as monotonically harder, and since the
+  three-minute retune a test pins *which rungs a strong player can actually arm*
+  at three different rep lengths, because monotonic dials turned out not to be
+  enough to keep a rung meaning anything. Nothing on the roster is unwinnable by construction any
   more; the top rung is hard rather than sealed, which D10a argues out.
 - **The field, end to end**: one challenge a day chosen deterministically,
   accepted with the prediction captured before they go, logged with what it

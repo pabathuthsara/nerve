@@ -41,6 +41,7 @@ export type Database = {
       entitlements: {
         Row: {
           created_at: string
+          onboarding_rep_used_at: string | null
           plan: string
           renews_at: string | null
           reps_day: string
@@ -53,6 +54,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          onboarding_rep_used_at?: string | null
           plan?: string
           renews_at?: string | null
           reps_day?: string
@@ -65,6 +67,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          onboarding_rep_used_at?: string | null
           plan?: string
           renews_at?: string | null
           reps_day?: string

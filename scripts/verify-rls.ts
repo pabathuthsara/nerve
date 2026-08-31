@@ -14,6 +14,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types'
+import { planById } from '@/lib/site/plans'
 import { loadEnvLocal } from './env'
 
 type Client = SupabaseClient<Database>
@@ -185,8 +186,12 @@ async function main(): Promise<void> {
       .update({ plan: 'elite', reps_per_day: 99, reps_used_today: 0 })
       .eq('user_id', aId)
     const { data: aPlan } = await a.from('entitlements').select('plan, reps_per_day').eq('user_id', aId).maybeSingle()
+    // The expected number comes from the authored plan record rather than a
+    // literal, so a price-and-volume change cannot leave this harness asserting
+    // a quota the product no longer grants. Free grants zero since voice moved
+    // behind Pro.
     check(
-      !!planForgery || (aPlan?.plan === 'free' && aPlan?.reps_per_day === 1),
+      !!planForgery || (aPlan?.plan === 'free' && aPlan?.reps_per_day === planById('free').repsPerDay),
       'a user cannot grant themselves a plan',
     )
 

@@ -5,7 +5,7 @@ import { PricingPage } from '@/components/site/pricing-page'
 export const metadata: Metadata = {
   title: 'Pricing',
   description:
-    'One voice rep a day free, three on your first day, no card. Paid plans raise the daily rep count. Field work is unlimited on every plan, forever.',
+    'One voice rep when you sign up, no card. Pro is $19 for three voice reps a day after a seven-day free trial. Field challenges, text mode and your streak are unlimited on every plan, forever.',
   alternates: { canonical: '/pricing' },
 }
 

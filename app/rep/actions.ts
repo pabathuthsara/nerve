@@ -24,6 +24,7 @@ import type { RepIncidents } from '@/lib/voice/incidents'
 import { AUDIO_RETENTION_DAYS } from '@/lib/db/retention'
 import { asJson } from '@/lib/db/json'
 import { consumeRep, recordTrainingDay, refundRep, syncLevel } from '@/lib/db/progress'
+import type { RefusalKind } from '@/lib/data/allowance'
 import { adjustDifficulty, recentScoresAtLevel } from '@/lib/db/difficulty'
 import { wonFromRep } from '@/lib/data/progression'
 
@@ -35,6 +36,14 @@ export interface SaveResult {
 
 export interface StartResult extends SaveResult {
   sessionId: string | null
+  /**
+   * Why the rep was refused, when it was.
+   *
+   * `upgrade` means this account has no voice on its plan at all — a different
+   * screen from "you are out for today", not a different wording of it. See
+   * `voiceRefusal` in `lib/data/allowance.ts`.
+   */
+  refusal?: RefusalKind
 }
 
 const FAILED: SaveResult = { ok: false, message: 'Not saved — you are signed out.' }
@@ -90,7 +99,7 @@ export async function startSession(input: {
   if (open) return { ok: true, message: null, sessionId: open.id }
 
   const quota = await consumeRep(user.id)
-  if (!quota.ok) return { ok: false, message: quota.message, sessionId: null }
+  if (!quota.ok) return { ok: false, message: quota.message, sessionId: null, refusal: quota.refusal ?? 'daily' }
 
   // Resolve the character row if it has been seeded. The slug is stored either
   // way, so a rep against an unseeded persona is still a complete record.

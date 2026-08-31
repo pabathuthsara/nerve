@@ -67,6 +67,11 @@ export const RESERVED_ARENA_COLOURS: readonly string[] = ['#c4f82a', '#7a9b1a', 
 /** The eight rungs of the roster, in ladder order (§06). */
 export const PERSONA_VISUAL: Record<string, AuthoredVisual> = {
   // Level 01 — receptive. Open forms, few folds, slack tilt.
+  // Tess holds the bottom rung: the openest form on the roster, two layers
+  // rather than three, and the fattest tube. Her hue is a green at ~140deg,
+  // which is the far side of the band Volt occupies and the only unclaimed
+  // arc left between Robin's teal-green and the yellows nothing may wear.
+  tess:  { mode: 0, petals: 4, layers: 2, tube: 0.33, tilt: [-0.16, 0.10, -0.06], deep: '#33473a', core: '#379556', sheen: '#c1d7c8' },
   nadia: { mode: 0, petals: 3, layers: 3, tube: 0.30, tilt: [-0.20, 0.08, -0.12], deep: '#473337', core: '#a8384f', sheen: '#d7c1c5' },
   priya: { mode: 1, petals: 7, layers: 3, tube: 0.26, tilt: [0.25, -0.12, 0.18], deep: '#473343', core: '#a83892', sheen: '#d7c1d3' },
   // Level 02 — neutral. Tighter tube, more structure.

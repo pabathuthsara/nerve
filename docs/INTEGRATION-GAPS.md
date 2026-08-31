@@ -27,10 +27,10 @@ change, which was the point of building them against a seam.
       `useInterviewSetup` are mocks and nothing writes `interview_setups`. The
       route now redirects unless `unlocked_tracks` says otherwise, so nobody
       reaches it by accident.
-- [x] Three characters, one per rung, seeded with their presentation copy —
-      §06 authors eight and five are retired rather than deleted, unpublished
-      by `npm run db:seed` so their old sessions stay readable (D10a in
-      `LAUNCH-GAP.md`). The trajectory table is read from the roster rather
+- [x] Four characters, one per rung and the ladder contiguous, seeded with
+      their presentation copy — §06 authors eight and five are retired rather
+      than deleted, unpublished by `npm run db:seed` so their old sessions stay
+      readable (D10a in `LAUNCH-GAP.md`). The trajectory table is read from the roster rather
       than kept beside it, so the shipped roster IS the ladder.
 - [x] The daily quota is checked where money is committed — `/api/voice/token`
       refuses a caller with none left, and a rep in flight may reconnect on the

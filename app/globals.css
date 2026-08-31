@@ -401,6 +401,11 @@ button { color: inherit; }
 .reps-pill, .streak-pill { display: inline-flex; min-height: 32px; align-items: center; gap: 7px; font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: 0.065em; text-transform: uppercase; }
 .reps-pill { border: 1px solid var(--line-bright); padding: 0 9px; color: var(--text); }
 .reps-pill strong { color: var(--volt); font-weight: 500; }
+/* A free account's pill is a link to the one screen that can change it, not a
+   countdown to a reset that never comes. Volt-edged rather than volt-filled:
+   the primary action on the screen behind it still owns the accent. */
+.reps-pill--locked { border-color: var(--volt-dim); color: var(--volt); text-decoration: none; }
+.reps-pill--locked:hover { border-color: var(--volt); }
 .streak-pill { color: var(--text-dim); }
 
 .today-card {
@@ -885,6 +890,10 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .plan-card li { display: flex; align-items: center; gap: 8px; }
 .plan-card li svg { color: var(--volt); }
 .billing-note { max-width: 660px; margin: 22px 0 0; color: var(--text-mute); font-size: 12px; }
+/* Back from a completed checkout, while the webhook is still in flight. Hairline
+   and volt-tinted like every other confirmation in Arena — never a shadow. */
+.billing-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 14px 18px; background: linear-gradient(120deg, rgba(196,248,42,.06), transparent 60%), var(--surface); }
+.billing-banner p { margin: 0; color: var(--text-dim); font-size: 13px; }
 
 .orb-stage { position: relative; width: 330px; height: 330px; display: grid; place-items: center; }
 .orb-stage .fluid-persona { overflow: visible; }

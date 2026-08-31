@@ -15,6 +15,11 @@ the real world and log the outcome.
 3. **`docs/LAUNCH-GAP.md` is what is blocking launch.** Ten numbered blockers,
    the product-promise gaps, and nine pieces of spec drift that need a
    decision rather than a ticket.
+   **`docs/PAYMENTS-NEW-INTEGRATION.md` is how voice is sold**, and §11 of it
+   is the record of what shipped on 31 August: free grants no voice reps, the
+   one free rep happens once at sign-up, Pro is $19 and Elite $49 behind a
+   seven-day card-backed trial. Read it before touching pricing, the allowance,
+   or the roster's rungs.
    **`docs/PAYMENTS-APPROVAL.md` is the one blocker that is not code.** Getting
    a merchant of record to approve us: who we apply to, what a human reviewer
    opens when they look at the site, and the three things still in the way.
@@ -43,6 +48,7 @@ npm run db:verify     # RLS from a second real account, 51 checks
 npm run db:rep        # the whole rep lifecycle, without a microphone
 npm run db:field      # the field loop: assign, accept, log, streak, milestones
 npm run db:spend      # the spend ceiling: rate limit, daily cap, both kill switches
+npm run db:billing    # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
 npm run grade:calibrate  # the §17 gate: grade drift on the deployed route
 ```
 
@@ -90,8 +96,11 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    written version of it would be advertising our own prose. `npm run hero:audio`
    records both. It spends money, so it is run by hand and never from a build.
 9. **Anything a user could pay to change has no user write path.** Plan, quota,
-   streak, unlocks, difficulty offsets and subscriptions are read-only to their
-   owner and written by the service role. The ledger is append-only and the
+   the one-off sign-up rep, streak, unlocks, difficulty offsets and
+   subscriptions are read-only to their owner and written by the service role.
+   **`entitlements.reps_per_day = 0` on free is the voice paywall itself** —
+   `consumeRep` and `mayOpenSession` refuse at zero, and there is deliberately
+   no second gate in the app layer for a screen to forget. The ledger is append-only and the
    field log cannot be rewritten by anybody, including the person who wrote it.
    (§14, §09)
    **Every route that spends money goes through `maySpend`** (`lib/db/spend.ts`)

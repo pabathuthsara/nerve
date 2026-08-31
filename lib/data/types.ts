@@ -1,7 +1,15 @@
 export type Track = 'dating' | 'interview'
 import type { Rank } from './rank'
 
-export type Level = 1 | 2 | 3
+/**
+ * A roster tier — one per shipped rung (§06, `lib/data/progression.ts`).
+ *
+ * Four of them since Tess took rung 1 and the ladder became contiguous. It
+ * matched `FieldTier` once, split from it when the roster shrank to three, and
+ * happens to have the same arity again — the two are still different ladders
+ * and still deliberately different types.
+ */
+export type Level = 1 | 2 | 3 | 4
 
 /**
  * A field tier (§09). Four of them, and NOT the same ladder as `Level`.
@@ -31,16 +39,26 @@ export interface UserState {
   rank: Rank
   repsRemainingToday: number
   /**
-   * What today is worth — the plan's number, except on day one.
+   * What today is worth — the plan's number, plus the sign-up rep if it is
+   * still unspent.
    *
-   * Not `entitlements.reps_per_day`: the first day is three reps on every plan
-   * (`lib/data/allowance.ts`), so this is the figure every screen counts down
-   * from and the same one `consumeRep` enforces.
+   * Not `entitlements.reps_per_day`: the one free voice rep an account gets
+   * sits on top of the plan (`lib/data/allowance.ts`), so this is the figure
+   * every screen counts down from and the same one `consumeRep` enforces.
    */
   repsPerDay: number
   repsResetAt: string
-  /** True on the account's own first local day. What the copy keys off. */
-  dayOne: boolean
+  /** True until the one sign-up voice rep has been spent. Once, ever. */
+  signupRepAvailable: boolean
+  /**
+   * No voice on the plan, and the sign-up rep already spent.
+   *
+   * The upgrade moment, and deliberately NOT the same thing as
+   * `repsRemainingToday === 0`: a Pro account at three of three is out for
+   * today and has three more at midnight, and telling those two people the
+   * same sentence is what makes a paywall read as a bug.
+   */
+  voiceLocked: boolean
   streakDays: number
   plan: Plan
   trainingWheels: boolean
@@ -105,6 +123,28 @@ export interface BaselineState {
   retestSessionId: string | null
   due: boolean
   daysSince: number
+}
+
+/**
+ * What the merchant of record says this account has bought (§14).
+ *
+ * A read of the `subscriptions` mirror, which is the table the webhook writes
+ * and nobody else does. It is separate from `UserState.plan` on purpose: the
+ * plan is what the app ENFORCES and this is what was BOUGHT, and the whole
+ * reason the mirror exists is that those two can legitimately disagree for a
+ * few seconds while a webhook is in flight — or for longer, if a product id is
+ * misconfigured and a purchase records without granting.
+ *
+ * Null means nobody has ever bought anything on this account, which is not the
+ * same as a cancelled subscription and must not be drawn as one.
+ */
+export interface SubscriptionState {
+  plan: Plan
+  status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'incomplete'
+  /** When the current period (or the trial) ends. ISO, null if unknown. */
+  currentPeriodEnd: string | null
+  /** Already cancelled, still inside the period they paid for. */
+  cancelAtPeriodEnd: boolean
 }
 
 /** The stored Sunday letter (§09, §11). */

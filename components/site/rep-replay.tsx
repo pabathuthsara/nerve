@@ -90,7 +90,7 @@ const FALLBACK: Turn[] = [
 /**
  * Warmth after each turn, as the meter reads it.
  *
- * Level 1 is authored to be nearly impossible to fail, so it climbs. Note that
+ * Nadia's rung is authored to be nearly impossible to fail, so it climbs. Note that
  * it crosses 65 and nothing on the screen acknowledges it: arming is silent
  * (§05), and a demo that announced it would be teaching the wrong thing about
  * the product on the one screen where somebody is deciding.
@@ -323,7 +323,7 @@ export function RepReplay() {
     <div className="replay" ref={root}>
       <div className={`stage${speaking ? ' stage--speaking' : ''}`}>
         <div className="stage__top">
-          <span className="label">Tier 1 · Second-hand bookshop</span>
+          <span className="label">Tier 2 · Second-hand bookshop</span>
           <span className="stage__clock data">{clock(REP_SECONDS - elapsed)}</span>
         </div>
 

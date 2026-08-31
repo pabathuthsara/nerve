@@ -11,8 +11,9 @@ import { describe, expect, it } from 'vitest'
 import { fastAuthority, FAST_AUTHORITY_FLOOR, FAST_AUTHORITY_SPAN, WarmthEngine } from './engine'
 import { bandFor, bandDirective, BANDS, WARMTH_MIN, WARMTH_MAX } from './bands'
 import { levelTrajectory } from './levels'
-import { ARM_THRESHOLD } from '@/lib/data/rep-rules'
+import { ARM_THRESHOLD, KEEP_THRESHOLD } from '@/lib/data/rep-rules'
 import { nadia } from '@/lib/personas/nadia'
+import { tess } from '@/lib/personas/tess'
 import { alex } from '@/lib/personas/alex'
 import { PERSONAS } from '@/lib/personas'
 import type { Personality, Trajectory } from '@/lib/voice/types'
@@ -20,7 +21,14 @@ import { scoreFast, isOpenQuestion, referencesAgent } from './fast'
 import { classifyOverreach, clampSlowScore } from './slow'
 import type { TranscriptTurn } from '@/lib/voice/types'
 
-/** Layer 1 now lives on the persona, so these read from the roster. */
+/**
+ * Layer 1 now lives on the persona, so these read from the roster.
+ *
+ * `L1` is Nadia's curve and stays Nadia's curve even though she is rung 2 now.
+ * Every assertion below it was tuned against these exact numbers, and a rename
+ * of the rung she stands on is not a reason to retune the engine against a
+ * different character. What the rung she holds is asserted in `level config`.
+ */
 const L1 = nadia.trajectory
 const L8 = alex.trajectory
 
@@ -496,23 +504,25 @@ describe('WarmthEngine', () => {
 describe('level config', () => {
   it('reads the authored trajectory for every rung the roster holds', () => {
     // A level's difficulty curve IS the trajectory of the character who holds
-    // that rung. The roster holds three of them — 1, 2 and 4 — so those three
-    // are the ladder, and each has to read back exactly what its character was
-    // authored with.
+    // that rung. The roster holds four of them — 1 to 4 — so those four are the
+    // ladder, and each has to read back exactly what its character was authored
+    // with. Nadia is rung 2 since Tess took the bottom, and this is the
+    // assertion that says the renumber renumbered the curves with her.
     for (const persona of Object.values(PERSONAS)) {
       expect(levelTrajectory(persona.level)).toEqual(persona.trajectory)
     }
-    expect(levelTrajectory(1)).toEqual(L1)
+    expect(levelTrajectory(1)).toEqual(tess.trajectory)
+    expect(levelTrajectory(2)).toEqual(L1)
   })
 
   it('falls an unheld rung back to a neighbour rather than inventing one', () => {
-    // Rungs 3 and 5-8 have nobody standing on them since the roster went to
-    // three. Interpolating would manufacture a difficulty curve no one designed
-    // and no one has run a rep against, so the nearest authored rung is used.
-    // Nothing routes a user here — it exists so a stored level from an older
-    // session, or an interview rung, still resolves to something real.
+    // Rungs 5-8 have nobody standing on them. Interpolating would manufacture a
+    // difficulty curve no one designed and no one has run a rep against, so the
+    // nearest authored rung is used. Nothing routes a user here — it exists so a
+    // stored level from an older session, or an interview rung, still resolves
+    // to something real.
     const authored = Object.values(PERSONAS).map((persona) => persona.trajectory)
-    for (const level of [3, 5, 6, 7, 8]) {
+    for (const level of [5, 6, 7, 8]) {
       expect(authored).toContainEqual(levelTrajectory(level))
     }
   })
@@ -714,9 +724,16 @@ describe('the retuned trajectory', () => {
 
     // A terse rep, the model rep, and a talkative one. More conversation earns
     // more ground — that is honest — but never the whole ladder at once.
-    expect(armedRungs(12)).toEqual([1])
-    expect(armedRungs(TURNS_IN_A_REP)).toEqual([1, 2])
-    expect(armedRungs(18)).toEqual([1, 2])
+    //
+    // Every row here moved up exactly one rung when Tess took the bottom, and
+    // nothing else about it changed: a terse rep arms the two receptive rungs,
+    // the model rep reaches Maya, and Robin is never in the list. Tess arms at
+    // every length on purpose — she is the rung authored to be won, and a
+    // sign-up rep a competent first-timer cannot arm would be the wrong first
+    // impression of the whole product.
+    expect(armedRungs(12)).toEqual([1, 2])
+    expect(armedRungs(TURNS_IN_A_REP)).toEqual([1, 2, 3])
+    expect(armedRungs(18)).toEqual([1, 2, 3])
   })
 
   it('leaves the top rung hard and not sealed', () => {
@@ -731,6 +748,31 @@ describe('the retuned trajectory', () => {
 
     expect(robinWarmth(18)).toBeLessThan(ARM_THRESHOLD)
     expect(robinWarmth(24)).toBeGreaterThanOrEqual(ARM_THRESHOLD)
+  })
+
+  it('lets a competent first-timer win rung 1, and only by talking', () => {
+    // THE SIGN-UP REP, as a number. Tess exists to be won by somebody who has
+    // not yet decided whether this product is for them, and the entire risk in
+    // authoring her is that "winnable" quietly becomes "automatic" — at which
+    // point the win teaches nothing and the user knows it.
+    //
+    // Good play arms her four turns in, which is under a minute of a
+    // three-minute rep. That is the promise.
+    const armedAt = [1, 2, 3, 4, 5].findIndex((turns) =>
+      play(levelTrajectory(1), GOOD, turns, her, 1, rungPersonality(1)).warmth >= ARM_THRESHOLD)
+    expect(armedAt).toBe(3) // zero-based: the fourth turn
+
+    // And a rep where he says nothing worth saying does not get there, or past
+    // the keep line either. 65 arms it and 55 keeps it (§07); a flat rep
+    // against the easiest character on the ladder must clear neither.
+    const flat = play(levelTrajectory(1), FLAT, TURNS_IN_A_REP, [], 1, rungPersonality(1)).warmth
+    expect(flat).toBeLessThan(ARM_THRESHOLD)
+    expect(flat).toBeLessThan(KEEP_THRESHOLD)
+
+    // She is still the softest landing on the roster: a flat rep against Tess
+    // ends well above where the same rep ends against Nadia. Failing is
+    // allowed to feel different at rung 1 — it must simply still be failing.
+    expect(flat).toBeGreaterThan(play(levelTrajectory(2), FLAT, TURNS_IN_A_REP, [], 2, rungPersonality(2)).warmth)
   })
 
   it('leaves a flat player cold', () => {

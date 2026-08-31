@@ -172,34 +172,55 @@ invites it to think about doing it, and every word is charged on every later tur
 
 ### The shipped ladder
 
-Three characters since 24 August, on engine rungs 1, 2 and 4. The reasoning is
-in `PRODUCT.md`; the decision and what it costs are D10a in `LAUNCH-GAP.md`.
+Four characters since 31 August, on engine rungs 1 to 4 — **contiguous for the
+first time**, so no rung falls back to a neighbour's curve any more. It was
+three (1, 2 and 4) from 24 August. The reasoning is in `PRODUCT.md`; the
+decision and what it costs are D10a in `LAUNCH-GAP.md`, and Tess's own reason
+for existing is `PAYMENTS-NEW-INTEGRATION.md` §4.
 
-|  | Nadia (L1) | Maya (L2) | Robin (L4) |
-|---|---|---|---|
-| start | 32 ± 6 | 28 ± 6 | 20 ± 6 |
-| gain | 1.1 | 1.0 | 0.8 |
-| decay | 0.5 | 0.7 | 1.1 |
-| decayPerTurn | 0.2 | 0.25 | 0.35 |
-| maxGainPerTurn | 3.5 | 3.2 | 2.7 |
-| sessionCeiling | 85 | 82 | 78 |
-| hardCeiling | 100 | 100 | 95 |
+|  | Tess (L1) | Nadia (L2) | Maya (L3) | Robin (L4) |
+|---|---|---|---|---|
+| start | 48 ± 6 | 32 ± 6 | 28 ± 6 | 20 ± 6 |
+| gain | 1.8 | 1.1 | 1.0 | 0.8 |
+| decay | 0.3 | 0.5 | 0.7 | 1.1 |
+| decayPerTurn | 0.1 | 0.2 | 0.25 | 0.35 |
+| maxGainPerTurn | 4.5 | 3.5 | 3.2 | 2.7 |
+| sessionCeiling | 85 | 85 | 82 | 78 |
+| hardCeiling | 100 | 100 | 100 | 95 |
 
-Maya and Robin **took the curves already authored for their new rungs** rather
-than carrying their old ones down. That is the four-layer schema doing its job:
-a rung is a difficulty curve, a character is everything else, and moving one
-does not touch the other. Robin is still the character whose `signalClarity` is
-20 — reading her is exactly as hard as it was at rung 7. What changed is only
-how far warmth travels.
+**Nobody carried a curve with them.** Maya and Robin took the curves already
+authored for their rungs when the roster shrank in August, and Nadia and Maya
+each moved down one when Tess took the bottom — and in both cases the numbers in
+their files never changed. That is the four-layer schema doing its job: a rung
+is a difficulty curve, a character is everything else, and `lib/warmth/levels.ts`
+builds the level→trajectory map off the roster rather than keeping a parallel
+table, so renumbering the characters renumbers the curves. Robin is still the
+character whose `signalClarity` is 20 — reading her is exactly as hard as it was
+at rung 7.
+
+`maxGainPerTurn` is the dial that makes Tess legible rather than merely
+generous. The cap clips every strong turn for most of a rep, so a high `gain`
+under Nadia's 3.5 cap would have been generosity the user could not see moving.
 
 Good play against each, at twelve seconds a turn, arming at 65:
 
-| turns | Nadia | Maya | Robin |
-|---|---|---|---|
-| 12 | 67.4 | 61.4 | 48.1 |
-| **15** — the three-minute rep | **72.6** | **67.0** | **53.9** |
-| 18 | 76.8 | 71.6 | 58.9 |
-| 24 | 83.2 | 78.6 | 67.0 |
+| turns | Tess | Nadia | Maya | Robin |
+|---|---|---|---|---|
+| 12 | 85.0 | 67.4 | 61.4 | 48.1 |
+| **15** — the three-minute rep | **85.0** | **72.6** | **67.0** | **53.9** |
+| 18 | 85.0 | 76.8 | 71.6 | 58.9 |
+| 24 | 85.0 | 83.2 | 78.6 | 67.0 |
+
+Tess is at her session ceiling from about turn 10, which is the point: she arms
+on **turn four**, under a minute into a three-minute rep, so a first-timer who
+manages four real sentences has won before the rep is a third done.
+
+**Easy is not automatic, and that is the line this character is balanced on.**
+The same fifteen turns of *flat* play — "Yeah, a lot of stuff." every time —
+leave her at 46.5, below both the 65 that arms a rep and the 55 that keeps it.
+So a rep where nothing was said does not produce a number, on the easiest rung
+on the ladder, and the meter is what tells the user the difference. Both halves
+are asserted in `engine.test.ts` rather than left as an intention.
 
 The top rung is **hard and not sealed**: Robin cannot be armed by a merely
 competent rep, and sustained perfect play does eventually reach her. Asserted
@@ -226,8 +247,8 @@ be routed to.
 45, so no sequence of user turns reaches the warm bands. That was the point of
 level 8: being told no and exiting well is the skill, and a level where charm
 eventually works would teach that persistence is the answer. **The shipped
-roster no longer contains that level**, which is the real cost of going to
-three characters and is argued out in `LAUNCH-GAP.md` D10a.
+roster no longer contains that level**, which is the real cost of the shorter
+roster and is argued out in `LAUNCH-GAP.md` D10a.
 
 ### The round-9 retune, applied
 

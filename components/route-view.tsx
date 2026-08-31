@@ -52,11 +52,31 @@ export function isOnboardingRoute(path: string): boolean {
 }
 
 /**
+ * The one thing the subscription screen cannot answer for itself.
+ *
+ * Whether a checkout can actually be opened is an environment question — the
+ * merchant-of-record key and a product id per paid plan — and those are secrets
+ * that must not reach a client bundle. So the server answers it and hands down
+ * a boolean, exactly as `devLoginEmail` does for the auth screens.
+ *
+ * It is deliberately NOT the same question as `PublicPlan.open`. That one is a
+ * product decision authored in `lib/site/plans.ts`; this one is whether the
+ * deployment can take money this minute. See `checkoutConfigured`.
+ */
+export interface BillingContext {
+  checkoutOpen: boolean
+}
+
+export function isBillingRoute(path: string): boolean {
+  return path === '/profile/subscription'
+}
+
+/**
  * The route table. A plain switch, deliberately synchronous: everything it
  * needs that only the server can answer arrives as a prop from the page, so
  * this file never awaits and never grows a data dependency of its own.
  */
-export function RouteView({ path, query = {}, auth, onboarding }: { path: string; query?: Record<string, string | undefined>; auth?: AuthContext; onboarding?: OnboardingContext }) {
+export function RouteView({ path, query = {}, auth, onboarding, billing }: { path: string; query?: Record<string, string | undefined>; auth?: AuthContext; onboarding?: OnboardingContext; billing?: BillingContext }) {
   if (path === '/train') return <TrainScreen />
   if (path === '/not-found') return <NotFound />
   if (path === '/error') return <main className="error-page"><AlertTriangle size={36} strokeWidth={1.5} className="amber" /><h1 className="display-lg">Something broke</h1><p className="data">DEMO_ERROR · The request could not be completed.</p><div className="error-actions"><Link className="arena-button arena-button--primary" href="/error">Try again</Link><Link className="arena-button arena-button--ghost" href="/train">Go home</Link></div></main>
@@ -68,7 +88,9 @@ export function RouteView({ path, query = {}, auth, onboarding }: { path: string
   if (path === '/progress/baseline') return <BaselineScreen />
   if (path === '/progress') return <ProgressScreen />
   if (path.startsWith('/progress/week/')) return <WeeklyReviewScreen weekStart={path.split('/')[3] ?? ''} />
-  if (path === '/profile' || path === '/profile/history' || path === '/profile/settings' || path === '/profile/subscription') return <ProfileScreen route={path as ProfileRoute} />
+  if (path === '/profile' || path === '/profile/history' || path === '/profile/settings' || path === '/profile/subscription') {
+    return <ProfileScreen route={path as ProfileRoute} checkoutOpen={billing?.checkoutOpen ?? false} bought={query['bought'] === '1'} />
+  }
   if (path.startsWith('/session/')) {
     const [, , sessionId = '', view = 'result'] = path.split('/')
     if (!sessionViews.has(view as SessionView)) return <NotFound />

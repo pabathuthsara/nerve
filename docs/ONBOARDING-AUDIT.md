@@ -34,6 +34,29 @@ Seven screens between "create account" and the first word spoken:
 | 5 | `/onboarding/mic` | Microphone permission + level | `vad_offset_ms` |
 | 6 | `/onboarding/ready` | Nothing — it is the brief | `onboarding_complete` |
 
+**Step 6 now spends the one free voice rep the product gives away (31 Aug).**
+Free grants no reps a day, so the rep started from this screen is the sign-up
+rep, held once per account on `entitlements.onboarding_rep_used_at`
+(`PAYMENTS-NEW-INTEGRATION.md` §4). Three consequences for this run
+specifically:
+
+- **It has to be the character authored to be won.** That is Tess, rung 1, and
+  the run reaches her through `chooseTodayPersona` over the roster the server
+  sent — not through a hardcoded slug (see O4/R12 below). A fresh account is at
+  `current_level` 1, so she is the only unlocked candidate.
+- **Abandoning the run must not cost the rep, and resuming must not mint a
+  second.** The stamp answers both, and it is on a table with no user write
+  path. Somebody who leaves after the mic step and comes back on Thursday still
+  has their rep.
+- **A muted microphone must not spend it.** `refundRep` clears the stamp when
+  the rep it hands back was the sign-up one, because on free there is not
+  another one behind it.
+
+It stays inside the authenticated part of the flow, deliberately: `requireUser`
+and `maySpend` both still apply, so the most expensive endpoint in the product
+is never reachable anonymously and the per-account spend ceiling still bounds
+it.
+
 Password sign-up asks the date of birth itself, so a password account never
 sees the gate. Google accounts and every account older than the gate do.
 
@@ -91,6 +114,12 @@ but the agreement is a coincidence maintained by hand. The moment a second
 level-1 character is seeded, `/train` and `/onboarding/ready` disagree about
 who you are meeting and the questionnaire visibly stops mattering on the one
 screen where the user is still deciding whether it did.
+
+> **Fixed by R12, and the hypothetical arrived on 31 August.** Tess took rung 1
+> and Nadia moved to rung 2, so the hardcoded slug would now be naming a
+> character the run cannot reach on a fresh account. The ready screen resolves
+> through `chooseTodayPersona` over a server-rendered roster instead, which is
+> the same function `/train` runs.
 
 **O5 · Nothing tells the user what an answer buys.**
 `FocusStep` and `ExperienceStep` are a heading and four buttons. `NameStep` is

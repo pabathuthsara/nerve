@@ -79,7 +79,7 @@ function TrainContent() {
       <div className="train-grid">
         <section>
           <div className="train-meta-row">
-            {userLoading || !user ? <><Skeleton width={108} height={32} /><Skeleton width={108} height={20} /></> : <><RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} /><StreakCounter days={user.streakDays} /></>}
+            {userLoading || !user ? <><Skeleton width={108} height={32} /><Skeleton width={108} height={20} /></> : <><RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} locked={user.voiceLocked} /><StreakCounter days={user.streakDays} /></>}
           </div>
           {user && !user.onboardingComplete ? <FinishSetup /> : null}
           {loading || !persona ? <Skeleton height={430} /> : (
@@ -114,10 +114,13 @@ function TrainContent() {
         <aside className="side-stack">
           {userLoading || !user ? <Skeleton height={86} /> : <RankRail rank={user.rank} />}
           <div className="side-stats">
-            {/* Day one is three reps on any plan (`lib/data/allowance.ts`), and
-                a counter that silently reads 3 / 3 today and 1 / 1 tomorrow
-                looks like a bug. Saying so is the whole point of the grant. */}
-            <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Reps remaining" value={`${user.repsRemainingToday} / ${user.repsPerDay}`} size="lg" detail={user.dayOne ? 'Day one — three on us' : undefined} />}</div>
+            {/* Three states, not a count and a zero. The sign-up rep is a
+                one-off on top of the plan (`lib/data/allowance.ts`), so it says
+                so while it is unspent; and a free account's zero is not a
+                counter that resets at midnight, so it does not pretend to be
+                one. A pill reading 0 / 0 with a countdown under it looks like a
+                bug and hides the only thing the user can do about it. */}
+            <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Reps remaining" value={user.voiceLocked ? 'Voice on Pro' : `${user.repsRemainingToday} / ${user.repsPerDay}`} size="lg" detail={user.signupRepAvailable ? 'Your sign-up rep, on us' : user.voiceLocked ? 'The field, text and your streak stay free' : undefined} />}</div>
             <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Current streak" value={`${user.streakDays} days`} size="lg" />}</div>
           </div>
           <Card className="field-card">

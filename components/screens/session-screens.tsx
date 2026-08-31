@@ -10,7 +10,7 @@ import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
 import { LEVEL_NAMES } from '@/lib/data/progression'
 import { resultReading } from '@/lib/data/rep-rules'
 import { AppShell } from '@/components/app-shell'
-import { Button, Card, Chip, EmptyState, LockOverlay, Skeleton, Tabs } from '@/components/ui'
+import { Button, Card, Chip, EmptyState, Skeleton, Tabs } from '@/components/ui'
 import { FirstWinSheet, LevelUnlockedSheet, PaywallSheet, ScorecardExplainerSheet } from '@/components/modals'
 import { acknowledgeUnlock } from '@/app/profile/actions'
 import { ShareButton } from '@/components/share/share-button'
@@ -125,12 +125,43 @@ function ScorecardScreen({ session }: { session: SessionSummary }) {
   const verdict = scorecard.composite < 50 ? 'Sloppy' : scorecard.composite < 70 ? 'Solid' : scorecard.composite < 85 ? 'Sharp' : 'Clean'
   const audit = scorecard.metrics.reduce((sum, metric) => sum + metric.points, 0) + (scorecard.judgement?.points ?? 0)
   const parts = [...scorecard.metrics.map((metric) => String(metric.points)), ...(scorecard.judgement ? [String(scorecard.judgement.points)] : [])]
-  const pro = user?.plan !== 'free'
+  /**
+   * THE SCORECARD IS NOT BEHIND A PLAN, AND USED TO LOOK LIKE IT WAS.
+   *
+   * Four of the six metric rows, the judgement row, both moments and the
+   * transcript link were drawn under a `LockOverlay` for a free account. Three
+   * things were wrong with that.
+   *
+   * It contradicted the record both pricing surfaces read: `lib/site/plans.ts`
+   * says a plan changes voice volume and nothing else, and `/pricing` lists
+   * "the full scorecard — six dimensions, evidence, transcript" under what a
+   * plan never changes. §14 has a merchant-of-record reviewer reading that page.
+   *
+   * It was never enforced. `/session/[id]/transcript` has no plan check on it —
+   * only the link was hidden — so the lock was a claim rather than a gate, which
+   * is the same defect `LAUNCH-GAP.md` D12 resolved for the persona gate. The
+   * answer there was to make the copy true rather than to build the gate.
+   *
+   * And since 31 August it lands on exactly the wrong screen. A free account
+   * gets one voice rep, ever, during sign-up — so this is the only scorecard
+   * they will ever see, and it is the product's whole first impression. Showing
+   * it half-obscured is an argument against buying, not for it.
+   *
+   * The paywall a free account meets is the microphone (`lib/site/plans.ts`),
+   * and it is enough.
+   */
   const outcomeLabel = session.track === 'interview' ? (session.won ? 'callback earned' : 'no callback') : (session.won ? 'number given' : 'left')
   const signalLabel = session.track === 'interview' ? 'Impression' : 'Warmth'
   const personaLevel = personas.find((item) => item.id === session.personaId)?.level ?? null
   const levelLabel = session.track === 'interview' ? 'Interview' : personaLevel ? `${String(personaLevel).padStart(2, '0')} — ${LEVEL_NAMES[personaLevel]}` : '—'
-  return <AppShell title="Scorecard"><header className="scorecard-title"><span className="label">Process score · {session.personaName}</span><h1 className="display-lg">Session breakdown</h1></header><div className="scorecard-grid"><div className="scorecard-left"><Card className="composite-card"><div><span className="composite data">{scorecard.composite}<small>/100</small></span><strong className="display-md">{verdict}</strong></div><p>{session.personaName} · Level {levelLabel} · {formatDuration(session.durationMs)} · {outcomeLabel}</p></Card>{scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}<section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric, index) => <div key={metric.key}>{!pro && index >= 2 ? <LockOverlay requirement="Full scorecards are Pro"><MetricBandRow metric={metric} /></LockOverlay> : <MetricBandRow metric={metric} />}</div>)}{scorecard.judgement ? (pro ? <JudgementRow judgement={scorecard.judgement} /> : <LockOverlay requirement="Full scorecards are Pro"><JudgementRow judgement={scorecard.judgement} /></LockOverlay>) : null}</div></section></div><aside className="scorecard-right">{pro ? <><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} /><section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card><FocusLinks focus={scorecard.focus} /></section></> : <LockOverlay requirement="Moments are available on Pro"><Card style={{ minHeight: 330 }} /></LockOverlay>}</aside></div><div className="scorecard-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>{pro ? <Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link> : <Button variant="secondary" onClick={() => setPaywall(true)}>Unlock transcript</Button>}<Link className="arena-button arena-button--ghost" href="/roster">Next persona</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div><ReportButton sessionId={session.id} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} reason="Full transcripts are available on Pro and Elite." /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet open={explainer} onClose={() => setExplainer(false)} /></AppShell>
+  return <AppShell title="Scorecard"><header className="scorecard-title"><span className="label">Process score · {session.personaName}</span><h1 className="display-lg">Session breakdown</h1></header><div className="scorecard-grid"><div className="scorecard-left"><Card className="composite-card"><div><span className="composite data">{scorecard.composite}<small>/100</small></span><strong className="display-md">{verdict}</strong></div><p>{session.personaName} · Level {levelLabel} · {formatDuration(session.durationMs)} · {outcomeLabel}</p></Card>{scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}<section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric) => <MetricBandRow key={metric.key} metric={metric} />)}{scorecard.judgement ? <JudgementRow judgement={scorecard.judgement} /> : null}</div></section></div><aside className="scorecard-right"><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} /><section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card><FocusLinks focus={scorecard.focus} /></section></aside></div><div className="scorecard-actions">{/* THE UPGRADE MOMENT, and the best-placed one in the product. Somebody
+    who has just finished the sign-up rep and wants to go again is the whole
+    funnel in one click, so Run it back opens the sheet rather than walking
+    them to a brief that will refuse them. Everything else on this screen —
+    every metric, both moments, the transcript — is theirs either way. */}
+{user?.voiceLocked && session.track === 'dating'
+  ? <Button onClick={() => setPaywall(true)}>Run it back</Button>
+  : <Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>}<Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link><Link className="arena-button arena-button--ghost" href="/roster">Next persona</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div><ReportButton sessionId={session.id} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={session.track === 'dating' ? session.personaId : null} /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet open={explainer} onClose={() => setExplainer(false)} /></AppShell>
 }
 
 /**

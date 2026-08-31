@@ -4,15 +4,23 @@
  * Two translations live here and nowhere else, because both of them are places
  * a second opinion would silently corrupt a progression record:
  *
- *   levels   the ladder is three rungs (§06 authors eight; the roster ships
- *            three — see `lib/personas/index.ts`), and the frontend shows one
+ *   levels   the ladder is four rungs (§06 authors eight; the roster ships
+ *            four — see `lib/personas/index.ts`), and the frontend shows one
  *            tier per rung.
  *   bands    the engine has six bands, HOSTILE included; the UI has five.
  *
  * Neither translation touches calibration. The engine still scores on the 1-8
- * scale it was tuned on — the shipped rungs are 1, 2 and 4 of that scale, with
+ * scale it was tuned on — the shipped rungs are 1 to 4 of that scale, with
  * their authored curves intact — and on HOSTILE..INVESTED as before. This is
  * presentation.
+ *
+ * **Since the roster went contiguous the level translation is the identity for
+ * every shipped rung**, and that is worth saying out loud rather than deleting
+ * the two tables below. They earn their keep in two places: the retired rungs
+ * 5-8 still have to render on an old session row, and the pair has to stay
+ * exact inverses of one another or a stored ladder position round-trips to a
+ * tier nobody earned. An identity written as a table is also the honest shape
+ * for something that has been re-derived twice already.
  */
 
 import { ARM_THRESHOLD, KEEP_THRESHOLD } from './rep-rules'
@@ -20,61 +28,70 @@ import { personaRankFor, type FocusArea } from './focus'
 import type { Band, Level } from './types'
 
 /**
- * The three tiers, in the frontend's own words.
+ * The four tiers, in the frontend's own words.
  *
- * Tier 3 was "Hostile" when it held Alex and "Resistant" when it held Erin and
- * Sam. It holds Robin, who is neither: she is unfailingly polite and the whole
- * difficulty is that she gives nothing away in either direction. Naming the
- * tier after a hostility she does not have would tell the user to brace for the
- * wrong thing, which is the one mistake this tier cannot afford — the skill is
- * reading her accurately.
+ * The top tier was "Hostile" when it held Alex and "Resistant" when it held
+ * Erin and Sam. It holds Robin, who is neither: she is unfailingly polite and
+ * the whole difficulty is that she gives nothing away in either direction.
+ * Naming the tier after a hostility she does not have would tell the user to
+ * brace for the wrong thing, which is the one mistake this tier cannot afford
+ * — the skill is reading her accurately.
+ *
+ * Every name shifted up one rung when Tess took the bottom, because the names
+ * describe the character standing there and the characters moved. Tess is
+ * "Open" rather than a fourth synonym for receptive: she is not merely willing
+ * to be talked to, she is actively glad of it, and that is the difference
+ * between rung 1 and rung 2.
  */
 export const LEVEL_NAMES: Record<Level, string> = {
-  1: 'Receptive',
-  2: 'Neutral',
-  3: 'Ambiguous',
+  1: 'Open',
+  2: 'Receptive',
+  3: 'Neutral',
+  4: 'Ambiguous',
 }
 
 /**
  * The last tier on the ladder.
  *
- * Named rather than written as `3` at each call site, because the number is
- * going to move again the moment a fourth character is authored, and a literal
- * scattered across the UI is how the roster screen and the training-wheels
- * warning come to disagree about where the top is.
+ * Named rather than written out at each call site, because the number moves
+ * every time the roster does — it has been 4, then 3, and is 4 again now that
+ * Tess holds rung 1 — and a literal scattered across the UI is how the roster
+ * screen and the training-wheels warning come to disagree about where the top
+ * is. Nothing but this constant changed at those call sites either time.
  */
-export const TOP_TIER: Level = 3
+export const TOP_TIER: Level = 4
 
 /**
  * Engine level → UI tier, one tier per shipped rung.
  *
- * This was `ceil(level / 2)` while eight rungs shared four tiers. It cannot
- * stay arithmetic now: the shipped rungs are 1, 2 and 4, and halving them puts
- * Nadia and Maya in the same tier and Robin in the second — a roster screen
- * with an empty top and a doubled bottom.
+ * This was `ceil(level / 2)` while eight rungs shared four tiers, then a table
+ * with a hole in it while the roster was 1, 2 and 4. The roster is contiguous
+ * now, so rungs 1-4 map straight through.
  *
  * The retired rungs still map, because a session row from before the roster
- * shrank names a level and must still render. Each falls to the tier of the
- * nearest shipped rung at or below it, so an old Erin rep (5) reads as tier 3
- * rather than vanishing.
+ * changed names a level and must still render. Each falls to the tier of the
+ * nearest shipped rung at or below it, so an old Erin rep (5) reads as the top
+ * tier rather than vanishing.
  */
-const TIER_BY_RUNG: Record<number, Level> = { 1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3 }
+const TIER_BY_RUNG: Record<number, Level> = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 4, 6: 4, 7: 4, 8: 4 }
 
 export function uiLevel(engineLevel: number): Level {
-  return TIER_BY_RUNG[Math.round(engineLevel)] ?? (engineLevel < 1 ? 1 : 3)
+  return TIER_BY_RUNG[Math.round(engineLevel)] ?? (engineLevel < 1 ? 1 : TOP_TIER)
 }
 
 /**
  * UI tier → the engine rung the roster offers at that tier. The inverse of
  * `uiLevel`, and it has to stay the inverse.
  *
- * This was `tier * 2` while eight rungs shared four tiers, which was the exact
- * inverse of the `ceil(level / 2)` above. Both moved when the roster went to
- * three, and a stored `profiles.current_level` is written through here and read
- * back through `uiLevel` — so if these two ever stop agreeing, a user's ladder
- * position round-trips to a different tier than the one they earned.
+ * This was `tier * 2` while eight rungs shared four tiers, and `{1:1, 2:2,
+ * 3:4}` while rung 3 stood empty. A stored `profiles.current_level` is written
+ * through here and read back through `uiLevel` — so if these two ever stop
+ * agreeing, a user's ladder position round-trips to a different tier than the
+ * one they earned. That is also why the renumber cost nobody their position:
+ * an account sitting on rung 4 because it had cleared Maya still sits on rung
+ * 4, and rung 4 is still Robin.
  */
-const RUNG_BY_TIER: Record<Level, number> = { 1: 1, 2: 2, 3: 4 }
+const RUNG_BY_TIER: Record<Level, number> = { 1: 1, 2: 2, 3: 3, 4: 4 }
 
 export function engineRung(tier: Level): number {
   return RUNG_BY_TIER[tier]
@@ -143,11 +160,21 @@ export const UNLOCK_REPS = 2
  * bug was fixed the grader could invent one outright, so the gate was scoring
  * outcome twice over. It counts qualifying SCORES now: process, not result. A
  * clean rep that ends in rejection can score 92 and advance you.
+ *
+ * **The shape survived the renumber; every character kept its own gate.** Maya
+ * used to be tier 2 and open from the start, and is tier 3 behind two
+ * qualifying reps against Nadia. Robin used to be tier 3 behind two qualifying
+ * reps against Maya, and is tier 4 behind two qualifying reps against Maya —
+ * the same requirement, one row further down. What changed is that Maya is now
+ * earned rather than given, which is where she sat in §06's own eight-rung
+ * ladder before the roster shrank; the two free tiers are the two receptive
+ * ones, and a first session still costs nothing.
  */
 export const UNLOCK_RULES: Record<Level, { level: Level; reps: number } | null> = {
   1: null,
   2: null,
   3: { level: 2, reps: UNLOCK_REPS },
+  4: { level: 3, reps: UNLOCK_REPS },
 }
 
 export function unlockRequirement(level: Level): string | null {
@@ -165,7 +192,7 @@ export function unlockRequirement(level: Level): string | null {
  */
 export function unlockedLevels(qualifyingByLevel: Record<number, number>): Set<Level> {
   const open = new Set<Level>()
-  for (const level of [1, 2, 3] as Level[]) {
+  for (const level of [1, 2, 3, 4] as Level[]) {
     const rule = UNLOCK_RULES[level]
     if (!rule || (qualifyingByLevel[rule.level] ?? 0) >= rule.reps) open.add(level)
   }
@@ -276,5 +303,5 @@ export function chooseTodayPersona<T extends { id: string; level: Level; locked:
 
 /** The band tone a level card wears. Cosmetic, and consistent everywhere. */
 export function levelTone(level: Level): Band {
-  return level >= 3 ? 'GUARDED' : level === 2 ? 'OPEN' : 'ENGAGED'
+  return level >= 4 ? 'GUARDED' : level === 3 ? 'OPEN' : 'ENGAGED'
 }

@@ -43,10 +43,15 @@ export interface FocusPlan {
    *
    * A tie-break, never a gate: it is applied among personas that are already
    * unlocked and equally unpractised, so it decides the FIRST rep and then
-   * gets out of the way of the rotation. With three characters on the roster
-   * — one of them the only thing a new account can reach — it frequently has
-   * nothing to choose between, and that is fine. It is the mechanism the
+   * gets out of the way of the rotation. Two tiers are open on a fresh
+   * account, so it now genuinely chooses between Tess and Nadia rather than
+   * falling through to the only reachable character. It is the mechanism the
    * roster is being filled for (`LAUNCH-GAP.md`, P2).
+   *
+   * **Tess leads three of the four**, because the sign-up rep is against
+   * whoever this list puts first and that rep is the one authored to be won
+   * (`lib/personas/tess.ts`). The exception is `rejection`, where the honest
+   * first character is not the one who says yes.
    */
   personaSlugs: readonly string[]
 }
@@ -58,17 +63,21 @@ export const FOCUS_PLANS: Record<FocusArea, FocusPlan> = {
     cardSlug: 'the-shared-situation',
     // Opening with a statement is the exercise; the number is not the point.
     challengeSlug: 'statement-not-question',
-    // Nadia first: level 1 is nearly impossible to fail, which is the right
-    // room to be in when the hard part is saying the first thing at all.
-    personaSlugs: ['nadia', 'maya', 'robin'],
+    // Tess first: a launderette queue hands you the shared situation, so the
+    // opener this answer is about is the easy one to reach for. Nadia behind
+    // her is the same lesson with slightly less help.
+    personaSlugs: ['tess', 'nadia', 'maya', 'robin'],
   },
   sustaining: {
     label: 'keeping it going',
     subScore: 'curiosity',
     cardSlug: 'the-second-question',
     challengeSlug: 'stay-on-the-topic',
-    // Maya is the rung authored around not running dry at ninety seconds.
-    personaSlugs: ['maya', 'nadia', 'robin'],
+    // Maya is the rung authored around not running dry at ninety seconds — but
+    // she is behind a gate on a new account now, so the list falls through to
+    // Tess, who will not let a conversation die and is the right room to learn
+    // that it can be kept alive at all.
+    personaSlugs: ['maya', 'tess', 'nadia', 'robin'],
   },
   flirting: {
     label: 'making it flirty without being weird',
@@ -78,7 +87,10 @@ export const FOCUS_PLANS: Record<FocusArea, FocusPlan> = {
     subScore: 'signalReading',
     cardSlug: 'the-shorter-answer',
     challengeSlug: 'say-the-observation',
-    personaSlugs: ['maya', 'robin', 'nadia'],
+    // Tess opens her gated layers earliest on the roster, so "did that land"
+    // is answerable at all inside three minutes. Maya is the same question with
+    // the answer withheld, which is the version worth graduating to.
+    personaSlugs: ['tess', 'maya', 'robin', 'nadia'],
   },
   rejection: {
     label: 'handling it when she is not interested',
@@ -86,10 +98,12 @@ export const FOCUS_PLANS: Record<FocusArea, FocusPlan> = {
     cardSlug: 'recovery-flat-response',
     // The tier-1 ask exists to make somebody hear the word out loud.
     challengeSlug: 'ask-alex',
-    // Robin is the rung about reading whether a no is a no — but she is level
-    // 4, so on a new account this list falls through to Nadia and the answer
-    // is honoured later rather than never.
-    personaSlugs: ['robin', 'maya', 'nadia'],
+    // Robin is the rung about reading whether a no is a no — but she is the
+    // top of the ladder, so on a new account this list falls through and the
+    // answer is honoured later rather than never. Nadia rather than Tess is
+    // the fall-through here, and deliberately: somebody whose hard part is
+    // being turned down is not served by the character least likely to do it.
+    personaSlugs: ['robin', 'maya', 'nadia', 'tess'],
   },
 }
 

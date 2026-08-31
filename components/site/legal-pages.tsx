@@ -21,6 +21,9 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { SITE_LINKS, SUPPORT_EMAIL } from './site-chrome'
+// The trial length is a claim on this page and a number in the product. One
+// source, so a change to the product is a change to the terms in the same edit.
+import { TRIAL_DAYS } from '@/lib/site/plans'
 
 const EFFECTIVE = '27 August 2026'
 
@@ -154,20 +157,40 @@ export function TermsDocument() {
 
       <Clause n="07" title="Plans, payment and cancellation">
         <p>
-          There is a free plan, and there are paid plans that raise the number of voice reps
-          you may run each day. Payment is handled by our merchant of record, who is the seller
-          of record for the transaction and who collects and remits any VAT or sales tax due
-          where you live. Their name, not ours, appears on your statement, and their terms
-          apply to the transaction itself.
+          There is a free plan, and there are paid plans that add voice reps. The free plan
+          includes one voice rep when you create your account, and after that it includes
+          every part of Nerve that does not use a microphone: the field challenges, the log
+          and the chart, text mode against the same characters, your streak, your history,
+          your transcripts and everything you have unlocked by scoring. It does not include
+          further voice reps. Nothing on the free plan expires and no card is required to
+          keep it.
         </p>
         <p>
-          Subscriptions renew each month until cancelled. Cancelling stops the next renewal and
-          leaves your access open until the end of the period you have already paid for; it
-          deletes nothing. Ask us within fourteen days of a charge and we will refund it.
+          Payment is handled by our merchant of record, who is the seller of record for the
+          transaction and who collects and remits any VAT or sales tax due where you live.
+          Their name, not ours, appears on your statement, and their terms apply to the
+          transaction itself.
+        </p>
+        <p>
+          A paid plan starts with a free trial of {TRIAL_DAYS} days. Starting it requires a
+          valid payment card, which is authorised at the start of the trial and charged for
+          the first month on the day the trial ends, unless you cancel before then. We will
+          email you before that first charge, and the date is shown on your subscription
+          screen for the whole of the trial. Cancelling during the trial costs nothing and you
+          are not charged at all. One trial per account.
+        </p>
+        <p>
+          After the trial, subscriptions renew each month at the price shown when you
+          subscribed, until cancelled. You can cancel at any time from the subscription screen
+          in your account, without contacting us. Cancelling stops the next renewal and leaves
+          your access open until the end of the period you have already paid for; it deletes
+          nothing, and the account returns to the free plan with your history, your streak and
+          your field log intact. Ask us within fourteen days of a charge and we will refund it.
         </p>
         <p>
           If a price changes, it changes for you at your next renewal and only after we have
-          told you by email first.
+          told you by email first. If you subscribed at a launch price, you keep it for as long
+          as your subscription runs without a break.
         </p>
       </Clause>
 

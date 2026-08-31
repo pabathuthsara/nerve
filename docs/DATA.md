@@ -24,7 +24,7 @@ eleventh anything.
 | `scores` | graded rep | Six sub-scores plus the deterministic audit trail |
 | `persona_memory` | user × character | The one-line callback on return, filtered before it is stored |
 | `usage_ledger` | charge | Append-only. The source of truth for metering |
-| `entitlements` | user | Plan and daily quota. **Read policy and nothing else** |
+| `entitlements` | user | Plan, daily quota and the one-off sign-up rep. **Read policy and nothing else** |
 | `streaks` | user | Days trained in a row. A rep counts; so does a logged ask |
 | `field_challenges` | challenge | Content. Hand-written, reviewed, never generated (§09) |
 | `field_assignments` | user × day | The one challenge a day, and the anxiety predicted before it |
@@ -33,7 +33,7 @@ eleventh anything.
 | `unlocks` | user × unlock | When we first told them. What is unlocked stays derived. Kinds: level, tier, persona, technique, milestone |
 | `difficulty_offsets` | user × level | Per-user difficulty adjustment. Read-only to its owner; the downward direction is never announced (§08, §12) |
 | `share_cards` | user × card | Shareable artefacts. One owner-read policy and **no anonymous policy** — the public page resolves the token with the service role |
-| `subscriptions` | user | Mirror of the merchant of record. Webhooks write it |
+| `subscriptions` | user | Mirror of the merchant of record. `/api/webhooks/creem` writes it, service role only; `npm run db:billing` |
 | `weekly_reviews` | user × week | Generated Sunday, stored because it is about that week |
 | `safety_events` | incident | Boundary hits, distress flags, moderation, user reports |
 | `interview_setups` | user | Role, JD, CV pointer, custom questions (M4) |
@@ -49,6 +49,46 @@ with the history it summarises, so the function wins every time they differ.
 Every table §13 names now exists. The two that differ from the spec's list do so
 on purpose: `streaks` counts training days rather than only asks, and there is
 no separate `unlocks` source of truth — see below.
+
+### `entitlements.reps_per_day = 0` is the voice lock (31 Aug)
+
+This is a semantics change rather than a schema one, and it is worth stating
+plainly because the column now carries a product decision rather than a number.
+
+**Free grants zero voice reps a day.** Not one, zero. `consumeRep` and
+`mayOpenSession` have always refused at zero, so no gate was added anywhere in
+the application layer — the lock is this column and only this column, which is
+also why it cannot be bypassed by a screen that forgot to check. The default on
+the column moved to 0 with it, so the sign-up trigger creates voice-less
+accounts.
+
+**`onboarding_rep_used_at` is the one exception, and it is once per account.**
+Free is not voice-*less* on day one: every account gets a single voice rep
+during sign-up, against the character authored to be won, so that nobody is
+asked to decide about a voice product they have never heard. It is a timestamp
+rather than a boolean because "when" is worth having when an account shows one
+more rep in the ledger than its plan allows.
+
+It replaces the day-one grant of three reps, which keyed off
+`entitlements.created_at` and the account's local day. A once-ever grant cannot
+be a date comparison: somebody who abandons onboarding on Tuesday and resumes on
+Thursday must get the rep they never spent, and somebody who spent it must not
+get another by restarting the run. The stamp answers both. It sits on
+`entitlements` for the same reason everything else here does — read policy, no
+write policy, service role only — so a user cannot clear their own mark.
+
+The grant is **additive and spent last**: the allowance is the plan's number
+plus one while the stamp is null, and anything at or past the plan's number is
+coming out of the grant. That ordering is what lets `refundRep` decide from the
+counter alone whether the rep it is handing back was the one-off one — which it
+must, because a free account's only voice rep must not be lost to a muted
+microphone. `lib/data/allowance.ts` is the whole rule, pure and tested, and
+`npm run db:rep` drives it against the real table.
+
+The refusal carries a `kind`. "You are out of reps for today" is true for a Pro
+account at three of three and a lie to a free account whose reps never reset,
+so `consumeRep`, `mayOpenSession` and `/api/voice/token` all pass `daily` or
+`upgrade` through to the sheet rather than one string the UI has to interpret.
 
 ## The spend ceiling (B9, §14, §18)
 
@@ -529,17 +569,29 @@ npm run db:verify        # prove RLS holds, with two real users
 npm run db:rep           # drive a whole rep lifecycle, without a microphone
 npm run db:field         # the field loop: assign, accept, log, streak, counters, milestones, the T4 gate
 npm run db:spend         # the spend ceiling: rate limit, daily cap, both kill switches
+npm run db:billing       # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
 npm run db:types         # regenerate lib/db/types.ts from the live schema
-npm run db:plan -- you@example.com pro   # grant a plan (free 1/day, pro 3, elite 6)
+npm run db:plan -- you@example.com pro   # grant a plan (free 0/day, pro 3, elite 6)
 npm run db:repair-wins -- --dry          # wins the old outcome rule invented; drop --dry to fix
 npm run grade:collect                   # stored transcripts, in calibration-fixture shape
 npm run grade:calibrate                 # the §17 gate: drift on the deployed /api/grade
 ```
 
 `db:plan` exists because `entitlements` has no write path a user can reach, and
-a fresh account is free — which is one rep a day, and not enough to build
-against. It is the same reason there is no UI for it and should not be one
-until a merchant of record is wired (§14).
+a fresh account is free — which since 31 August is **no** voice reps at all past
+the sign-up one, so a dev account that needs a microphone needs this script. It
+reads its rep counts from `lib/site/plans.ts` rather than keeping its own copy. It stays the manual override now that the webhook exists: an account
+that has to be fixed by hand at 2am should not need a merchant of record to be
+reachable.
+
+`db:billing` drives `lib/billing/apply.ts` over the real tables — a purchase
+grants the plan and writes the mirror, an upgrade moves both, `past_due` keeps
+access while the provider retries, expiry and a dispute land back on free, a
+redelivered event changes nothing, and a *late* retry cannot resurrect a plan a
+later event revoked. It finishes by signing in as the user and proving they can
+read their subscription and cannot write it (rule 9). It creates its own user
+and deletes it, like the others. The one thing it cannot prove is a real
+delivery from Creem: that needs a public URL and a registered endpoint.
 
 `db:types` needs `SUPABASE_PROJECT_REF` and a logged-in Supabase CLI. A stale
 `lib/db/types.ts` compiles cleanly and lies at runtime, which is the worst

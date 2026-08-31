@@ -63,7 +63,7 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
               })}
             </nav>
             <div className="rail-bottom">
-              {loading ? <Skeleton height={32} /> : user ? <RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} /> : null}
+              {loading ? <Skeleton height={32} /> : user ? <RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} locked={user.voiceLocked} /> : null}
               <Link className="account-row" href="/profile">
                 <Avatar name={user?.displayName ?? 'N'} size={32} />
                 <span style={{ minWidth: 0 }}><strong style={{ display: 'block', color: 'var(--text)', fontWeight: 500 }}>{user?.displayName ?? 'Account'}</strong><span className="label">{user?.plan ?? 'free'} plan</span></span>
@@ -86,7 +86,16 @@ export function TrackSwitcher({ track, onChange, compact = false }: { track: Tra
   return <div className="track-switcher" role="group" style={compact ? { width: 142 } : undefined} aria-label="Training track"><button aria-pressed={track === 'dating'} onClick={() => onChange('dating')}>Dating</button><button aria-pressed={track === 'interview'} onClick={() => onChange('interview')}>Interview</button></div>
 }
 
-export function RepsRemaining({ count, resetAt }: { count: number; resetAt: string }) {
+/**
+ * The rep counter in the chrome.
+ *
+ * Three states, not two. A count is a count; zero on a plan that HAS voice is a
+ * countdown to the reset, and that is honest because the reset happens. Zero on
+ * a plan with no voice at all is neither — nothing resets, so a countdown would
+ * be the pill lying every minute, on every screen. That case says what is
+ * actually true and points at the one screen that can change it.
+ */
+export function RepsRemaining({ count, resetAt, locked = false }: { count: number; resetAt: string; locked?: boolean }) {
   const [remaining, setRemaining] = useState('04:12')
   useEffect(() => {
     const update = () => {
@@ -99,6 +108,9 @@ export function RepsRemaining({ count, resetAt }: { count: number; resetAt: stri
     const timer = window.setInterval(update, 60_000)
     return () => window.clearInterval(timer)
   }, [resetAt])
+  if (locked) {
+    return <Link className="reps-pill reps-pill--locked" href="/profile/subscription">Voice on Pro</Link>
+  }
   return <span className={`reps-pill${count === 0 ? ' amber' : ''}`}>{count > 0 ? <><strong>{count}</strong> reps left</> : <>Resets {remaining}</>}</span>
 }
 

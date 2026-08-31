@@ -23,7 +23,7 @@ import { nextTierRequirement, unlockedTier } from '@/lib/field/assignment'
 import { milestoneFor, type Milestone } from '@/lib/field/milestones'
 import { LIBRARY_READ_PREFIX, MEMORY_BEAT_FLAG, planWaitlistFlag } from './ui-flags'
 import { localDay, nextLocalMidnight } from './day'
-import { isDayOne, repsAllowedToday } from './allowance'
+import { repsAllowedToday, signupRepAvailable, voicelessPlan } from './allowance'
 import { qualifyingByLevel, uiBand, uiLevel, uiWarmth, unlockRequirement, unlockedLevels, wonFromOutcome } from './progression'
 import { toScorecard, type StoredMetricScore, type StoredWarmthEvent } from './scorecard'
 import { RANKS, type Rank } from './rank'
@@ -44,6 +44,7 @@ import type {
   ProgressPoint,
   Scorecard,
   SessionSummary,
+  SubscriptionState,
   Track,
   TranscriptTurn,
   UserState,
@@ -85,7 +86,7 @@ export async function fetchUserState(): Promise<UserState | null> {
       .maybeSingle(),
     supabase
       .from('entitlements')
-      .select('plan, reps_per_day, reps_used_today, reps_day, renews_at, created_at')
+      .select('plan, reps_per_day, reps_used_today, reps_day, renews_at, onboarding_rep_used_at')
       .eq('user_id', user.id)
       .maybeSingle(),
     supabase.from('streaks').select('current').eq('user_id', user.id).maybeSingle(),
@@ -97,12 +98,16 @@ export async function fetchUserState(): Promise<UserState | null> {
   // simply not this day's counter, so the first read after midnight rolls it
   // without anything having had to run at midnight.
   const usedToday = entitlement && entitlement.reps_day === today ? entitlement.reps_used_today : 0
-  // Not `reps_per_day`. Day one is three reps on every plan, and the pill, the
-  // brief screen's gate and the Server Action that spends the counter all have
-  // to be reading the same number — see `lib/data/allowance.ts`.
-  const createdOn = entitlement?.created_at ? localDay(new Date(entitlement.created_at), timezone) : null
+  // Not `reps_per_day`. The sign-up rep sits on top of the plan's number, and
+  // the pill, the brief screen's gate and the Server Action that spends the
+  // counter all have to be reading the same figure — see
+  // `lib/data/allowance.ts`.
+  const signupRep = signupRepAvailable(entitlement?.onboarding_rep_used_at ?? null)
   const perDay = entitlement
-    ? repsAllowedToday({ repsPerDay: entitlement.reps_per_day, createdOn, today })
+    ? repsAllowedToday({
+        repsPerDay: entitlement.reps_per_day,
+        onboardingRepUsedAt: entitlement.onboarding_rep_used_at,
+      })
     : 0
   const plan = entitlement && isPlan(entitlement.plan) ? entitlement.plan : 'free'
   const activeTrack = profile && isTrack(profile.active_track) ? profile.active_track : 'dating'
@@ -125,7 +130,12 @@ export async function fetchUserState(): Promise<UserState | null> {
     repsRemainingToday: Math.max(0, perDay - usedToday),
     repsPerDay: perDay,
     repsResetAt: nextLocalMidnight(new Date(), timezone).toISOString(),
-    dayOne: isDayOne(createdOn, today),
+    signupRepAvailable: signupRep,
+    // The state the upgrade screen exists for: no voice on the plan, and the
+    // one free rep already spent. Derived here rather than in each screen so
+    // the pill, the brief gate and the refusal sheet cannot disagree about
+    // whether this account can open a microphone at all.
+    voiceLocked: voicelessPlan(entitlement?.reps_per_day ?? 0) && !signupRep,
     streakDays: streak?.current ?? 0,
     plan,
     trainingWheels: profile?.training_wheels ?? true,
@@ -599,6 +609,45 @@ export async function fetchPersonaMemory(slug: string): Promise<PersonaMemory | 
 }
 
 /** Which paid plans this user has already asked to be told about. */
+/**
+ * The billing mirror, for the subscription screen.
+ *
+ * Read under RLS from the browser like every other hook here — `subscriptions`
+ * grants read-own and no write policy at all, so this is a read of a table the
+ * user can look at and cannot touch (rule 9).
+ *
+ * A row whose `status` or `plan` is not one this build understands is treated
+ * as no row rather than as an error. The provider's vocabulary is normalised at
+ * the webhook (`lib/billing/events.ts`) and anything that reaches the column
+ * outside the check constraint is a row written by a version of this app that
+ * no longer exists — not something to fail a page load over.
+ */
+export async function fetchSubscription(): Promise<SubscriptionState | null> {
+  const supabase = supabaseBrowser()
+  const user = await currentUser()
+  if (!user) return null
+
+  const { data } = await supabase
+    .from('subscriptions')
+    .select('plan, status, current_period_end, cancel_at_period_end')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (!data || !isPlan(data.plan) || !isSubscriptionStatus(data.status)) return null
+
+  return {
+    plan: data.plan,
+    status: data.status,
+    currentPeriodEnd: data.current_period_end,
+    cancelAtPeriodEnd: data.cancel_at_period_end,
+  }
+}
+
+function isSubscriptionStatus(value: string): value is SubscriptionState['status'] {
+  return value === 'trialing' || value === 'active' || value === 'past_due'
+    || value === 'canceled' || value === 'incomplete'
+}
+
 export async function fetchPlanWaitlist(): Promise<string[]> {
   const supabase = supabaseBrowser()
   const user = await currentUser()

@@ -10,15 +10,29 @@
  * service key.
  *
  * It is also the reason building this is possible at all: a fresh account is
- * free, and free is one rep a day.
+ * free, and free has no voice reps at all since they moved behind Pro — so a
+ * dev account that needs a microphone needs this script.
  */
 
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types'
+import { PUBLIC_PLANS } from '@/lib/site/plans'
+import type { Plan as PlanId } from '@/lib/data/types'
 import { loadEnvLocal } from './env'
 
-const PLANS = { free: 1, pro: 3, elite: 6 } as const
-type Plan = keyof typeof PLANS
+/**
+ * The rep counts, read from the authored plan record rather than repeated.
+ *
+ * `lib/site/plans.ts` is what `/pricing` and `/profile/subscription` quote and
+ * what `applyBillingEvent` writes when a webhook lands. A fourth copy of the
+ * number here is a way for a dev account to be granted a quota the product does
+ * not sell — and free is 0 now, which is exactly the kind of change a stale
+ * literal would have swallowed.
+ */
+const PLANS = Object.fromEntries(
+  PUBLIC_PLANS.map((plan) => [plan.id, plan.repsPerDay]),
+) as Record<PlanId, number>
+type Plan = PlanId
 
 async function main(): Promise<void> {
   await loadEnvLocal()

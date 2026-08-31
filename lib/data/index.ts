@@ -38,6 +38,7 @@ import {
   fetchScorecard,
   fetchSession,
   fetchSessions,
+  fetchSubscription,
   fetchTranscript,
   fetchUserState,
   fetchProgress,
@@ -60,6 +61,7 @@ import type {
   PersonaProgress,
   Scorecard,
   SessionSummary,
+  SubscriptionState,
   TranscriptTurn,
   UserState,
   WeeklyReview,
@@ -275,6 +277,18 @@ export function useLifetimeStats(): Loadable<LifetimeStats | null> {
 /** Paid plans this user has already asked to be told about. */
 export function usePlanWaitlist(): Loadable<string[]> {
   return useAsync(fetchPlanWaitlist, NO_WAITLIST, [])
+}
+
+/**
+ * What the merchant of record says was bought.
+ *
+ * Separate from `useUserState`, which reads what the app enforces. The
+ * subscription screen is the one place both answers are on screen at once, and
+ * it is the only place that should be: everywhere else, the enforced plan is
+ * the one that matters.
+ */
+export function useSubscription(): Loadable<SubscriptionState | null> {
+  return useAsync(fetchSubscription, null, [])
 }
 
 export function usePersonaProgress(personaId?: string): Loadable<PersonaProgress[] | PersonaProgress | null> {

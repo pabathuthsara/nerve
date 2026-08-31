@@ -71,7 +71,14 @@ export async function POST(request: Request): Promise<Response> {
   if (auth.userId !== 'internal') {
     const allowed = await mayOpenSession(auth.userId)
     if (!allowed.ok) {
-      return NextResponse.json({ error: allowed.message ?? 'No reps left today.' }, { status: 429 })
+      // `refusal` travels with the message so the browser can tell a Pro
+      // account that has run out for today from a free account that has no
+      // voice at all. Those are the same status code and entirely different
+      // screens — see `voiceRefusal` in `lib/data/allowance.ts`.
+      return NextResponse.json(
+        { error: allowed.message ?? 'No reps left today.', refusal: allowed.refusal ?? 'daily' },
+        { status: 429 },
+      )
     }
   }
 

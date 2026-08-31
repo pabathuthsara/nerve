@@ -84,10 +84,18 @@ describe('impulse response', () => {
   it('normalises so wet mix means the same thing across scenes', () => {
     for (const profile of [BOOKSHOP.reverb, BAR.reverb]) {
       const { left, right } = buildImpulseResponse(profile, SR, seeded(9))
-      const peak = Math.max(
-        ...Array.from(left, Math.abs),
-        ...Array.from(right, Math.abs),
-      )
+      // Reduced rather than spread into `Math.max`. A 1.1s tail at 48kHz is
+      // ~53,000 samples per channel, and spreading that many arguments blows
+      // the call stack on some engines — which is a property of the runner, not
+      // of the impulse response, and it failed the assertion for the wrong
+      // reason. Node 22 is one of the engines it fails on.
+      let peak = 0
+      for (const channel of [left, right]) {
+        for (const sample of channel) {
+          const magnitude = Math.abs(sample)
+          if (magnitude > peak) peak = magnitude
+        }
+      }
       expect(peak).toBeGreaterThan(0.5)
       expect(peak).toBeLessThanOrEqual(0.9001)
     }
