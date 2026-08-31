@@ -43,6 +43,11 @@ day. See [Before we submit](#before-we-submit).
 >
 > Everything in §4's table below was re-checked the same way. The rows that
 > moved are marked.
+>
+> **Deployed and re-audited, 30 August (`f137faf`).** All three are now fixed on
+> the live site. The reviewer walk below was run against `hellonerve.com` in a
+> browser, not against the repo: **21 checks pass, 0 fail.** The site is ready
+> to be looked at. What is left is not on the site — see §5.5.
 
 ---
 
@@ -126,10 +131,10 @@ site as an application document, not marketing.
 | Acceptable use / safety | `/legal/safety` | **Written** 27 Aug, rewritten 28 Aug. Seven clauses. The PG-13 position stated in full, and every control on it now described in the present tense because it exists |
 | Automated content moderation | Both conversation streams | **Built** 28 Aug (B3). Decline in frame, then the rep ends; content involving minors ends it on sight with no in-character answer. Every decision recorded to `safety_events` |
 | Refund and cancellation terms | Terms clause 07 | **Ready.** Renews monthly, cancelling stops the next renewal, fourteen days to ask for a refund |
-| An age statement | Terms clause 02, every footer, and `/signup` | **Enforced** 28 Aug, and made the first step of sign-up 30 Aug. A date of birth before any other field, checked on the server before the account is created; Google sign-ups and older accounts are asked at `/onboarding/age` before anything else opens |
+| An age statement | Terms clause 02, every footer, and `/signup` | **Enforced** 28 Aug, and made the first step of sign-up 30 Aug. A date of birth before any other field, checked on the server before the account is created. **Strengthened 30 Aug:** Google sign-in is no longer offered — it was on both doors and the provider was never configured — so there is now exactly one way to create an account and it collects the date first. `/onboarding/age` stays for accounts that predate the gate, and still works if §04 reopens OAuth |
 | A way for a user to report a problem | Every rep's result, scorecard and transcript screen | **Built** 28 Aug (B3). Goes to `safety_events` with the session attached |
 | A working support address | `support@hellonerve.com` | **Fixed in the tree, 30 Aug; not yet deployed.** Was `support@nerve.training`, a domain with no DNS at all — no A record, no MX — so every message to the address in the footer, in Settings and in all three legal pages bounced. Now a real mailbox on the domain the product runs on, with a catch-all behind it. `SUPPORT_EMAIL` in `components/site/site-chrome.tsx` is the single record; `profile-screens.tsx` had spelled it out instead, which is how three of the four copies went stale together. **Ships with §5.3** |
-| A domain that can send as well as receive | `hellonerve.com` | **Wired 30 Aug.** Resend verified on `send.hellonerve.com` (SPF and bounce MX on the subdomain, DKIM at `resend._domainkey`), so the root MX and root SPF that carry *receiving* are untouched — no second SPF record, which is the usual way this breaks. DMARC published at `p=none`. Supabase Auth sends through Resend rather than its own sender, which is the receiving half of `LAUNCH-GAP.md` B5. **Still owed:** the Private Email DKIM record (`default._domainkey`) is enabled in the panel but not published, so replies sent from the mailbox are SPF-signed and not DKIM-signed |
+| A domain that can send as well as receive | `hellonerve.com` | **Wired 30 Aug.** Resend verified on `send.hellonerve.com` (SPF and bounce MX on the subdomain, DKIM at `resend._domainkey`), so the root MX and root SPF that carry *receiving* are untouched — no second SPF record, which is the usual way this breaks. DMARC published at `p=none`. Supabase Auth sends through Resend rather than its own sender, which is the receiving half of `LAUNCH-GAP.md` B5. Both sending paths are signed: `resend._domainkey` for app mail and `privateemail._domainkey` for mail sent from the mailbox — including replies to a reviewer. Namecheap Private Email publishes under the `privateemail` selector, not `default`, which is worth knowing before concluding it is missing |
 | A company to pay | — | **Open.** We trade as "Nerve". The entity that signs and the bank account that receives payout have not been recorded anywhere in this repo |
 | The site actually serving all of this | `hellonerve.com` | **Live and public, 30 Aug.** Deployment protection is off, so a reviewer reaches it without a Vercel login; all six §11 routes return 200; `robots.txt` and `sitemap.xml` resolve against the real origin. **But it serves the last commit, not the working tree** — see the note at the top and §5.4 |
 | A recorded demo that is not a mock | `/` | **Ready, 30 Aug.** The hero manifest is committed and deployed, and the stamp on the live page names the models that actually spoke |
@@ -176,7 +181,32 @@ the domain is held and that mail sent to that address arrives somewhere a person
 reads. B5 records that there is no custom sending domain, no SPF or DKIM, and no
 transactional provider — that is about mail we *send*, but it is the same domain.
 
-### 5.3 Ship what is already written
+### 5.3 Ship what is already written · **done 30 Aug**
+
+Everything below shipped in `f137faf` and was verified on `hellonerve.com`:
+
+| Checked on the live site | Result |
+|---|---|
+| Hero plays a real recorded rep | ✅ stamp reads *recorded · her gpt-realtime, unscripted · his gpt-4o-mini-tts, read* |
+| §07 scoring law stated above the fold | ✅ |
+| No "get her number" / seduction framing anywhere on the landing | ✅ |
+| States what the product is *not* | ✅ |
+| Footer carries 18+, training-not-therapy, PG-13, live support address | ✅ all four |
+| Date of birth is step one of sign-up, on its own screen | ✅ |
+| No email field until the age is answered | ✅ |
+| Duplicated landing pitch removed from the auth doors | ✅ |
+| An under-18 date is refused at the door | ✅ *"Nerve is 18+. Come back when you are."* |
+| All three legal pages, contacts all on the live domain | ✅ |
+| Sri Lankan governing law and jurisdiction stated | ✅ |
+| Prices public, checkout stated as not yet open | ✅ $24 / $39, "Opens soon" |
+| No horizontal overflow on a 390px phone | ✅ |
+| No JS errors or 4xx/5xx across the whole walk | ✅ |
+| Deployment protection off — a reviewer needs no login | ✅ |
+| **The §16.4 gate is reachable by a dateless account** | ✅ four navigations, no loop, gate renders (§5.4 closed) |
+| Only one way in, and it asks for the date first | ✅ Google removed 30 Aug — no unconfigured provider button on a public door |
+| Public GitHub repo carries no committed secrets, full history scanned | ✅ only `.env.example` placeholders |
+
+### 5.3b The old §5.3, kept as the record
 
 The two paragraphs above are founder tasks. This one is not, and it is the
 cheapest item on the page: **everything this document cites as evidence from 28
@@ -189,9 +219,14 @@ Nothing needs to be built. It needs to be committed, pushed and verified on the
 deployed URL — and this page needs to stop describing a build that is only on
 one laptop. A git-linked deploy builds the pushed commit, not the working tree.
 
-### 5.4 The age gate cannot be reached by a Google account
+### 5.4 The age gate cannot be reached by a Google account · **fixed and verified 30 Aug**
 
-Found on 30 August and **live in production right now.** The route guard sends
+Re-tested on `hellonerve.com` with an account created without a date of birth —
+the exact shape a Google sign-up produces. Trail:
+`/login → /login → / → /onboarding/age`, settled, gate rendered. Four
+navigations and no loop.
+
+**What it was.** Found on 30 August and live until `f137faf`. The route guard sends
 an account with no date of birth to `/onboarding/age`, and then the rule below
 it sends an unfinished run to its resume step — which is `/onboarding/track`,
 which has no date either, which sends it back. An infinite redirect.
@@ -264,5 +299,7 @@ provider and when.
 | 27 Aug 2026 | Public site and three legal documents shipped (B1, B4). The application stopped being blocked by anything in this repo |
 | 28 Aug 2026 | This document created. Not yet submitted to any provider |
 | 28 Aug 2026 | Safety layer shipped (B3): moderation on both streams, the age gate at sign-up, the boundary sequence, the distress path, the report control. The three legal pages rewritten from future tense to present tense to match. **The last build-task blocker on submission is cleared; what remains is a mailbox and an entity** |
+| 30 Aug 2026 | Google sign-in removed from both doors. The provider was never configured, so the button reached Supabase, was told the provider was disabled, and put an error under the control that looked like the fastest way in — on the page a merchant-of-record reviewer opens first. One account-creation path now, and it collects the date of birth before anything else. `/auth/callback` is left in place so §04 can reopen it as configuration rather than code; `/onboarding/age` stays for accounts that predate the gate. The privacy page no longer names Google as a sign-in method |
+| 30 Aug 2026 | `f137faf` deployed. Live reviewer audit run against `hellonerve.com` in a browser: 21 checks pass, 0 fail — hero, scoring law, positioning, footer commitments, two-step age gate, under-18 refusal, three legal pages, pricing, mobile layout, console, and the Google-shaped account reaching the §16.4 gate without looping. Public repo history scanned for secrets, clean. §5.3 and §5.4 closed. **The site is ready to be reviewed; the remaining blocker is the entity and payout account** |
 | 30 Aug 2026 | Mail fixed end to end: `support@hellonerve.com` created with a catch-all, Resend verified on `send.hellonerve.com`, DMARC published at `p=none`, Supabase Auth moved onto Resend, and `SUPPORT_EMAIL` pointed at the live domain in one place. §5.2 closed. Not deployed — it goes out with §5.3 |
 | 30 Aug 2026 | Every claim on this page re-checked against `hellonerve.com` rather than against the repo. `support@nerve.training` found to have no DNS at all; production found to be running the last commit while 28–30 Aug's work sits uncommitted, so §3's two-step age gate is not what a reviewer sees; the Google sign-up path found to loop before it can reach the §16.4 gate. The hero rep, which notes elsewhere still called owed, found recorded and live. Still not submitted to any provider |

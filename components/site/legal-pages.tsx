@@ -237,7 +237,7 @@ export function PrivacyDocument() {
 
       <Clause n="01" title="What we collect">
         <ul>
-          <li><strong>Account.</strong> Your email address, your display name, your date of birth, and a password hash or the fact that you signed in with Google. We never see your Google password. The date of birth is the age check and nothing else — it is not used to personalise anything and it is never shown to a character.</li>
+          <li><strong>Account.</strong> Your email address, your display name, your date of birth, and a hash of your password — never the password itself. The date of birth is the age check and nothing else: it is not used to personalise anything and it is never shown to a character.</li>
           <li><strong>Setup answers.</strong> What you said you are here for, the first name you would like characters to use, and your microphone and audio-device preferences — including a measurement of how long you pause mid-sentence, so a character waits for you to finish rather than answering a half-thought.</li>
           <li><strong>Sessions.</strong> The audio of your reps, the transcript of both sides, the moment-to-moment interest readings the character reacted to, your score and the evidence behind it, and one short line of what a character carries into the next encounter.</li>
           <li><strong>Field log.</strong> Which exercise you were given, whether you did it, how nervous you expected to be and how nervous you were, and anything you chose to write down.</li>

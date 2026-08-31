@@ -460,10 +460,6 @@ button { color: inherit; }
 .auth-title { margin-bottom: 28px; }
 .auth-intro { max-width: 360px; margin: -12px 0 24px; color: var(--text-dim); font-size: 15px; }
 .auth-form { display: grid; gap: 16px; }
-.oauth-button { width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid var(--line-bright); border-radius: 2px; background: transparent; color: var(--text); cursor: pointer; }
-.oauth-button:hover { background: var(--surface); }
-.google-mark { display: grid; width: 20px; height: 20px; place-items: center; border: 1px solid var(--line-bright); border-radius: 2px; font-family: var(--font-sans), sans-serif; font-weight: 500; }
-.auth-or { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin: 22px 0; }
 .auth-inline { min-height: 20px; display: flex; justify-content: space-between; margin-top: -10px; font-size: 12px; }
 .volt-link { color: var(--volt); }
 .volt-link:hover { text-decoration: underline; text-underline-offset: 4px; }

@@ -274,10 +274,14 @@ uses was already there.
   "run it back", and a list of real helplines authored in
   `lib/safety/resources.ts` rather than written in a component.
 - **Age gate at sign-up.** A date of birth on the sign-up form, checked by
-  `checkAge` on the server *before* the account is created. Google's button has
-  no fields and older accounts have no date, so both are caught by
-  `/onboarding/age`, which the route guard puts ahead of everything including a
-  finished onboarding.
+  `checkAge` on the server *before* the account is created. Accounts that
+  predate the gate have no date, so they are caught by `/onboarding/age`, which
+  the route guard puts ahead of everything including a finished onboarding.
+  **Narrowed 30 Aug:** Google's button had no fields on it and was the other way
+  to reach the product without a date. It is gone — the provider was never
+  configured, so it only ever produced an error — which leaves one
+  account-creation path, and it asks for the date first. The gate stays, and is
+  written so that reopening OAuth changes nothing about it.
   **Corrected 30 Aug**: that screen was unreachable for exactly the accounts it
   exists for. The guard exempted every onboarding route *except* the age gate
   from the rule that sends an unfinished run to its resume step — deliberately,
@@ -373,11 +377,15 @@ this is broken. DMARC is published at `p=none`. Supabase Auth sends through
 Resend now instead of its own sender, which was the hourly limit this entry was
 about. `SUPPORT_EMAIL` is one constant and every surface imports it.
 
-**Still owed:** the Private Email DKIM record (`default._domainkey`) is enabled
-in the Namecheap panel and not published in DNS, so mail sent *from* the mailbox
-— a reply to a customer, or to a merchant-of-record reviewer — is SPF-signed
-and not DKIM-signed. One TXT record. And none of this is live until the tree is
-pushed (`PAYMENTS-APPROVAL.md` §5.3).
+Mail authentication is complete on both paths, verified against public
+resolvers: SPF single-record at the apex, DMARC at `p=none`,
+`resend._domainkey` for app mail and `privateemail._domainkey` (2048-bit) for
+mail sent from the mailbox. **Namecheap Private Email publishes under the
+`privateemail` selector, not `default`** — checking the wrong one is how this
+was briefly recorded as missing when it had been there all along.
+
+**Still owed:** none of this reaches a user until the tree is pushed
+(`PAYMENTS-APPROVAL.md` §5.3).
 
 **What it was.**
 `support@nerve.training` is printed in the footer, in Settings, and in all three
@@ -519,8 +527,9 @@ Found by the Supabase security advisor while clearing B9, unrelated to it.
 Supabase Auth can check new passwords against HaveIBeenPwned and refuse the
 compromised ones; the setting is off.
 
-It matters here because of D1: the build ships password sign-in alongside OTP
-and Google, against a spec line that says no password fields anywhere. As long
+It matters here because of D1: the build ships password sign-in alongside OTP,
+against a spec line that says no password fields anywhere — and since Google
+came off on 30 Aug, a password is now the only way in. As long
 as passwords exist, a beta user reusing a breached one is an account takeover
 that reaches a payment-bearing profile.
 
@@ -1265,7 +1274,7 @@ somebody has to say which is right.
 
 | # | Spec says | Build does | Note |
 |---|---|---|---|
-| D1 | "No password fields anywhere" (§04, §11) | Password sign-up and sign-in, alongside OTP and Google | The frontend brief asked for passwords. Either the spec line goes, or the screens do |
+| D1 | "No password fields anywhere" (§04, §11) | Password sign-up and sign-in, alongside OTP. Google removed 30 Aug — never configured | The frontend brief asked for passwords. Either the spec line goes, or the screens do |
 | D2 | Free = 3 reps ≈ 9 min, then paywall; $19 / 60 min and $39 / 150 min | Free = 1 rep/day; $24 / 3 a day; $39 / 6 a day | Three inconsistencies at once: price, unit and generosity. The reps-per-day framing is better than minutes (§14 agrees) but the numbers need choosing. **Now costed** — see D2a. **Now also public (27 Aug):** `/pricing` quotes the built numbers, from `lib/site/plans.ts`, which is the single record both it and `/profile/subscription` read. Changing the answer is one file, but it is a price on a public page now rather than a number in a component — decide before checkout opens |
 | D3 | Bill per second, minutes framed as reps | Both: an append-only per-second ledger *and* a reps/day counter that actually gates | Fine as a design, but only one is enforced. If a rep can run 2 minutes, reps/day and minutes are interchangeable — say so once, in the spec |
 | ~~D4~~ | Streaks run on asks made, never on asks accepted (§09) | ~~Streak counts days with a voice rep~~ | **Resolved 23 Aug.** A logged ask calls `recordTrainingDay`, so the field carries the day when the voice quota is gone (§14), and `npm run db:field` asserts a streak starting with no rep anywhere near it |
@@ -1465,7 +1474,7 @@ So the list above is read in proportion.
 - **Two content libraries authored and seeded**: 24 field challenges across
   four tiers, each reviewed and stamped, and 14 library cards covering the six
   sub-scores, five settings, the ladder, recovery and the exit.
-- **Auth** end to end: password, OTP, Google, reset, and a route guard that
+- **Auth** end to end: password, OTP, reset, and a route guard that
   reads the session and the profile with no development bypass.
 - **Metering**: quota checked where money is committed, spent on connect,
   resumable across a reload, and never writable by the user.

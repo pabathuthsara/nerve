@@ -1,7 +1,7 @@
 'use server'
 
 /**
- * Email OTP (§04). Google is deliberately not wired yet — it needs OAuth
+ * Email and password (§04). Google is deliberately not offered — it needs OAuth
  * credentials created in the Google Cloud console, and /auth/callback already
  * handles the code exchange, so adding it is configuration rather than code.
  *
@@ -276,25 +276,6 @@ export async function setPassword(_prev: AuthResult, form: FormData): Promise<Au
   const { error } = await supabase.auth.updateUser({ password })
   if (error) return { ok: false, message: error.message }
   return { ok: true, message: null }
-}
-
-/**
- * Google. The exchange already lived at /auth/callback; this is the button
- * that points at it. Everything else is configuration in the Google console
- * and the Supabase dashboard, and an unconfigured provider says so here
- * rather than failing silently at the redirect.
- */
-export async function signInWithGoogle(): Promise<AuthResult> {
-  const supabase = await supabaseServer()
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: `${await siteOrigin()}/auth/callback?next=/` },
-  })
-
-  if (error || !data.url) {
-    return { ok: false, message: error?.message ?? 'Google sign-in is not available right now.' }
-  }
-  redirect(data.url)
 }
 
 /** Another confirmation email, for the "check your inbox" screen. */

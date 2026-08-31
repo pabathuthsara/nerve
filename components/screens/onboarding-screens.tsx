@@ -305,9 +305,10 @@ function OnboardingProgress({ step }: { step: number }) {
 /**
  * The age gate for the doors that could not carry one (§16.4).
  *
- * Google sign-in has no fields, and every account created before this shipped
- * has no date on file. The guard sends both here and lets nothing else render
- * until this is answered.
+ * Every account created before this shipped has no date on file, and the guard
+ * sends them here and lets nothing else render until it is answered. Google
+ * sign-in was the other way in without a date; that door is closed for now,
+ * and this step is written so that reopening it changes nothing here.
  *
  * A refusal is final and says so once. There is no second attempt offered, no
  * hint about what date would have worked, and no lecture — a screen that

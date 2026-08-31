@@ -97,9 +97,10 @@ export async function saveDisplayName(name: string): Promise<SaveResult> {
 /**
  * The age gate, for the accounts the sign-up form could not ask (§16.4).
  *
- * Google's button has no fields on it, and every account created before this
- * shipped has no date on file either. Both land on `/onboarding/age`, and this
- * is what that step writes.
+ * Every account created before this shipped has no date on file. Google used
+ * to be the other case — its button had no fields on it — and that door is
+ * closed for now, though the gate has to keep working if §04 reopens it. Both
+ * land on `/onboarding/age`, and this is what that step writes.
  *
  * `age_confirmed_at` is stamped here, after `checkAge` has agreed with the
  * date — never from anything the form posted. The date itself is self-declared

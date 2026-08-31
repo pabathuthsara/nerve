@@ -59,10 +59,15 @@ export async function enforceFrontendGuard(path: string): Promise<GuardedProfile
    *
    * The sign-up form asks and `signUpWithPassword` writes the answer, so a
    * password account arrives here already stamped and never sees this step.
-   * Two kinds of account do not: one created through Google, whose button has
-   * no fields on it, and every account that existed before the gate shipped.
-   * They are asked here, once, and nothing in the product opens until they
-   * answer — which is the difference between a gate and a form.
+   * What still does: every account created before the gate shipped. Google
+   * used to be the other case — its button had no fields on it — and that door
+   * is closed for now, which narrows who lands here without removing the need
+   * for it. They are asked once, and nothing in the product opens until they
+   * answer, which is the difference between a gate and a form.
+   *
+   * It also has to keep working if Google is ever turned on (§04): the
+   * `/auth/callback` exchange is still in place, and an OAuth account would
+   * arrive with no date exactly as it did before.
    *
    * Checked before the onboarding gate rather than folded into it, because a
    * user who finished onboarding months ago is exactly the case that has no

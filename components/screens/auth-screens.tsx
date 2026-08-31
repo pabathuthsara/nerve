@@ -1,7 +1,14 @@
 'use client'
 
 /**
- * The Arena doors. Password and Google, against Supabase.
+ * The Arena doors. Email and password, against Supabase.
+ *
+ * **Google is not offered.** The button was on both doors and the provider was
+ * never configured, so pressing it reached Supabase, got told the provider was
+ * disabled, and put an error under a control that had looked like the fastest
+ * way in. §04 still wants it; `signInWithOAuth` plus the `/auth/callback`
+ * exchange is one button and a dashboard change away, and the callback route is
+ * deliberately left in place so that stays true.
  *
  * Every form here posts to a Server Action rather than to a client-side
  * Supabase call, for one reason that matters and one that follows from it:
@@ -26,7 +33,6 @@ import {
   resendConfirmation,
   sendPasswordReset,
   setPassword,
-  signInWithGoogle,
   signInWithPassword,
   signUpWithPassword,
   type AuthResult,
@@ -65,10 +71,9 @@ function TimezoneField() {
 
 function LoginForm({ devLoginEmail }: { devLoginEmail: string | null }) {
   const [state, action, busy] = useActionState(signInWithPassword, EMPTY)
-  const [google, googleAction, googleBusy] = useActionState(async () => signInWithGoogle(), EMPTY)
   const [show, setShow] = useState(false)
-  const error = state.message ?? google.message
-  return <><AuthHeading title="Log in" /><form action={googleAction}><button className="oauth-button" type="submit" disabled={googleBusy}><span className="google-mark">G</span> {googleBusy ? 'Opening Google…' : 'Continue with Google'}</button></form><Or /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} /><div className="auth-inline"><span /><Link href="/forgot-password" className="volt-link">Forgot?</Link></div><Button type="submit" size="lg" fullWidth loading={busy}>Log in</Button></form><AuthFoot>New here? <Link href="/signup" className="volt-link">Start training</Link></AuthFoot>{devLoginEmail ? <DevDoor email={devLoginEmail} /> : null}</>
+  const error = state.message
+  return <><AuthHeading title="Log in" /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} /><div className="auth-inline"><span /><Link href="/forgot-password" className="volt-link">Forgot?</Link></div><Button type="submit" size="lg" fullWidth loading={busy}>Log in</Button></form><AuthFoot>New here? <Link href="/signup" className="volt-link">Start training</Link></AuthFoot>{devLoginEmail ? <DevDoor email={devLoginEmail} /> : null}</>
 }
 
 /**
@@ -94,12 +99,13 @@ function DevDoor({ email }: { email: string }) {
  * is a product decision on top of that rule: it makes the gate behave like a
  * gate, and it means somebody it turns away never typed a password first.
  *
- * Google sits on the second step, which means a person who chooses it there
- * has answered an age question we then hand to nobody — the OAuth redirect
- * creates the account without it and the route guard asks again at
- * `/onboarding/age`. One extra screen, for Google users only, and the gate
- * still closes. Carrying the answer across the redirect is possible and is
- * not worth the machinery.
+ * There is one door now, and it collects the date before it collects
+ * anything else. That used to be the harder half of §16.4: Google's button
+ * had no fields on it, so an account created through it reached the product
+ * with no date on file and had to be asked again at `/onboarding/age`. With
+ * Google not offered, every new account answers here — and `/onboarding/age`
+ * stays, because it is still the only thing that can ask an account created
+ * before this gate shipped.
  */
 function SignupForm() {
   const router = useRouter()
@@ -133,15 +139,14 @@ function SignupAge({ value, onChange, onDone }: { value: string; onChange: (valu
 /** Step two. The account itself, with the answer from step one riding along. */
 function SignupAccount({ dateOfBirth, onBack, router }: { dateOfBirth: string; onBack: () => void; router: ReturnType<typeof useRouter> }) {
   const [state, action, busy] = useActionState(signUpWithPassword, EMPTY)
-  const [google, googleAction, googleBusy] = useActionState(async () => signInWithGoogle(), EMPTY)
   const [show, setShow] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPasswordValue] = useState('')
   // Confirmation is on: the account exists and the inbox is the next step.
   useEffect(() => { if (state.ok) router.push(`/verify-email?email=${encodeURIComponent(email)}`) }, [email, router, state.ok])
   const strength = password.length === 0 ? 'Use at least 8 characters.' : password.length < 8 ? 'Keep going — 8 characters minimum.' : password.length < 12 ? 'Good enough. Longer is stronger.' : 'Strong.'
-  const error = state.message ?? google.message
-  return <><AuthSteps step={1} onBack={onBack} /><AuthHeading title="Create your account" /><form action={googleAction}><button className="oauth-button" type="submit" disabled={googleBusy}><span className="google-mark">G</span> {googleBusy ? 'Opening Google…' : 'Continue with Google'}</button></form><Or /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><input type="hidden" name="date_of_birth" value={dateOfBirth} readOnly /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} value={password} onChange={setPasswordValue} hint={strength} autoComplete="new-password" /><Button type="submit" size="lg" fullWidth loading={busy}>Create account</Button></form><p className="auth-fine">By continuing, you agree to the <Link href="/legal/terms">terms</Link> and <Link href="/legal/privacy">privacy policy</Link>.</p></>
+  const error = state.message
+  return <><AuthSteps step={1} onBack={onBack} /><AuthHeading title="Create your account" /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><input type="hidden" name="date_of_birth" value={dateOfBirth} readOnly /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} value={password} onChange={setPasswordValue} hint={strength} autoComplete="new-password" /><Button type="submit" size="lg" fullWidth loading={busy}>Create account</Button></form><p className="auth-fine">By continuing, you agree to the <Link href="/legal/terms">terms</Link> and <Link href="/legal/privacy">privacy policy</Link>.</p></>
 }
 
 /**
@@ -191,4 +196,4 @@ function ResetPassword({ ready }: { ready: boolean }) {
 function AuthHeading({ title }: { title: string }) { return <h1 className="display-lg auth-title">{title}</h1> }
 function AuthFoot({ children }: { children: ReactNode }) { return <p className="auth-foot">{children}</p> }
 function FormError({ children }: { children: ReactNode }) { return <div className="form-error" role="alert">{children}</div> }
-function Or() { return <div className="auth-or"><Hairline /><span className="label">Or</span><Hairline /></div> }
+
