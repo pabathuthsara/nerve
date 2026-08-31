@@ -373,6 +373,141 @@ and verified against signed payloads; it refuses with 503 when
 | `subscription.expired`, `.canceled`, `.paused` | revoke → free |
 | `refund.created`, `dispute.created` | revoke immediately |
 
+### 6.3a The account as it actually stands, 31 Aug
+
+Checked against the live test account rather than assumed. `npm run creem:verify`
+re-checks all of it and is the gate to run before any deploy that can charge.
+
+| | State |
+|---|---|
+| Account | Exists. `~/.creem/config.json`, environment `test`, a `creem_test_…` key |
+| App configuration | **None.** No `CREEM_*` variable is set locally or on Vercel, so `checkoutConfigured()` is false and the buy button is correctly hidden |
+| Products | **One.** `prod_1UPb0Txvljc9F1u9uiC31f` · "Nerve Training" · $19/mo · recurring · tax exclusive/saas · active |
+| Free trial | **NOT SET on that product** |
+| Elite | Does not exist |
+
+Three things follow, in order of danger.
+
+**The trial is the dangerous one.** Creem sets it on the product, in the
+dashboard, at creation time — the CLI has no flag for it and the products API
+does not return the field. Meanwhile every paid surface in this app promises
+`TRIAL_DAYS` free: the pricing page, `TRIAL_NOTE`, the countdown on
+`/profile/subscription`, and clause 07 of the terms. Wiring the existing product
+up as it stands would charge $19 the instant somebody clicks *Start 7 days free*
+— a false claim on a payment page, which is precisely the dispute pattern §14
+says closes a merchant-of-record account. **Both products must be created with
+Trial Period on.**
+
+**The existing product's description is the retired plan.** It reads "60 minutes
+of practice reps per month", which is §14's minutes model, not the three-reps-a-
+day plan we now sell. It is on the receipt and in the dashboard a reviewer reads.
+`creem:verify` warns on it.
+
+**A test key must never reach production.** `test-api.creem.io` takes no money
+but emits the same correctly signed webhooks as live, so a test key in
+production means checkout "succeeds", `subscription.paid` arrives, and
+`applyBillingEvent` grants a real paid plan against a payment that never
+happened — free Elite for anyone who finds the button. `checkoutConfigured()`
+therefore returns **false** on a production runtime unless the key is
+`creem_live_`, and the screen falls back to the notify-me list. Asserted in
+`lib/billing/plans.test.ts`. A live key needs the account approved, which is
+`PAYMENTS-APPROVAL.md` and is not code.
+
+### 6.3b What was created and proven, 31 Aug
+
+Two products, through the API, with the copy the plan specifies:
+
+| Plan | Product id | Price |
+|---|---|---|
+| Pro | `prod_7HgaFo2ZPTuCuih2gETbsh` | $19.00 / month |
+| Elite | `prod_2PCQm3Do9eDLiMTryPQucZ` | $49.00 / month |
+
+Both recurring monthly, tax exclusive / saas, active, test mode, with
+`default_success_url` set to `https://www.hellonerve.com/profile/subscription?bought=1`.
+
+**The product-level return URL is a backstop, not the main path**, and it is
+worth having for two reasons. `startCheckout` sends a `success_url` on every
+session and that one wins — but it can only send one if an origin resolves from
+the environment, and `NEXT_PUBLIC_SITE_URL` is set to an empty string, which
+`??` does not treat as unset. Until that was fixed, no checkout carried a return
+URL at all. Second, a product carries its own hosted payment link
+(`product_url`), which never passes through our code; the product default is the
+only thing that brings that buyer back. Note that such a purchase also carries no
+`metadata.user_id`, so `applyBillingEvent` cannot attribute it — see
+`resolveUserId`. Those links should not be circulated.
+
+The www host is deliberate: the apex 308-redirects to it. `/profile/subscription`
+now treats the provider's own `checkout_id` parameter as a completed purchase as
+well as our `bought=1`, so the confirmation banner does not depend on our query
+surviving a redirect or a link we did not build. The original
+`prod_1UPb0Txvljc9F1u9uiC31f` ("Nerve Training", stale minutes-based
+description) is left in place and unused — retiring it is a dashboard decision.
+
+`npm run creem:verify` passes every static check on both. `npm run creem:verify
+-- --checkout` opens real sessions through `createCheckout`, the same function
+the buy button calls, and both return a `checkout_url`. **That closes the first
+half of §6.4:** everything from the button to the vendor's checkout page is
+proven. What is left is the webhook coming back, which needs a public URL.
+
+**The trial is confirmed absent, empirically.** The product API rejects
+`trial_days`, `trial_period_days`, `free_trial_days`, `trialDays`,
+`trial_period`, `free_trial`, `trial`, `has_trial` and `trial_enabled` with
+"property … should not exist", and the created checkout session contains no
+trial field anywhere in its payload. So it is dashboard-only, and until Trial
+Period is switched on **these two products charge immediately** while the app
+promises `TRIAL_DAYS` free. They must not be wired into a live deployment in
+this state.
+
+### 6.5 Rehearsing on the production domain, and the flip to live
+
+**Decided 31 Aug: the rehearsal runs on `hellonerve.com`, not through a tunnel.**
+The domain is not published anywhere yet, and the only honest way to prove a
+payment flow is to run it where it will actually run — a tunnel to a laptop
+exercises none of the real domain, the real redirect, the real cookie or the
+real webhook route.
+
+That is not free. A test key in production grants real plans for payments that
+never happened, and test mode gives every product a public hosted payment link.
+So the state is **chosen rather than stumbled into**, and three things hold it:
+
+| | |
+|---|---|
+| `CREEM_TEST_MODE_IN_PRODUCTION=1` | One variable, named for what it does. Its absence is the safe default, so nobody reaches this state by copying a key between environments. It is the only thing that opens either guard |
+| The banner | `/profile/subscription` tells every visitor, in the copy itself, that checkout is a sandbox rehearsal and no card is charged. Amber, because it is a warning |
+| `npm run creem:verify` | Refuses to report the deployment ready while the flag is set, whatever else passes |
+
+Without the flag, production refuses twice over: `checkoutConfigured()` hides
+the buy button, and `billingEnvironmentRefusal()` stops the webhook applying any
+event. Both are asserted in `lib/billing/plans.test.ts`.
+
+#### The flip
+
+**It is four values, not one, and that is Creem's shape rather than ours.**
+Products are minted per mode, so `prod_…` ids differ between test and live, and
+the webhook signing secret differs with them. Anything claiming a single switch
+would be granting plans against the wrong catalogue.
+
+Before flipping: create both products **in live mode with Trial Period on**, and
+register a **live** webhook at `https://www.hellonerve.com/api/webhooks/creem`.
+Then one paste:
+
+```bash
+vercel env rm  CREEM_TEST_MODE_IN_PRODUCTION production   # the rehearsal ends here
+vercel env add CREEM_API_KEY          production   # creem_live_…
+vercel env add CREEM_WEBHOOK_SECRET   production   # the LIVE webhook's whsec_
+vercel env add CREEM_PRODUCT_PRO      production   # the LIVE prod_…
+vercel env add CREEM_PRODUCT_ELITE    production   # the LIVE prod_…
+vercel --prod                                      # env changes need a rebuild
+```
+
+Removing the flag is in the same block on purpose: a live key makes it a no-op,
+so leaving it behind is harmless but it is exactly the kind of thing that
+survives for a year and confuses the next person.
+
+Then `npm run creem:verify` against the production environment. It reports ready
+only when the key is live, both products resolve at the right prices, and the
+flag is gone.
+
 ### 6.4 What is not yet proven
 
 Creem has never called the endpoint. It is verified against signed payloads and

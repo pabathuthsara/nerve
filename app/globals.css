@@ -894,6 +894,9 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
    and volt-tinted like every other confirmation in Arena — never a shadow. */
 .billing-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 14px 18px; background: linear-gradient(120deg, rgba(196,248,42,.06), transparent 60%), var(--surface); }
 .billing-banner p { margin: 0; color: var(--text-dim); font-size: 13px; }
+/* The rehearsal warning. Amber is semantic here, never branding. */
+.billing-banner--test { background: linear-gradient(120deg, rgba(255,176,32,.07), transparent 60%), var(--surface); border-color: var(--amber); }
+.billing-banner--test strong { color: var(--amber); }
 
 .orb-stage { position: relative; width: 330px; height: 330px; display: grid; place-items: center; }
 .orb-stage .fluid-persona { overflow: visible; }

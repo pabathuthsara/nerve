@@ -65,6 +65,14 @@ export function isOnboardingRoute(path: string): boolean {
  */
 export interface BillingContext {
   checkoutOpen: boolean
+  /**
+   * True when a purchase here is theatre — a non-live key, on any runtime.
+   *
+   * The screen has to say so out loud. This deployment is on a public domain,
+   * and somebody who finds it and "subscribes" against the sandbox must not walk
+   * away believing they have paid for something. See `rehearsing()`.
+   */
+  testMode: boolean
 }
 
 export function isBillingRoute(path: string): boolean {
@@ -89,7 +97,21 @@ export function RouteView({ path, query = {}, auth, onboarding, billing }: { pat
   if (path === '/progress') return <ProgressScreen />
   if (path.startsWith('/progress/week/')) return <WeeklyReviewScreen weekStart={path.split('/')[3] ?? ''} />
   if (path === '/profile' || path === '/profile/history' || path === '/profile/settings' || path === '/profile/subscription') {
-    return <ProfileScreen route={path as ProfileRoute} checkoutOpen={billing?.checkoutOpen ?? false} bought={query['bought'] === '1'} />
+    /**
+     * Back from a paid checkout, by either of the two routes it can arrive on.
+     *
+     * `bought=1` is ours, appended to the `success_url` the Server Action sends
+     * with each session. `checkout_id` is the provider's, and it is on every
+     * return regardless — including the one case our parameter is missing
+     * entirely: a purchase made through the product's own hosted payment link,
+     * which never passes through `startCheckout` at all and falls back to the
+     * product-level return URL.
+     *
+     * Reading both means the confirmation banner does not depend on our own
+     * query surviving a redirect, a copy-paste, or a link we did not build.
+     */
+    const bought = query['bought'] === '1' || !!query['checkout_id']
+    return <ProfileScreen route={path as ProfileRoute} checkoutOpen={billing?.checkoutOpen ?? false} testMode={billing?.testMode ?? false} bought={bought} />
   }
   if (path.startsWith('/session/')) {
     const [, , sessionId = '', view = 'result'] = path.split('/')

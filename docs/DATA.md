@@ -572,6 +572,7 @@ npm run db:spend         # the spend ceiling: rate limit, daily cap, both kill s
 npm run db:billing       # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
 npm run db:types         # regenerate lib/db/types.ts from the live schema
 npm run db:plan -- you@example.com pro   # grant a plan (free 0/day, pro 3, elite 6)
+npm run creem:verify                     # the money preflight, before any deploy that can charge
 npm run db:repair-wins -- --dry          # wins the old outcome rule invented; drop --dry to fix
 npm run grade:collect                   # stored transcripts, in calibration-fixture shape
 npm run grade:calibrate                 # the §17 gate: drift on the deployed /api/grade
@@ -583,6 +584,20 @@ the sign-up one, so a dev account that needs a microphone needs this script. It
 reads its rep counts from `lib/site/plans.ts` rather than keeping its own copy. It stays the manual override now that the webhook exists: an account
 that has to be fixed by hand at 2am should not need a merchant of record to be
 reachable.
+
+`creem:verify` is the other half of `db:billing` and reads only. `db:billing`
+proves OUR side — that a signed event moves the right plan — by building its own
+payloads and injecting its own product ids, so it proves nothing about the
+vendor. `creem:verify` asks the provider whether the account is configured the
+way the product claims: every `CREEM_PRODUCT_*` resolves, is active, belongs to
+this environment, and charges exactly what `lib/site/plans.ts` advertises, with
+tax exclusive. It also refuses a test key on a production deployment, which is
+the failure worth having a script for — the sandbox emits the same correctly
+signed webhooks as live, so a test key in production grants real plans against
+payments that never happened. **The free trial is the one thing it cannot
+check**: Creem sets it on the product in the dashboard and neither the CLI nor
+the API exposes the field, so it is proven by one real checkout whose first
+webhook is `subscription.trialing` rather than `subscription.paid`.
 
 `db:billing` drives `lib/billing/apply.ts` over the real tables — a purchase
 grants the plan and writes the mirror, an upgrade moves both, `past_due` keeps

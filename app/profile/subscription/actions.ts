@@ -22,6 +22,15 @@ import { PUBLIC_PLANS } from '@/lib/site/plans'
 import { SUPPORT_EMAIL } from '@/components/site/site-chrome'
 import type { Plan } from '@/lib/data/types'
 
+/** The first of these that is actually a URL. Blank and whitespace are unset. */
+function firstUrl(...candidates: (string | undefined)[]): string | undefined {
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim()
+    if (trimmed && /^https?:\/\//i.test(trimmed)) return trimmed.replace(/\/+$/, '')
+  }
+  return undefined
+}
+
 export interface CheckoutActionResult {
   ok: boolean
   url: string | null
@@ -61,7 +70,22 @@ export async function startCheckout(plan: string): Promise<CheckoutActionResult>
     }
   }
 
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL
+  /**
+   * Where the provider returns the buyer, and why this is `||` rather than `??`.
+   *
+   * An unset variable is `undefined`, but a variable set to nothing is `''` —
+   * and `??` only falls back on the first. `.env.local` here carries
+   * `NEXT_PUBLIC_SITE_URL=` with an empty value, which under `??` wins over the
+   * app-URL fallback and yields an empty origin. That produced a relative
+   * `success_url`, which Creem rejects outright with "URL must be valid".
+   *
+   * The failure is quiet in the version that survives: an empty origin makes
+   * the ternary below drop `successUrl` entirely, so checkout still opens and
+   * the buyer is simply never returned to `/profile/subscription?bought=1` —
+   * they pay and land on the vendor's own page, and the confirmation banner
+   * that covers the seconds before the webhook lands never fires.
+   */
+  const origin = firstUrl(process.env.NEXT_PUBLIC_SITE_URL, process.env.NEXT_PUBLIC_APP_URL)
 
   const result = await createCheckout({
     userId: user.id,

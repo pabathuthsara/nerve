@@ -4,7 +4,7 @@ import { enforceFrontendGuard, ONBOARDING_TRACK_FLAG, onboardingResumePath, type
 import { fetchFirstRepCandidates } from '@/lib/data/first-rep'
 import { uiLevel } from '@/lib/data/progression'
 import { currentUser } from '@/lib/db/server'
-import { checkoutConfigured } from '@/lib/billing/plans'
+import { checkoutConfigured, takingRealPayments } from '@/lib/billing/plans'
 import type { FocusArea } from '@/lib/data/focus'
 import type { Track } from '@/lib/data/types'
 
@@ -73,7 +73,7 @@ export default async function FrontendRoute({ params, searchParams }: { params: 
       query={query}
       auth={isAuthRoute(path) ? await authContext(path) : undefined}
       onboarding={isOnboardingRoute(path) ? await onboardingContext(path, profile) : undefined}
-      billing={isBillingRoute(path) ? { checkoutOpen: checkoutConfigured() } : undefined}
+      billing={isBillingRoute(path) ? { checkoutOpen: checkoutConfigured(), testMode: !takingRealPayments() } : undefined}
     />
   )
 }

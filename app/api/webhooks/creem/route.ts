@@ -18,6 +18,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { applyBillingEvent } from '@/lib/billing/apply'
 import { toBillingEvent } from '@/lib/billing/events'
 import { SignatureError, verifyCreemSignature } from '@/lib/billing/signature'
+import { billingEnvironmentRefusal } from '@/lib/billing/plans'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -50,6 +51,21 @@ export async function POST(request: NextRequest) {
   } catch {
     // Signed but unparseable is not worth retrying — it will not parse next time.
     return NextResponse.json({ error: 'malformed payload' }, { status: 400 })
+  }
+
+  /**
+   * The environment gate, after the signature and before anything is granted.
+   *
+   * A correctly signed event is not necessarily a real payment: the test host
+   * signs its events too, and test mode has hosted payment links that take any
+   * card. So production refuses to act unless it is configured as live. Logged
+   * loudly and acknowledged with a 200 — a retry would not fix a configuration
+   * problem, and a non-200 would have the provider redeliver it five times.
+   */
+  const refusal = billingEnvironmentRefusal()
+  if (refusal) {
+    console.error(`[billing] refusing to apply an event: ${refusal}`)
+    return NextResponse.json({ ok: true, ignored: true, reason: 'environment' })
   }
 
   const event = toBillingEvent(payload, Date.now())

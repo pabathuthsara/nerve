@@ -49,6 +49,7 @@ npm run db:rep        # the whole rep lifecycle, without a microphone
 npm run db:field      # the field loop: assign, accept, log, streak, milestones
 npm run db:spend      # the spend ceiling: rate limit, daily cap, both kill switches
 npm run db:billing    # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
+npm run creem:verify     # the money preflight: keys, products, prices, environment
 npm run grade:calibrate  # the §17 gate: grade drift on the deployed route
 ```
 

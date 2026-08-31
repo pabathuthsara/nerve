@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, ChevronRight, Download, Headphones, LogOut, Mic, RotateCcw, Trash2 } from 'lucide-react'
+import { Check, ChevronRight, Download, FlaskConical, Headphones, LogOut, Mic, RotateCcw, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useFieldStats, useLifetimeStats, usePlanWaitlist, useSessionHistory, useSubscription, useUserState } from '@/lib/data'
 import type { FieldStats, Plan, SessionSummary, SubscriptionState } from '@/lib/data/types'
@@ -29,6 +29,7 @@ export type ProfileRoute = '/profile' | '/profile/history' | '/profile/settings'
 export function ProfileScreen({
   route,
   checkoutOpen = false,
+  testMode = false,
   bought = false,
 }: {
   route: ProfileRoute
@@ -38,12 +39,14 @@ export function ProfileScreen({
    * `BillingContext` in `components/route-view.tsx`.
    */
   checkoutOpen?: boolean
+  /** A purchase here takes no real money. The screen must say so. */
+  testMode?: boolean
   /** Back from a completed checkout. The provider appends `?bought=1`. */
   bought?: boolean
 }) {
   if (route === '/profile/history') return <HistoryScreen />
   if (route === '/profile/settings') return <SettingsScreen />
-  if (route === '/profile/subscription') return <SubscriptionScreen checkoutOpen={checkoutOpen} bought={bought} />
+  if (route === '/profile/subscription') return <SubscriptionScreen checkoutOpen={checkoutOpen} testMode={testMode} bought={bought} />
   return <ProfileHome />
 }
 
@@ -278,7 +281,7 @@ function MicTest() {
  * notify-me list it had before checkout existed rather than showing a button
  * that errors — the demand is worth keeping either way.
  */
-function SubscriptionScreen({ checkoutOpen, bought }: { checkoutOpen: boolean; bought: boolean }) {
+function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: boolean; testMode: boolean; bought: boolean }) {
   const { data: user, loading } = useUserState()
   const { data: subscription, reload: reloadSubscription } = useSubscription()
   const current = user?.plan ?? 'free'
@@ -343,6 +346,11 @@ function SubscriptionScreen({ checkoutOpen, bought }: { checkoutOpen: boolean; b
   const joined = asking ? waitlisted.includes(asking) : false
   return <AppShell title="Subscription">
     <div className="screen-heading compact"><span className="label">Training access</span><h1 className="display-lg">Subscription</h1></div>
+    {/* Said plainly, above everything, and never dressed as a feature. A
+        visitor who finds this site while the rehearsal flag is on must not be
+        able to believe they have bought anything. Amber rather than volt: this
+        is a warning, and volt is for the primary action (Arena). */}
+    {checkoutOpen && testMode ? <Card className="billing-banner billing-banner--test"><FlaskConical size={18} strokeWidth={1.5} className="amber" /><p><strong>Test mode.</strong> Checkout here is a rehearsal against our payment provider&apos;s sandbox. No card is charged and no real subscription is created, whatever the receipt says.</p></Card> : null}
     {bought ? <Card className="billing-banner"><Check size={18} strokeWidth={1.5} className="volt" /><p>Payment received. Your plan updates here within a few seconds — the receipt is already on its way to your inbox.</p></Card> : null}
     <CurrentPlan user={user} loading={loading} subscription={subscription} onManage={() => void manage()} busy={busy === 'portal'} />
     <section className="plan-section">
