@@ -16,6 +16,12 @@ import { acknowledgeUnlock } from '@/app/profile/actions'
 import { ShareButton } from '@/components/share/share-button'
 import { FluidPersona } from '@/components/fluid-persona'
 import { ReportButton } from '@/components/safety/report-button'
+import { capture } from '@/components/analytics'
+import { MissionCard } from '@/components/mission'
+import { missionFor } from '@/lib/data/mission'
+import { useCountUp, useStagger } from '@/lib/hooks/use-staged-reveal'
+import { SoundKit } from '@/lib/audio/kit'
+import { soundEnabled } from '@/lib/hooks/use-rep-production'
 
 export type SessionView = 'result' | 'scorecard' | 'transcript'
 
@@ -113,6 +119,37 @@ function ScorecardScreen({ session }: { session: SessionSummary }) {
     const timer = window.setTimeout(() => setExplainer(true), 1100)
     return () => window.clearTimeout(timer)
   }, [loading, scorecard])
+  /**
+   * Funnel step five (B7). Once the grade is actually on screen — a scorecard
+   * that is still a skeleton has not been viewed, and this screen is reached
+   * every time somebody revisits an old rep, so the ref keeps one visit to one
+   * event.
+   */
+  /**
+   * The staged reveal (§02, M3 Phase D). The composite climbs, then the rows
+   * arrive behind it, then the kit's only chord lands. Under a reduced-motion
+   * preference every one of those is already finished on the first render —
+   * §02 names the score reveal as the example that rule exists for.
+   */
+  const composite = useCountUp(loading || !scorecard ? null : scorecard.composite)
+  const rowCount = scorecard ? scorecard.metrics.length + (scorecard.judgement ? 1 : 0) : 0
+  const rowsShown = useStagger(rowCount, composite.done)
+  const kitRef = useRef<SoundKit | null>(null)
+  const landed = useRef(false)
+  useEffect(() => {
+    if (!composite.done || landed.current || !scorecard) return
+    landed.current = true
+    if (!kitRef.current) kitRef.current = new SoundKit(soundEnabled())
+    kitRef.current.play('land')
+  }, [composite.done, scorecard])
+  useEffect(() => () => { kitRef.current?.dispose(); kitRef.current = null }, [])
+
+  const scorecardSeen = useRef(false)
+  useEffect(() => {
+    if (loading || !scorecard || scorecardSeen.current) return
+    scorecardSeen.current = true
+    capture('scorecard_viewed', { session_id: session.id, composite: scorecard.composite })
+  }, [loading, scorecard, session.id])
   const pending = dismissed ? null : unlock.data
   const closeUnlock = () => {
     setDismissed(true)
@@ -154,7 +191,10 @@ function ScorecardScreen({ session }: { session: SessionSummary }) {
   const signalLabel = session.track === 'interview' ? 'Impression' : 'Warmth'
   const personaLevel = personas.find((item) => item.id === session.personaId)?.level ?? null
   const levelLabel = session.track === 'interview' ? 'Interview' : personaLevel ? `${String(personaLevel).padStart(2, '0')} — ${LEVEL_NAMES[personaLevel]}` : '—'
-  return <AppShell title="Scorecard"><header className="scorecard-title"><span className="label">Process score · {session.personaName}</span><h1 className="display-lg">Session breakdown</h1></header><div className="scorecard-grid"><div className="scorecard-left"><Card className="composite-card"><div><span className="composite data">{scorecard.composite}<small>/100</small></span><strong className="display-md">{verdict}</strong></div><p>{session.personaName} · Level {levelLabel} · {formatDuration(session.durationMs)} · {outcomeLabel}</p></Card>{scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}<section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric) => <MetricBandRow key={metric.key} metric={metric} />)}{scorecard.judgement ? <JudgementRow judgement={scorecard.judgement} /> : null}</div></section></div><aside className="scorecard-right"><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} /><section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card><FocusLinks focus={scorecard.focus} /></section></aside></div><div className="scorecard-actions">{/* THE UPGRADE MOMENT, and the best-placed one in the product. Somebody
+  return <AppShell title="Scorecard"><header className="scorecard-title"><span className="label">Process score · {session.personaName}</span><h1 className="display-lg">Session breakdown</h1></header><div className="scorecard-grid"><div className="scorecard-left"><Card className="composite-card"><div><span className="composite data" data-revealing={!composite.done}>{composite.value}<small>/100</small></span><strong className="display-md">{verdict}</strong></div><p>{session.personaName} · Level {levelLabel} · {formatDuration(session.durationMs)} · {outcomeLabel}</p></Card>{scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}<section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric, index) => <div key={metric.key} data-reveal={index < rowsShown ? 'shown' : 'pending'}><MetricBandRow metric={metric} /></div>)}{scorecard.judgement ? <div data-reveal={scorecard.metrics.length < rowsShown ? 'shown' : 'pending'}><JudgementRow judgement={scorecard.judgement} /></div> : null}</div></section></div><aside className="scorecard-right"><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} /><section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card>{/* The mission this rep sets, and the same words Train, the brief
+      and the live screen will show until the weakest dimension moves.
+      It is the connective tissue the audit said was missing. */}
+<MissionCard mission={missionFor(scorecard.focus)} kicker="Next rep" /><FocusLinks focus={scorecard.focus} /></section></aside></div><div className="scorecard-actions">{/* THE UPGRADE MOMENT, and the best-placed one in the product. Somebody
     who has just finished the sign-up rep and wants to go again is the whole
     funnel in one click, so Run it back opens the sheet rather than walking
     them to a brief that will refuse them. Everything else on this screen —

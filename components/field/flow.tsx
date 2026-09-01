@@ -16,6 +16,7 @@
 import { useCallback, useState, type ReactNode } from 'react'
 import { Check, Shuffle, X } from 'lucide-react'
 import { acceptChallenge, logAsk, swapChallenge } from '@/app/field/actions'
+import { capture } from '@/components/analytics'
 import type { FieldAssignment, FieldOutcome, FieldStatus } from '@/lib/data/types'
 import { Button, Chip, Sheet, useToast } from '@/components/ui'
 
@@ -100,6 +101,10 @@ export function useFieldFlow(assignment: FieldAssignment | null, callbacks: Flow
     close: () => setSheet(null),
     accept: (anxietyPre) => {
       if (!assignment) return
+      // Funnel step eight (B7). The challenge slug, never the title and never
+      // the note — a field log is somebody's account of approaching a stranger
+      // in real life, and none of that text leaves the device.
+      capture('field_challenge_accepted', { challenge_id: assignment.challenge.slug, tier: assignment.challenge.tier, predicted_anxiety: anxietyPre })
       run('accepted', () => acceptChallenge(assignment.id, anxietyPre), 'Accepted. Go and do it.')
     },
     swap: () => {
@@ -116,6 +121,16 @@ export function useFieldFlow(assignment: FieldAssignment | null, callbacks: Flow
     },
     logDid: ({ outcome, anxietyPost, note }) => {
       if (!assignment) return
+      // Funnel step nine, and the one the product is really for: the predicted
+      // number against the actual one. §09 calls that gap the therapeutic
+      // work, so it is the pair worth having off-device — the note is not.
+      capture('field_challenge_logged', {
+        challenge_id: assignment.challenge.slug,
+        tier: assignment.challenge.tier,
+        predicted_anxiety: assignment.anxietyPre ?? -1,
+        actual_anxiety: anxietyPost,
+        asked: true,
+      })
       run(
         'done',
         () => logAsk({ assignmentId: assignment.id, asked: true, outcome, anxietyPost, note }),
@@ -124,6 +139,16 @@ export function useFieldFlow(assignment: FieldAssignment | null, callbacks: Flow
     },
     logCouldNot: (reason) => {
       if (!assignment) return
+      // The honest non-ask is the same funnel step with `asked: false`. Losing
+      // it would make the field loop look better than it is, which is the one
+      // direction an analytics gap must never bend.
+      capture('field_challenge_logged', {
+        challenge_id: assignment.challenge.slug,
+        tier: assignment.challenge.tier,
+        predicted_anxiety: assignment.anxietyPre ?? -1,
+        actual_anxiety: -1,
+        asked: false,
+      })
       run(
         'skipped',
         () => logAsk({ assignmentId: assignment.id, asked: false, outcome: 'not_asked', note: reason }),

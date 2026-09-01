@@ -149,6 +149,16 @@ export interface RepSessionState {
    * can never be mistaken for a microphone that stopped working.
    */
   heardUser: boolean
+  /**
+   * Why this rep ended, once it has. Null while it is still running.
+   *
+   * The adapter has always reported this and `finishSession` has always
+   * written it down; it is surfaced here because the screen could otherwise
+   * only guess, and B7's `rep_completed` is a reliability measure — "she left"
+   * and "the transport died" are the two cases it exists to tell apart, and
+   * `outcome.won` cannot separate them.
+   */
+  endReason: 'user' | 'character' | 'cap' | 'error' | null
   error: 'mic' | 'connection' | null
   /** What moderation has done to this rep, if anything. See `RepSafety`. */
   safety: RepSafety
@@ -213,6 +223,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   const [band, setBand] = useState<Band>('CLOSED')
   const [speaking, setSpeaking] = useState<SpeakingState>('none')
   const [heardUser, setHeardUser] = useState(false)
+  const [endReason, setEndReason] = useState<SessionSummary['reason'] | null>(null)
   const [levels, setLevels] = useState({ user: 0, persona: 0 })
   const [msRemaining, setMsRemaining] = useState(durationMs)
   const [outcome, setOutcome] = useState<RepOutcome | null>(null)
@@ -312,6 +323,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     async (reason: SessionSummary['reason'] = 'user') => {
       const voice = providerRef.current
       if (!voice || finishedRef.current) return
+      setEndReason(reason)
       finishedRef.current = true
       providerRef.current = null
       clearLoops()
@@ -483,6 +495,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     agentSpeakingRef.current = false
     numberRef.current = ''
     turnsRef.current = []
+    setEndReason(null)
     safetyCloseAtRef.current = null
     safetyEndedRef.current = false
     setSafety({ ended: false, distress: false })
@@ -828,6 +841,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     paused,
     retryAttempt,
     heardUser,
+    endReason,
     error,
     safety,
     sessionId,

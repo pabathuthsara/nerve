@@ -469,22 +469,53 @@ and therefore cannot be a SQL function.
 **Why it blocks:** it is the one promise in §16 that a user can check on day
 one, and "email support to delete your account" is not the promise.
 
-### B7 · Nothing is instrumented  ·  ~1 day  ·  **re-checked 30 Aug: neither package is in `package.json`**
+### B7 · Nothing is instrumented  ·  **code done 1 Sep** · `keys owed`
 **Spec:** §04 — PostHog for funnels and week-4 cohorts, Sentry for errors with
 replay off on the live route.
-**Built:** neither package is installed.
+**Built (1 Sep):** both packages are installed and wired. `lib/analytics/events.ts`
+is the catalogue — nine events, in the order `docs/site-audit-openai.md` set out:
+brief viewed → rep started → **first user turn** → rep completed → scorecard
+viewed → technique opened → focused rep started → field challenge accepted →
+logged. `components/analytics.tsx` is the only file that imports `posthog-js`,
+the way `lib/voice/provider.ts` is the only seam for a voice vendor.
+
+Three things about it that are decisions rather than defaults:
+
+- **M5's gate is answerable without a stale counter.** *Three or more reps* is a
+  cohort on the event stream (`rep_completed` at least 3 times), not a
+  `reps_completed` person property that would be wrong between every rep and
+  its next identify call.
+- **`safeProps` refuses free text.** Ids, enums, finite numbers and booleans
+  only — a transcript turn, a display name or a field-log note cannot leave with
+  an event. Throws in development, drops in production, for the same reason
+  moderation fails open: §05 does not let instrumentation end a live rep.
+- **`sessionReplayAllowed` is §04's replay rule as a tested function**, applied
+  on every navigation and widened to text mode, saved transcripts and
+  scorecards, and the field log. Sentry ships with **no replay integration at
+  all**, so the rule lives in exactly one place.
+
+Both are off until keyed, and the imports are dynamic and inside the key check,
+so an unkeyed deployment fetches nothing — first-load JS is unchanged at 103 kB.
+
+**Still owed:** the PostHog project and key, the Sentry project and DSN,
+`withSentryConfig` for source maps (needs an auth token), and confirmation that
+the first events actually land. The pipeline half noted below is unaffected.
 **Why it blocks:** M5's gate is *week-4 retention above 25% among users who did
 three or more reps*. That number cannot be computed from what is currently
 recorded, and the beta's entire purpose is to produce it. It also means a
 crashed rep in Colombo at 9pm on a Friday is invisible.
 
-**Narrowed 24 Aug.** The *pipeline* half is now instrumented: every non-fatal
+**Narrowed 24 Aug.** The *pipeline* half was instrumented first: every non-fatal
 voice incident is counted in `lib/voice/incidents.ts` and stored on
 `sessions.pipeline_incidents`. That was the acute case — a rep where she was cut
 off on most replies, or where real user turns were deleted, is now
-distinguishable after the fact from a rep the user simply played badly. The
-product analytics and error reporting this entry is really about are still
-unbuilt, so the estimate stands.
+distinguishable after the fact from a rep the user simply played badly.
+
+**Closed in code 1 Sep**, from the P0 row of `docs/site-audit-openai.md`. What
+remains is two accounts and two environment variables, which is why this entry
+is `keys owed` rather than cleared: nothing is recorded until somebody creates
+the projects, and a funnel that has never been seen arriving is not a funnel
+anybody should trust yet.
 
 ### B8 · The field track  ·  **cleared 23 Aug**  ·  `DB done` · `loop done` · `chart done`
 **Spec:** §09 — four tiers, daily assignment, predicted anxiety before, actual

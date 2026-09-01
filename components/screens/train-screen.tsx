@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Check, ChevronRight, Mic, RotateCcw, X } from 'lucide-react'
 import { useState } from 'react'
-import { useBaseline, useFieldToday, usePersonaProgress, usePersonas, useSessionHistory, useUserState, useWeeklyReview } from '@/lib/data'
+import { useBaseline, useFieldToday, useLatestFocus, usePersonaProgress, usePersonas, useSessionHistory, useUserState, useWeeklyReview } from '@/lib/data'
 import type { PersonaProgress, SessionSummary } from '@/lib/data/types'
 import { chooseTodayPersona, LEVEL_NAMES, levelTone } from '@/lib/data/progression'
 import { RANKS, RANK_BLURBS, RANK_NAMES, nextRankRequirement, rankIndex, type Rank } from '@/lib/data/rank'
@@ -14,6 +14,8 @@ import { AppShell, RepsRemaining, StreakCounter } from '@/components/app-shell'
 import { Button, Card, Chip, Sheet, Skeleton, Stat } from '@/components/ui'
 import { ShareButton } from '@/components/share/share-button'
 import { FluidPersona } from '@/components/fluid-persona'
+import { MissionCard } from '@/components/mission'
+import { missionFor } from '@/lib/data/mission'
 
 export function TrainScreen() {
   return <AppShell title="Train"><TrainContent /></AppShell>
@@ -49,6 +51,11 @@ function TrainContent() {
   const { data: sessions, loading: sessionsLoading } = useSessionHistory()
   const { data: personas, loading: personaLoading } = usePersonas()
   const { data: progressRaw, loading: progressLoading } = usePersonaProgress()
+  // The standing objective. `focus` is the last graded rep's two weakest
+  // sub-scores, weakest first, so the mission changes when the weakness does
+  // and there is no second copy of it to fall out of step.
+  const { data: focus } = useLatestFocus()
+  const mission = missionFor(focus)
   const field = useFieldToday()
   const { data: assignment, loading: challengeLoading } = field
   const [milestone, setMilestone] = useState<Milestone | null>(null)
@@ -82,6 +89,9 @@ function TrainContent() {
             {userLoading || !user ? <><Skeleton width={108} height={32} /><Skeleton width={108} height={20} /></> : <><RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} locked={user.voiceLocked} /><StreakCounter days={user.streakDays} /></>}
           </div>
           {user && !user.onboardingComplete ? <FinishSetup /> : null}
+          {/* Above the character, not below it. The mission is what the rep is
+              for; the character is who you happen to be running it against. */}
+          <MissionCard mission={mission} />
           {loading || !persona ? <Skeleton height={430} /> : (
             <article className="today-card">
               <div className="today-card__visual" />

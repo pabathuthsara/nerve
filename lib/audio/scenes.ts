@@ -125,6 +125,26 @@ export function roomAcousticsEnabled(): boolean {
 }
 
 /**
+ * Whether the room can make a sound of its own — a different question.
+ *
+ * `roomAcousticsEnabled` asks whether HER VOICE goes through a convolver, and
+ * the answer is no because that hurt intelligibility. One flag was answering
+ * both questions, so the ambient bed went silent with the reverb even though
+ * AUDIO.md's own graph shows them as independent chains and the settings
+ * toggle sat disabled reading "rooms are silent while the new sound is
+ * recorded".
+ *
+ * `lib/audio/room-tone.ts` is that new sound, synthesised rather than
+ * recorded, and it has no voice input node at all — there is physically
+ * nothing for her audio to be routed through. So it is available regardless of
+ * the convolver, and whether it actually plays is the user's `ambience`
+ * preference rather than a build flag.
+ */
+export function roomToneAvailable(): boolean {
+  return true
+}
+
+/**
  * The scene an adapter should build for a persona, or null for a dry voice.
  *
  * Null is a supported answer everywhere: both adapters already route her

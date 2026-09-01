@@ -16,6 +16,27 @@ ear — that is why they are config rather than constants inside the audio graph
 > planned as audio files; they are a different mechanism and will not restore
 > the convolver.
 
+> **The bed is back, on its own — 1 September 2026.** That switch was coarser
+> than the decision behind it. `sceneForRoom` returns null while acoustics are
+> off, both adapters then skip building a `Room` at all, and **the ambient bed
+> went silent with the convolver** — even though the graph below shows them as
+> two independent chains and says the only thing her voice does to the bed is
+> duck it. The bed was collateral damage of a reverb decision.
+>
+> `lib/audio/room-tone.ts` plays the beds authored below with **no convolver,
+> no wet send, and no voice input node at all**. There is physically nothing
+> for her audio to be routed through, which is what makes it unable to undo the
+> intelligibility fix. It is synthesised rather than recorded — the mechanism
+> this note anticipated, arriving earlier and cheaper than audio files.
+>
+> Two questions, two functions, and conflating them is what caused this:
+> `roomAcousticsEnabled()` asks whether her voice goes through a convolver (no).
+> `roomToneAvailable()` asks whether the room makes a sound of its own (yes).
+> Whether it actually plays is the user's `ambience` preference — the Settings
+> toggle that had been disabled reading "rooms are silent while the new sound
+> is recorded" is live. Every number below is still the authority; nothing was
+> re-specified. `docs/site-audit-openai.md` P1.
+
 ## The graph (round 10 rebuild)
 
 The bed used to be mixed into her output bus, which meant it only played while

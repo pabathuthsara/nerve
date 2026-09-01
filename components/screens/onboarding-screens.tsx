@@ -61,6 +61,7 @@ import {
   type SaveResult,
 } from '@/app/profile/actions'
 import { signOut } from '@/app/auth/actions'
+import { resetPerson } from '@/components/analytics'
 import { forgetCurrentUser } from '@/lib/data/session'
 import { PauseMeter, offsetFromPause } from '@/lib/voice/calibration'
 import { DEFAULT_CALIBRATION, resolveSilenceMs } from '@/lib/voice/types'
@@ -272,7 +273,7 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
  * cookies. A door that only opens inward is not a door.
  */
 function OnboardingSignOut() {
-  return <form className="onboarding-signout" action={signOut} onSubmit={() => forgetCurrentUser()}><button type="submit"><LogOut size={15} strokeWidth={1.5} /> Sign out</button></form>
+  return <form className="onboarding-signout" action={signOut} onSubmit={() => { forgetCurrentUser(); resetPerson() }}><button type="submit"><LogOut size={15} strokeWidth={1.5} /> Sign out</button></form>
 }
 
 /**

@@ -32,6 +32,19 @@ const ROSTER = [
   { slug: 'robin', tier: 4 as const, name: 'Robin' },
 ]
 
+/**
+ * How many of them there are, spelled out, for the headline above the cards.
+ *
+ * Counted rather than written, because it was written and it was wrong: the
+ * section said "Three people" over four cards from the commit that introduced
+ * the page, since Robin was in the array from the first version. It is the one
+ * place on the public site where the copy and the product contradicted each
+ * other on the same screen with no scrolling. A headline that counts the array
+ * it sits above cannot drift from it again when the fifth rung ships.
+ */
+const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'] as const
+const ROSTER_COUNT = COUNT_WORDS[ROSTER.length] ?? String(ROSTER.length)
+
 /** The six §07 dimensions, in the rubric's own words, shortened for a card. */
 const DIMENSIONS = [
   { name: 'Opening', copy: 'Did you get a conversation started at all. An awkward opener that lands beats a polished one that never comes.' },
@@ -250,7 +263,7 @@ function Roster() {
   return (
     <SiteSection
       kicker="The roster"
-      title={<>Three people who<br />are not helping you.</>}
+      title={<>{ROSTER_COUNT} people who<br />are not helping you.</>}
       lede="Each one holds a rung. They are not difficulty settings with the same script — they want different things, they run out of patience differently, and the top rung takes the warmth number off your screen so you have to read a person instead of a meter."
       wide
     >

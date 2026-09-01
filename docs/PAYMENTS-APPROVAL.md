@@ -70,19 +70,25 @@ without a foreign entity, and at this stage it is worth paying.
 
 ## 2. Who we apply to, in what order
 
-From §14's table, unchanged:
+From §14's table, with Gumroad added 1 September as the named fallback:
 
 | Provider | Sri Lankan payout | Cost | Standing |
 |---|---|---|---|
-| **Creem** | Yes — local bank transfer | 3.9% + $0.40, payout fee €7 or 1% | **Primary.** Cheapest of the viable set and explicitly supports Sri Lanka |
-| Polar | Yes — Stripe Connect Express | ≈ 4–5% + fixed | Backup. Its policy names "AI relationship services" as prohibited, and a reviewer could misread us as one |
-| Dodo Payments | Yes — markets to emerging markets | Comparable | Third. Newer and less proven |
+| **Creem** | Yes — local bank transfer | 3.9% + $0.40, payout fee €7 or 1% | **Primary.** Cheapest of the viable set and explicitly supports Sri Lanka. Onboarding asks for a tax ID — see §5.5 |
+| **Gumroad** | Yes — PayPal (receiving now available in Sri Lanka; confirm withdrawal limits) or Payoneer | 10% flat + card processing, so roughly 2–3× Creem's cut | **Fallback, chosen 1 September.** If Creem declines — on the tax ID or on the category review — we launch on Gumroad rather than keep applying. It is a merchant of record, needs no company and no tax ID to start, and its content rules are looser. The price is margin: at Pro's worst-case burn the cut takes the tier from about half to a bit under half, so it is a bridge to launch, not a permanent home. Re-check D2's price math against it before committing |
+| Polar | Yes — Stripe Connect Express | ≈ 4–5% + fixed | Its policy names "AI relationship services" as prohibited, and a reviewer could misread us as one |
+| Dodo Payments | Yes — markets to emerging markets | Comparable | Newer and less proven |
 | Paddle | Not clearly listed | ≈ 5% + $0.50 | Rejected. Bans "dating services/applications, or any other products/services intended for this industry" outright |
 | Lemon Squeezy | Yes | ≈ 5% + $0.50 | Avoid. Being folded into Stripe Managed Payments, which reaches far fewer countries — a migration we do not need |
 
 Apply to Creem first and wait. Applying to several at once is not a hedge: each
 one runs a human review of the same site, and being declined somewhere is a
-thing you may have to disclose later.
+thing you may have to disclose later. **If Creem says no, the next move is
+Gumroad, not a third application** — the AI-character question in §3 follows us
+to every provider on this list, so a fourth review of the same site is unlikely
+to land differently, and Gumroad clears the two hurdles Creem raised: the tax ID,
+and probably the category. Its rules have tightened around AI and adult content
+too, so §3's positioning discipline applies there in full.
 
 The database was built for this. `subscriptions` keeps provider identifiers
 deliberately abstract, so being declined by one provider costs a migration
@@ -142,7 +148,9 @@ site as an application document, not marketing.
 ## 5. Before we submit
 
 Two things now, and neither is a build task. The third — moderation — was the
-hard prerequisite and it shipped on 28 August.
+hard prerequisite and it shipped on 28 August. **A fourth surfaced on
+1 September: Creem's onboarding wants a tax ID (§5.5), and if that turns into a
+demand for a registered company we switch to Gumroad (§2).**
 
 ### 5.1 Moderation · **done 28 Aug** · `LAUNCH-GAP.md` B3
 
@@ -241,11 +249,25 @@ the single control this application leans on hardest, and §3 of this page tells
 a reviewer it is the first thing they will meet. The fix is written and tested
 (`ONBOARDING-AUDIT.md` §7.1 N1) and is part of §5.3's unpushed work.
 
-### 5.5 An entity and a payout account
+### 5.5 An entity, a tax ID, and a payout account
 
 Creem pays out by local bank transfer, which needs a name to pay and an account
 to pay into. Neither is recorded. This is a founder task, not an engineering one,
 and with moderation done it is now the longest pole on the page.
+
+**Creem's onboarding also asks for a tax ID, discovered 1 September.** A tax ID
+is not a company: Sri Lanka issues a personal Taxpayer Identification Number to
+individuals through the Inland Revenue Department — free, online, no
+incorporation, and close to mandatory since the 2024 rules anyway. A sole
+proprietor's personal TIN is normally what these forms mean. Two moves before
+assuming it blocks us: register for the TIN through IRD e-Services, and ask Creem
+support whether a sole-proprietor TIN satisfies the field or is addable after
+approval. If Creem turns out to need a registered company, that is the trigger
+for the Gumroad fallback in §2 — Gumroad needs neither a company nor a tax ID to
+start.
+
+Get the TIN regardless. Every provider on the §2 list will want it eventually,
+and it is the same number the entity and payout work above needs.
 
 ### 5.6 Three public claims the product does not currently keep
 
@@ -303,3 +325,4 @@ provider and when.
 | 30 Aug 2026 | `f137faf` deployed. Live reviewer audit run against `hellonerve.com` in a browser: 21 checks pass, 0 fail — hero, scoring law, positioning, footer commitments, two-step age gate, under-18 refusal, three legal pages, pricing, mobile layout, console, and the Google-shaped account reaching the §16.4 gate without looping. Public repo history scanned for secrets, clean. §5.3 and §5.4 closed. **The site is ready to be reviewed; the remaining blocker is the entity and payout account** |
 | 30 Aug 2026 | Mail fixed end to end: `support@hellonerve.com` created with a catch-all, Resend verified on `send.hellonerve.com`, DMARC published at `p=none`, Supabase Auth moved onto Resend, and `SUPPORT_EMAIL` pointed at the live domain in one place. §5.2 closed. Not deployed — it goes out with §5.3 |
 | 30 Aug 2026 | Every claim on this page re-checked against `hellonerve.com` rather than against the repo. `support@nerve.training` found to have no DNS at all; production found to be running the last commit while 28–30 Aug's work sits uncommitted, so §3's two-step age gate is not what a reviewer sees; the Google sign-up path found to loop before it can reach the §16.4 gate. The hero rep, which notes elsewhere still called owed, found recorded and live. Still not submitted to any provider |
+| 1 Sep 2026 | Creem onboarding reviewed field by field. Two new blockers. One: the prohibited-list item on "AI companion or relationship chatbots … romantic AI characters" is a reviewer judgement call we land on the right side of only if §3's framing holds. Two: onboarding requires a tax ID we do not have — recorded that a Sri Lankan personal TIN (IRD, no company) is the likely answer and worth getting regardless. **Fallback decided: if Creem declines on the tax ID or the category, we launch on Gumroad rather than run a third application** — MoR, no company or tax ID to start, looser content rules, at the cost of a ~10% + processing cut against Creem's ~4%. Noted that PayPal now supports receiving in Sri Lanka, which makes Gumroad's payout viable. Still not submitted to any provider |

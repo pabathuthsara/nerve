@@ -9,6 +9,7 @@ import type { Track } from '@/lib/data/types'
 import { useProduct } from './product-provider'
 import { Avatar, Skeleton } from './ui'
 import { useOnlineStatus } from '@/lib/hooks/use-online-status'
+import { identifyPerson } from './analytics'
 
 const navItems = [
   { label: 'Train', href: '/train', icon: Zap, tracks: ['dating'] as Track[] },
@@ -32,6 +33,20 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
     if (pathname.startsWith('/interview')) setTrack('interview')
     else if (pathname.startsWith('/train') || pathname.startsWith('/field')) setTrack('dating')
   }, [pathname, setTrack])
+
+  /**
+   * Ties the funnel to a person (B7).
+   *
+   * Here rather than in `<Analytics>` because the root layout sits above auth
+   * and has no user to name. Every signed-in screen renders through this
+   * shell, so this is the one place that always knows — and `identify` is
+   * idempotent, so re-running it on a plan or level change is the point rather
+   * than a cost.
+   */
+  useEffect(() => {
+    if (!user) return
+    identifyPerson(user.id, { plan: user.plan, level: user.currentLevel, streak_days: user.streakDays })
+  }, [user])
 
   const items = useMemo(() => navItems.filter((item) => item.tracks.includes(track)), [track])
   const switchTrack = (next: Track) => {

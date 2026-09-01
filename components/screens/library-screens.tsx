@@ -23,7 +23,7 @@
  */
 
 import Link from 'next/link'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
 import { useLibrary, useLibraryCard, useLibraryReads, usePersonas, useUserState } from '@/lib/data'
 import type { LibraryCard, Persona } from '@/lib/data/types'
@@ -34,6 +34,28 @@ import { groupLibrary } from '@/lib/techniques/grouping'
 import { AppShell } from '@/components/app-shell'
 import { Card, Chip, EmptyState, Skeleton } from '@/components/ui'
 import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
+import { capture } from '@/components/analytics'
+
+/**
+ * Where this card was opened from, for B7's `technique_opened`.
+ *
+ * The referrer rather than a query parameter, because the links into here are
+ * spread across the scorecard, the library index and the train screen, and a
+ * parameter on each is four places to forget one. A same-origin referrer is
+ * enough to tell the three apart and nothing else is read off it.
+ */
+function cameFrom(): 'library' | 'scorecard' | 'train' {
+  try {
+    const referrer = document.referrer
+    if (!referrer || new URL(referrer).origin !== window.location.origin) return 'library'
+    const path = new URL(referrer).pathname
+    if (path.startsWith('/session/')) return 'scorecard'
+    if (path.startsWith('/train')) return 'train'
+    return 'library'
+  } catch {
+    return 'library'
+  }
+}
 
 export function LibraryScreen() {
   const { data: cards, loading } = useLibrary()
@@ -111,6 +133,20 @@ export function LibraryCardScreen({ slug }: { slug: string }) {
   useEffect(() => {
     if (!card) return
     void markUiFlag(libraryReadFlag(card.slug))
+  }, [card])
+
+  /**
+   * Funnel step six (B7). The audit's complaint about the library is that its
+   * fourteen cards "feel like unrelated links" — this is the measurement that
+   * either supports that or refutes it, and `from` is what makes it useful:
+   * a card opened off a scorecard is a recommendation working, a card opened
+   * off the library index is somebody browsing.
+   */
+  const opened = useRef<string | null>(null)
+  useEffect(() => {
+    if (!card || opened.current === card.slug) return
+    opened.current = card.slug
+    capture('technique_opened', { slug: card.slug, from: cameFrom() })
   }, [card])
 
   const siblings = useMemo(() => {
@@ -193,9 +229,14 @@ function PractiseThis({ card, personas, repsLeft }: { card: LibraryCard; persona
           reads as a template that ran out of things to say. */}
       <p>{persona ? `${persona.name} — ${persona.settingShort.toLowerCase()}.` : 'Take it into a rep.'} {card.drill ? 'Run that drill against her.' : 'Run the technique in a live conversation.'}</p>
       <div className="library-practise__actions">
+        {/* Funnel step seven (B7). This is the product's only "focused rep" —
+            a rep entered from a technique, with a sub-score attached to it —
+            so it is what the audit's connective-tissue claim is measured on.
+            `focus` is the card's first target, which is the same key the
+            scorecard used to recommend the card in the first place. */}
         {spent
-          ? <Link className="arena-button arena-button--primary" href={`/text/${slug}`}>Run it in text</Link>
-          : <Link className="arena-button arena-button--primary" href={`/rep/${slug}/brief`}>Run a rep on this</Link>}
+          ? <Link className="arena-button arena-button--primary" href={`/text/${slug}`} onClick={() => capture('focused_rep_started', { persona_id: slug, focus: card.targets[0] ?? 'none' })}>Run it in text</Link>
+          : <Link className="arena-button arena-button--primary" href={`/rep/${slug}/brief`} onClick={() => capture('focused_rep_started', { persona_id: slug, focus: card.targets[0] ?? 'none' })}>Run a rep on this</Link>}
         <Link className="arena-button arena-button--ghost" href={spent ? '/train' : `/text/${slug}`}>{spent ? 'Back to training' : 'Or try it in text'}</Link>
       </div>
     </section>

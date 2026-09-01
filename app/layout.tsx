@@ -4,9 +4,14 @@ import './globals.css'
 import { displayFont, monoFont, sansFont } from '@/lib/fonts'
 import { ProductProvider } from '@/components/product-provider'
 import { ToastProvider } from '@/components/ui'
+import { Analytics } from '@/components/analytics'
+import { SITE_ORIGIN } from '@/lib/site/origin'
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'),
+  // Resolves the relative `/og.png` below. It used to fall back to localhost,
+  // which published link previews nobody outside this machine could load —
+  // see the note in `lib/site/origin.ts`.
+  metadataBase: new URL(SITE_ORIGIN),
   title: { default: 'NERVE — Conversation training', template: '%s · NERVE' },
   description: 'Timed voice reps for conversations that matter.',
   openGraph: {
@@ -39,7 +44,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${displayFont.variable} ${sansFont.variable} ${monoFont.variable}`}>
-      <body><ProductProvider><ToastProvider>{children}</ToastProvider></ProductProvider></body>
+      <body><ProductProvider><ToastProvider>{children}</ToastProvider><Analytics /></ProductProvider></body>
     </html>
   )
 }

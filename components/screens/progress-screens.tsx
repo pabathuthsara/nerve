@@ -70,11 +70,15 @@ export function ProgressScreen() {
 
         <Card className="progress-card">
           <div className="card-heading">
-            <div><span className="label">Composure score</span><h2 className="display-md">The trend</h2></div>
+            {/* Composite, not composure. Composure is one of the six §07
+                dimensions and it has its own cell in the card below this one,
+                so the old label did not merely read oddly — it named a
+                different number that is also on this screen. */}
+            <div><span className="label">Composite score</span><h2 className="display-md">The trend</h2></div>
           </div>
           {points.length < MIN_POINTS
             ? <NotEnough have={points.length} />
-            : <Trend values={composites} label="Composure score over recent reps" />}
+            : <Trend values={composites} label="Composite score over recent reps" />}
         </Card>
 
         <Card className="progress-card">

@@ -27,7 +27,30 @@
 /** Milliseconds. Long enough to feel, short enough not to buzz. */
 const TICK = 8
 
-export function tap(duration: number = TICK): void {
+/**
+ * The rep's own patterns (§02, `M3-PLAN.md` Phase D).
+ *
+ * Three, and no more. Haptics carry meaning only while they stay
+ * distinguishable, and a product with six vibration patterns has one
+ * vibration pattern that nobody can tell apart.
+ *
+ *   countdown  one count of 3·2·1. The same tick the date wheel uses, because
+ *              it means the same thing: a discrete step just happened.
+ *   open       the rep starts. Longer, single, unmistakably a different event.
+ *   close      she has gone. Two short pulses — the only pattern with a gap in
+ *              it, so the end of a rep never feels like the start of one.
+ *
+ * There is deliberately nothing for the thirty-second mark. §05 forbids
+ * coaching mid-rep, and a buzz against the leg while somebody is mid-sentence
+ * is the most literal interruption available.
+ */
+export const PATTERNS = {
+  countdown: TICK,
+  open: 18,
+  close: [14, 60, 14],
+} as const
+
+export function tap(duration: number | readonly number[] = TICK): void {
   if (typeof window === 'undefined') return
 
   // Vestibular triggers and haptics travel together, and §02's motion rule is
@@ -43,7 +66,7 @@ export function tap(duration: number = TICK): void {
   if (!vibrate) return
 
   try {
-    vibrate(duration)
+    vibrate(duration as number | number[])
   } catch {
     // Some browsers throw rather than returning false when the page has not
     // been interacted with yet. A missing tick is not worth an exception.

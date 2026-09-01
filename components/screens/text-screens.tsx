@@ -30,10 +30,17 @@ import { usePersona, useUserState } from '@/lib/data'
 import { Button, Sheet, Skeleton, useToast } from '@/components/ui'
 import { FluidPersona } from '@/components/fluid-persona'
 import { DistressModal } from '@/components/modals'
+import { useLatestFocus } from '@/lib/data'
+import { missionFor } from '@/lib/data/mission'
+import { cueRail, railVisible } from '@/lib/text/cues'
 
 export function TextRepScreen({ personaId }: { personaId: string }) {
   const { data: persona, loading: personaLoading } = usePersona(personaId)
   const { data: user } = useUserState()
+  // The same objective the scorecard set. Text mode points at it rather than
+  // inventing a second vocabulary — see `lib/text/cues.ts`.
+  const { data: focus } = useLatestFocus()
+  const mission = missionFor(focus)
   const toast = useToast()
 
   const [turns, setTurns] = useState<TextTurn[]>([])
@@ -181,6 +188,18 @@ export function TextRepScreen({ personaId }: { personaId: string }) {
 
         <div ref={endRef} />
       </div>
+
+      {/* Directions, never lines. The empty state above still offers nothing
+          at all, because saying the first thing is the skill being trained;
+          this appears only once a conversation exists. */}
+      {railVisible(started, ended) ? (
+        <div className="cue-rail" aria-label={`Attention cues for ${mission.target}`}>
+          <span className="cue-rail__label label">{mission.target}</span>
+          {cueRail(mission, turns.filter((turn) => turn.speaker === 'user').length).map((cue) => (
+            <span key={cue.text} className={`cue-chip${cue.done ? ' cue-chip--done' : ''}`} aria-current={cue.active ? 'step' : undefined}>{cue.text}</span>
+          ))}
+        </div>
+      ) : null}
 
       <form
         className="text-rep__compose"

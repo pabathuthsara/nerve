@@ -1,6 +1,5 @@
 import type { MetadataRoute } from 'next'
-
-const BASE = process.env.NEXT_PUBLIC_APP_URL ?? 'https://nerve-henna.vercel.app'
+import { SITE_ORIGIN } from '@/lib/site/origin'
 
 /**
  * Public pages are crawlable; the product is not. `/rep` and `/session` in
@@ -14,6 +13,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: ['/api/', '/rep/', '/text/', '/session/', '/progress/', '/profile/', '/onboarding/', '/interview/', '/auth/'],
     },
-    sitemap: `${BASE}/sitemap.xml`,
+    sitemap: `${SITE_ORIGIN}/sitemap.xml`,
   }
 }

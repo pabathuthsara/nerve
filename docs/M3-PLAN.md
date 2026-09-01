@@ -248,16 +248,23 @@ accounts later without any of this changing.
 
 Everything in §02 that is not built:
 
-- Sound kit — one coherent set, all under 400ms, mutable in one tap
-- Haptics via the Vibration API; silent on desktop, degraded without comment on iOS
-- Staged score reveal — composite counting up over 900ms, sub-scores at 60ms
-- The armed countdown, 3·2·1 with tick and haptic
-- The character-left moment as a full-bleed beat rather than an ordinary ending
-- Session audio replay — recordings upload and purge correctly; there is no player
+- ~~Sound kit — one coherent set, all under 400ms, mutable in one tap~~ **shipped 1 Sep** · `lib/audio/kit.ts`, synthesised rather than sampled so it is reviewable in a diff and costs nothing over the wire. The 400ms ceiling is an assertion, not a note — the exit sound was authored at 410ms and `kit.test.ts` refused it
+- ~~Haptics via the Vibration API~~ **shipped 1 Sep** · three named patterns in `lib/haptics.ts` and deliberately no more; still silent on iOS, for the reasons that file already sets out
+- ~~Staged score reveal — composite counting up over 900ms, sub-scores at 60ms~~ **shipped 1 Sep** · `lib/hooks/use-staged-reveal.ts`. §02 names this as *the* reduced-motion example, so under that preference both hooks return their finished state on the first render
+- ~~The armed countdown, 3·2·1 with tick and haptic~~ **shipped 1 Sep** · and the session opens on the *first* tick, not the last, so the connection is made underneath the count instead of after it
+- ~~The character-left moment as a full-bleed beat~~ **shipped 1 Sep** · `.rep-live--over` dims the whole screen rather than the orb alone
+- Session audio replay — recordings upload and purge correctly; there is no player *(still open — a P2 in `site-audit-openai.md`)*
 - Reconnection behind `ConnectionLostModal`: ICE retry ×3, paused timer, "saved up to 2:14"
 - Keyboard paths — `Space` to arm, `Esc` to end
 - PWA manifest and offline shell
-- Room tone, once the beds from Phase C exist
+- ~~Room tone, once the beds from Phase C exist~~ **shipped 1 Sep** · without waiting for recorded beds. `lib/audio/room-tone.ts` plays the authored beds with no convolver and no voice input node, so it does not reopen the intelligibility decision — see the note at the top of `AUDIO.md`
+
+> **Also shipped 1 Sep, not on this list because §17 never asked for it:** one
+> persistent training mission (`lib/data/mission.ts`) carried scorecard → Train
+> → brief → live rep → text mode, and a cue rail in text mode. Both come from
+> the P1 rows of `docs/site-audit-openai.md`, whose diagnosis was that the
+> product is "a performance dashboard without a coach". `assertNoScript` is the
+> load-bearing part: a mission may never contain a line to say.
 
 > **GATE — side-by-side against RizzAgent with three strangers; Nerve reads as
 > the more expensive product to all three.**

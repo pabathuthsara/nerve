@@ -19,6 +19,11 @@ import { micPermission, type MicPermission } from '@/lib/data/mic'
 import { PhoneNumberCard, TimeArc } from '@/components/rep-visuals'
 import { useOnlineStatus } from '@/lib/hooks/use-online-status'
 import { FluidPersona } from '@/components/fluid-persona'
+import { capture } from '@/components/analytics'
+import { MissionLine, MissionNote } from '@/components/mission'
+import { missionFor } from '@/lib/data/mission'
+import { useRepProduction } from '@/lib/hooks/use-rep-production'
+import { sceneId } from '@/lib/voice/types'
 
 interface RepScreenProps {
   personaId: string
@@ -56,7 +61,28 @@ export function RepBriefScreen({ personaId, interview = false }: RepScreenProps)
   useEffect(() => { void micPermission().then(setMicState) }, [])
   const level = subject?.level ?? 1
 
+  // The same objective the scorecard set and Train has been showing. Restated
+  // here because this is the last screen before the microphone opens.
+  const { data: focus } = useLatestFocus()
+  const mission = missionFor(focus)
+
+  /**
+   * Funnel step one (B7). Fired once the brief actually has a character to
+   * show, not on mount — the screen spends its first frames as a skeleton, and
+   * a "viewed" that counts skeletons measures routing rather than reading.
+   */
+  const briefSeen = useRef(false)
+  useEffect(() => {
+    if (!subject || subject.locked || briefSeen.current) return
+    briefSeen.current = true
+    capture('brief_viewed', { persona_id: personaId, level, track: interview ? 'interview' : 'dating', mode: 'voice' })
+  }, [interview, level, personaId, subject])
+
   const start = () => {
+    // Funnel step two. Fired at the commit point rather than on connect, so
+    // the gap between this and `rep_first_user_turn` still contains the reps
+    // that never got a connection — that gap is the thing worth seeing.
+    capture('rep_started', { persona_id: personaId, level, track: interview ? 'interview' : 'dating', mode: 'voice' })
     setCurtain(true)
     window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560)
   }
@@ -80,7 +106,7 @@ export function RepBriefScreen({ personaId, interview = false }: RepScreenProps)
   const setting = interview ? `${interviewer?.styleLabel ?? 'Interviewer'} · ${interviewer?.gender ?? ''}` : persona?.setting ?? ''
   const hook = interview ? interviewer?.blurb ?? '' : persona?.hook ?? ''
   const back = interview ? '/interview/interviewers' : `/roster/${personaId}`
-  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}><Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link><section className="brief-shell"><FluidPersona name={subject.name} personaId={subject.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={132} /><h1 className="display-lg">{subject.name}</h1><span className="label">{setting}</span><p className="brief-hook">{hook}</p>{!interview && progress && progress.attempts > 0 ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span> : null}{!interview ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} /> : null}<RuleBlock interview={interview} />{!interview ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}{!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}<Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button>{/* The way out of the microphone, offered at the exact moment somebody
+  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}><Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link><section className="brief-shell"><FluidPersona name={subject.name} personaId={subject.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={132} /><h1 className="display-lg">{subject.name}</h1><span className="label">{setting}</span><p className="brief-hook">{hook}</p>{!interview && progress && progress.attempts > 0 ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span> : null}{!interview ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} /> : null}<RuleBlock interview={interview} />{!interview ? <MissionNote mission={mission} /> : null}{!interview ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}{!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}<Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button>{/* The way out of the microphone, offered at the exact moment somebody
     is deciding whether to grant it (P1). Same character, no permission,
     no quota — and it is a link rather than a modal because a person
     hesitating here should not have to answer another question. */}
@@ -110,8 +136,67 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
 
   const loading = userLoading || (interview ? interviewersLoading : personaLoading)
   const blockedByReps = !userLoading && (user?.repsRemainingToday ?? 0) <= 0
-  useEffect(() => { if (!loading && subject && !subject.locked && !blockedByReps && online && live) start() }, [blockedByReps, live, loading, online, start, subject])
+  /**
+   * The rep no longer opens the instant loading finishes.
+   *
+   * `start()` is now what the countdown calls, so the three seconds before a
+   * stranger speaks are a real beat somebody was counted into rather than a
+   * state change they happened to be present for. The connection opens during
+   * the count, which also means the first thing they hear is not silence with
+   * a person in it. See `useRepProduction`.
+   */
+  const repReady = !loading && !!subject && !subject.locked && !blockedByReps && online && !!live
+  // The one thing §05 rule 6 allows on this screen besides the timer and the
+  // waveform. Read here, drawn as a single static line.
+  const { data: liveFocus } = useLatestFocus()
+  const liveMission = missionFor(liveFocus)
+  const production = useRepProduction({
+    ready: repReady,
+    onGo: start,
+    ended: Boolean(session.outcome),
+    wrapping: !session.outcome && session.status === 'live' && session.msRemaining <= WRAP_UP_MS,
+    // `sceneId()` is the codebase's own answer to "which scene is this":
+    // the authored bed when there is one, the reverb's scene otherwise. The
+    // `bed: null` on eight of nine personas was the switch for the
+    // convolver-era bed, which is not the mechanism playing here.
+    sceneId: live ? sceneId(live.persona.room) : null,
+    ambience: live?.ambience ?? false,
+    ambienceVolume: live?.ambienceVolume ?? 0,
+  })
   useEffect(() => { if (micLost) pause() }, [micLost, pause])
+
+  /**
+   * Funnel steps three and four (B7).
+   *
+   * `heardUser` is the hook's own "the first word we actually heard", so this
+   * measures somebody speaking rather than somebody's microphone opening —
+   * which is the entire distinction the step exists to draw. The clock starts
+   * when the session goes live, so the number is time-to-first-word from the
+   * moment she could hear them, not from the route change.
+   */
+  const liveAtRef = useRef<number | null>(null)
+  const firstTurnRef = useRef(false)
+  const completedRef = useRef(false)
+  useEffect(() => {
+    if (session.status === 'live' && liveAtRef.current === null) liveAtRef.current = Date.now()
+  }, [session.status])
+  useEffect(() => {
+    if (!session.heardUser || firstTurnRef.current || !sessionId) return
+    firstTurnRef.current = true
+    capture('rep_first_user_turn', { session_id: sessionId, ms_to_first_turn: Date.now() - (liveAtRef.current ?? Date.now()) })
+  }, [session.heardUser, sessionId])
+  useEffect(() => {
+    if (!outcome || completedRef.current || !sessionId) return
+    completedRef.current = true
+    capture('rep_completed', {
+      session_id: sessionId,
+      duration_ms: Date.now() - (liveAtRef.current ?? Date.now()),
+      // Never the score and never whether she said yes — §07 means outcome is
+      // not a metric here either. `ended_by` is about how the rep terminated,
+      // which is a reliability question, not a performance one.
+      ended_by: session.endReason ?? 'character',
+    })
+  }, [outcome, session.endReason, sessionId])
   // A refused microphone and a microphone that stopped working are different
   // problems with different fixes (§12). The hook reports both as `mic`, so the
   // permission state is what tells them apart: telling somebody whose headset
@@ -205,7 +290,7 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
   const unheard = !session.outcome && session.status === 'live'
     && !session.heardUser && silentFor >= SILENCE_NUDGE_MS
   const visualWarmth = session.outcome?.won ? 100 : loss ? 0 : session.warmth
-  return <main className={`rep-live${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label="End rep" disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{interview && session.question ? <p className="interview-question">{session.question}</p> : null}<section className="rep-center">{caption && subject ? <div className="rep-caption"><strong>{subject.name}</strong><span>{interview ? interviewer?.styleLabel : persona?.settingShort}</span></div> : null}<div className="orb-stage"><FluidPersona name={subject.name} personaId={subject.id} warmth={visualWarmth} announceWarmth speaking={loss ? 'thinking' : session.speaking} userLevel={session.userLevel} personaLevel={session.personaLevel} status={session.status === 'connecting' ? 'connecting' : 'live'} interactive fill /></div>{connecting ? <span className="label rep-connecting">Connecting · she can’t hear you yet</span> : null}{!connecting && level < 4 && !session.outcome ? <div className="band-readout"><span className="label" style={{ color: bandCss(session.band) }}>{displayBand}</span>{session.trainingWheels ? <strong className="data"><small>Warmth</small>{session.warmth}<i>/ {session.threshold}</i></strong> : null}</div> : null}{wrapCue ? <span className="wrap-cue label">30 seconds · land the conversation</span> : null}{session.outcome?.won && session.outcome.phoneNumber ? <PhoneNumberCard number={session.outcome.phoneNumber} /> : null}{loss ? <p className="exit-line">“{session.outcome?.exitLine}”</p> : null}{unheard ? <p className="silence-nudge" role="status"><MicOff size={15} strokeWidth={1.5} /> We can&apos;t hear you. Check your microphone and input device.</p> : null}<div className="mic-status" aria-live="polite">{statusLine}</div><div className="sr-only" aria-live="polite">{wrapCue ? 'Thirty seconds left. Land the conversation.' : bandAnnouncement(session.band, interview)}</div></section>{interview ? <span className="question-count data">Q{session.questionIndex} / {session.questionTotal}</span> : null}{resumeCount ? <div className="resume-count data">{resumeCount}</div> : null}<EndRepModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={() => { setEndOpen(false); session.end() }} /><MicLostModal open={micLost} onResume={() => { setMicLost(false); resume() }} onEnd={() => { setMicLost(false); session.end() }} /><MicBlockedSheet open={micBlocked} onClose={() => { setMicBlocked(false); session.end() }} onRetry={() => { setMicBlocked(false); session.retry() }} /><ConnectionLostModal open={session.error === 'connection'} attempt={session.retryAttempt} onRetry={session.retry} onEnd={session.end} /><DistressModal open={session.safety.distress} onClose={() => { navigatedRef.current = true; router.push('/train') }} /></main>
+  return <main className={`rep-live${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}${session.outcome ? ' rep-live--over' : ''}${production.arming ? ' rep-live--arming' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label="End rep" disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{production.count !== null ? <div className="rep-arm" role="status" aria-live="assertive"><span className="rep-arm__count data" key={production.count}>{production.count}</span><span className="rep-arm__label label">{subject.name} is about to speak</span></div> : null}{interview && session.question ? <p className="interview-question">{session.question}</p> : null}<section className="rep-center">{caption && subject ? <div className="rep-caption"><strong>{subject.name}</strong><span>{interview ? interviewer?.styleLabel : persona?.settingShort}</span></div> : null}<div className="orb-stage"><FluidPersona name={subject.name} personaId={subject.id} warmth={visualWarmth} announceWarmth speaking={loss ? 'thinking' : session.speaking} userLevel={session.userLevel} personaLevel={session.personaLevel} status={session.status === 'connecting' ? 'connecting' : 'live'} interactive fill /></div>{connecting && !production.arming ? <span className="label rep-connecting">Connecting · she can’t hear you yet</span> : null}{!connecting && level < 4 && !session.outcome ? <div className="band-readout"><span className="label" style={{ color: bandCss(session.band) }}>{displayBand}</span>{session.trainingWheels ? <strong className="data"><small>Warmth</small>{session.warmth}<i>/ {session.threshold}</i></strong> : null}</div> : null}{!connecting && !session.outcome && !production.arming ? <MissionLine mission={liveMission} /> : null}{wrapCue ? <span className="wrap-cue label">30 seconds · land the conversation</span> : null}{session.outcome?.won && session.outcome.phoneNumber ? <PhoneNumberCard number={session.outcome.phoneNumber} /> : null}{loss ? <p className="exit-line">“{session.outcome?.exitLine}”</p> : null}{unheard ? <p className="silence-nudge" role="status"><MicOff size={15} strokeWidth={1.5} /> We can&apos;t hear you. Check your microphone and input device.</p> : null}<div className="mic-status" aria-live="polite">{statusLine}</div><div className="sr-only" aria-live="polite">{wrapCue ? 'Thirty seconds left. Land the conversation.' : bandAnnouncement(session.band, interview)}</div></section>{interview ? <span className="question-count data">Q{session.questionIndex} / {session.questionTotal}</span> : null}{resumeCount ? <div className="resume-count data">{resumeCount}</div> : null}<EndRepModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={() => { setEndOpen(false); session.end() }} /><MicLostModal open={micLost} onResume={() => { setMicLost(false); resume() }} onEnd={() => { setMicLost(false); session.end() }} /><MicBlockedSheet open={micBlocked} onClose={() => { setMicBlocked(false); session.end() }} onRetry={() => { setMicBlocked(false); session.retry() }} /><ConnectionLostModal open={session.error === 'connection'} attempt={session.retryAttempt} onRetry={session.retry} onEnd={session.end} /><DistressModal open={session.safety.distress} onClose={() => { navigatedRef.current = true; router.push('/train') }} /></main>
 }
 
 function BriefGate({ title, description, href, locked = false }: { title: string; description: string; href: string; locked?: boolean }) {

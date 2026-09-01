@@ -21,7 +21,7 @@
     "db:seed": "vite-node --config vitest.config.ts scripts/seed-personas.ts",
     "db:content": "vite-node --config vitest.config.ts scripts/seed-content.ts",
     "db:plan": "vite-node --config vitest.config.ts scripts/set-plan.ts",
-    "db:types": "npx supabase gen types typescript --project-id \"$SUPABASE_PROJECT_REF\" > /tmp/nerve-db-types.ts && grep -q '^export type Database' /tmp/nerve-db-types.ts && mv /tmp/nerve-db-types.ts lib/db/types.ts || { echo 'db:types failed \u2014 lib/db/types.ts left untouched'; cat /tmp/nerve-db-types.ts; exit 1; }",
+    "db:types": "npx supabase gen types typescript --project-id \"$SUPABASE_PROJECT_REF\" > /tmp/nerve-db-types.ts && grep -q '^export type Database' /tmp/nerve-db-types.ts && mv /tmp/nerve-db-types.ts lib/db/types.ts || { echo 'db:types failed — lib/db/types.ts left untouched'; cat /tmp/nerve-db-types.ts; exit 1; }",
     "db:verify": "vite-node --config vitest.config.ts scripts/verify-rls.ts",
     "db:rep": "vite-node --config vitest.config.ts scripts/verify-rep.ts",
     "db:field": "vite-node --config vitest.config.ts scripts/verify-field.ts",
@@ -32,11 +32,13 @@
     "db:repair-wins": "vite-node --config vitest.config.ts scripts/repair-wins.ts"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.73.0",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
     "framer-motion": "^12.43.0",
     "lucide-react": "^0.468.0",
     "next": "15.5.23",
+    "posthog-js": "^1.422.5",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "server-only": "^0.0.1",

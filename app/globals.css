@@ -950,6 +950,66 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .resume-count { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; background: rgba(11,12,10,.76); color: var(--volt); font-size: 64px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 
+/* ── THE PRODUCTION LAYER (§02, M3 Phase D) ─────────────────────────────────
+   The live screen was correct and had no sense of occasion: a rep began the
+   instant a connection opened and ended when a component swapped. These are
+   the four beats. Every one of them is suppressed under prefers-reduced-motion
+   at the bottom of this file — the sound and the haptics keep their timing,
+   because a countdown is timing rather than movement, but nothing moves. */
+
+/* The arm. 3·2·1, full-bleed, over everything including the orb. */
+.rep-arm { position: absolute; z-index: 30; inset: 0; display: grid; place-items: center; align-content: center; gap: 10px; background: radial-gradient(circle at 50% 45%, rgba(19,21,17,.82), rgba(11,12,10,.97) 62%); }
+.rep-arm__count { color: var(--volt); font-size: clamp(5rem, 26vw, 9rem); line-height: 1; font-variant-numeric: tabular-nums; animation: arm-count 700ms cubic-bezier(.16,1,.3,1) both; }
+.rep-arm__label { color: var(--text-mute); }
+@keyframes arm-count { 0% { opacity: 0; transform: scale(1.24); } 32% { opacity: 1; transform: scale(1); } 100% { opacity: .5; transform: scale(.97); } }
+
+/* The entrance. When the count clears, the room fades up under her rather
+   than the screen simply being there already. */
+.rep-live--arming .rep-top, .rep-live--arming .rep-center { opacity: .18; }
+.rep-live .rep-top, .rep-live .rep-center { transition: opacity 620ms ease-out; }
+
+/* The mission, the third of the three things §05 rule 6 allows on this
+   screen. Static, quiet, and never a live region — see components/mission.tsx. */
+.mission-live { min-height: 18px; color: var(--text-mute); letter-spacing: .07em; }
+
+/* The exit beat. The whole screen dims and settles rather than the orb alone
+   doing the work, so an ending reads as an ending. */
+.rep-live--over { animation: rep-over 620ms ease-out both; }
+@keyframes rep-over { 0% { filter: brightness(1); } 100% { filter: brightness(.82); } }
+.rep-live--over .rep-top { opacity: .3; transition: opacity 500ms ease-out; }
+
+/* ── THE MISSION, ACROSS THE LOOP ───────────────────────────────────────── */
+.mission-card { display: grid; gap: 8px; border: 1px solid var(--line); border-left: 2px solid var(--volt); border-radius: 2px; padding: 14px 16px; background: var(--surface); }
+.mission-card__head { display: flex; align-items: center; gap: 7px; }
+.mission-card__objective { margin: 0; color: var(--text); font-size: 15px; line-height: 1.45; }
+.mission-card__done { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.45; }
+.mission-card__done .label { margin-right: 6px; }
+.mission-note { display: flex; align-items: flex-start; gap: 8px; width: 100%; margin: 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.45; text-align: left; }
+.mission-note > svg { flex: 0 0 auto; margin-top: 2px; color: var(--volt); }
+.mission-note .label { display: block; margin-bottom: 2px; }
+
+/* ── THE CUE RAIL (text mode) ───────────────────────────────────────────── */
+/* Same column as the thread and the composer. Without the width and the auto
+   margins it sat flush against the left edge of the viewport while everything
+   it belongs to was centred — see `.text-rep__thread` / `.text-rep__compose`,
+   which is where these two numbers come from. */
+.cue-rail { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: min(100%, 640px); margin: 0 auto; padding: 0 16px 2px; }
+.cue-rail__label { width: 100%; margin-bottom: 2px; color: var(--text-mute); }
+/* Three states, and the brightness runs forwards: what you have passed is the
+   quietest, what you are on is the loudest, what is coming is in between.
+   `--done` was volt and `--active` was nothing at all, which pointed the eye at
+   the cue already behind you and made "exactly one is active" invisible.
+   No volt anywhere on the rail: the send button is this screen's one accent. */
+.cue-chip { border: 1px solid var(--line); border-radius: 2px; padding: 5px 9px; background: transparent; color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; cursor: default; transition: color 200ms, border-color 200ms; }
+.cue-chip[aria-current='step'] { border-color: var(--line-bright); background: var(--surface); color: var(--text); }
+.cue-chip--done { border-color: transparent; color: var(--text-mute); }
+
+/* ── THE STAGED SCORE REVEAL ────────────────────────────────────────────── */
+.composite[data-revealing='true'] { color: var(--volt); }
+.metric-list [data-reveal='pending'] { opacity: 0; transform: translateY(6px); }
+.metric-list [data-reveal='shown'] { opacity: 1; transform: none; transition: opacity 320ms ease-out, transform 320ms cubic-bezier(.16,1,.3,1); }
+
+
 .result-page { min-height: 100dvh; display: grid; place-items: center; align-content: center; gap: 18px; padding: 40px 20px; text-align: center; }
 .result-page h1 { max-width: 620px; }
 .result-time { font-size: clamp(2rem, 8vw, 2.75rem); }
@@ -991,8 +1051,19 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .progress-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
 .progress-card { display: grid; gap: 14px; padding: 20px; }
 .trend { width: 100%; }
-.trend svg { width: 100%; height: 120px; display: block; }
+.trend svg { width: 100%; height: 120px; display: block; overflow: visible; }
 .trend--compact svg { height: 44px; }
+/* The seven lines on Progress.
+   `.chart-score` was styled only under `.warmth-chart`, so every polyline here
+   fell back to the SVG defaults — `stroke: none` and `fill: black` — and drew a
+   black shape on the `#0B0C0A` ground. Invisible, on the one screen whose whole
+   job is showing that the number is going up.
+   The composite line is Volt because §Arena assigns Volt to the composite score;
+   the six sub-scores are the second series and take Cool. That is exactly one
+   Volt element on this screen. */
+.trend polyline { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; }
+.trend .chart-score { stroke: var(--volt); }
+.trend--compact .chart-score { stroke: var(--cool); stroke-width: 1.5; }
 .subscore-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
 .subscore-cell { display: grid; gap: 6px; min-width: 0; }
 .subscore-cell__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
