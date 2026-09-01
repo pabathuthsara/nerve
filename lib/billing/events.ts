@@ -83,6 +83,32 @@ const INTENTS: Record<string, { intent: BillingIntent; status: SubscriptionStatu
   'dispute.created': { intent: 'revoke', status: 'canceled' },
 }
 
+/**
+ * The provider's own subscription status, but only where it is allowed to win.
+ *
+ * `INTENTS` above is a set of product decisions, not a transcription, and most
+ * of them must survive whatever the payload says: a `dispute.created` carrying
+ * `status: "active"` is still a revocation, and `past_due` is still recorded as
+ * `past_due` however the vendor labels the subscription mid-retry. So the
+ * payload refines exactly one thing — a grant that would land on `active` may
+ * land on `trialing` instead.
+ *
+ * That one case matters because it is the entire difference between "Renews
+ * 8 Sep" and "your card is charged on 8 Sep unless you cancel first", and only
+ * the second of those is honest to somebody who has not paid yet. It was found
+ * on 1 Sep: a trialling checkout arrives as `checkout.completed`, which maps to
+ * `active`, so the trial line in `CurrentPlan` could never be reached and every
+ * trialling account was told its plan renews. §14 is blunt that a trial ending
+ * quietly is the pattern that closes a merchant account.
+ *
+ * It is narrow on purpose. A subscription that stops calling itself trialing —
+ * because the first charge went through — goes back to `active` through the
+ * same path, since that is what the payload will then say.
+ */
+function trialing(subscription: Record<string, unknown>, data: Record<string, unknown>): boolean {
+  return stringOf(subscription['status']) === 'trialing' || stringOf(data['status']) === 'trialing'
+}
+
 /** Events we understand. Anything else is acknowledged and ignored. */
 export function isKnownEventType(type: string): boolean {
   return type in INTENTS
@@ -163,7 +189,10 @@ export function toBillingEvent(payload: unknown, receivedAt: number): BillingEve
     eventId: stringOf(root['id']),
     type,
     intent: mapped.intent,
-    status: mapped.status,
+    status:
+      mapped.intent === 'grant' && mapped.status === 'active' && trialing(subscription, data)
+        ? 'trialing'
+        : mapped.status,
     occurredAt,
     userId: readUserId(data),
     providerCustomerId: idOf(subscription['customer']) ?? idOf(data['customer']),

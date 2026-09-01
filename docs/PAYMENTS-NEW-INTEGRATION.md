@@ -304,10 +304,9 @@ anonymously, and the per-account spend ceiling still bounds it.
 - `subscription.expired → revoke` lands them on free, which after this change
   means voice off and everything else intact.
 - What is missing is UI: a trial countdown, the card-on-file state, and a
-  cancel path that does not require emailing us. **The countdown needs a read
-  fixed first** — a trialling subscription is stored with `status = 'active'`,
-  because status comes from the event type and the event is
-  `checkout.completed`. See §12.
+  cancel path that does not require emailing us. All three shipped on 31 Aug —
+  but the countdown was dark until 1 Sep, because a trialling subscription was
+  stored as `active`. See §12.
 
 ### 5.4 The buy button
 
@@ -735,21 +734,32 @@ the button to the plan is proven, in production, on the real domain.
 
 Two things came out of it.
 
-### The trial is on, and we cannot see it
+### The trial is on, and we could not see it
 
 `current_period_end` came back seven days out rather than a month, which is the
 trial doing its job — the Trial Period switch is on both products in the
 dashboard, so §6.1's warning about products that charge immediately no longer
 applies to the test-mode pair.
 
-**But `subscriptions.status` says `active`, not `trialing`.** Status is read
-from the event type alone (`INTENTS` in `lib/billing/events.ts`), and the event
-that arrives on a trialling checkout is `checkout.completed`, which maps to
-`active`. Creem's own `status: "trialing"` is in the payload and ignored. That
-is harmless for access — a trial grants Pro either way, which is the intent —
-and wrong for anything that has to *say* something about the trial. §5.3 already
-owes a trial countdown and a card-on-file state; neither can be built off a
-status that reads `active` on day one. Fix the read before building that UI.
+**But `subscriptions.status` said `active`, not `trialing`** — and that was
+worse than a mislabelled row. Status was read from the event type alone
+(`INTENTS` in `lib/billing/events.ts`), and a card-backed trial arrives as
+`checkout.completed`, which maps to `active`. Creem's own `status: "trialing"`
+was in the payload and ignored. Access was never affected — a trial grants Pro
+either way, which is the intent — but the trial line in `CurrentPlan`
+(`components/screens/profile-screens.tsx`) is written and was **unreachable**.
+Every trialling account was told *"Renews 8 Sep"* on the day its card would
+actually be charged for the first time. §14 names a trial that ends quietly as
+the pattern that closes a merchant account; this was that pattern, shipped.
+
+Fixed by letting the payload refine exactly one thing: a grant that would land
+on `active` lands on `trialing` when the subscription says so. Nothing else
+moves. `dispute.created` still revokes and `past_due` is still recorded as
+`past_due` however the vendor labels the subscription mid-retry — asserted in
+`events.test.ts`, because a payload that can talk a revocation out of revoking
+is the version of this that costs money. When the first charge lands the
+payload says `active` and the row follows it back, with no special case for the
+transition.
 
 **What the trial-end charge does is still unproven**, and cannot be rehearsed by
 waiting: test mode has no clock control, so the seven days would have to pass in

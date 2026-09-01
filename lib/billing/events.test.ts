@@ -41,6 +41,56 @@ describe('toBillingEvent', () => {
     })
   })
 
+  it('reads a trialling checkout as trialing, not active', () => {
+    // The 1 Sep finding. Creem sends `checkout.completed` when a card-backed
+    // trial starts, which maps to `active` — so every trialling account was
+    // told its plan renews on the day its card is actually charged.
+    const event = toBillingEvent(
+      payload('checkout.completed', {
+        subscription: {
+          id: 'sub_1',
+          status: 'trialing',
+          product: 'prod_pro',
+          current_period_end_date: '2026-09-08T04:12:01.591Z',
+        },
+      }),
+      1_000,
+    )
+    expect(event?.status).toBe('trialing')
+    // Still a grant: a trial is Pro from the moment it starts.
+    expect(event?.intent).toBe('grant')
+    expect(event?.currentPeriodEnd).toBe('2026-09-08T04:12:01.591Z')
+  })
+
+  it('goes back to active when the first charge lands', () => {
+    const event = toBillingEvent(payload('subscription.paid', { status: 'active' }), 1_000)
+    expect(event?.status).toBe('active')
+  })
+
+  it('reads the status off a subscription event as well as a checkout', () => {
+    expect(toBillingEvent(payload('subscription.update', { status: 'trialing' }), 1_000)?.status)
+      .toBe('trialing')
+  })
+
+  it('never lets the payload talk a revocation out of revoking', () => {
+    // The load-bearing limit. A dispute is money already clawed back; a payload
+    // still calling the subscription active or trialing changes nothing (§14).
+    const disputed = toBillingEvent(payload('dispute.created', { status: 'trialing' }), 1_000)
+    expect(disputed?.intent).toBe('revoke')
+    expect(disputed?.status).toBe('canceled')
+
+    const dunning = toBillingEvent(payload('subscription.past_due', { status: 'trialing' }), 1_000)
+    expect(dunning?.status).toBe('past_due')
+  })
+
+  it('falls back to active when the subscription was not expanded', () => {
+    // A checkout that carries the subscription as a bare id tells us nothing
+    // about a trial. Active is the safe read: access is identical either way.
+    const event = toBillingEvent(payload('checkout.completed', { subscription: 'sub_9', status: 'completed' }), 1_000)
+    expect(event?.status).toBe('active')
+    expect(event?.intent).toBe('grant')
+  })
+
   it('ignores an event it does not act on', () => {
     expect(toBillingEvent(payload('license.created'), 1_000)).toBeNull()
     expect(isKnownEventType('license.created')).toBe(false)
