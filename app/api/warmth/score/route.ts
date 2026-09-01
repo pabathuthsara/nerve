@@ -14,7 +14,7 @@ import { NextResponse } from 'next/server'
 import { requireUser } from '@/lib/db/api-auth'
 import { maySpend } from '@/lib/db/spend'
 import { clampSlowScore } from '@/lib/warmth/slow'
-import { buildSystemPrompt } from '@/lib/warmth/prompt'
+import { buildSystemPrompt, scorerPlaceFor } from '@/lib/warmth/prompt'
 
 export const runtime = 'edge'
 
@@ -60,6 +60,11 @@ export async function POST(request: Request): Promise<Response> {
   const agentReply = str(body.agentReply)
   const agentPrior = str(body.agentPrior)
   const personaName = str(body.personaName, 40) ?? 'She'
+  // Resolved from the registry, never taken from the body. The name arrives
+  // from the client and is only ever interpolated as a name; where she is
+  // standing is prompt content that steers the intimacy scale, so it comes from
+  // the repo — the same rule the character contract follows.
+  const place = scorerPlaceFor(personaName)
   const warmth =
     typeof body.warmth === 'number' && Number.isFinite(body.warmth)
       ? Math.round(body.warmth)
@@ -85,7 +90,7 @@ export async function POST(request: Request): Promise<Response> {
         max_tokens: 160,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: buildSystemPrompt(personaName) },
+          { role: 'system', content: buildSystemPrompt(personaName, place) },
           { role: 'user', content: userContent },
         ],
       }),

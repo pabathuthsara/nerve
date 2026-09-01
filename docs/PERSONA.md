@@ -71,6 +71,31 @@ climb monotonically (6 → 10 → 12 → 14 → 15 → 15) and the warm bands ar
 untouched, because those were tuned against real reps and round 6 lives at that
 end.
 
+## The eight optional fields, and why they exist
+
+Added 1 September for Tess (`PERSONA-AUDIT.md`). The last two came out of
+auditioning her rather than out of reading her, which is the difference between
+a field somebody reasoned into existence and one the transcripts demanded.
+**Every one defaults to the behaviour that was already there**, so absent means byte-identical and the rest
+of the roster is untouched — `lib/personas/tess.test.ts` asserts exactly that,
+over shipped and retired characters alike.
+
+| Field | Overrides | Why a per-character field |
+|---|---|---|
+| `disposition` | the compiler's banded disposition line | `trajectory.start` is a DIFFICULTY dial and was being read as a temperament. There is no value of it that produces both a rung-1 curve and a character glad to be spoken to: "genuinely pleased" needs `start > 66`, and `start + jitter` must stay under `ARM_THRESHOLD` (65) |
+| `bandDirectives` | the shared band table | The band table is a personality and it is Nadia's. It still owns reply length — this changes *which table she is read from*, not how many systems get an opinion |
+| `postureMode` | `absolute` posture reading | `openingAffect` opens comfort 15+ above warmth for every start below 50, which is the whole roster, so `at-ease` fired on turn one of every rep. `relative` measures against the opening spread, so a posture can only mean "this moved" |
+| `moods` | nothing; adds `# Today, specifically` | The steering line is deterministic in warmth, so a rep inside one band carries one instruction start to finish. A mood changes what she has to talk about and **never** what she gives |
+| `room.place` | `sceneId(room)` in prose | The scene id is an audio lookup. With ambient beds off it returns the impulse response, which put Tess in a bookshop because that is whose reverb her launderette borrows |
+| `steerHeartbeatTurns` | `STEER_HEARTBEAT_TURNS` (4) | Drift is proportional to the room the band gives her — measured, 16-20 words on a reminded turn and 26-30 on an unreminded one. A wider band without a shorter heartbeat is a wider band she ignores, so this and `bandDirectives` are one setting |
+| `verbosityMedian` | `DEFAULT_VERBOSITY_MEDIAN` (12) | The M0 gate counts sustained length as a frame break. Set above the REALISED output of her widest band, not above the cap, or it reports her own band back at her |
+| `contract(…, { punctuation })` | `PUNCTUATION_RULES` | The shared block is two rules under one heading. The em-dash line is a TTS artefact fix and is forever; "short sentences" is a rhythm, and it was the last place Nadia's cadence reached the whole roster |
+
+**None of these is a friendliness dial and none may become one.** The rule above
+stands. `disposition` is a hand-authored sentence replacing a worse machine-
+generated one about the same thing; it does not move warmth, and the character
+who has one still opens below the arm line like everybody else.
+
 ## Personality is arithmetic, not adjectives
 
 Layer 2 described eight characters in detail and then moved none of them: the

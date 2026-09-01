@@ -6,6 +6,9 @@
  * (§04 — "Nothing in the application layer may import a provider SDK directly.")
  */
 
+import type { BandDirectives } from '@/lib/warmth/bands'
+import type { PostureMode } from '@/lib/warmth/affect'
+
 export type ProviderId = 'openai' | 'elevenlabs'
 
 /* ------------------------------------------------------------------ *
@@ -175,6 +178,21 @@ export interface RoomConfig {
   reverbWet: number
   /** Milliseconds, [min, max], between randomly scheduled one-shots. */
   oneShotIntervalMs: [min: number, max: number]
+  /**
+   * The word for the room she is standing in, when it is not the scene id.
+   *
+   * PERSONA-AUDIT §3.6. `sceneId` returns `bed ?? reverbIr`, and with ambient
+   * beds off roster-wide that is the impulse response — which is an ACOUSTIC
+   * choice. Tess's launderette borrows the bookshop IR because it is the closer
+   * of the two authored dead rooms to somewhere small and tiled, and the
+   * consequence was that her Absolute rules told her to react "the way a
+   * stranger in a bookshop would" while she stood in a launderette. A room
+   * contradiction planted in the section that says what is inviolable.
+   *
+   * So the name and the reverb are separate fields. Absent means the scene id,
+   * which is correct for every character whose room and IR are the same place.
+   */
+  place?: string
 }
 
 /**
@@ -187,6 +205,16 @@ export interface RoomConfig {
  */
 export function sceneId(room: RoomConfig): string {
   return room.bed ?? room.reverbIr
+}
+
+/**
+ * The word for the room, for prose. Never for looking up audio.
+ *
+ * `sceneId` is an audio lookup and stayed one; this is the half of it that was
+ * doing prose work by accident. See `RoomConfig.place`.
+ */
+export function roomName(room: RoomConfig): string {
+  return (room.place ?? sceneId(room)).replace(/_/g, ' ')
 }
 
 export interface OutcomeWeights {
@@ -254,6 +282,99 @@ export interface Persona {
    * against a contract asking for four to ten.
    */
   contract: string
+
+  /**
+   * How she feels about being spoken to, in her own words.
+   *
+   * PERSONA-AUDIT §3.2. The compiler derives a disposition line by banding
+   * `trajectory.start` — guarded / neutral / pleased. That is a DIFFICULTY dial
+   * being read as a TEMPERAMENT one, and the two are different questions: Tess
+   * is delighted to be talked to *and* gives little away at first, because she
+   * is delighted and does not know him. Both are true and the band cannot say
+   * so. Worse, it is unreachable — "genuinely pleased" needs `start > 66` and
+   * `roster.test.ts` requires `start + startJitter < ARM_THRESHOLD` (65), so no
+   * value of `start` produces both a rung-1 curve and a character who is glad
+   * to see you. Her contract said delighted and the derived line, printed after
+   * it, said neutral.
+   *
+   * This is NOT a friendliness dial and must never become one — friendliness is
+   * warmth, and a second parameter for it is two systems arguing over one
+   * behaviour. It is a sentence, hand-authored, replacing a worse machine-
+   * generated sentence about the same thing. Absent is the normal case and
+   * means the derived line, unchanged.
+   */
+  disposition?: string
+
+  /**
+   * Her own wording for one or more warmth bands. See `BandDirectives`.
+   *
+   * Absent is the normal case and means the shared table (PERSONA-AUDIT §3.7).
+   */
+  bandDirectives?: BandDirectives
+
+  /**
+   * How her posture is read off the three affect axes. See `PostureMode`.
+   *
+   * Absent means `absolute`, which is what the roster was tuned under.
+   */
+  postureMode?: PostureMode
+
+  /**
+   * How often an unchanged direction is re-sent to her, in turns.
+   *
+   * Absent means `STEER_HEARTBEAT_TURNS` (4), which is what the roster runs.
+   *
+   * **A character with a wider band needs reminding more often**, and the
+   * audition is where that stopped being a guess: on the turns Tess was sent
+   * her direction she came in at 16 to 20 words, and on the turns she was not
+   * she came in at 26 to 30. Same band, same cap, same character — the only
+   * variable was how many turns ago she last read it. Drift is proportional to
+   * the room the band gives her, so the cap and the heartbeat are one setting
+   * in two places, and a character who is allowed a small story cannot be
+   * reminded as rarely as one who is allowed a sentence.
+   *
+   * It is not free — the line is re-charged as context — but it is one short
+   * item, and change-detection already cut a rep from one copy per breath to a
+   * handful.
+   */
+  steerHeartbeatTurns?: number
+
+  /**
+   * The sustained median reply length, over six turns, at which she counts as
+   * having drifted into essay mode. See `DEFAULT_VERBOSITY_MEDIAN` (12).
+   *
+   * Part of the same decision as `bandDirectives` and not a separate one: a
+   * character allowed a small story cannot be measured against a character
+   * allowed a sentence, and the M0 gate counts this as a frame break. Set it
+   * above the widest band she can actually reach, so it catches drift rather
+   * than reporting her own ceiling back at her.
+   */
+  verbosityMedian?: number
+
+  /**
+   * The handful of afternoons this character could be having, one rolled per
+   * rep.
+   *
+   * PERSONA-AUDIT §3.9. `composeSteering` is deterministic in warmth and the
+   * directive is only re-sent when it changes, so a rep that stays inside one
+   * band carries ONE instruction from start to finish — measured, fifteen
+   * turns, one line. A second rep against the same character at the same warmth
+   * is that line again. For Tess that is not academic: §08 re-offers the
+   * sign-up rep at day 28 as a side-by-side measurement, so the user meets the
+   * identical afternoon twice and the thing being measured is contaminated by
+   * the thing being remembered.
+   *
+   * One line, second person, about her day and never about him. Rolled by the
+   * same RNG that rolls `startJitter`, so a rep is one seed and not two, and
+   * dropped into the contract under her authored mood.
+   *
+   * IT MUST NOT TOUCH A DIAL. A mood that moved warmth would be a difficulty
+   * roll wearing a costume, and the ladder would stop meaning anything. These
+   * change what she has to talk about, never what she gives.
+   *
+   * Authored in the repo and seeded, never generated at runtime (rule 8).
+   */
+  moods?: string[]
 
   /**
    * What she would rather be doing, in her own scene.

@@ -168,6 +168,28 @@ export interface DirectiveContext {
 }
 
 /**
+ * A character's own wording for one or more of her bands.
+ *
+ * THE BAND TABLE IS A PERSONALITY, AND IT IS NADIA'S (PERSONA-AUDIT §3.7).
+ * Every directive above was tuned against her, and she is quiet, flat and
+ * clipped — so for her the caps read as who she is rather than as a constraint
+ * on it. A character authored against that grain is partially overwritten by
+ * them, in proportion to how far she differs, and Tess is the maximum-distance
+ * case: warm, quick, carries it, and told on every turn to say one sentence of
+ * fourteen words and ask nothing.
+ *
+ * THE BAND STILL OWNS REPLY LENGTH. That rule is not weakened here and must
+ * not be — round 6 had the contract and the band both specifying it, they
+ * disagreed, and the model produced a third answer nobody asked for. What an
+ * override changes is *which* band table this character is read from, not how
+ * many systems are allowed to have an opinion. There is still exactly one
+ * clause in the steering line that says how much she gives.
+ *
+ * Absent is the normal case and means the shared table, byte for byte.
+ */
+export type BandDirectives = Partial<Record<WarmthBand, string>>
+
+/**
  * The band's own clauses, unbracketed.
  *
  * Split out so `composeSteering` can add the personality and gate clauses to
@@ -177,9 +199,10 @@ export interface DirectiveContext {
 export function bandDirectiveParts(
   warmth: number,
   context: DirectiveContext = {},
+  overrides?: BandDirectives,
 ): string[] {
   const band = bandFor(warmth)
-  const parts = [specFor(band).directive]
+  const parts = [overrides?.[band] ?? specFor(band).directive]
   // The low bands already forbid questions outright; saying it twice reads as
   // emphasis on the wrong thing.
   if (context.suppressQuestion && BANDS_ALLOWING_QUESTIONS.has(band)) {

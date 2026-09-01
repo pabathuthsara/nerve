@@ -95,6 +95,9 @@ export class WarmthSession {
       // the same reason the trajectory is one: the dev panel can retune a
       // character mid-rep and the next turn has to feel it.
       personality: () => this.persona.personality,
+      // Also a getter, for the same reason: a character switched in the dev
+      // panel must not leave the engine reading the previous one's mode.
+      postureMode: () => this.persona.postureMode ?? 'absolute',
       ...(options.rng ? { rng: options.rng } : {}),
     })
   }
@@ -153,7 +156,10 @@ export class WarmthSession {
       repairOpen: this.engine.repairOpen,
     })
     this.turnsSinceSteer += 1
-    if (next === this.lastDirective && this.turnsSinceSteer < STEER_HEARTBEAT_TURNS) {
+    // Hers if she has one. See `Persona.steerHeartbeatTurns` — a wider band
+    // drifts further between reminders, so the two are one setting.
+    const heartbeat = this.persona.steerHeartbeatTurns ?? STEER_HEARTBEAT_TURNS
+    if (next === this.lastDirective && this.turnsSinceSteer < heartbeat) {
       return null
     }
     return this.directive()

@@ -12,6 +12,8 @@
  * at what we meant, and it guessed "low".
  */
 
+import { PERSONAS, RETIRED_PERSONAS } from '@/lib/personas'
+
 export const INTIMACY_ANCHORS = `INTIMACY — how personal the turn is, by TOPIC. Absolute scale.
 
   0-10    the shop, the books, the weather, objects in the room
@@ -161,9 +163,51 @@ export function renderFewShots(shots: readonly FewShot[] = FEW_SHOTS): string {
     .join('\n\n')
 }
 
-export function buildSystemPrompt(personaName: string): string {
+/**
+ * The room the scorer is told this is happening in.
+ *
+ * It used to be the literal "a second-hand bookshop", for every character
+ * (PERSONA-AUDIT §3.6). That is Nadia's scene, and it is not a cosmetic slip:
+ * `intimacy` is scored against anchors whose bottom rung is "the shop, the
+ * books, the weather", and intimacy drives the overreach rule that decides
+ * whether a turn reads as flirting or as a boundary crossing. A launderette
+ * conversation judged against a bookshop moves the wrong way.
+ *
+ * The few-shots below are still bookshop-specific and are deliberately left
+ * alone — rewriting them is a recalibration of the whole live scorer, and the
+ * scene sentence is the part that can move on its own.
+ *
+ * Defaults to the old literal, so a character with no authored `place` produces
+ * a byte-identical prompt.
+ */
+export const DEFAULT_SCORER_PLACE = 'a second-hand bookshop'
+
+/**
+ * The place clause for a character, by the name the client sent.
+ *
+ * A lookup against the authored roster rather than a value read off the
+ * request: the name is interpolated as a name and is harmless, but the room
+ * steers the intimacy anchors and therefore steers the meter. Anything that
+ * shapes scoring comes from the repo.
+ *
+ * Falls back to the old literal, which is what every character without an
+ * authored `place` gets — so their prompt is unchanged to the byte.
+ */
+export function scorerPlaceFor(personaName: string): string {
+  const match = [...Object.values(PERSONAS), ...Object.values(RETIRED_PERSONAS)].find(
+    (persona) => persona.name.toLowerCase() === personaName.trim().toLowerCase(),
+  )
+  const place = match?.room.place
+  if (!place) return DEFAULT_SCORER_PLACE
+  return `${/^[aeiou]/i.test(place) ? 'an' : 'a'} ${place}`
+}
+
+export function buildSystemPrompt(
+  personaName: string,
+  place: string = DEFAULT_SCORER_PLACE,
+): string {
   return [
-    `You rate one exchange between a man and ${personaName}, a woman he has just started talking to in a second-hand bookshop.`,
+    `You rate one exchange between a man and ${personaName}, a woman he has just started talking to in ${place}.`,
     '',
     PAIR_RULE,
     '',

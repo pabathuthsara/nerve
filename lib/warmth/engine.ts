@@ -24,7 +24,13 @@ import { WARMTH_MIN, WARMTH_MAX } from './bands'
 import type { Personality, Trajectory } from '@/lib/voice/types'
 import { classifyOverreach, type OverreachVerdict, type SlowScore } from './slow'
 import type { FastReason, FastScore } from './fast'
-import { openingAffect, postureOf, type AffectState, type Posture } from './affect'
+import {
+  openingAffect,
+  postureOf,
+  type AffectState,
+  type Posture,
+  type PostureMode,
+} from './affect'
 import { temperamentOf, type Temperament } from './temperament'
 
 export type WarmthEventSource = 'start' | 'fast' | 'slow' | 'overreach' | 'repair'
@@ -208,6 +214,14 @@ export interface WarmthEngineOptions {
    * characters are moved by identical arithmetic. See ./temperament.ts.
    */
   personality?: Personality | (() => Personality)
+  /**
+   * How posture is read off the three axes, or a getter for it.
+   *
+   * Defaults to `absolute`, which is what every existing character and every
+   * stored calibration was measured under. See `PostureMode` in ./affect.ts for
+   * why the other mode exists and why it is opt-in rather than the default.
+   */
+  postureMode?: PostureMode | (() => PostureMode)
   /** Injected for tests. Defaults to Math.random. */
   rng?: () => number
 }
@@ -222,6 +236,13 @@ export class WarmthEngine {
   /** The other two axes. See ./affect.ts for why there are three. */
   private comfortValue: number
   private likingValue: number
+  /**
+   * The spread she opened with, kept so a posture can mean "this moved".
+   *
+   * Read only under `postureMode: 'relative'`; see `PostureMode`.
+   */
+  private readonly openingAffectValue: AffectState
+  private readonly readPostureMode: () => PostureMode
 
   private readonly eventLog: WarmthEvent[] = []
   private readonly bandSequence: WarmthBand[] = []
@@ -248,6 +269,9 @@ export class WarmthEngine {
         : typeof personality === 'function'
           ? personality
           : () => personality
+    const postureMode = options.postureMode ?? 'absolute'
+    this.readPostureMode =
+      typeof postureMode === 'function' ? postureMode : () => postureMode
     const rng = options.rng ?? Math.random
 
     // Rolled, not fixed (§05). The same opener must not always work, or the
@@ -263,6 +287,7 @@ export class WarmthEngine {
     const opening = openingAffect(this.startValue)
     this.comfortValue = opening.comfort
     this.likingValue = opening.liking
+    this.openingAffectValue = opening
 
     this.timeInBand = Object.fromEntries(
       BAND_NAMES.map((name) => [name, 0]),
@@ -296,8 +321,16 @@ export class WarmthEngine {
     return { warmth: this.warmth, comfort: this.comfort, liking: this.liking }
   }
 
+  /** The spread she opened with. See `PostureMode`. */
+  get openingAffect(): AffectState {
+    return this.openingAffectValue
+  }
+
   get posture(): Posture {
-    return postureOf(this.affect)
+    return postureOf(this.affect, {
+      mode: this.readPostureMode(),
+      opening: this.openingAffectValue,
+    })
   }
 
   /**

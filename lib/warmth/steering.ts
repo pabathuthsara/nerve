@@ -85,7 +85,9 @@ export function composeSteering(context: SteeringContext): string {
   //   personality  colour.
   //   gates        permissions she will still have next turn.
   return assemble([
-    bandDirectiveParts(context.warmth, context),
+    // Her own band table when she has one, the shared one otherwise. The band
+    // still owns reply length either way — see `BandDirectives`.
+    bandDirectiveParts(context.warmth, context, context.persona.bandDirectives),
     postureClauses(context),
     repairClauses(context),
     wantClauses(context.persona, context.warmth),

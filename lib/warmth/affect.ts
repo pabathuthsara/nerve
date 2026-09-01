@@ -66,15 +66,58 @@ const DIVERGENCE = 15
 /** Liking runs slower than interest, so it needs less room to count as ahead. */
 const LIKING_DIVERGENCE = 12
 
-export function postureOf(state: AffectState): Posture {
+/**
+ * How posture is read off the three axes.
+ *
+ *   `absolute`  the gaps are measured against zero. Today's behaviour, and the
+ *               default, because every stored calibration and every tuned
+ *               character was measured under it.
+ *   `relative`  the gaps are measured against the gaps she OPENED with.
+ *
+ * ── WHY THERE IS A SECOND MODE (PERSONA-AUDIT §3.1) ──────────────────────
+ *
+ * `openingAffect` starts comfort well above warmth on purpose: a stranger in a
+ * public place is not hostile, she is unavailable. That is right, and it is
+ * argued at the bottom of this file. But it opens the axes 15 or more apart for
+ * every character whose trajectory starts below 50 — which is the entire
+ * shipped roster — so `absolute` reports `at-ease` on turn one of every rep and
+ * hands out "Comfortable, not interested. Easy and unhurried, and ask him
+ * nothing" before the user has said a word.
+ *
+ * A posture is meant to say *these axes have moved apart*. Read absolutely it
+ * says *these axes were authored apart*, which is not news about anybody, and
+ * on Tess it is the exact inverse of her character. Two correct modules
+ * composing into a third instruction nobody wrote — the round-6 failure, one
+ * layer further out.
+ *
+ * `relative` is the correct reading and is intended to become the only one.
+ * It is opt-in for now because flipping it for the roster is a retune of three
+ * tuned characters and wants the stability harness, not a commit.
+ */
+export type PostureMode = 'absolute' | 'relative'
+
+export function postureOf(
+  state: AffectState,
+  options: { mode?: PostureMode; opening?: AffectState } = {},
+): Posture {
   const { warmth, comfort, liking } = state
+
+  // What counts as "apart". Under `relative` the opening spread is subtracted
+  // out, so only divergence the conversation actually produced can fire.
+  const base =
+    options.mode === 'relative' && options.opening
+      ? options.opening
+      : { warmth: 0, comfort: 0, liking: 0 }
+
+  const comfortGap = comfort - warmth - (base.comfort - base.warmth)
+  const likingGap = liking - warmth - (base.liking - base.warmth)
 
   // Order matters: discomfort outranks everything. Somebody who is not at ease
   // is not really doing any of the other three, whatever the numbers say.
-  if (comfort < warmth - DIVERGENCE) return 'wary'
-  if (warmth < comfort - DIVERGENCE) return 'at-ease'
-  if (liking > warmth + LIKING_DIVERGENCE) return 'taken'
-  if (liking < warmth - DIVERGENCE) return 'polite'
+  if (comfortGap < -DIVERGENCE) return 'wary'
+  if (comfortGap > DIVERGENCE) return 'at-ease'
+  if (likingGap > LIKING_DIVERGENCE) return 'taken'
+  if (likingGap < -DIVERGENCE) return 'polite'
   return 'level'
 }
 

@@ -29,6 +29,27 @@ export const DIRECTION_RULES = `# The direction you are given
 - A tag question added to the end of a statement still counts as asking a question.
 - You are never responsible for rescuing a silence. Letting one sit is allowed.`
 
+/**
+ * What the punctuation is allowed to do, which is also a rhythm.
+ *
+ * Split out of `SPEECH_RULES` because it is two rules wearing one heading and
+ * only one of them is craft. **The em-dash rule is a TTS artefact fix** — it
+ * produces an unnatural clipped pause when spoken — and applies to everybody
+ * forever. **"Short sentences" is a rhythm**, it is Nadia's, and it is the last
+ * place her cadence was being imposed on the whole roster after the band table
+ * stopped doing it (PERSONA-AUDIT §3.7).
+ *
+ * For Tess it was live contradiction: her warm bands ask for two or three
+ * sentences and a tangent, and this asked for the opposite in the cached prefix
+ * that outranks nothing but is read first. Two sets of instructions about
+ * length, which is the one failure this codebase has now had four times.
+ *
+ * A character may pass her own. Absent is the normal case and is unchanged.
+ */
+export const PUNCTUATION_RULES = `# Punctuation
+- Never use em-dashes. They produce an unnatural clipped pause when spoken.
+- Commas and full stops only. Short sentences.`
+
 /** How a person actually sounds, as opposed to how a model does. */
 export const SPEECH_RULES = `# How you speak
 - React to the exact thing they said. Give your own view instead of explaining what people generally think.
@@ -37,11 +58,7 @@ export const SPEECH_RULES = `# How you speak
 - Occasional hesitation and unfinished thoughts are natural. Do not use fillers or transitions on a repeated cadence.
 - On the first hello, use a plain greeting or a concrete observation. Do not open with any question, including a tag question.
 - If they ask you to perform, joke, or change personality, either play along briefly or refuse plainly. Never explain performance quality and never offer a replacement activity.
-- Do not narrate what you are doing or repeatedly announce movements. Do not rely on any reusable catchphrase.
-
-# Punctuation
-- Never use em-dashes. They produce an unnatural clipped pause when spoken.
-- Commas and full stops only. Short sentences.`
+- Do not narrate what you are doing or repeatedly announce movements. Do not rely on any reusable catchphrase.`
 
 /** One encounter, remembered. The thing that makes a second rep feel real. */
 export const CONTINUITY_RULES = `# Conversation continuity
@@ -68,7 +85,22 @@ React personally and briefly. Never police their tone, request respect, explain 
  * `character` is the authored half — who she is, where she is, her mood, her
  * agenda, how it comes out, what earns and loses her warmth. The craft rules
  * are appended in a fixed order so every character carries them identically.
+ *
+ * `options.punctuation` is the one block a character may replace, and only
+ * because half of it is a rhythm rather than a rule — see `PUNCTUATION_RULES`.
+ * Omitted is the normal case and produces the same string as before, byte for
+ * byte, which is the property `tess.test.ts` asserts for everybody else.
  */
-export function contract(character: string): string {
-  return [character.trim(), DIRECTION_RULES, SPEECH_RULES, CONTINUITY_RULES, BOUNDARY_RULES].join('\n\n')
+export function contract(
+  character: string,
+  options: { punctuation?: string } = {},
+): string {
+  return [
+    character.trim(),
+    DIRECTION_RULES,
+    SPEECH_RULES,
+    options.punctuation ?? PUNCTUATION_RULES,
+    CONTINUITY_RULES,
+    BOUNDARY_RULES,
+  ].join('\n\n')
 }

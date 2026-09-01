@@ -12,6 +12,7 @@
     "test": "vitest run",
     "cost:model": "vite-node --config vitest.config.ts scripts/cost-model.ts",
     "grade:calibrate": "vite-node --config vitest.config.ts scripts/grade-calibrate.ts",
+    "rep:audition": "vite-node --config vitest.config.ts scripts/rep-audition.ts",
     "grade:collect": "vite-node --config vitest.config.ts scripts/grade-collect.ts",
     "voice:voices": "vite-node --config vitest.config.ts scripts/voice.ts voices",
     "voice:design": "vite-node --config vitest.config.ts scripts/voice.ts design",

@@ -30,6 +30,28 @@ export interface BreakDetectionOptions {
   nonStaff?: boolean
 }
 
+/**
+ * The median agent reply length, across the last six turns, at which the
+ * `verbosity` rule fires.
+ *
+ * 12 is the roster default and the number every M0 measurement was taken
+ * against. It is a PROXY: it was authored when long turns were the symptom of
+ * assistant register — structured advice, menus, recaps — and the phrase rules
+ * plus `BANNED_REGISTER` now detect that register directly.
+ *
+ * It has to be per-character because a band table can be (PERSONA-AUDIT §3.7).
+ * Tess's warm bands permit two sentences, deliberately, and measuring her
+ * against Nadia's ceiling would report the fix as the fault: a warmer, more
+ * human character read as a broken one, counted against the < 0.5 breaks per
+ * five minutes gate.
+ *
+ * The right long-term rule asserts that she OBEYED THE DIRECTION SHE WAS
+ * GIVEN rather than that she was short, which needs the band at the detector
+ * and is a bigger change than this. Until then, a character with her own band
+ * table brings her own ceiling.
+ */
+export const DEFAULT_VERBOSITY_MEDIAN = 12
+
 const PHRASE_RULES: Rule[] = [
   {
     name: 'offers-assistance',
@@ -206,7 +228,10 @@ export interface StabilityStats {
   longestQuestionStreak: number
 }
 
-export interface StabilityMeterOptions extends BreakDetectionOptions {}
+export interface StabilityMeterOptions extends BreakDetectionOptions {
+  /** See `DEFAULT_VERBOSITY_MEDIAN`. Omitted keeps the roster default of 12. */
+  verbosityMedian?: number
+}
 
 export class StabilityMeter {
   private readonly found: CharacterBreak[] = []
@@ -273,13 +298,14 @@ export class StabilityMeter {
     if (recent.length === 6) {
       const lengths = recent.map(wordCount).sort((a, b) => a - b)
       const medianWords = (lengths[2]! + lengths[3]!) / 2
+      const ceiling = this.options.verbosityMedian ?? DEFAULT_VERBOSITY_MEDIAN
       this.addWindowRule(
         hits,
         'verbosity',
-        medianWords > 12,
+        medianWords > ceiling,
         text,
         at,
-        `median ${medianWords} words across last 6 turns`,
+        `median ${medianWords} words across last 6 turns (ceiling ${ceiling})`,
       )
     }
 
