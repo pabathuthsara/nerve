@@ -86,20 +86,18 @@ React personally and briefly. Never police their tone, request respect, explain 
  * agenda, how it comes out, what earns and loses her warmth. The craft rules
  * are appended in a fixed order so every character carries them identically.
  *
- * `options.punctuation` is the one block a character may replace, and only
- * because half of it is a rhythm rather than a rule — see `PUNCTUATION_RULES`.
- * Omitted is the normal case and produces the same string as before, byte for
- * byte, which is the property `tess.test.ts` asserts for everybody else.
+ * The punctuation block is a separate constant rather than being buried at the
+ * end of `SPEECH_RULES`, because it is two rules under one heading and only one
+ * of them is craft — see `PUNCTUATION_RULES`. It is not currently overridable:
+ * Tess had her own for a day and the override went with the rest of that work
+ * when she was ported to Nadia's contract. Split, documented, and one owner.
  */
-export function contract(
-  character: string,
-  options: { punctuation?: string } = {},
-): string {
+export function contract(character: string): string {
   return [
     character.trim(),
     DIRECTION_RULES,
     SPEECH_RULES,
-    options.punctuation ?? PUNCTUATION_RULES,
+    PUNCTUATION_RULES,
     CONTINUITY_RULES,
     BOUNDARY_RULES,
   ].join('\n\n')

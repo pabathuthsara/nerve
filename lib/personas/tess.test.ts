@@ -1,345 +1,260 @@
 /**
- * Tess, and the blast radius around her (PERSONA-AUDIT, Tier 0).
+ * Tess is Nadia, in a launderette, on the rung-1 curve.
  *
- * Two jobs, and the second one is the reason this file is separate from
- * `roster.test.ts`.
+ * ── WHY THIS FILE EXISTS IN THIS SHAPE ───────────────────────────────────
  *
- * **What Tess is now.** Six defects were fixed by moving numbers and prose in
- * her file plus four optional fields on the schema. Each one was invisible
- * until somebody read the assembled prompt, which is exactly why they survived
- * so long — every dial was individually plausible and the composition was
- * never looked at. So the assertions here are about the COMPOSED output, not
- * about the dials.
+ * It used to assert the opposite. `PERSONA-AUDIT.md` found that the shared band
+ * table was tuned against Nadia and concluded it was overwriting any character
+ * authored against that grain, so Tess was given her own bands, her own posture
+ * reading, her own punctuation, a mood roll and a list of things to say — and
+ * this file asserted each of them.
  *
- * **That nobody else moved.** The instruction was Tess-only, and every fix
- * below sits behind a field that is absent everywhere else. Absent has to keep
- * meaning "exactly what happened before", so the guards run over the whole
- * roster — shipped and retired — rather than over the three other shipped
- * characters, because a retired persona is still importable and `alex` is what
- * `engine.test.ts` exercises the warmth clamps with.
+ * The person who has talked to both then said Nadia is fun and Tess still read
+ * as an AI. Nadia runs the shared table with none of those overrides. So the
+ * table was not the thing flattening Tess; it is most of what makes Nadia good.
+ *
+ * The assertions therefore invert. What is checked now is **fidelity** — that
+ * her contract really is Nadia's and not a paraphrase, that she carries none of
+ * the per-character escape hatches, and that the only things still hers are
+ * layer 1 and the two dials that layer 1 implies. A port that drifts is a port
+ * that stops being the thing that was working.
+ *
+ * Two fixes were kept from the audit, and they are asserted separately at the
+ * bottom, because both are broken OUTPUT rather than an opinion about who she
+ * is: the room name, and a `want` that completes the sentence built around it.
  */
 
 import { describe, expect, it } from 'vitest'
 import { PERSONAS, RETIRED_PERSONAS } from './index'
 import { tess } from './tess'
 import { nadia } from './nadia'
-import { compileInstructions, moodFor } from '@/lib/voice/openai/persona'
+import { compileInstructions } from '@/lib/voice/openai/persona'
 import { composeSteering, wantClauses } from '@/lib/warmth/steering'
-import { openingAffect, postureOf } from '@/lib/warmth/affect'
 import { bandFor, specFor } from '@/lib/warmth/bands'
-import { DEFAULT_VERBOSITY_MEDIAN } from '@/lib/metrics/stability'
 import { DEFAULT_SCORER_PLACE, buildSystemPrompt, scorerPlaceFor } from '@/lib/warmth/prompt'
 import { ARM_THRESHOLD } from '@/lib/data/rep-rules'
 import type { Persona } from '@/lib/voice/types'
 
 const EVERYONE: Persona[] = [...Object.values(PERSONAS), ...Object.values(RETIRED_PERSONAS)]
-const EVERYONE_ELSE = EVERYONE.filter((persona) => persona.slug !== 'tess')
 
-/** Deterministic, so a mood roll never makes an assertion flaky. */
-const compile = (persona: Persona, roll = 0) =>
-  compileInstructions(persona, { canEndScene: true, rng: () => roll })
+/**
+ * Every craft rule in Nadia's contract, verbatim.
+ *
+ * These are the lines that decide how she TALKS, as opposed to what she is
+ * standing next to, and they are the reason she is good company. If a future
+ * edit paraphrases one of them for Tess, the port has quietly become a
+ * different character and this is where that shows up.
+ */
+const NADIA_CRAFT = [
+  'Do not enunciate carefully. Let sentences trail off.',
+  'An occasional "um" or a false start.',
+  'Never sound like you are presenting or performing.',
+  'Never use em-dashes. They produce an unnatural clipped pause when spoken.',
+  'Commas and full stops only. Short sentences.',
+  'A tag question added to the end of a statement still counts as asking a question.',
+  'You are never responsible for rescuing a silence. Letting one sit is allowed.',
+  'When asked for advice, give one imperfect personal pick. No menu, sales language, qualification, or follow-up question.',
+  'Never sound like a reviewer, counsellor, moderator, interviewer, or customer-service worker.',
+  'Do not automatically agree, praise, validate, or call their thought great, cool, interesting, relatable, or sensible.',
+  'Occasional hesitation and unfinished thoughts are natural. Do not use fillers or transitions on a repeated cadence.',
+  'On the first hello, use a plain greeting or a concrete observation. Do not open with any question, including a tag question.',
+  'This is one continuous encounter. A later "hello" does not restart it.',
+  'Show memory indirectly through the next relevant opinion or choice.',
+  'React personally and briefly. Never police their tone, request respect, explain a rule, or sound like a moderator.',
+  'Speak twice in a row without them saying something.',
+  'Repeat a greeting you have already used.',
+]
 
-describe('Tess — nothing here reaches another character', () => {
-  it('is the only persona carrying any of the four new fields', () => {
-    // The whole Tier 0 scope, expressed as an assertion rather than as a
-    // promise in a commit message. If a later session gives one of these to
-    // Nadia, that is a retune of a tuned character and this fails first.
-    for (const persona of EVERYONE_ELSE) {
+/** Nadia's own sections, in her order. A port keeps the skeleton. */
+const NADIA_SECTIONS = [
+  '# Who you are',
+  '# Where you are',
+  '# Your mood right now',
+  '# Your agenda in this scene',
+  '# How it comes out',
+  '# Punctuation',
+  '# How you speak',
+  '# Conversation continuity',
+  '# If they ask something personal',
+  '# If they are rude or test you',
+  '# What earns your warmth',
+  '# What loses it',
+  '# You never',
+]
+
+describe('Tess — the port is faithful', () => {
+  it('carries every one of Nadia\'s craft rules verbatim', () => {
+    for (const rule of NADIA_CRAFT) {
+      expect(nadia.contract, `nadia is missing: ${rule}`).toContain(rule)
+      expect(tess.contract, `tess is missing: ${rule}`).toContain(rule)
+    }
+  })
+
+  it('keeps her section skeleton, in her order', () => {
+    let cursor = -1
+    for (const heading of NADIA_SECTIONS) {
+      const at = tess.contract.indexOf(heading)
+      expect(at, `missing or out of order: ${heading}`).toBeGreaterThan(cursor)
+      cursor = at
+    }
+  })
+
+  it('changes only the props', () => {
+    // The exhaustive list of what a launderette port is allowed to touch. If
+    // something else diverges it belongs in this test with a reason.
+    expect(tess.contract).toContain('a launderette')
+    expect(tess.contract).toContain('Your machine has nineteen minutes left on it')
+    expect(tess.contract).toContain('claim knowledge of the launderette, its machines, or its ownership')
+    expect(tess.contract).toContain('Do not narrate watching the machine')
+    expect(tess.contract).toContain('Never retreat to your book, the machine')
+    // And nothing of the bookshop survives the port.
+    for (const leak of ['bookshop', 'the shelves', 'in stock', 'browsing']) {
+      expect(tess.contract.toLowerCase(), `bookshop leak: ${leak}`).not.toContain(leak)
+    }
+  })
+
+  it('keeps the material that makes her good company', () => {
+    // Nadia leans on having something in her hands and an opinion about it.
+    // A woman with nineteen minutes and a paperback is the same person as a
+    // woman killing forty minutes in a shop, so the book ports rather than
+    // being replaced with launderette small talk.
+    for (const line of [
+      'people being sad in nice houses',
+      'Tana French',
+      'airport thrillers',
+      'something in logistics that you find boring',
+    ]) {
+      expect(tess.contract, line).toContain(line)
+      expect(nadia.contract, line).toContain(line)
+    }
+  })
+
+  it('is a full hand-written contract, like hers, not an assembled one', () => {
+    // Nadia's is written end to end and the shared helper would reorder it.
+    // Her punctuation block sits inside the contract, above `# How you speak`.
+    expect(tess.contract.indexOf('# Punctuation')).toBeLessThan(
+      tess.contract.indexOf('# How you speak'),
+    )
+    expect(nadia.contract.indexOf('# Punctuation')).toBeLessThan(
+      nadia.contract.indexOf('# How you speak'),
+    )
+  })
+})
+
+describe('Tess — she sounds like Nadia because the dials say so', () => {
+  it('matches her on every dial that is not the rung', () => {
+    // `patience` and `distraction` are what "easier" means in layer 2 and are
+    // pinned against Nadia's by `roster.test.ts`. Everything else is hers.
+    expect(tess.personality.sharpness).toBe(nadia.personality.sharpness)
+    expect(tess.personality.sharpnessLowWarmthBoost).toBe(nadia.personality.sharpnessLowWarmthBoost)
+    expect(tess.personality.humour).toBe(nadia.personality.humour)
+    expect(tess.personality.talkativeness).toBe(nadia.personality.talkativeness)
+    expect(tess.personality.expression).toBe(nadia.personality.expression)
+    expect(tess.personality.signalClarity).toBe(nadia.personality.signalClarity)
+  })
+
+  it('compiles to the same derived behaviour block except the disposition', () => {
+    // The disposition line is banded off `trajectory.start`, which IS the rung,
+    // so it is the one line that must differ. Every other derived sentence —
+    // effort, clarity, patience, delivery — should read identically, because
+    // they are read off dials she now shares.
+    const hers = compileInstructions(tess, { canEndScene: true })
+    const nadias = compileInstructions(nadia, { canEndScene: true })
+    for (const line of [
+      'You meet them halfway. You answer what you are asked and occasionally add something, but you do not drive.',
+      'Your level of interest is obvious and unmistakable from how you respond.',
+      'You are light and quick, and you enjoy winding people up a little.',
+      'You are funny more often than not, and dry about it.',
+    ]) {
+      expect(nadias, `control: ${line}`).toContain(line)
+      expect(hers, `tess: ${line}`).toContain(line)
+    }
+  })
+
+  it('reads the same shared band table she does, at every warmth', () => {
+    for (const warmth of [10, 30, 50, 70, 90]) {
+      const line = composeSteering({ persona: tess, warmth })
+      expect(line.startsWith(`[${specFor(bandFor(warmth)).directive}`), `@${warmth}`).toBe(true)
+    }
+  })
+})
+
+describe('Tess — no character carries a per-character escape hatch', () => {
+  it('leaves the whole roster on the shared path', () => {
+    // The optional fields survive on the schema — they are the right shape for
+    // a character who genuinely needs one — but nobody uses one today, and the
+    // reason is recorded in PERSONA-AUDIT §6: the overrides were the thing
+    // making Tess read as an AI, not the thing that would have fixed her.
+    for (const persona of EVERYONE) {
       expect(persona.disposition, persona.slug).toBeUndefined()
       expect(persona.bandDirectives, persona.slug).toBeUndefined()
       expect(persona.postureMode, persona.slug).toBeUndefined()
       expect(persona.moods, persona.slug).toBeUndefined()
-      expect(persona.room.place, persona.slug).toBeUndefined()
       expect(persona.steerHeartbeatTurns, persona.slug).toBeUndefined()
       expect(persona.verbosityMedian, persona.slug).toBeUndefined()
     }
   })
-
-  it('leaves every other compiled prompt on the derived path', () => {
-    // The four fields are each an override of something the compiler derives.
-    // Absent means the derivation runs, so the banded prose has to still be
-    // there — and for Nadia specifically, still be the guarded line her whole
-    // character was tuned around.
-    const compiled = compile(nadia)
-    expect(compiled).toContain('You are guarded. Warmth has to be earned and you give it slowly.')
-    expect(compiled).not.toContain('# Today, specifically')
-
-    for (const persona of EVERYONE_ELSE) {
-      // A mood block can only appear where moods were authored.
-      expect(compile(persona), persona.slug).not.toContain('# Today, specifically')
-      expect(moodFor(persona, () => 0), persona.slug).toBeNull()
-    }
-  })
-
-  it('leaves every other steering line on the shared band table', () => {
-    for (const persona of EVERYONE_ELSE) {
-      for (const warmth of [10, 30, 50, 70, 90]) {
-        const line = composeSteering({ persona, warmth })
-        // The band clause is required and always leads, so its exact text
-        // appearing at the front is the same claim as "no override applied".
-        expect(line.startsWith(`[${specFor(bandFor(warmth)).directive}`), `${persona.slug}@${warmth}`)
-          .toBe(true)
-      }
-    }
-  })
-
-  it('leaves every other posture reading absolute', () => {
-    // §3.1 is roster-wide and is deliberately NOT fixed roster-wide yet: it is
-    // a retune of three tuned characters and wants the stability harness. So
-    // the others must still open `at-ease`, wrong though that is — this test
-    // records the debt rather than hiding it.
-    for (const persona of Object.values(PERSONAS)) {
-      if (persona.slug === 'tess') continue
-      const opening = openingAffect(persona.trajectory.start)
-      expect(postureOf(opening), persona.slug).toBe('at-ease')
-    }
-  })
 })
 
-describe('Tess — §3.2, her contract is no longer contradicted', () => {
-  it('states her disposition in her own words', () => {
-    const compiled = compile(tess)
-    expect(compiled).toContain('You are pleased to be spoken to and you do not hide it.')
-    expect(compiled).not.toContain('You are neither pleased nor annoyed to be spoken to.')
+describe('Tess — she is still rung 1', () => {
+  it('keeps the curve, which is the only difference by design', () => {
+    expect(tess.trajectory.start).toBeGreaterThan(nadia.trajectory.start)
+    expect(tess.trajectory.gain).toBeGreaterThan(nadia.trajectory.gain)
+    expect(tess.personality.patience).toBeGreaterThan(nadia.personality.patience)
+    expect(tess.personality.distraction).toBeLessThan(nadia.personality.distraction)
   })
 
-  it('keeps pleased-to-be-spoken-to separate from easy-to-impress', () => {
-    // The line this character is balanced on, and the reason the disposition is
-    // allowed to exist at all. If warmth 65 became reachable by showing up, the
-    // win teaches nothing — so the authored sentence has to carry the caveat
-    // that the banded one carried by being lukewarm.
-    expect(tess.disposition).toMatch(/not the same as being easy to impress/i)
+  it('is easy to win and still has to be won', () => {
     expect(tess.trajectory.start + tess.trajectory.startJitter).toBeLessThan(ARM_THRESHOLD)
   })
-})
 
-describe('Tess — §3.3, she carries the conversation', () => {
-  it('compiles to the carrying line rather than the halfway one', () => {
-    // 66 sat one point inside `band()`'s middle bucket and produced the exact
-    // opposite of what her file said about her.
-    expect(tess.personality.talkativeness).toBeGreaterThan(66)
-    const compiled = compile(tess)
-    expect(compiled).toContain('You carry the conversation by volunteering something about yourself')
-    expect(compiled).not.toContain('but you do not drive')
-  })
-})
-
-describe('Tess — §3.4, her want is a sentence', () => {
-  it('composes into the frame at every warmth', () => {
-    // `wantClauses` completes "You would rather be ___". The old phrasing gave
-    // "You would still rather be these nineteen minutes to go faster than they
-    // are going", injected on every turn of every rep.
-    //
-    // Robin's `want` has the same fault and is deliberately NOT fixed here —
-    // the instruction was Tess-only. PERSONA-AUDIT §3.4 carries the debt.
-    for (const warmth of [10, 40, 80]) {
-      const [clause] = wantClauses(tess, warmth)
-      expect(clause, `warmth ${warmth}`).toMatch(
-        /^You would (still )?rather be doing literally anything but watching that drum go round[.,]/,
-      )
-    }
-  })
-})
-
-describe('Tess — §3.5, the gates she was tuned for actually reach her', () => {
   it('gives her flirt and disclosure for the body of the rep', () => {
-    // The old ordering put `initiatesTopics` (38) and `usesYourName` (36) above
-    // `flirtiness` (30) and `personalDisclosure` (34), and `gateClauses` emits
-    // only the top two — so from warmth 38 upward she was never once told she
-    // might flirt. She opens at 48.
+    // `gateClauses` emits the two most recently crossed. With a fixed unlock
+    // order the top two above the highest threshold are always the same two, so
+    // the cheap permissions go first. Nadia does not need this: her thresholds
+    // sit above the range she actually runs in. Tess opens at 48.
     for (const warmth of [40, 48, 60, 85]) {
       const line = composeSteering({ persona: tess, warmth })
       expect(line, `warmth ${warmth}`).toContain('You may flirt.')
       expect(line, `warmth ${warmth}`).toContain('You may say something real about your life.')
     }
   })
-
-  it('still opens flirtiness earliest on the roster, and below her own start', () => {
-    // The constraint `roster.test.ts` asserts. Reordering had to keep it.
-    expect(tess.gated.flirtiness.unlocksAt).toBeLessThan(nadia.gated.flirtiness.unlocksAt)
-    expect(tess.gated.flirtiness.unlocksAt).toBeLessThan(tess.trajectory.start)
-  })
 })
 
-describe('Tess — §3.6, she is standing in a launderette', () => {
-  it('says so in the section that says what is inviolable', () => {
-    const compiled = compile(tess)
+describe('Tess — the two fixes kept from the audit', () => {
+  it('stands in a launderette, in the section that says what is inviolable', () => {
+    // `sceneId` returns `bed ?? reverbIr`, and with ambient beds off that is the
+    // impulse response — so her Absolute rules told her to react "the way a
+    // stranger in a bookshop would" while she stood in a launderette. The
+    // reverb borrowing is an acoustic choice and was never the bug.
+    const compiled = compileInstructions(tess, { canEndScene: true })
     expect(compiled).toContain('the way a stranger in a launderette would react')
     expect(compiled).not.toContain('a stranger in a bookshop')
-  })
-
-  it('keeps borrowing the bookshop impulse response', () => {
-    // The reverb is an acoustic choice and was never the bug. Separating the
-    // name from the IR is what let it stay.
     expect(tess.room.reverbIr).toBe('bookshop')
     expect(tess.room.place).toBe('launderette')
   })
-})
 
-describe('Tess — §3.6, the live scorer knows which room she is in', () => {
-  it('anchors her intimacy scale to a launderette', () => {
-    // Not cosmetic. `intimacy` drives `classifyOverreach`, which decides
-    // whether a turn reads as flirting or as a boundary crossing, and its
-    // bottom anchor is "the shop, the books". Judging a launderette against a
-    // bookshop moves her meter the wrong way.
+  it('anchors the live scorer to a launderette', () => {
+    // `intimacy` drives `classifyOverreach`, and its bottom anchor is "the shop,
+    // the books". Judging a launderette against a bookshop moves her the wrong
+    // way. Every character without a `place` keeps the old literal to the byte.
     expect(scorerPlaceFor('Tess')).toBe('a launderette')
-    expect(buildSystemPrompt('Tess', scorerPlaceFor('Tess'))).toContain(
-      'talking to in a launderette',
-    )
+    expect(buildSystemPrompt('Tess', scorerPlaceFor('Tess'))).toContain('talking to in a launderette')
+    expect(scorerPlaceFor('Nadia')).toBe(DEFAULT_SCORER_PLACE)
+    expect(buildSystemPrompt('Nadia', scorerPlaceFor('Nadia'))).toBe(buildSystemPrompt('Nadia'))
   })
 
-  it('leaves every other character on the old literal, to the byte', () => {
-    for (const persona of EVERYONE_ELSE) {
-      expect(scorerPlaceFor(persona.name), persona.slug).toBe(DEFAULT_SCORER_PLACE)
-      expect(buildSystemPrompt(persona.name, scorerPlaceFor(persona.name)), persona.slug)
-        .toBe(buildSystemPrompt(persona.name))
-    }
-    // And an unknown name — the route's fallback — still resolves.
-    expect(scorerPlaceFor('She')).toBe(DEFAULT_SCORER_PLACE)
-  })
-})
-
-describe('Tess — §3.7, her own band table', () => {
-  it('lets her be a person in the band a median first-timer never leaves', () => {
-    // She opens at 48 and a median rep sits there for the full three minutes,
-    // so OPEN is not one band among six for this character — it is the rep.
-    const line = composeSteering({ persona: tess, warmth: 48 })
-    // Her cap, not the shared one. The audition is why it is 16 rather than the
-    // 20 this test first asserted: a stated cap comes back as roughly 1.2x.
-    expect(line).toContain('Sixteen words at most')
-    expect(line).toContain('Volunteer one thing he did not ask for.')
-    expect(line).not.toContain('fourteen words at most')
-  })
-
-  it('still expresses coldness as what it withholds', () => {
-    // The rule the cold-band rewrite established: a cold band withholds
-    // curiosity, volunteering and follow-ups, not syllables. Her GUARDED must
-    // still refuse questions or the meter stops meaning anything.
-    const guarded = composeSteering({ persona: tess, warmth: 30 })
-    expect(guarded).toContain('do not ask him anything back')
-    expect(guarded).not.toContain('Volunteer something he did not ask for')
-  })
-
-  it('leaves HOSTILE to the shared table', () => {
-    // A rung-1 character only reaches it when a boundary has been crossed, and
-    // the shared line is right for that.
-    expect(tess.bandDirectives?.HOSTILE).toBeUndefined()
-    expect(composeSteering({ persona: tess, warmth: -10 })).toContain(specFor('HOSTILE').directive)
-  })
-})
-
-describe('Tess — what the audition changed', () => {
-  it('states a countable word cap in every band she overrides', () => {
-    // The first draft said "One or two sentences" and came back at a median of
-    // 40.5 words. An uncountable limit is not a limit. Every override leads
-    // with a number, and the number leads the clause — putting a sentence count
-    // in front of it licensed the overshoot all over again.
-    for (const [band, directive] of Object.entries(tess.bandDirectives ?? {})) {
-      expect(directive, band).toMatch(
-        /^(Six|Twelve|Fourteen|Sixteen|Twenty|Twenty-four|Twenty-six|Thirty)[a-z- ]*\b/,
+  it('has a want that completes the sentence built around it', () => {
+    // `wantClauses` composes "You would rather be ___". The old phrasing gave
+    // "You would still rather be these nineteen minutes to go faster than they
+    // are going", on every turn of every rep.
+    //
+    // Robin's has the same fault and is still unfixed — PERSONA-AUDIT §3.4.
+    for (const warmth of [10, 40, 80]) {
+      const [clause] = wantClauses(tess, warmth)
+      expect(clause, `warmth ${warmth}`).toMatch(
+        /^You would (still )?rather be left alone with the book you are halfway through[.,]/,
       )
-      expect(directive, band).toMatch(/words at most|words\./)
     }
-  })
-
-  it('gives her a wider ceiling than the roster, and a heartbeat to match it', () => {
-    // The two are one setting. She drifts back toward her own natural length in
-    // proportion to the room the band gives her — 16-20 words on a turn the
-    // directive was sent, 26-30 on a turn it was not — so a wider band without
-    // a shorter heartbeat is a wider band she ignores.
-    expect(tess.steerHeartbeatTurns).toBeLessThan(4)
-    expect(tess.verbosityMedian).toBeGreaterThan(DEFAULT_VERBOSITY_MEDIAN)
-  })
-
-  it('does not order a question and then forbid it in the same breath', () => {
-    // The shared ENGAGED says "Ask about him"; the §4e quota periodically
-    // appends "Do not ask him anything this turn" on top of it. Told both, she
-    // asked. Hers offers a question and never commands one.
-    expect(tess.bandDirectives?.ENGAGED).not.toMatch(/\bAsk about him\b/)
-    expect(tess.bandDirectives?.OPEN).toMatch(/Do not ask him a question/)
-  })
-
-  it('carries the consecutive-question rule M0 recorded and the refactor lost', () => {
-    // M0: the tuned contract said "no opening or consecutive tag questions".
-    // Only the opening half survived into SPEECH_RULES, so `question-every-turn`
-    // still breaks on the second one while nothing tells her not to. Stated in
-    // both places on purpose — same rule, same wording, so there is no third
-    // answer to split towards, and the band is what she reads last.
-    expect(tess.contract).toMatch(/never ask two questions in a row/i)
-    expect(tess.bandDirectives?.ENGAGED).toMatch(/if your last one ended with a question/)
-    // Still missing roster-wide. When it is restored this should fail loudly.
-    expect(nadia.contract).not.toMatch(/two questions in a row/i)
-  })
-})
-
-describe('Tess — §3.1, no posture before the conversation has produced one', () => {
-  it('does not open by being told she is not interested', () => {
-    const opening = openingAffect(tess.trajectory.start)
-    // Absolute is what the rest of the roster still reads, and it is wrong.
-    expect(postureOf(opening)).toBe('at-ease')
-    // Relative is what she reads, and it is silent until something moves.
-    expect(postureOf(opening, { mode: 'relative', opening })).toBe('level')
-    expect(tess.postureMode).toBe('relative')
-  })
-
-  it('still fires a posture once the axes actually diverge', () => {
-    // The mode must not amount to switching postures off — they are the reason
-    // there are three axes.
-    const opening = openingAffect(tess.trajectory.start)
-    const uneasy = { warmth: 70, comfort: opening.comfort - 20, liking: 60 }
-    expect(postureOf(uneasy, { mode: 'relative', opening })).toBe('wary')
-  })
-})
-
-describe('Tess — the rhythm rule stops arguing with her bands', () => {
-  it('hands sentence length back to the direction', () => {
-    // "Commas and full stops only. Short sentences." is Nadia's cadence and was
-    // the last place it reached the whole roster. Her warm bands ask for two or
-    // three sentences; the cached prefix was asking for the opposite.
-    expect(tess.contract).toContain('Sentence length is the direction in brackets, not a habit.')
-    expect(tess.contract).not.toContain('Commas and full stops only. Short sentences.')
-  })
-
-  it('keeps the em-dash rule, which is a TTS fix and not a rhythm', () => {
-    expect(tess.contract).toContain('Never use em-dashes.')
-    for (const persona of EVERYONE) {
-      expect(persona.contract, persona.slug).toContain('Never use em-dashes.')
-    }
-  })
-
-  it('leaves every other character on the shared rhythm', () => {
-    for (const persona of EVERYONE_ELSE) {
-      expect(persona.contract, persona.slug).toContain('Commas and full stops only. Short sentences.')
-    }
-  })
-})
-
-describe('Tess — §3.9, a different afternoon each time', () => {
-  it('rolls one of the authored moods into the prompt', () => {
-    const moods = tess.moods ?? []
-    expect(moods.length).toBeGreaterThan(1)
-    for (let i = 0; i < moods.length; i += 1) {
-      const roll = (i + 0.5) / moods.length
-      const chosen = moodFor(tess, () => roll)
-      expect(moods).toContain(chosen)
-      expect(compile(tess, roll)).toContain(`# Today, specifically\n${chosen}`)
-    }
-  })
-
-  it('never lets a mood reach a dial', () => {
-    // The rule that keeps this from being a difficulty roll in a costume: a
-    // mood is prose about her day and touches nothing the engine reads.
-    for (const mood of tess.moods ?? []) {
-      expect(typeof mood).toBe('string')
-      expect(mood).not.toMatch(/\b(warmth|meter|score|level|difficulty)\b/i)
-    }
-  })
-
-  it('does not change what she gives, only what she has to talk about', () => {
-    // Same warmth, different mood, identical steering. The mood lives in the
-    // cached contract prefix; the steering line is the engine's.
-    const first = composeSteering({ persona: tess, warmth: 48 })
-    const second = composeSteering({ persona: tess, warmth: 48 })
-    expect(first).toBe(second)
   })
 })

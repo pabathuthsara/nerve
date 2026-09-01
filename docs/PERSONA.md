@@ -71,14 +71,20 @@ climb monotonically (6 → 10 → 12 → 14 → 15 → 15) and the warm bands ar
 untouched, because those were tuned against real reps and round 6 lives at that
 end.
 
-## The eight optional fields, and why they exist
+## The optional fields, and why nobody uses one
 
-Added 1 September for Tess (`PERSONA-AUDIT.md`). The last two came out of
-auditioning her rather than out of reading her, which is the difference between
-a field somebody reasoned into existence and one the transcripts demanded.
-**Every one defaults to the behaviour that was already there**, so absent means byte-identical and the rest
-of the roster is untouched — `lib/personas/tess.test.ts` asserts exactly that,
-over shipped and retired characters alike.
+Added 1 September for Tess (`PERSONA-AUDIT.md`), and **every one of them is
+unused as of 2 September**. They were built on the theory that the shared band
+table was overwriting a character authored against its grain. It was not: Nadia
+runs that table with no overrides and is the character people enjoy, so the
+overrides were what made Tess read as an AI rather than what would have fixed
+her. She is now Nadia's contract in a launderette and carries none of them.
+
+They stay on the schema because they are the right shape for a character who
+genuinely needs one, and because every one defaults to the behaviour that was
+already there. `lib/personas/tess.test.ts` asserts that **every persona leaves
+every one of them undefined** — that assertion is the point, so a future session
+trips over the lesson rather than rediscovering it.
 
 | Field | Overrides | Why a per-character field |
 |---|---|---|

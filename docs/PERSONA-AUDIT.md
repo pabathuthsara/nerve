@@ -1,9 +1,22 @@
 # Persona audit — why Tess feels robotic and Nadia does not
 
-**Question asked, 1 September:** the demo character (Tess, rung 1, the sign-up
-rep) feels robotic. Nadia does not. What is wrong with her, can the scoring be
-made to feel more human, and what can be fixed without disturbing the rest of
-the roster?
+> ## ⚠️ The central claim in this document is wrong. Read §7 first.
+>
+> This audit argued that the shared band table is "Nadia's personality" and was
+> overwriting any character authored against its grain. Everything measured in
+> §3 is accurate and every seam it names is real. **The conclusion drawn from
+> them was not.**
+>
+> On 2 September the person who has actually talked to both characters said
+> Nadia is fun and Tess still read as an AI — after all of §5 had shipped.
+> Nadia runs the shared table with none of the overrides Tess was given. So the
+> table was not what flattened Tess; it is most of what makes Nadia good, and
+> the overrides were the thing to remove.
+>
+> **Tess is now Nadia's contract in a launderette**, on the rung-1 curve, with
+> every override deleted. §7 has the reversal, the measurement, and what
+> survived. §3 is kept unedited because the seams it documents are genuine and
+> two of them were real bugs — but do not act on §5 without reading §7.
 
 **Short answer.** Tess's prose is not the problem. Every layer *around* her
 prose is tuned to Nadia, and five of them silently overwrite what Tess's
@@ -654,7 +667,114 @@ narrower and true: **on the prompt, against the same harness, the sign-up
 character behaves no worse than the tuned one, and reads like somebody with an
 afternoon of her own.**
 
-## 7. What not to do
+## 7. The reversal — Tess is Nadia in a launderette (2 September)
+
+Everything in §5 shipped. Tess got her own band table, her own posture reading,
+her own punctuation, a mood roll, a facts list, a shorter steering heartbeat and
+her own verbosity ceiling. Each was argued from a measurement and the arithmetic
+behind each was sound. §6 then auditioned her and tightened six of the numbers.
+
+Then the person who has talked to both characters said: **Nadia is fun, Tess
+still feels like an AI.**
+
+That is decisive in a way no amount of reading is, and it points at exactly one
+thing. Nadia runs the shared band table with **none** of those overrides. If she
+is the fun one, the shared table is not what was flattening Tess — it is most of
+what makes Nadia good, and the overrides were the problem rather than the fix.
+
+### What the audit got right, and where it turned
+
+The seams in §3 are real. Two were genuine bugs with broken output — the room
+name and the ungrammatical `want` — and both are kept. The rest were a
+*hypothesis*: that a character whose authored self differs from the band table
+is being overwritten by it.
+
+The hypothesis had an unexamined premise. It assumed Tess's authored self was
+worth protecting. She was warm, quick, carried the conversation, delighted to be
+spoken to — and read as an AI, because **that description is what a language
+model does by default.** Nadia is flat, half-attentive, trails off, does not
+rescue silences and will not tell you what she does for a living. Every one of
+those is a constraint *against* the default, and the constraints are the
+character. Widening Tess's bands did not free her to be herself; it freed her to
+be the model.
+
+An audit that reads a prompt can prove two instructions disagree. It cannot tell
+you which of them was carrying the character.
+
+### The port
+
+Nadia's contract, section for section, in her order, with the props changed and
+nothing else. The deviations are exhaustive: name, age, the room, what she is
+doing in it, and the four rules that name the shop — working there, its stock,
+browsing, retreating to the shelves. `lib/personas/tess.test.ts` asserts every
+craft rule verbatim and asserts no bookshop noun survives.
+
+The book ports better than it deserves to. Nadia leans on having something in
+her hands and an opinion about it, and a woman with nineteen minutes and a
+paperback is the same person as a woman killing forty minutes in a shop. Her job
+ports exactly: scheduling for a removals firm is *something in logistics that
+you find boring and do not bring up*.
+
+**Layer 1 is the only thing still hers**, plus the two layer-2 dials that layer 1
+implies — `patience` and `distraction` — which `roster.test.ts` pins against
+Nadia's anyway. Sharpness, humour, talkativeness, expression and signalClarity
+are now hers to the number, so the derived behaviour block is identical except
+the one line banded off `trajectory.start`.
+
+### Measured, same harness, same day
+
+| | breaks / 5 min | median words | armed |
+|---|---|---|---|
+| Tess **before** the port (§6 final) | 1.79 | 21 | 3/3 |
+| **Tess ported** | **2.68** | **15.5** | 3/3 |
+| Nadia — control | 3.57 | 13 | 0/3 |
+
+She now sits **between** her old self and Nadia and scores better than the
+control on breaks, with the same break profile (verbosity, consecutive
+questions). Her median is above Nadia's because she reaches INVESTED where Nadia
+tops out at ENGAGED — that is the rung, working. The ladder is also correctly
+ordered against a median player: rung 1 arms 3/3, rung 2 arms 0/3.
+
+Nadia trips `verbosity` in all three of her own reps at the roster ceiling of
+12, which is the third independent confirmation that this harness reads longer
+than the realtime pipeline and that its absolute numbers cannot be compared to
+M0's gate.
+
+### What survives, and what is now dead
+
+**Kept** — both are broken output, not opinions about who she is:
+
+- `room.place`, because `sceneId` falls back to the impulse response and was
+  putting her in a bookshop inside her own Absolute rules (§3.6)
+- a `want` that completes the sentence `wantClauses` builds (§3.4), reworded to
+  Nadia's shape: *left alone with the book you are halfway through*
+- `scorerPlaceFor`, so the live intimacy scorer stops believing she is in a
+  bookshop — that anchor drives `classifyOverreach`
+
+**Deleted from Tess:** `disposition`, `bandDirectives`, `postureMode`, `moods`,
+`steerHeartbeatTurns`, `verbosityMedian`, the punctuation override, the facts
+list, the two extra scene beats, `humour: 69` restored from 74, `talkativeness`
+back to Nadia's 56.
+
+**The optional fields stay on the schema and nobody uses one.** They are the
+right shape for a character who genuinely needs one, they all default to the
+prior behaviour, and `tess.test.ts` now asserts that *every* persona leaves
+*every* one of them undefined. That assertion is the point: it turns "we tried
+this and it made her worse" into something a future session trips over rather
+than rediscovers.
+
+### The one thing to watch
+
+In one audition rep she introduced herself three times — "I'm Tess, by the way",
+then twice more — against a contract that explicitly forbids reintroducing
+yourself. It did not recur across the other three reps and no `conversation-reset`
+break fired in them, so it is not systematic. But `usesYourName` unlocks at 28
+for her against Nadia's 41, so "You may use his name" is in her steering from
+almost the first turn, and that is the most likely prompt for it. Worth watching;
+not worth a change on one occurrence.
+
+
+## 8. What not to do
 
 - **Do not add a friendliness dial.** §3.2 is fixed by letting the authored
   mood own the disposition, not by adding a second system that argues with
@@ -670,7 +790,7 @@ afternoon of her own.**
 
 ---
 
-## 8. Verification
+## 9. Verification
 
 Existing gates that must stay green:
 
@@ -702,7 +822,7 @@ testing their own product.
 
 ---
 
-## 9. Open question for the roster
+## 10. Open question for the roster
 
 Tess is rung 1 *and* the sign-up rep — a difficulty rung and a first
 impression. §06 argues she must be a real rung, and that argument is right:
