@@ -16,7 +16,14 @@ import 'server-only'
 
 import { supabaseAdmin } from './admin'
 import { daysBetween, localDay } from '@/lib/data/day'
-import { repsAllowedToday, spendingSignupRep, voiceRefusal, type RefusalKind } from '@/lib/data/allowance'
+import {
+  refundingSignupRep,
+  repsRemainingToday,
+  signupRepSpentOn,
+  spendingSignupRep,
+  voiceRefusal,
+  type RefusalKind,
+} from '@/lib/data/allowance'
 import { engineRung, qualifyingByLevel, uiLevel, unlockedLevels, UNLOCK_RULES } from '@/lib/data/progression'
 import { rankFor } from '@/lib/data/rank'
 import { unlockedTier, type FieldHistory } from '@/lib/field/assignment'
@@ -53,18 +60,26 @@ interface QuotaRow {
 }
 
 /**
- * What this account may run today — the plan's number, plus the sign-up rep if
- * it has never been spent.
+ * What this account has left today — the plan's unused reps, plus the sign-up
+ * rep if it has never been spent.
  *
  * Every quota question goes through here rather than reading `reps_per_day`
  * directly, because three places asking the same question three ways is how a
  * user gets handed a credential for a rep the counter then refuses to spend.
- * See `lib/data/allowance.ts` for why the sign-up rep is one, once, ever.
+ * See `lib/data/allowance.ts` for why the sign-up rep is one, once, ever — and
+ * for why it has to be subtracted from the counter before the plan's reps are
+ * counted, rather than after.
  */
-function allowanceFor(row: QuotaRow): number {
-  return repsAllowedToday({
+function remainingFor(row: QuotaRow, zone: string | null, today: string): number {
+  // Both halves are asked of TODAY's counter. A counter belonging to another
+  // day has already rolled, so nothing of the grant is inside it however
+  // recently the stamp was set.
+  const isToday = row.reps_day === today
+  return repsRemainingToday({
     repsPerDay: row.reps_per_day,
     onboardingRepUsedAt: row.onboarding_rep_used_at,
+    usedToday: isToday ? row.reps_used_today : 0,
+    signupSpentToday: isToday && signupRepSpentOn(row.onboarding_rep_used_at, zone, today),
   })
 }
 
@@ -103,9 +118,8 @@ export async function consumeRep(userId: string): Promise<QuotaResult> {
     // train at all, and the ledger still records what it cost.
     if (!row) return { ok: true, message: null, remaining: null }
 
-    const allowed = allowanceFor(row)
     const used = row.reps_day === today ? row.reps_used_today : 0
-    if (used >= allowed) {
+    if (remainingFor(row, zone, today) <= 0) {
       const refusal = voiceRefusal(row.reps_per_day)
       return { ok: false, message: refusal.message, remaining: 0, refusal: refusal.kind }
     }
@@ -130,18 +144,20 @@ export async function consumeRep(userId: string): Promise<QuotaResult> {
       .maybeSingle()
 
     if (updated) {
-      // Re-derived rather than reusing `allowed`: the sign-up rep has just left
-      // the allowance if it was the one spent, and telling somebody they have
-      // one left when they have none is the version of this bug that costs a
-      // credential the counter then refuses.
-      const remainingAllowance = repsAllowedToday({
-        repsPerDay: row.reps_per_day,
-        onboardingRepUsedAt: signup ? new Date().toISOString() : row.onboarding_rep_used_at,
-      })
+      // Re-derived rather than reusing the pre-spend number: the sign-up rep
+      // has just left the allowance if it was the one spent, and telling
+      // somebody they have one left when they have none is the version of this
+      // bug that costs a credential the counter then refuses.
+      const stamp = signup ? new Date().toISOString() : row.onboarding_rep_used_at
       return {
         ok: true,
         message: null,
-        remaining: Math.max(0, remainingAllowance - updated.reps_used_today),
+        remaining: repsRemainingToday({
+          repsPerDay: row.reps_per_day,
+          onboardingRepUsedAt: stamp,
+          usedToday: updated.reps_used_today,
+          signupSpentToday: signupRepSpentOn(stamp, zone, today),
+        }),
         refusal: null,
       }
     }
@@ -188,24 +204,23 @@ export async function refundRep(userId: string): Promise<QuotaResult> {
     // No row means nothing was metered in the first place.
     if (!row) return { ok: true, message: null, remaining: null }
 
-    const allowed = allowanceFor(row)
-
     if (row.reps_day !== today || row.reps_used_today <= 0) {
-      const remaining = row.reps_day === today
-        ? Math.max(0, allowed - row.reps_used_today)
-        : allowed
-      return { ok: true, message: null, remaining }
+      return { ok: true, message: null, remaining: remainingFor(row, zone, today) }
     }
 
     /**
      * Was the rep being handed back the sign-up one?
      *
-     * The grant is spent last, so it was iff the counter has gone past the
-     * plan's own allowance. Note that this can only be true for a stamp set
-     * TODAY: once the grant is gone the allowance is the plan's number alone,
-     * so `reps_used_today` can never climb above it again on a later day.
+     * Decided by `refundingSignupRep`, which knows about the plan that changed
+     * between the spend and the refund as well as the ordinary case. Only a
+     * grant stamped TODAY can be handed back — yesterday's counter is already
+     * reset by the day key, so there is nothing there to credit.
      */
-    const refundingSignup = row.reps_used_today > Math.max(0, row.reps_per_day)
+    const refundingSignup = refundingSignupRep({
+      repsPerDay: row.reps_per_day,
+      usedToday: row.reps_used_today,
+      signupSpentToday: signupRepSpentOn(row.onboarding_rep_used_at, zone, today),
+    })
 
     const { data: updated } = await admin
       .from('entitlements')
@@ -220,11 +235,17 @@ export async function refundRep(userId: string): Promise<QuotaResult> {
       .maybeSingle()
 
     if (updated) {
-      const remainingAllowance = repsAllowedToday({
-        repsPerDay: row.reps_per_day,
-        onboardingRepUsedAt: refundingSignup ? null : row.onboarding_rep_used_at,
-      })
-      return { ok: true, message: null, remaining: Math.max(0, remainingAllowance - updated.reps_used_today) }
+      const stamp = refundingSignup ? null : row.onboarding_rep_used_at
+      return {
+        ok: true,
+        message: null,
+        remaining: repsRemainingToday({
+          repsPerDay: row.reps_per_day,
+          onboardingRepUsedAt: stamp,
+          usedToday: updated.reps_used_today,
+          signupSpentToday: signupRepSpentOn(stamp, zone, today),
+        }),
+      }
     }
     // Somebody else moved the row between the read and the write. Read again.
   }
@@ -261,8 +282,7 @@ export async function mayOpenSession(
   // No row is a sign-up trigger that has not landed. Let them train.
   if (!row) return { ok: true, message: null }
 
-  const used = row.reps_day === today ? row.reps_used_today : 0
-  if (used < allowanceFor(row)) return { ok: true, message: null }
+  if (remainingFor(row, zone, today) > 0) return { ok: true, message: null }
 
   const since = new Date(Date.now() - RECONNECT_WINDOW_MS).toISOString()
   const { count } = await admin

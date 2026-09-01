@@ -39,10 +39,29 @@
  * gets its plan's reps and this one, because the sign-up rep is not part of any
  * plan — it is the thing that happens before a plan is chosen.
  *
+ * ── WHY THE GRANT IS COUNTED SEPARATELY FROM THE PLAN'S REPS ─────────────
+ *
+ * The grant is additive, and `entitlements.reps_used_today` is one counter for
+ * both. That is fine while the plan's number does not move — the grant is spent
+ * last, so anything past `reps_per_day` is the grant. It breaks the moment
+ * somebody upgrades on the day they signed up, which is the single most likely
+ * day for them to do it: the sign-up rep is already sitting in the counter, so
+ * Pro's three reps arrive with one of them apparently spent and the account is
+ * handed two. The grant would have been taken out of the plan it is supposed to
+ * sit on top of.
+ *
+ * So the counter is read as two buckets rather than one. `signupSpentToday`
+ * says whether the one-off grant is inside today's number, and the plan's own
+ * use is the counter minus it. That is a read-side derivation and needs no
+ * write when a plan changes — which matters, because the webhook that grants
+ * Pro must not have to know anything about the rep counter to be correct.
+ *
  * Pure and isomorphic, like `day.ts` and for the same reason: the Server Action
  * that spends a rep and the pill that counts them down have to agree, and one
  * implementation is the only way to guarantee that.
  */
+
+import { localDay } from './day'
 
 /** What the sign-up rep is worth. One, once, per account. */
 export const SIGNUP_REPS = 1
@@ -72,6 +91,85 @@ export function signupRepAvailable(onboardingRepUsedAt: string | null): boolean 
 export function repsAllowedToday(input: AllowanceInput): number {
   const plan = Math.max(0, input.repsPerDay)
   return plan + (signupRepAvailable(input.onboardingRepUsedAt) ? SIGNUP_REPS : 0)
+}
+
+export interface DailyUseInput extends AllowanceInput {
+  /**
+   * `entitlements.reps_used_today`, already rolled: zero when the counter
+   * belongs to a day that is not today. Both buckets are in here.
+   */
+  usedToday: number
+  /**
+   * Whether the one-off grant is one of the reps inside `usedToday` — that is,
+   * `onboarding_rep_used_at` falls on today's local day. Use
+   * `signupRepSpentOn` to work it out from the stamp.
+   */
+  signupSpentToday: boolean
+}
+
+/**
+ * Was the sign-up rep spent on this local day?
+ *
+ * The stamp is an instant and the counter is a day, so the two only line up
+ * through the account's own timezone — the same one `day.ts` counts the quota
+ * in. A grant spent at 23:50 in Colombo belongs to that day's counter, not to
+ * whatever day it was in UTC.
+ */
+export function signupRepSpentOn(
+  onboardingRepUsedAt: string | null,
+  timeZone: string | null | undefined,
+  day: string,
+): boolean {
+  if (!onboardingRepUsedAt) return false
+  const at = new Date(onboardingRepUsedAt)
+  if (Number.isNaN(at.getTime())) return false
+  return localDay(at, timeZone) === day
+}
+
+/**
+ * The plan's own reps used today, with the sign-up rep taken back out.
+ *
+ * This is the number that must not move when a plan does. Somebody who spends
+ * the grant and then buys Pro an hour later has used none of Pro's three.
+ */
+export function planRepsUsedToday(input: Pick<DailyUseInput, 'usedToday' | 'signupSpentToday'>): number {
+  const used = Math.max(0, input.usedToday)
+  return Math.max(0, used - (input.signupSpentToday ? SIGNUP_REPS : 0))
+}
+
+/**
+ * What is actually left today: the plan's unused reps, plus the grant if it is
+ * still unspent.
+ *
+ * Not `repsAllowedToday - usedToday`. That subtraction is what charged the
+ * sign-up rep to the plan somebody had just bought — see the third block of
+ * this file's header. Every caller that answers "may I run a rep" or "how many
+ * are left" goes through here.
+ */
+export function repsRemainingToday(input: DailyUseInput): number {
+  const plan = Math.max(0, input.repsPerDay)
+  const planLeft = Math.max(0, plan - planRepsUsedToday(input))
+  return planLeft + (signupRepAvailable(input.onboardingRepUsedAt) ? SIGNUP_REPS : 0)
+}
+
+/**
+ * Is the rep being handed back the sign-up one?
+ *
+ * `consumeRep` spends the plan first and the grant last, so under a plan that
+ * has not moved this is just "the counter is past the plan's number". The
+ * second clause is for the plan that HAS moved: an account that spent the grant
+ * and then bought Pro has one rep in today's counter and three plan reps it has
+ * not touched, so the rep it is giving back can only be the grant.
+ *
+ * Getting this wrong costs the user their one-off rep and leaves the stamp set,
+ * which is why it is a named function with a test rather than a comparison
+ * inlined at the call site.
+ */
+export function refundingSignupRep(
+  input: Pick<DailyUseInput, 'repsPerDay' | 'usedToday' | 'signupSpentToday'>,
+): boolean {
+  if (!input.signupSpentToday) return false
+  return planRepsUsedToday(input) === 0 || input.usedToday > Math.max(0, input.repsPerDay)
 }
 
 /**

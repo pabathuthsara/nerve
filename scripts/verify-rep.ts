@@ -159,8 +159,41 @@ async function main(): Promise<void> {
     check(!tomorrow.ok, 'a new day does not hand a free account another voice rep')
     check(tomorrow.refusal === 'upgrade', 'and the refusal is still the upgrade moment')
 
-    console.log('\nthe plan is what grants voice')
+    console.log('\nupgrading on the day you signed up (the 1 Sep regression)')
+    // The sequence that was wrong in production: spend the sign-up rep during
+    // onboarding, buy Pro twenty minutes later, and be shown two reps. The
+    // grant is additive, so Pro's three must arrive untouched.
+    await admin
+      .from('entitlements')
+      .update({ plan: 'free', reps_per_day: 0, reps_day: localDay(new Date(), zone?.timezone ?? null), reps_used_today: 0, onboarding_rep_used_at: null })
+      .eq('user_id', userId)
+    const grant = await consumeRep(userId)
+    check(grant.ok && grant.remaining === 0, 'the sign-up rep is spent on free, as it is in onboarding')
+
     await admin.from('entitlements').update({ plan: 'pro', reps_per_day: 3 }).eq('user_id', userId)
+    const justUpgraded = await consumeRep(userId)
+    check(
+      justUpgraded.ok && justUpgraded.remaining === 2,
+      'buying Pro after the grant hands over three reps, not two — the first of them is spent here',
+    )
+    await consumeRep(userId)
+    const third = await consumeRep(userId)
+    check(third.ok && third.remaining === 0, 'all three of Pro\u2019s reps are actually there')
+    const past = await consumeRep(userId)
+    check(!past.ok && past.refusal === 'daily', 'and the fourth is refused as a daily limit')
+
+    console.log('\nthe plan is what grants voice')
+    await admin
+      .from('entitlements')
+      // A Pro account on an ordinary day: the grant was spent on some earlier
+      // day, so today's counter is the plan's alone.
+      .update({
+        plan: 'pro',
+        reps_per_day: 3,
+        reps_used_today: 0,
+        onboarding_rep_used_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+      })
+      .eq('user_id', userId)
     const onPro = await consumeRep(userId)
     check(onPro.ok && onPro.remaining === 2, 'Pro grants three reps a day and the counter reflects it')
     await consumeRep(userId)

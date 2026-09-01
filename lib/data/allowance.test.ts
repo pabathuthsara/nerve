@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   SIGNUP_REPS,
+  planRepsUsedToday,
+  refundingSignupRep,
   repsAllowedToday,
+  repsRemainingToday,
   signupRepAvailable,
+  signupRepSpentOn,
   spendingSignupRep,
   voiceRefusal,
   voicelessPlan,
@@ -92,5 +96,108 @@ describe('the refusal', () => {
     expect(voicelessPlan(0)).toBe(true)
     expect(voicelessPlan(1)).toBe(false)
     expect(voicelessPlan(-1)).toBe(true)
+  })
+})
+
+describe('the grant is not charged to the plan', () => {
+  // The bug this describes was found in production on 1 Sep: an account spent
+  // its sign-up rep during onboarding, bought Pro twenty minutes later and was
+  // shown two reps rather than three. The grant had been taken out of the plan
+  // it is supposed to sit on top of.
+  it('leaves a plan bought after the grant untouched', () => {
+    expect(
+      repsRemainingToday({
+        repsPerDay: 3,
+        onboardingRepUsedAt: SPENT,
+        usedToday: 1,
+        signupSpentToday: true,
+      }),
+    ).toBe(3)
+  })
+
+  it('still counts the plan’s own reps against the plan', () => {
+    const pro = { repsPerDay: 3, onboardingRepUsedAt: SPENT, signupSpentToday: true }
+    expect(repsRemainingToday({ ...pro, usedToday: 2 })).toBe(2)
+    expect(repsRemainingToday({ ...pro, usedToday: 4 })).toBe(0)
+    // Past the ceiling is zero, never negative.
+    expect(repsRemainingToday({ ...pro, usedToday: 99 })).toBe(0)
+  })
+
+  it('gives a free account one rep and then nothing', () => {
+    const free = { repsPerDay: 0 }
+    expect(
+      repsRemainingToday({ ...free, onboardingRepUsedAt: null, usedToday: 0, signupSpentToday: false }),
+    ).toBe(SIGNUP_REPS)
+    expect(
+      repsRemainingToday({ ...free, onboardingRepUsedAt: SPENT, usedToday: 1, signupSpentToday: true }),
+    ).toBe(0)
+  })
+
+  it('adds the grant to a plan that has not spent it', () => {
+    expect(
+      repsRemainingToday({
+        repsPerDay: 3,
+        onboardingRepUsedAt: null,
+        usedToday: 3,
+        signupSpentToday: false,
+      }),
+    ).toBe(SIGNUP_REPS)
+  })
+
+  it('does not credit the grant twice once the day has rolled', () => {
+    // Tomorrow: the counter is not today's, so `usedToday` is zero and the
+    // stamp is on another day. The plan comes back; the grant does not.
+    expect(
+      repsRemainingToday({
+        repsPerDay: 3,
+        onboardingRepUsedAt: SPENT,
+        usedToday: 0,
+        signupSpentToday: false,
+      }),
+    ).toBe(3)
+  })
+
+  it('separates the two buckets inside one counter', () => {
+    expect(planRepsUsedToday({ usedToday: 2, signupSpentToday: true })).toBe(1)
+    expect(planRepsUsedToday({ usedToday: 2, signupSpentToday: false })).toBe(2)
+    expect(planRepsUsedToday({ usedToday: 0, signupSpentToday: true })).toBe(0)
+  })
+})
+
+describe('when the grant was spent', () => {
+  it('reads the stamp in the account’s own timezone, not UTC', () => {
+    // 20:30 UTC is already the next day in Colombo (+05:30). The counter is
+    // kept in local days, so the stamp has to be compared in the same ones.
+    const lateUtc = '2026-08-31T20:30:00.000Z'
+    expect(signupRepSpentOn(lateUtc, 'Asia/Colombo', '2026-09-01')).toBe(true)
+    expect(signupRepSpentOn(lateUtc, 'Asia/Colombo', '2026-08-31')).toBe(false)
+    expect(signupRepSpentOn(lateUtc, 'UTC', '2026-08-31')).toBe(true)
+  })
+
+  it('is false for a grant that was never spent, or a stamp that is nonsense', () => {
+    expect(signupRepSpentOn(null, 'UTC', '2026-09-01')).toBe(false)
+    expect(signupRepSpentOn('not a date', 'UTC', '2026-09-01')).toBe(false)
+  })
+})
+
+describe('which rep is being handed back', () => {
+  it('gives back the grant when the counter is past the plan', () => {
+    expect(refundingSignupRep({ repsPerDay: 0, usedToday: 1, signupSpentToday: true })).toBe(true)
+    expect(refundingSignupRep({ repsPerDay: 3, usedToday: 4, signupSpentToday: true })).toBe(true)
+  })
+
+  it('gives back the grant when the plan arrived after it was spent', () => {
+    // One rep in today's counter, three plan reps untouched: the only rep there
+    // is to give back is the grant, even though the counter is under the plan.
+    expect(refundingSignupRep({ repsPerDay: 3, usedToday: 1, signupSpentToday: true })).toBe(true)
+  })
+
+  it('gives back a plan rep when the plan is the thing that was spent', () => {
+    expect(refundingSignupRep({ repsPerDay: 3, usedToday: 3, signupSpentToday: true })).toBe(false)
+    expect(refundingSignupRep({ repsPerDay: 3, usedToday: 2, signupSpentToday: false })).toBe(false)
+  })
+
+  it('never gives back a grant that was not spent today', () => {
+    expect(refundingSignupRep({ repsPerDay: 0, usedToday: 1, signupSpentToday: false })).toBe(false)
   })
 })

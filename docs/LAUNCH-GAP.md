@@ -255,14 +255,23 @@ refusal is a distinct `kind` from `consumeRep` all the way to the sheet, because
 `checkoutConfigured()` keeps the buy button off a deployment with no
 merchant-of-record variables, so the screen falls back to the notify-me list
 rather than showing a button that errors.
+**Proven on 1 Sep:** a real checkout on the production domain, in test mode
+behind `CREEM_TEST_MODE_IN_PRODUCTION`, delivered a signed webhook Creem sent
+itself and moved the account to Pro with no hand at the database. The trial is
+switched on at the product (seven days, card captured) — so of the list below,
+the products and the environment variables are done in test mode and owed again
+in live. It also found the sign-up rep being subtracted from the plan the buyer
+had just paid for, now fixed read-side; both are recorded in
+`PAYMENTS-NEW-INTEGRATION.md` §12.
 **Still missing:** the merchant-of-record account itself (the real blocker, and
-not code — `PAYMENTS-APPROVAL.md`), the two Creem products with `trialDays: 7`
-set on them, the four environment variables, the pre-charge email, and the six
-money overlays in §12. The webhook has never been called by Creem itself: it is
-proven against signed payloads and the real tables, not yet against a live
-delivery, which needs a public URL and a registered endpoint. Plans can still be
-granted from a terminal by `npm run db:plan`, which stays as the manual
-override.
+not code — `PAYMENTS-APPROVAL.md`), the live-mode products and the four live
+environment variables, the pre-charge email, and the six money overlays in §12.
+`subscriptions.status` cannot tell a trial from a paid month — it is read from
+the event type, and a trialling checkout arrives as `checkout.completed` — so
+the trial countdown that §5.3 owes has nothing true to read yet. What the
+trial-end charge does is unproven and not rehearsable: test mode has no clock
+control. Plans can still be granted from a terminal by `npm run db:plan`, which
+stays as the manual override.
 **Why it blocks:** no revenue, obviously — but the real risk is lead time.
 §17 says apply at the *start* of M4 because approval takes days and can fail,
 and it can only be applied for once B1 exists. **B1 exists as of 27 Aug**, so

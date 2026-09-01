@@ -23,7 +23,13 @@ import { nextTierRequirement, unlockedTier } from '@/lib/field/assignment'
 import { milestoneFor, type Milestone } from '@/lib/field/milestones'
 import { LIBRARY_READ_PREFIX, MEMORY_BEAT_FLAG, planWaitlistFlag } from './ui-flags'
 import { localDay, nextLocalMidnight } from './day'
-import { repsAllowedToday, signupRepAvailable, voicelessPlan } from './allowance'
+import {
+  repsAllowedToday,
+  repsRemainingToday,
+  signupRepAvailable,
+  signupRepSpentOn,
+  voicelessPlan,
+} from './allowance'
 import { qualifyingByLevel, uiBand, uiLevel, uiWarmth, unlockRequirement, unlockedLevels, wonFromOutcome } from './progression'
 import { toScorecard, type StoredMetricScore, type StoredWarmthEvent } from './scorecard'
 import { RANKS, type Rank } from './rank'
@@ -109,6 +115,20 @@ export async function fetchUserState(): Promise<UserState | null> {
         onboardingRepUsedAt: entitlement.onboarding_rep_used_at,
       })
     : 0
+  // Subtracted through `repsRemainingToday` rather than as `perDay - usedToday`,
+  // because the sign-up rep is in that counter and is not part of any plan: the
+  // account that spends it and then buys Pro an hour later has used none of
+  // Pro's three, and the pill has to say so.
+  const remainingToday = entitlement
+    ? repsRemainingToday({
+        repsPerDay: entitlement.reps_per_day,
+        onboardingRepUsedAt: entitlement.onboarding_rep_used_at,
+        usedToday,
+        signupSpentToday:
+          entitlement.reps_day === today &&
+          signupRepSpentOn(entitlement.onboarding_rep_used_at, timezone, today),
+      })
+    : 0
   const plan = entitlement && isPlan(entitlement.plan) ? entitlement.plan : 'free'
   const activeTrack = profile && isTrack(profile.active_track) ? profile.active_track : 'dating'
   const focus = profile?.focus_area
@@ -127,7 +147,7 @@ export async function fetchUserState(): Promise<UserState | null> {
     // string means a row written before the rail existed — not an error worth
     // failing a page load over.
     rank: RANKS.includes(profile?.rank as Rank) ? (profile?.rank as Rank) : 'rookie',
-    repsRemainingToday: Math.max(0, perDay - usedToday),
+    repsRemainingToday: remainingToday,
     repsPerDay: perDay,
     repsResetAt: nextLocalMidnight(new Date(), timezone).toISOString(),
     signupRepAvailable: signupRep,

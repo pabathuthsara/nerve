@@ -304,7 +304,10 @@ anonymously, and the per-account spend ceiling still bounds it.
 - `subscription.expired → revoke` lands them on free, which after this change
   means voice off and everything else intact.
 - What is missing is UI: a trial countdown, the card-on-file state, and a
-  cancel path that does not require emailing us.
+  cancel path that does not require emailing us. **The countdown needs a read
+  fixed first** — a trialling subscription is stored with `status = 'active'`,
+  because status comes from the event type and the event is
+  `checkout.completed`. See §12.
 
 ### 5.4 The buy button
 
@@ -510,10 +513,13 @@ flag is gone.
 
 ### 6.4 What is not yet proven
 
-Creem has never called the endpoint. It is verified against signed payloads and
-the real tables, but a live delivery needs a public URL and a registered
-endpoint. Closing that is: expose a tunnel, register it, paste the `whsec_`
-secret, run a checkout, confirm the plan moves.
+~~Creem has never called the endpoint.~~ **Closed on 1 September** — a real
+checkout on the production domain delivered a signed webhook and moved the plan
+without anybody touching the database. See §12.
+
+What is left unproven is the *end* of the trial: whether the first charge lands
+seven days on, and what arrives when it does. Test mode has no clock control, so
+that one is a live-mode observation rather than a rehearsal.
 
 ---
 
@@ -711,3 +717,71 @@ transactional mail, which this product does not have yet.
 `M0.md` still owes the live ten-rep measurement from Colombo at 7–9pm, and §2.1
 says plainly that $19 does not absorb a 2× cost surprise. **Take it before the
 live products go up.**
+
+---
+
+## 12 · The first real checkout, 1 September
+
+A real purchase went through the deployed site under
+`CREEM_TEST_MODE_IN_PRODUCTION=1` (§6.5): card `4242 4242 4242 4242` on Creem's
+test mode, the hosted page, the redirect back to
+`/profile/subscription?checkout_id=…`, and the webhook arriving unprompted.
+
+**That closes §6.4.** Creem has now called the endpoint. `evt_…` verified,
+`checkout.completed` applied, `subscriptions` row written with
+`prod_7HgaFo2ZPTuCuih2gETbsh`, and `entitlements` moved to `pro` /
+`reps_per_day = 3` without anybody touching the database. The whole path from
+the button to the plan is proven, in production, on the real domain.
+
+Two things came out of it.
+
+### The trial is on, and we cannot see it
+
+`current_period_end` came back seven days out rather than a month, which is the
+trial doing its job — the Trial Period switch is on both products in the
+dashboard, so §6.1's warning about products that charge immediately no longer
+applies to the test-mode pair.
+
+**But `subscriptions.status` says `active`, not `trialing`.** Status is read
+from the event type alone (`INTENTS` in `lib/billing/events.ts`), and the event
+that arrives on a trialling checkout is `checkout.completed`, which maps to
+`active`. Creem's own `status: "trialing"` is in the payload and ignored. That
+is harmless for access — a trial grants Pro either way, which is the intent —
+and wrong for anything that has to *say* something about the trial. §5.3 already
+owes a trial countdown and a card-on-file state; neither can be built off a
+status that reads `active` on day one. Fix the read before building that UI.
+
+**What the trial-end charge does is still unproven**, and cannot be rehearsed by
+waiting: test mode has no clock control, so the seven days would have to pass in
+real time, and the rehearsal is meant to be over before then. The path itself is
+covered — `subscription.paid → grant` renews, `past_due` keeps access while the
+retries run, `expired` revokes — and `npm run db:billing` exercises all three
+against the real tables. Treat the calendar test as a live-mode observation on
+the first real trial, not as a gate.
+
+### The sign-up rep was being charged to the plan somebody had just bought
+
+The account that bought Pro was shown **two** reps, not three. It had spent its
+sign-up rep during onboarding twenty minutes earlier, and `reps_used_today = 1`
+was still sitting in today's counter when `reps_per_day` moved from 0 to 3.
+
+The grant is additive by design (§P2, `lib/data/allowance.ts`) but the counter
+holds both it and the plan's reps, and remaining was `allowance − used`. That
+subtraction is fine while the plan's number does not move. It is exactly wrong
+on the day it does — which is the most likely day for it to move, because
+upgrading immediately after the free rep is the funnel the whole pricing model
+is built on. **The first thing a new subscriber saw was one fewer rep than the
+page they had just paid on.**
+
+Fixed read-side, in `lib/data/allowance.ts`: `signupRepSpentOn` says whether the
+grant is inside today's counter, `planRepsUsedToday` takes it back out, and
+`repsRemainingToday` counts the plan's own use against the plan. No write, no
+migration, and nothing for the webhook to know about — `applyBillingEvent` still
+touches only the plan. `refundingSignupRep` decides the same question in reverse
+for `refundRep`, which had the mirror-image mistake: it would have handed a
+refunded grant back as a plan rep and left the stamp set.
+
+Covered by `lib/data/allowance.test.ts` and, against the real database, by the
+"upgrading on the day you signed up" block in `npm run db:rep`. No repair was
+needed for existing rows: the derivation is a read, so the affected account was
+correct on its next page load.
