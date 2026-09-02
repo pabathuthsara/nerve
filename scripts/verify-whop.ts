@@ -42,6 +42,7 @@ import {
   takingRealPayments,
 } from '@/lib/billing/plans'
 import { createCheckout } from '@/lib/billing/checkout'
+import { FROM } from '@/lib/email/send'
 
 let failures = 0
 let warnings = 0
@@ -301,6 +302,45 @@ async function main(): Promise<void> {
           failed.length === 0
             ? `its last ${recent.length} deliveries all succeeded`
             : `${failed.length} of its last ${recent.length} deliveries failed (${failed.map((d) => `${d.event ?? '?'} ${d.response_code}`).join(', ')})`)
+      }
+    }
+  }
+
+  /**
+   * The email before the first charge, and whether it can actually leave.
+   *
+   * This check exists because the thing it catches already happened: the sender
+   * was `nerve@send.hellonerve.com`, that subdomain was never verified on the
+   * Resend account, and Resend refuses to send from an unverified domain.
+   * `sendEmail` swallows the failure on purpose — an email provider must never
+   * turn a billing webhook into a 500 — so the result was a route answering 200
+   * and a promised email that did not exist. Silent, and it would have stayed
+   * silent until a customer disputed a charge they were never warned about.
+   */
+  console.log('\nthe email before the first charge')
+  const resendKey = process.env['RESEND_API_KEY']?.trim()
+  if (!resendKey) {
+    warn(false, 'RESEND_API_KEY is unset — no trial-ending email will be sent')
+    note('      Terms clause 07 and TRIAL_NOTE both promise one. Either set this,')
+    note('      or confirm the merchant of record sends its own.')
+  } else {
+    const sender = FROM.match(/<([^>]+)>/)?.[1] ?? FROM
+    const domain = sender.split('@')[1] ?? ''
+    const domains = await fetch('https://api.resend.com/domains', {
+      headers: { authorization: `Bearer ${resendKey}` },
+    })
+    if (!domains.ok) {
+      check(false, `Resend accepts the API key (${domains.status})`)
+    } else {
+      const { data = [] } = (await domains.json()) as { data?: { name: string; status: string }[] }
+      const match = data.find((d) => d.name === domain)
+      check(!!match, `the sender's domain is on the Resend account (${domain})`)
+      if (match) {
+        check(match.status === 'verified',
+          `and it is verified, so mail can actually leave (${match.status})`)
+      } else {
+        note(`      verified domains: ${data.map((d) => `${d.name} (${d.status})`).join(', ') || 'none'}`)
+        note(`      the sender is ${sender} — set in lib/email/send.ts`)
       }
     }
   }

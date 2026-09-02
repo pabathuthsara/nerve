@@ -21,13 +21,24 @@ import 'server-only'
 const ENDPOINT = 'https://api.resend.com/emails'
 
 /**
- * Who the mail comes from.
+ * Who the mail comes from, and where a reply goes.
  *
- * `send.hellonerve.com` rather than the apex, because that subdomain is the one
- * verified with SPF, DKIM and a DMARC record — sending transactional mail from
- * an unverified apex is how a domain's reputation gets spent.
+ * **`hellonerve.com`, the apex.** The first version of this said
+ * `send.hellonerve.com`, taken from a line in `PAYMENTS-APPROVAL.md`'s log that
+ * was either stale or describing a plan that changed. That subdomain is not
+ * verified on the Resend account; the apex is. Resend refuses to send from an
+ * unverified domain, `sendEmail` swallows the failure by design, and the result
+ * was a webhook that answered 200 and an email that never existed.
+ *
+ * That is the exact failure mode this whole message exists to prevent, so the
+ * sender is now checked in `npm run whop:verify` against the domains Resend
+ * says are verified — a silent non-send becomes a preflight failure.
+ *
+ * Replies go to the support inbox rather than into a void, because this email
+ * asks somebody about money and some of them will answer it.
  */
-const FROM = 'Nerve <nerve@send.hellonerve.com>'
+export const FROM = 'Nerve <nerve@hellonerve.com>'
+const REPLY_TO = 'support@hellonerve.com'
 
 export interface SendResult {
   ok: boolean
@@ -54,6 +65,7 @@ export async function sendEmail(options: {
       },
       body: JSON.stringify({
         from: FROM,
+        reply_to: REPLY_TO,
         to: [options.to],
         subject: options.subject,
         text: options.body,
