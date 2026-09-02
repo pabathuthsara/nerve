@@ -487,3 +487,111 @@ export function SafetyDocument() {
     </LegalDocument>
   )
 }
+
+/* --------------------------------------------------- Refunds and returns */
+
+/**
+ * The refund policy, as its own document.
+ *
+ * Every commitment on this page already exists in clause 07 of the terms. It is
+ * restated here rather than linked because a merchant of record asks for a
+ * discrete return policy — Whop's onboarding wants one as a separate uploaded
+ * document — and "see clause 07 of another document" is not a policy a
+ * compliance reviewer can accept or a customer can find.
+ *
+ * **It must never say anything clause 07 does not.** Two documents describing
+ * the same refund are two chances to disagree, and the one a disputing customer
+ * quotes is whichever is more generous. If the refund window, the trial length
+ * or the cancellation behaviour changes, it changes in `TermsDocument`, here,
+ * and in `TRIAL_NOTE` in the same edit — the same rule the trial length already
+ * follows through `TRIAL_DAYS`.
+ */
+export function RefundDocument() {
+  return (
+    <LegalDocument
+      title="Refunds and cancellation"
+      summary={`How to stop paying for Nerve, what happens to your access when you do, and how to get money back. Everything here is also clause 07 of the terms; this is the same policy on its own page.`}
+    >
+      <Clause n="01" title="The free trial">
+        <p>
+          Both paid plans start with a free trial of {TRIAL_DAYS} days. Starting one
+          requires a valid payment card. The card is authorised when the trial starts and
+          charged for the first month on the day the trial ends, and not before.
+        </p>
+        <p>
+          We email you before that first charge, and the date is shown on your subscription
+          screen for the whole of the trial. <strong>Cancel at any point during the trial and
+          you are not charged at all</strong> — there is nothing to refund, because no money
+          has moved. One trial per account.
+        </p>
+      </Clause>
+
+      <Clause n="02" title="Cancelling">
+        <p>
+          You can cancel at any time from the subscription screen inside your account. It is
+          one action. You do not need to email us, fill in a form, or give a reason, and
+          nobody will try to talk you out of it.
+        </p>
+        <p>
+          Cancelling stops the next renewal. It does not end your access immediately:
+          <strong> you keep everything you paid for until the end of the period you have
+          already paid for</strong>, and the account then returns to the free plan. Nothing
+          is deleted — your reps, transcripts, scores, streak, field log and everything you
+          have unlocked stay exactly where they are, and they are still there if you
+          subscribe again later.
+        </p>
+      </Clause>
+
+      <Clause n="03" title="Refunds">
+        <p>
+          <strong>Ask us within fourteen days of a charge and we will refund it.</strong> One
+          email to {SUPPORT_EMAIL} is enough. You do not have to explain why, and we do not
+          require you to have used the product a certain amount or to answer questions first.
+        </p>
+        <p>
+          Refunds go back to the card that was charged, and normally appear within five to
+          ten business days depending on your bank. If a refund is issued, access to the paid
+          plan ends and the account returns to the free plan.
+        </p>
+        <p>
+          Outside that fourteen-day window we will still look at anything that went wrong on
+          our side — a charge you did not expect, a plan that did not activate, a period you
+          could not use because the service was down. Write to us and say what happened.
+        </p>
+      </Clause>
+
+      <Clause n="04" title="Nothing is shipped">
+        <p>
+          Nerve is a digital service. There is no physical product, so there is nothing to
+          return, no shipping and no restocking fee. &ldquo;Return&rdquo; here means
+          cancelling and, where it applies, a refund of what you were charged.
+        </p>
+      </Clause>
+
+      <Clause n="05" title="Who charges you">
+        <p>
+          Payment is handled by our merchant of record, who is the seller of record for the
+          transaction and who collects and remits any VAT or sales tax due where you live.
+          Their name, not ours, appears on your statement. Refunds are issued through them,
+          and asking us is enough to start one — you do not need to contact them yourself.
+        </p>
+      </Clause>
+
+      <Clause n="06" title="Price changes">
+        <p>
+          If a price changes, it changes for you at your next renewal and only after we have
+          told you by email first. If you subscribed at a launch price, you keep it for as
+          long as your subscription runs without a break.
+        </p>
+      </Clause>
+
+      <Clause n="07" title="Asking">
+        <p>
+          Everything above happens by writing to <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>,
+          except cancelling, which you can do yourself in two taps and which is the faster
+          route. We answer within one working day.
+        </p>
+      </Clause>
+    </LegalDocument>
+  )
+}

@@ -27,6 +27,7 @@
     "db:field": "vite-node --config vitest.config.ts scripts/verify-field.ts",
     "db:spend": "vite-node --config vitest.config.ts scripts/verify-spend.ts",
     "db:billing": "vite-node --config vitest.config.ts scripts/verify-billing.ts",
+    "legal:pdf": "vite-node --config vitest.config.ts scripts/legal-pdf.ts",
     "whop:setup": "vite-node --config vitest.config.ts scripts/setup-whop.ts",
     "whop:verify": "vite-node --config vitest.config.ts scripts/verify-whop.ts",
     "whop:probe": "vite-node --config vitest.config.ts scripts/verify-whop-webhook.ts",

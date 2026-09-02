@@ -28,9 +28,18 @@ warn, charge — has been driven over HTTP through the running route.
 `npm run whop:verify` is clean: 0 failed, 0 warnings. All seven variables are in
 Vercel production.
 
-**Two things are still owed, and both are dashboard-only** (§13.9): the terms,
-privacy and refund URLs on the account, and the account's own industry, which is
-still `health_and_wellness / mental_health_app` and contradicts terms clause 08.
+The account's industry was corrected to `personal_development /
+communication_coaching` on 2 September — **not with an API key, which gets a 404
+on its own account, but with a user token** (the Whop MCP). That is the only
+route to it short of the dashboard.
+
+**One thing is still owed: the policy documents.** Whop wants them as uploaded
+**PDFs**, not as URLs — `terms_of_service`, `privacy_policy` and `return_policy`
+are file fields, which is why they are absent from the account update schema.
+`npm run legal:pdf` renders them from the running app, so the uploaded document
+cannot drift from the published page. There was no discrete return policy to
+render, so `RefundDocument` and `/legal/refunds` were added; every commitment on
+it already existed in clause 07, and the two must change together.
 
 **Nothing is deployed.** Production is still building the last commit on
 `elevenlabs-pipeline`, which has no `/api/webhooks/whop` — the path 308s there
@@ -720,6 +729,8 @@ list. It does not require a deploy of code.
 | 2 Sep 2026 | Two more of §2's open questions answered against the live account: **trial eligibility is per person and Whop enforces it themselves** (§2.4), and **Sri Lanka gets local bank transfer in LKR or USD at a flat $3.70, not crypto** (§7.7). The last open question is §2.5, whether checkout forces the buyer to make a Whop account — which only a real checkout answers |
 | 2 Sep 2026 | The account's industry corrected from `health_and_wellness / mental_health_app` to `personal_development / communication_coaching`. The original contradicted terms clause 08 and rule 10 — a processor's own record of us should not say the opposite of our legal page |
 | 2 Sep 2026 | **§7 ran against the live account.** Product `prod_DlhZq3oMd4QHd`, plans `plan_pyrhOCBHYRnFW` (Pro) and `plan_m0JD4mhTqeZnk` (Elite), webhook `hook_uBtOKRs6GhyR8`. `whop:verify` clean, 0 failed 0 warnings. All seven variables in Vercel production. A live hidden plan was confirmed to mint a real `purchase_url` — the one risk in D1 that could have made the whole approach unsellable. Four undocumented API facts recorded in §13.9. Committed on `whop-payments`; **not deployed** |
+| 2 Sep 2026 | **The policy documents turned out to need PDFs, not URLs.** `npm run legal:pdf` renders the real pages through headless Chrome and re-wraps them in a print stylesheet — Arena is dark, and a black A4 page is unreadable printed and looks broken to a reviewer. Four documents: terms, privacy, return policy, acceptable use. Whop needs the first three. A discrete return policy did not exist, so `RefundDocument` and `/legal/refunds` were added, restating clause 07 rather than inventing anything — two documents describing the same refund are two chances to disagree, and the one a disputing customer quotes is whichever is more generous |
+| 2 Sep 2026 | The account's industry corrected to `personal_development / communication_coaching` **through a user token**, after `PATCH /accounts/{id}` with an account API key answered 404 for its own `biz_`. Recorded in §13.9: an Account API key updates its *connected* accounts, never itself |
 | 2 Sep 2026 | Two bugs fixed in `whop:verify` itself, both found by running it for the first time against a configured account: it called `GET /webhooks` without the required `account_id` and reported the webhook unreadable, and it printed `pass  this is the SANDBOX base` on a LIVE deployment — a check that reports backwards is worse than one that does not run |
 | 2 Sep 2026 | `SITE_ORIGIN`'s production fallback moved from the generated Vercel domain to `hellonerve.com`. Unrelated to Whop and found on the way: canonical tags, sitemap entries and OpenGraph image URLs are all things other people see and cache |
 
