@@ -41,9 +41,13 @@ cannot drift from the published page. There was no discrete return policy to
 render, so `RefundDocument` and `/legal/refunds` were added; every commitment on
 it already existed in clause 07, and the two must change together.
 
-**Nothing is deployed.** Production is still building the last commit on
-`elevenlabs-pipeline`, which has no `/api/webhooks/whop` — the path 308s there
-today. Merging `whop-payments` is what turns the buy button on.
+**Deployed to production on 2 September.** `elevenlabs-pipeline` is git-linked
+to production, so the push built and released it. `whop:probe` passes against
+`https://www.hellonerve.com` and `whop:verify` is clean. The buy button is live.
+
+**The canonical host is `www.hellonerve.com`, not the apex** — see §13.10. Three
+things were registered against the apex before anybody checked which way that
+redirect ran, and one of them was the webhook.
 
 **Read §2.1 and §13 before doing §7.** Five of §2's six open questions were
 answered from Whop's own OpenAPI specification while building this, and three of
@@ -729,6 +733,10 @@ list. It does not require a deploy of code.
 | 2 Sep 2026 | Two more of §2's open questions answered against the live account: **trial eligibility is per person and Whop enforces it themselves** (§2.4), and **Sri Lanka gets local bank transfer in LKR or USD at a flat $3.70, not crypto** (§7.7). The last open question is §2.5, whether checkout forces the buyer to make a Whop account — which only a real checkout answers |
 | 2 Sep 2026 | The account's industry corrected from `health_and_wellness / mental_health_app` to `personal_development / communication_coaching`. The original contradicted terms clause 08 and rule 10 — a processor's own record of us should not say the opposite of our legal page |
 | 2 Sep 2026 | **§7 ran against the live account.** Product `prod_DlhZq3oMd4QHd`, plans `plan_pyrhOCBHYRnFW` (Pro) and `plan_m0JD4mhTqeZnk` (Elite), webhook `hook_uBtOKRs6GhyR8`. `whop:verify` clean, 0 failed 0 warnings. All seven variables in Vercel production. A live hidden plan was confirmed to mint a real `purchase_url` — the one risk in D1 that could have made the whole approach unsellable. Four undocumented API facts recorded in §13.9. Committed on `whop-payments`; **not deployed** |
+| 2 Sep 2026 | **Deployed to production.** `elevenlabs-pipeline` merged fast-forward and pushed; Vercel is git-linked and released it. `whop:probe` and `whop:verify` both clean against `www.hellonerve.com`. Every public page 200s. **The buy button is live and real cards can be charged** |
+| 2 Sep 2026 | **The apex redirects to `www`, and the webhook had been registered against the apex** — §13.10. Repointed, along with `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL` and `PRODUCTION_FALLBACK`. The `og:image` was answering 308, so every social share of a site about to be marketed would have risked a blank card |
+| 2 Sep 2026 | Whop's `POST /webhooks/{id}/test` answers `success: true` with every field null and logs **no delivery**. So a Whop-sent delivery has still never been observed end to end — what is proven is that the route verifies signatures made with the production secret, which `whop:probe` does against the live domain. The gap closes on the first real purchase |
+| 2 Sep 2026 | Saving Whop's Business settings form **reverted the industry** to `health_and_wellness / wellness_app`. Re-set through the user token. Worth knowing before touching that form again |
 | 2 Sep 2026 | **The policy documents turned out to need PDFs, not URLs.** `npm run legal:pdf` renders the real pages through headless Chrome and re-wraps them in a print stylesheet — Arena is dark, and a black A4 page is unreadable printed and looks broken to a reviewer. Four documents: terms, privacy, return policy, acceptable use. Whop needs the first three. A discrete return policy did not exist, so `RefundDocument` and `/legal/refunds` were added, restating clause 07 rather than inventing anything — two documents describing the same refund are two chances to disagree, and the one a disputing customer quotes is whichever is more generous |
 | 2 Sep 2026 | The account's industry corrected to `personal_development / communication_coaching` **through a user token**, after `PATCH /accounts/{id}` with an account API key answered 404 for its own `biz_`. Recorded in §13.9: an Account API key updates its *connected* accounts, never itself |
 | 2 Sep 2026 | Two bugs fixed in `whop:verify` itself, both found by running it for the first time against a configured account: it called `GET /webhooks` without the required `account_id` and reported the webhook unreadable, and it printed `pass  this is the SANDBOX base` on a LIVE deployment — a check that reports backwards is worse than one that does not run |
@@ -820,6 +828,36 @@ A webhook pinned to `2026-08-14` or later sends `account_id`; one pinned earlier
 or with **no pin at all**, still sends `company_id`. `readAccountId` reads both.
 Reading only the new name would have made the route's account check refuse every
 event from an unpinned webhook — a total outage that looks like nothing.
+
+### 13.10 · The apex redirects, and the webhook was pointed at it
+
+Found on the first production deploy, and the most dangerous thing in this
+document.
+
+`hellonerve.com` **308-redirects to `www.hellonerve.com`**. The webhook was
+registered against the apex, because that is the address written throughout
+these docs and nobody had checked which way the redirect ran.
+
+A browser follows a 308 without anybody noticing. **A webhook sender is a
+different animal** — plenty treat any 3xx as a failed delivery, and Whop's own
+retry schedule would then have burned twelve attempts over three days against a
+redirect before disabling the endpoint. A billing webhook that fails every
+delivery is a product where nobody who pays ever gets their plan: silent, total,
+and invisible until somebody has already been charged.
+
+Two more things were pointed at the apex for the same reason:
+
+- `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_SITE_URL` in Vercel production, which
+  put `https://hellonerve.com/og.png` in the `og:image` tag — a **308, not a
+  200**. Some social scrapers follow that and some render a blank card, which is
+  precisely the failure `lib/site/origin.ts` was written to prevent, arrived at
+  from the other direction. On a site about to be marketed, every share would
+  have been a blank preview.
+- `PRODUCTION_FALLBACK` in that same file.
+
+All three now name `www`. The rule worth keeping: **whatever goes in a webhook
+URL, a canonical tag or an OG image has to be the host that answers 200 without
+a hop, not the one that looks tidier.**
 
 ### 13.9 · Four things only the live account could teach
 
