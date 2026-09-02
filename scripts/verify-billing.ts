@@ -258,6 +258,52 @@ async function main(): Promise<void> {
     await deliver('dispute.created')
     check((await planNow()) === 'free', 'a chargeback revokes on sight (§14)')
 
+    // --- out of order, which Whop does not guarantee against ------------------
+    /**
+     * The first real purchase, 2 September, drove this.
+     *
+     * Both events of one purchase are emitted in the same second and only the
+     * membership carries the period. When the payment lands first, the
+     * membership event that follows is OLDER by timestamp, and a plain
+     * staleness check drops it whole — leaving the account on a paid plan with
+     * no charge date, so the subscription screen tells somebody whose card is
+     * charged in seven days that nothing renews and nothing is charged.
+     *
+     * The precondition is set directly rather than assumed, because by this
+     * point in the run the row already carries a period from earlier steps.
+     */
+    console.log('\nan out-of-order membership event that knows the charge date')
+    await deliver('payment.succeeded')
+    await admin.from('subscriptions').update({ current_period_end: null }).eq('user_id', userId)
+    await admin.from('entitlements').update({ renews_at: null }).eq('user_id', userId)
+    check((await mirrorNow())?.current_period_end === null, 'the stored row has no charge date')
+
+    const older = await deliver('membership.activated', {
+      occurredAt: Date.now() - 60_000,
+      periodEnd: '2099-06-01T00:00:00.000Z',
+      status: 'trialing',
+    })
+    check(older.ok, 'the older membership event is acknowledged')
+    check(
+      String((await mirrorNow())?.current_period_end).startsWith('2099-06-01'),
+      'it FILLS the charge date the payment did not carry',
+    )
+    const entAfterFill = await admin
+      .from('entitlements').select('renews_at').eq('user_id', userId).maybeSingle()
+    check(
+      String(entAfterFill.data?.renews_at).startsWith('2099-06-01'),
+      'and the renewal date the subscription screen actually draws',
+    )
+    check((await mirrorNow())?.status === 'active', 'but it does NOT roll the status back to trialing')
+    check((await planNow()) === 'pro', 'and it does NOT move the plan a newer event decided')
+
+    // Put the account back where the dispute left it. This section borrowed a
+    // paid plan to have a period worth filling, and the checks below assert on
+    // a revoked one — a harness step that quietly changes the state its
+    // successors read is how a suite starts failing for reasons nobody wrote.
+    await deliver('membership.deactivated', { status: 'expired' })
+    check((await planNow()) === 'free', 'and the account is put back on free for what follows')
+
     // --- rule 9: the owner may read and may not write -------------------------
     console.log('\nwhat the user themselves can do')
     const asUser: SupabaseClient<Database> = createClient<Database>(url, publishable)

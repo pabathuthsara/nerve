@@ -99,7 +99,54 @@ export async function applyBillingEvent(event: BillingEvent): Promise<ApplyResul
 
   const storedAt = readOccurredAt(existing?.last_event)
   if (!shouldApply(storedAt, event.occurredAt)) {
-    return { ok: true, detail: `${event.type} is older than the stored state; ignored`, userId }
+    /**
+     * Stale for deciding access — but it may still know something we do not.
+     *
+     * Whop states plainly that delivery order is not guaranteed, and the two
+     * events of a single purchase are emitted in the same second. Only the
+     * membership event carries the period; only it knows the day the card is
+     * charged. So when the payment arrives first, the membership event that
+     * follows is *older* by timestamp and `shouldApply` — correctly — refuses
+     * to let it move the plan.
+     *
+     * Refusing to let it move the plan is not the same as refusing to read it.
+     * Dropping it whole leaves the account on Pro with no charge date, and the
+     * subscription screen then tells somebody whose card is charged in seven
+     * days that nothing renews and nothing is charged. That is §14's
+     * trial-ending-quietly failure arriving through the back door, and it
+     * happened on the first real purchase.
+     *
+     * So a stale event may FILL a field that is currently unset, and may never
+     * change one that is not. It cannot touch the plan, the status or the
+     * entitlement — a late `payment.succeeded` still cannot resurrect a plan a
+     * dispute revoked, which is the whole reason `shouldApply` exists.
+     */
+    const missingPeriod = !!event.currentPeriodEnd && !existing?.current_period_end
+    if (!missingPeriod) {
+      return { ok: true, detail: `${event.type} is older than the stored state; ignored`, userId }
+    }
+
+    await admin
+      .from('subscriptions')
+      .update({ current_period_end: event.currentPeriodEnd })
+      .eq('user_id', userId)
+
+    // The renewal date the subscription screen draws comes from `entitlements`,
+    // so filling the mirror alone fixes the record and not the page. `.is(null)`
+    // keeps this a fill rather than an overwrite even here.
+    if (existing?.plan && existing.plan !== 'free') {
+      await admin
+        .from('entitlements')
+        .update({ renews_at: event.currentPeriodEnd })
+        .eq('user_id', userId)
+        .is('renews_at', null)
+    }
+
+    return {
+      ok: true,
+      detail: `${event.type} is older than the stored state; filled the period end and changed nothing else`,
+      userId,
+    }
   }
 
   const purchased = planForWhopPlan(event.planId, configuredPlanMap())
