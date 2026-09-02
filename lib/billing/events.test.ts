@@ -375,3 +375,125 @@ describe('resolvedPlan', () => {
     expect(resolvedPlan(event('grant'), null)).toBeNull()
   })
 })
+
+/**
+ * The real deliveries, captured verbatim from the first live purchase.
+ *
+ * `hook_uBtOKRs6GhyR8`, 2 September 2026, 14:56:31Z — pinned `2026-08-31`.
+ * Trimmed of fields nothing reads, and otherwise untouched.
+ *
+ * These exist because the OpenAPI specification and the wire disagree, and the
+ * disagreement cost a real customer their charge date. Everything else in this
+ * file is a payload someone wrote; these two are payloads Whop sent.
+ */
+describe('the real deliveries from the first live purchase', () => {
+  /** The membership shape: FLAT ids, and `current_period_end`, not `renewal_period_end`. */
+  const REAL_MEMBERSHIP_ACTIVATED = {
+    id: 'msg_6JZnWPK2PUSr4LaORL3J9ZT8',
+    type: 'membership.activated',
+    api_version: 'v1',
+    api_version_date: '2026-08-31',
+    timestamp: '2026-09-02T14:56:31.414Z',
+    account_id: 'biz_G4B33AGA0sWgzq',
+    data: {
+      status: 'trialing',
+      user_id: 'user_ZbQ2ZYU6qjfpE',
+      account: { title: 'Hellonerve', id: 'biz_G4B33AGA0sWgzq', route: 'hellonerve', logo_url: null },
+      phone_number: null,
+      id: 'mem_b3evNKpwBNRNLh',
+      product_id: 'prod_DlhZq3oMd4QHd',
+      license_key: null,
+      cancel_at_period_end: false,
+      metadata: { user_id: '693c70ba-f087-4b65-b0b1-92cbd1364880' },
+      current_period_end: '2026-09-09T14:56:27.927Z',
+      created_at: '2026-09-02T14:56:27.826Z',
+      plan_id: 'plan_pyrhOCBHYRnFW',
+      member: null,
+    },
+  }
+
+  /** The payment shape: NESTED objects, exactly as the specification documents. */
+  const REAL_PAYMENT_SUCCEEDED = {
+    id: 'msg_6JZnWPK2PUSr4LaORL3J9ZT9',
+    type: 'payment.succeeded',
+    api_version: 'v1',
+    api_version_date: '2026-08-31',
+    timestamp: '2026-09-02T14:56:31.504Z',
+    account_id: 'biz_G4B33AGA0sWgzq',
+    data: {
+      id: 'pay_PjRU2V3WOafQJ9',
+      status: 'paid',
+      metadata: { user_id: '693c70ba-f087-4b65-b0b1-92cbd1364880' },
+      membership: { id: 'mem_b3evNKpwBNRNLh', phone_number: null, status: 'trialing' },
+      plan: { internal_notes: null, metadata: { nerve_plan: 'pro' }, id: 'plan_pyrhOCBHYRnFW' },
+      user: { email: 'buyer@example.test', id: 'user_ZbQ2ZYU6qjfpE', name: null, username: 'buyer' },
+      total: '0.0',
+      currency: 'usd',
+      billing_reason: 'subscription_create',
+    },
+  }
+
+  it('resolves the plan from a membership event that sends flat ids', () => {
+    // THE BUG THIS PINS. Built against the specification, which documents a
+    // nested `plan` object, this read null — so the plan failed closed, the
+    // event was dropped, and the account got Pro with no charge date on it.
+    const event = toBillingEvent(REAL_MEMBERSHIP_ACTIVATED, 1_000)
+    expect(event?.planId).toBe('plan_pyrhOCBHYRnFW')
+    expect(event?.intent).toBe('grant')
+  })
+
+  it('reads the charge date, which only the membership event carries', () => {
+    // The whole reason the bug mattered: without this the subscription screen
+    // says "nothing renews and nothing is charged" to somebody whose card is
+    // charged in seven days. §14 calls that the pattern that closes a
+    // merchant account.
+    expect(toBillingEvent(REAL_MEMBERSHIP_ACTIVATED, 1_000)?.currentPeriodEnd)
+      .toBe('2026-09-09T14:56:27.927Z')
+  })
+
+  it('reads a card-backed trial as trialing, on the real payload', () => {
+    expect(toBillingEvent(REAL_MEMBERSHIP_ACTIVATED, 1_000)?.status).toBe('trialing')
+  })
+
+  it('attributes the membership event to the Nerve account, not the Whop one', () => {
+    // Two ids that both live under the name `user_id` and mean different
+    // things: `metadata.user_id` is ours, top-level `user_id` is Whop's.
+    const event = toBillingEvent(REAL_MEMBERSHIP_ACTIVATED, 1_000)
+    expect(event?.userId).toBe('693c70ba-f087-4b65-b0b1-92cbd1364880')
+    expect(event?.providerCustomerId).toBe('user_ZbQ2ZYU6qjfpE')
+    expect(event?.providerSubscriptionId).toBe('mem_b3evNKpwBNRNLh')
+  })
+
+  it('reads the payment event, which nests what the membership event flattens', () => {
+    const event = toBillingEvent(REAL_PAYMENT_SUCCEEDED, 1_000)
+    expect(event).toMatchObject({
+      intent: 'grant',
+      // `data.status` here is the PAYMENT's status, "paid". The membership's
+      // is one level down and is the one that counts.
+      status: 'trialing',
+      userId: '693c70ba-f087-4b65-b0b1-92cbd1364880',
+      providerCustomerId: 'user_ZbQ2ZYU6qjfpE',
+      providerSubscriptionId: 'mem_b3evNKpwBNRNLh',
+      planId: 'plan_pyrhOCBHYRnFW',
+    })
+    // It carries no period, which is why the membership event must not be lost.
+    expect(event?.currentPeriodEnd).toBeNull()
+  })
+
+  it('agrees with itself across both shapes', () => {
+    // The same purchase, described two ways by the same vendor in the same
+    // second. Everything they both name has to come out identical, or the
+    // second event silently overwrites the first with a different answer.
+    const a = toBillingEvent(REAL_MEMBERSHIP_ACTIVATED, 1_000)
+    const b = toBillingEvent(REAL_PAYMENT_SUCCEEDED, 1_000)
+    expect(a?.userId).toBe(b?.userId)
+    expect(a?.planId).toBe(b?.planId)
+    expect(a?.providerSubscriptionId).toBe(b?.providerSubscriptionId)
+    expect(a?.providerCustomerId).toBe(b?.providerCustomerId)
+  })
+
+  it('accepts the account under the name this API version actually sends', () => {
+    expect(readAccountId(REAL_MEMBERSHIP_ACTIVATED)).toBe('biz_G4B33AGA0sWgzq')
+    expect(readAccountId(REAL_PAYMENT_SUCCEEDED)).toBe('biz_G4B33AGA0sWgzq')
+  })
+})

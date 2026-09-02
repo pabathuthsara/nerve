@@ -19,9 +19,10 @@
  * the full object the event is about. Which object that is varies, and this is
  * the whole reason the reads below are not simple field accesses:
  *
- *   `membership.*`   `data` IS the membership: `id` is the `mem_`, and `plan`,
- *                    `product` and `user` are nested objects rather than ids.
- *                    Only these events carry `renewal_period_end`.
+ *   `membership.*`   `data` IS the membership: `id` is the `mem_`, and the
+ *                    plan, product and user arrive as **flat ids** —
+ *                    `plan_id`, `product_id`, `user_id` — with the period on
+ *                    `current_period_end`. Only these events carry a period.
  *   `payment.*`      `data` is the PAYMENT: `id` is a `pay_`, and the
  *                    membership hangs off it as `data.membership`. No period.
  *   `refund.created` `data` is the refund and everything useful — metadata,
@@ -31,6 +32,27 @@
  *
  * So the reads walk `data.payment ?? data` and then fall back to `data`, which
  * covers all four shapes without a branch per event type.
+ *
+ * ── AND THE SPEC IS NOT THE PAYLOAD ──────────────────────────────────────
+ *
+ * The two families disagree about how they name the same things, and the
+ * OpenAPI specification documents only one of them. `payment.*` nests `plan`,
+ * `user` and `membership` as objects, exactly as documented. **`membership.*`
+ * does not**: it sends `plan_id`, `product_id`, `user_id` and
+ * `current_period_end` as flat scalars, and carries no `renewal_period_end`,
+ * no `plan` object and no `manage_url` at all.
+ *
+ * This was found the only way it could be — by reading the first real delivery
+ * of a real purchase, on 2 September. Built against the specification alone,
+ * `membership.activated` resolved no plan, failed closed, and was dropped;
+ * `payment.succeeded` then created the row without a period, so the account got
+ * Pro with no charge date on it. The subscription screen would have said
+ * "nothing renews and nothing is charged" to somebody whose card was about to
+ * be charged in seven days — §14's trial-ending-quietly failure exactly.
+ *
+ * So every id below is read in **both** spellings. `events.test.ts` pins the
+ * real captured payloads of both events, verbatim, so this cannot regress into
+ * whichever shape the next API version prefers.
  */
 
 import type { Plan } from '@/lib/data/types'
@@ -271,14 +293,23 @@ export function toBillingEvent(payload: unknown, receivedAt: number): BillingEve
     status: payloadStatus ?? mapped.status,
     occurredAt,
     userId: readUserId(data),
-    providerCustomerId: idOf(subject['user']) ?? idOf(data['user']) ?? idOf(data['member']),
+    // `user` (payment shape) or `user_id` (membership shape). Never
+    // `metadata.user_id`, which is OUR id and is read by `readUserId`.
+    providerCustomerId:
+      idOf(subject['user']) ?? stringOf(subject['user_id'])
+      ?? idOf(data['user']) ?? stringOf(data['user_id']) ?? idOf(data['member']),
     providerSubscriptionId:
-      idOf(subject['membership'])
+      idOf(subject['membership']) ?? stringOf(subject['membership_id'])
       ?? (type.startsWith('membership.') ? stringOf(data['id']) : null),
-    planId: idOf(subject['plan']) ?? idOf(data['plan']) ?? idOf(data['current_plan']),
-    // Only a membership carries a period, so this is null on payment, refund,
-    // dispute and invoice events. `applyBillingEvent` keeps the stored date.
-    currentPeriodEnd: stringOf(data['renewal_period_end']),
+    planId:
+      idOf(subject['plan']) ?? stringOf(subject['plan_id'])
+      ?? idOf(data['plan']) ?? stringOf(data['plan_id']) ?? idOf(data['current_plan']),
+    // Only a membership carries a period, and it spells it `current_period_end`
+    // in the shape actually sent and `renewal_period_end` in the one the
+    // specification documents. Null on payment, refund, dispute and invoice
+    // events, where `applyBillingEvent` keeps the stored date instead.
+    currentPeriodEnd:
+      stringOf(data['renewal_period_end']) ?? stringOf(data['current_period_end']),
     cancelAtPeriodEnd:
       typeof data['cancel_at_period_end'] === 'boolean' ? data['cancel_at_period_end'] : null,
     manageUrl: stringOf(data['manage_url']),
