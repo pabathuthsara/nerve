@@ -35,13 +35,18 @@
  * one edit in one file — and so the value cannot drift between the sitemap and
  * the OpenGraph tags the way it already had.
  *
- * Moved from the Vercel-generated domain to `hellonerve.com` on 2 September,
- * when the site became something to market. The generated domain still
- * resolves, so nothing was broken — but a canonical tag, a sitemap entry and
- * an OpenGraph image URL are all things other people see and cache, and every
- * one of them should name the address the product is actually sold from.
+ * Moved from the Vercel-generated domain to the real one on 2 September, when
+ * the site became something to market — and then, hours later, from the apex to
+ * `www`, which is the part worth remembering.
+ *
+ * **The apex 308-redirects to `www`.** So `https://hellonerve.com/og.png`
+ * answers 308, not 200, and a canonical tag pointing at the apex points at a
+ * redirect. Some social scrapers follow that and some render a blank card —
+ * which is exactly the failure this file was written to prevent, arrived at
+ * from a different direction. Whatever goes here has to be the host that
+ * answers 200 without a hop, not the one that looks tidier.
  */
-const PRODUCTION_FALLBACK = 'https://hellonerve.com'
+const PRODUCTION_FALLBACK = 'https://www.hellonerve.com'
 
 /** Strip a trailing slash so callers can concatenate paths without doubling it. */
 function normalise(origin: string): string {

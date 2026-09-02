@@ -68,7 +68,17 @@ const ACCOUNT = {
  * that the one place it does surface reads as ours.
  */
 const PRODUCT_ROUTE = 'hellonerve'
-const WEBHOOK_URL = 'https://hellonerve.com/api/webhooks/whop'
+/**
+ * The webhook endpoint, on the host that does NOT redirect.
+ *
+ * The apex 308s to `www`, and this was registered against the apex on the first
+ * run. A browser follows that without noticing; a webhook sender is a different
+ * animal — plenty treat any 3xx as a failed delivery, and a billing webhook
+ * that fails every delivery is a product where nobody who pays ever gets their
+ * plan. It is the most expensive kind of bug: silent, total, and invisible
+ * until somebody has already been charged.
+ */
+const WEBHOOK_URL = 'https://www.hellonerve.com/api/webhooks/whop'
 
 /** Every event `lib/billing/events.ts` acts on. Fewer would be a silent gap. */
 const WEBHOOK_EVENTS = [
@@ -260,7 +270,7 @@ async function main(): Promise<void> {
       // reviewer to read and a second place for the description to drift.
       visibility: 'hidden',
       custom_statement_descriptor: 'WHOP*NERVE',
-      redirect_purchase_url: 'https://hellonerve.com/profile/subscription?bought=1',
+      redirect_purchase_url: 'https://www.hellonerve.com/profile/subscription?bought=1',
       global_affiliate_status: 'disabled',
       member_affiliate_status: 'disabled',
     }, `product:${PRODUCT_ROUTE}`)
