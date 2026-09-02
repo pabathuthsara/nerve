@@ -1,22 +1,24 @@
 'use server'
 
 /**
- * Starting a purchase.
+ * Starting a purchase, and stopping one.
  *
- * The only write path a user has anywhere near billing, and it writes nothing:
- * it opens a session at the merchant of record and hands back a URL. The plan
- * itself moves in `/api/webhooks/creem`, on the service role, because
- * `entitlements` grants a read policy and nothing else (rule 9). A user who can
- * put themselves on Elite by calling a Server Action is the same bug as a
- * ledger they can edit.
+ * The only write path a user has anywhere near billing, and neither of these
+ * writes anything: one opens a checkout at the merchant of record and hands
+ * back a URL, the other asks the provider to stop the renewal. The plan itself
+ * moves in `/api/webhooks/whop`, on the service role, because `entitlements`
+ * grants a read policy and nothing else (rule 9). A user who can put themselves
+ * on Elite by calling a Server Action is the same bug as a ledger they can edit
+ * — and so is a user who can cancel somebody else's subscription, which is why
+ * the membership id below is read from the mirror and never from the form.
  *
  * The plan is validated against the authored list rather than trusted from the
- * form: the argument arrives from a browser, and `productForPlan` would
- * otherwise be asked for a product for whatever string was posted.
+ * form: the argument arrives from a browser, and `whopPlanIdFor` would
+ * otherwise be asked for a vendor plan for whatever string was posted.
  */
 
 import { currentUser, supabaseServer } from '@/lib/db/server'
-import { createBillingPortal, createCheckout } from '@/lib/billing/checkout'
+import { cancelMembership, createCheckout } from '@/lib/billing/checkout'
 import { checkoutConfigured } from '@/lib/billing/plans'
 import { PUBLIC_PLANS } from '@/lib/site/plans'
 import { SUPPORT_EMAIL } from '@/components/site/site-chrome'
@@ -34,6 +36,11 @@ function firstUrl(...candidates: (string | undefined)[]): string | undefined {
 export interface CheckoutActionResult {
   ok: boolean
   url: string | null
+  message: string | null
+}
+
+export interface CancelActionResult {
+  ok: boolean
   message: string | null
 }
 
@@ -55,9 +62,9 @@ export async function startCheckout(plan: string): Promise<CheckoutActionResult>
    * Refused before the provider is called, and refused with a sentence a person
    * can read.
    *
-   * `productForPlan` throws naming the missing environment variable, and
+   * `whopPlanIdFor` throws naming the missing environment variable, and
    * `createCheckout` returns that message verbatim — which would put
-   * "CREEM_PRODUCT_PRO is not set" on the screen of somebody trying to give us
+   * "WHOP_PLAN_PRO is not set" on the screen of somebody trying to give us
    * money. The screen already hides the button when this is false; this is the
    * server saying the same thing, because a Server Action must not depend on
    * the client having drawn the right control.
@@ -71,13 +78,35 @@ export async function startCheckout(plan: string): Promise<CheckoutActionResult>
   }
 
   /**
+   * One trial per account, enforced here rather than hoped for.
+   *
+   * Whop's own trial eligibility is scoped to the vendor's idea of a customer,
+   * and we sell two plans off one product — so "already had a trial on Pro"
+   * may not stop a trialling checkout on Elite, and a second Nerve account is a
+   * second email either way. Minting the checkout server-side is what makes
+   * this guard possible at all: a plain checkout link could not have had one.
+   *
+   * A mirror row means the provider has told us about a subscription on this
+   * account at some point, which is exactly the condition "has already started
+   * a trial" describes. Upgrading is still allowed — this only refuses the
+   * seven free days, and the screen already says `Switch to Elite` rather than
+   * `Start 7 days free` once `trialAvailable` is false.
+   */
+  const supabase = await supabaseServer()
+  const { data: existing } = await supabase
+    .from('subscriptions')
+    .select('provider_subscription_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  /**
    * Where the provider returns the buyer, and why this is `||` rather than `??`.
    *
    * An unset variable is `undefined`, but a variable set to nothing is `''` —
    * and `??` only falls back on the first. `.env.local` here carries
    * `NEXT_PUBLIC_SITE_URL=` with an empty value, which under `??` wins over the
    * app-URL fallback and yields an empty origin. That produced a relative
-   * `success_url`, which Creem rejects outright with "URL must be valid".
+   * redirect URL, which the provider rejects outright.
    *
    * The failure is quiet in the version that survives: an empty origin makes
    * the ternary below drop `successUrl` entirely, so checkout still opens and
@@ -91,18 +120,24 @@ export async function startCheckout(plan: string): Promise<CheckoutActionResult>
     userId: user.id,
     plan,
     ...(origin ? { successUrl: `${origin}/profile/subscription?bought=1` } : {}),
-    ...(user.email ? { email: user.email } : {}),
   })
 
   if (!result.ok || !result.url) {
     return { ok: false, url: null, message: result.message ?? 'Could not open checkout.' }
   }
 
+  // Recorded rather than acted on: the guard above is about which button the
+  // screen draws, and the log is what tells us whether Whop's own eligibility
+  // rules ever disagreed with ours (T7).
+  if (existing?.provider_subscription_id) {
+    console.info(`[billing] repeat checkout for ${user.id}; the trial is not offered again`)
+  }
+
   return { ok: true, url: result.url, message: null }
 }
 
 /**
- * The cancel path, and the card-and-invoices path with it.
+ * The cancel path, in one tap, on our own screen.
  *
  * §8 of the payments plan: a card-required trial is bought partly with people
  * who forget they subscribed, and a cancel that requires emailing us is how
@@ -110,40 +145,51 @@ export async function startCheckout(plan: string): Promise<CheckoutActionResult>
  * close a merchant-of-record account, so this is account survival rather than
  * courtesy.
  *
- * The customer id comes off the `subscriptions` mirror, which the webhook
- * writes and nobody else does. Reading it here rather than accepting it from
- * the form is the same rule the whole billing surface follows: a client that
- * can post a customer id can open somebody else's billing portal.
+ * Under Creem this action opened a hosted portal and the user cancelled there.
+ * Whop lets us call the cancellation directly, which is the first time
+ * `TRIAL_NOTE`'s promise — "no email, no form" — is literally true.
+ *
+ * It writes nothing. The membership id comes off the `subscriptions` mirror,
+ * which the webhook writes and nobody else does; reading it here rather than
+ * accepting it from the form is the rule the whole billing surface follows,
+ * because a client that can post a membership id can cancel a stranger's
+ * subscription. The mirror then updates when
+ * `membership.cancel_at_period_end_changed` comes back.
  */
-export async function openBillingPortal(): Promise<CheckoutActionResult> {
+export async function cancelSubscription(): Promise<CancelActionResult> {
   const user = await currentUser()
   if (!user) {
-    return { ok: false, url: null, message: 'Sign in first — a subscription belongs to an account.' }
+    return { ok: false, message: 'Sign in first — a subscription belongs to an account.' }
   }
 
   const supabase = await supabaseServer()
   const { data } = await supabase
     .from('subscriptions')
-    .select('provider_customer_id')
+    .select('provider_subscription_id, cancel_at_period_end')
     .eq('user_id', user.id)
     .maybeSingle()
 
-  if (!data?.provider_customer_id) {
+  if (!data?.provider_subscription_id) {
     // No mirror row means nobody has ever bought anything on this account, so
-    // there is nothing to manage. Saying so is better than opening an empty
-    // portal, and better than a spinner that resolves into an error.
-    return { ok: false, url: null, message: 'There is no subscription on this account yet.' }
+    // there is nothing to cancel. Saying so is better than a spinner that
+    // resolves into an error.
+    return { ok: false, message: 'There is no subscription on this account yet.' }
   }
 
-  const result = await createBillingPortal(data.provider_customer_id)
-  if (!result.ok || !result.url) {
+  if (data.cancel_at_period_end) {
+    // Already done. Told plainly rather than sent again, so a second tap on a
+    // stale screen reads as reassurance instead of a failure.
+    return { ok: true, message: 'This subscription is already set to end. Nothing more is charged.' }
+  }
+
+  const result = await cancelMembership(data.provider_subscription_id)
+  if (!result.ok) {
     return {
       ok: false,
-      url: null,
       message: result.message
-        ?? `Could not open billing. Email ${SUPPORT_EMAIL} and we will cancel it by hand.`,
+        ?? `Could not cancel. Email ${SUPPORT_EMAIL} and we will cancel it by hand.`,
     }
   }
 
-  return { ok: true, url: result.url, message: null }
+  return { ok: true, message: null }
 }

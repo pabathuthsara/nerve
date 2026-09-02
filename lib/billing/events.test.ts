@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isKnownEventType,
+  readAccountId,
   readUserId,
   resolvedPlan,
   shouldApply,
@@ -9,181 +10,295 @@ import {
 } from './events'
 
 const USER = '11111111-2222-3333-4444-555555555555'
+const ACCOUNT = 'biz_G4B33AGA0sWgzq'
+const PERIOD_END = '2026-09-08T04:12:01.591Z'
 
-function payload(type: string, object: Record<string, unknown> = {}, createdAt?: number) {
+/** The envelope Whop wraps every event in. */
+function envelope(type: string, data: Record<string, unknown>, timestamp = '2026-09-01T17:03:24.291Z') {
+  return { id: 'msg_1', type, api_version: 'v1', timestamp, account_id: ACCOUNT, data }
+}
+
+/**
+ * A membership, as `membership.*` events send it: `data` IS the membership, and
+ * plan, product and user are nested objects rather than bare ids.
+ */
+function membership(overrides: Record<string, unknown> = {}) {
   return {
-    id: 'evt_1',
-    type,
-    ...(createdAt === undefined ? {} : { created_at: createdAt }),
-    object: {
-      id: 'sub_1',
-      customer: 'cust_1',
-      product: 'prod_pro',
-      metadata: { user_id: USER },
-      current_period_end_date: '2026-09-30T12:32:00.755Z',
-      ...object,
-    },
+    id: 'mem_1',
+    status: 'active',
+    metadata: { user_id: USER },
+    plan: { id: 'plan_pro_1' },
+    product: { id: 'prod_nerve' },
+    user: { id: 'user_buyer', email: 'buyer@nerve.test' },
+    cancel_at_period_end: false,
+    renewal_period_end: PERIOD_END,
+    manage_url: 'https://whop.com/orders/mem_1',
+    ...overrides,
   }
 }
 
-describe('toBillingEvent', () => {
-  it('reads a subscription.paid into a grant', () => {
-    const event = toBillingEvent(payload('subscription.paid'), 1_000)
+/** A payment, as `payment.*` events send it: the membership hangs off it. */
+function payment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'pay_1',
+    status: 'succeeded',
+    metadata: { user_id: USER },
+    membership: { id: 'mem_1', status: 'active' },
+    plan: { id: 'plan_pro_1' },
+    product: { id: 'prod_nerve' },
+    user: { id: 'user_buyer' },
+    ...overrides,
+  }
+}
+
+describe('a membership activating', () => {
+  it('grants the plan the membership names', () => {
+    const event = toBillingEvent(envelope('membership.activated', membership()), 1_000)
     expect(event).toMatchObject({
-      type: 'subscription.paid',
+      type: 'membership.activated',
       intent: 'grant',
       status: 'active',
       userId: USER,
-      providerCustomerId: 'cust_1',
-      providerSubscriptionId: 'sub_1',
-      productId: 'prod_pro',
-      currentPeriodEnd: '2026-09-30T12:32:00.755Z',
+      providerCustomerId: 'user_buyer',
+      providerSubscriptionId: 'mem_1',
+      planId: 'plan_pro_1',
+      currentPeriodEnd: PERIOD_END,
+      cancelAtPeriodEnd: false,
+      manageUrl: 'https://whop.com/orders/mem_1',
     })
   })
 
-  it('reads a trialling checkout as trialing, not active', () => {
-    // The 1 Sep finding. Creem sends `checkout.completed` when a card-backed
-    // trial starts, which maps to `active` — so every trialling account was
-    // told its plan renews on the day its card is actually charged.
+  it('reads a card-backed trial as trialing, not active', () => {
+    // The 1 September bug, and the reason this case is mandatory. Under Creem a
+    // trialling checkout arrived as `checkout.completed`, which mapped to
+    // `active`, so every trialling account was told its plan RENEWS on the day
+    // its card is actually first CHARGED. Whop states the status outright — so
+    // the mapping is easier and there is no excuse for getting it wrong twice.
     const event = toBillingEvent(
-      payload('checkout.completed', {
-        subscription: {
-          id: 'sub_1',
-          status: 'trialing',
-          product: 'prod_pro',
-          current_period_end_date: '2026-09-08T04:12:01.591Z',
-        },
-      }),
+      envelope('membership.activated', membership({ status: 'trialing' })),
       1_000,
     )
     expect(event?.status).toBe('trialing')
     // Still a grant: a trial is Pro from the moment it starts.
     expect(event?.intent).toBe('grant')
-    expect(event?.currentPeriodEnd).toBe('2026-09-08T04:12:01.591Z')
+    expect(event?.currentPeriodEnd).toBe(PERIOD_END)
   })
 
-  it('goes back to active when the first charge lands', () => {
-    const event = toBillingEvent(payload('subscription.paid', { status: 'active' }), 1_000)
-    expect(event?.status).toBe('active')
-  })
-
-  it('reads the status off a subscription event as well as a checkout', () => {
-    expect(toBillingEvent(payload('subscription.update', { status: 'trialing' }), 1_000)?.status)
-      .toBe('trialing')
-  })
-
-  it('never lets the payload talk a revocation out of revoking', () => {
-    // The load-bearing limit. A dispute is money already clawed back; a payload
-    // still calling the subscription active or trialing changes nothing (§14).
-    const disputed = toBillingEvent(payload('dispute.created', { status: 'trialing' }), 1_000)
-    expect(disputed?.intent).toBe('revoke')
-    expect(disputed?.status).toBe('canceled')
-
-    const dunning = toBillingEvent(payload('subscription.past_due', { status: 'trialing' }), 1_000)
-    expect(dunning?.status).toBe('past_due')
-  })
-
-  it('falls back to active when the subscription was not expanded', () => {
-    // A checkout that carries the subscription as a bare id tells us nothing
-    // about a trial. Active is the safe read: access is identical either way.
-    const event = toBillingEvent(payload('checkout.completed', { subscription: 'sub_9', status: 'completed' }), 1_000)
+  it('goes back to active when the first real charge lands', () => {
+    const event = toBillingEvent(envelope('payment.succeeded', payment()), 1_000)
     expect(event?.status).toBe('active')
     expect(event?.intent).toBe('grant')
   })
 
-  it('ignores an event it does not act on', () => {
-    expect(toBillingEvent(payload('license.created'), 1_000)).toBeNull()
-    expect(isKnownEventType('license.created')).toBe(false)
-  })
-
-  it('ignores a payload with no type at all', () => {
-    expect(toBillingEvent({ object: {} }, 1_000)).toBeNull()
-    expect(toBillingEvent(null, 1_000)).toBeNull()
-    expect(toBillingEvent('subscription.paid', 1_000)).toBeNull()
-  })
-
-  it('expands a nested customer or product object', () => {
+  it('reads a payment on a still-trialling membership as trialing', () => {
+    // A payment's own `status` is `succeeded`, which is not a membership status
+    // at all — the membership's is one level down. Reading the wrong one would
+    // put nonsense in the mirror, and reading a fixed `active` would resurrect
+    // the 1 September bug through a different door.
     const event = toBillingEvent(
-      payload('subscription.active', { customer: { id: 'cust_2' }, product: { id: 'prod_elite' } }),
+      envelope('payment.succeeded', payment({ membership: { id: 'mem_1', status: 'trialing' } })),
       1_000,
     )
-    expect(event?.providerCustomerId).toBe('cust_2')
-    expect(event?.productId).toBe('prod_elite')
+    expect(event?.status).toBe('trialing')
   })
 
-  it('finds the subscription hanging off a checkout', () => {
+  it('finds the membership hanging off a payment', () => {
+    const event = toBillingEvent(envelope('payment.succeeded', payment()), 1_000)
+    expect(event?.providerSubscriptionId).toBe('mem_1')
+    expect(event?.planId).toBe('plan_pro_1')
+  })
+
+  it('says nothing about the period when the event does not carry one', () => {
+    // Only a membership has `renewal_period_end`. A renewal `payment.succeeded`
+    // must report null so `applyBillingEvent` keeps the stored date, rather
+    // than blanking the renewal line on every renewal.
+    const event = toBillingEvent(envelope('payment.succeeded', payment()), 1_000)
+    expect(event?.currentPeriodEnd).toBeNull()
+    expect(event?.cancelAtPeriodEnd).toBeNull()
+  })
+})
+
+describe('a scheduled cancellation', () => {
+  it('records rather than revokes, and keeps access', () => {
+    // They keep what they paid for until the period actually ends. The
+    // revocation is `membership.deactivated`, days or weeks later.
     const event = toBillingEvent(
-      {
-        id: 'evt_2',
-        type: 'checkout.completed',
-        object: {
-          id: 'ch_1',
-          metadata: { user_id: USER },
-          subscription: {
-            id: 'sub_9',
-            customer: 'cust_9',
-            product: 'prod_pro',
-            current_period_end_date: '2026-10-01T00:00:00.000Z',
-          },
-        },
-      },
+      envelope('membership.cancel_at_period_end_changed', membership({ cancel_at_period_end: true })),
       1_000,
     )
-    expect(event?.providerSubscriptionId).toBe('sub_9')
-    expect(event?.providerCustomerId).toBe('cust_9')
-    expect(event?.currentPeriodEnd).toBe('2026-10-01T00:00:00.000Z')
+    expect(event?.intent).toBe('record')
+    expect(event?.cancelAtPeriodEnd).toBe(true)
+    expect(event?.status).toBe('active')
   })
 
-  it('treats a second-precision created_at as seconds', () => {
-    // 1788178846 is a plausible epoch in seconds; as milliseconds it is 1970.
-    const event = toBillingEvent(payload('subscription.paid', {}, 1_788_178_846), 1_000)
-    expect(event?.occurredAt).toBe(1_788_178_846_000)
+  it('keeps a trial trialing while it is being cancelled', () => {
+    // Somebody cancelling on day three of a trial is still on a trial, and the
+    // screen has to keep saying "your card is charged on the 8th unless you
+    // cancel" rather than switching to "renews".
+    const event = toBillingEvent(
+      envelope('membership.cancel_at_period_end_changed', membership({ status: 'trialing', cancel_at_period_end: true })),
+      1_000,
+    )
+    expect(event?.status).toBe('trialing')
   })
 
-  it('keeps a millisecond created_at as it is', () => {
-    const event = toBillingEvent(payload('subscription.paid', {}, 1_788_178_846_000), 1_000)
-    expect(event?.occurredAt).toBe(1_788_178_846_000)
+  it('reads a reversed cancellation as false rather than as silence', () => {
+    const event = toBillingEvent(
+      envelope('membership.cancel_at_period_end_changed', membership({ cancel_at_period_end: false })),
+      1_000,
+    )
+    expect(event?.cancelAtPeriodEnd).toBe(false)
   })
 
-  it('falls back to the arrival time when the payload has no timestamp', () => {
-    expect(toBillingEvent(payload('subscription.paid'), 4_242)?.occurredAt).toBe(4_242)
+  it('reads Whop`s pending `canceling` state as still having access', () => {
+    const event = toBillingEvent(
+      envelope('membership.cancel_at_period_end_changed', membership({ status: 'canceling', cancel_at_period_end: true })),
+      1_000,
+    )
+    expect(event?.status).toBe('active')
+    expect(event?.intent).toBe('record')
   })
 })
 
 describe('what each event does to access', () => {
-  const intentOf = (type: string) => toBillingEvent(payload(type), 1_000)?.intent
+  const intentOf = (type: string, data: Record<string, unknown>) =>
+    toBillingEvent(envelope(type, data), 1_000)?.intent
 
-  it('grants on the paid and active events', () => {
-    expect(intentOf('subscription.paid')).toBe('grant')
-    expect(intentOf('subscription.active')).toBe('grant')
-    expect(intentOf('subscription.trialing')).toBe('grant')
-    expect(intentOf('checkout.completed')).toBe('grant')
+  it('grants on activation and on a successful payment', () => {
+    expect(intentOf('membership.activated', membership())).toBe('grant')
+    expect(intentOf('payment.succeeded', payment())).toBe('grant')
   })
 
-  it('revokes on expiry, cancellation and pause', () => {
-    expect(intentOf('subscription.expired')).toBe('revoke')
-    expect(intentOf('subscription.canceled')).toBe('revoke')
-    expect(intentOf('subscription.paused')).toBe('revoke')
+  it('revokes when the membership actually ends', () => {
+    expect(intentOf('membership.deactivated', membership({ status: 'expired' }))).toBe('revoke')
   })
 
-  it('revokes on a dispute, because a chargeback is money already gone (§14)', () => {
-    expect(intentOf('dispute.created')).toBe('revoke')
-    expect(intentOf('refund.created')).toBe('revoke')
+  it('revokes on a refund and on a dispute, because the money is gone (§14)', () => {
+    expect(intentOf('refund.created', { id: 'ref_1', payment: payment() })).toBe('revoke')
+    expect(intentOf('dispute.created', { id: 'dis_1', payment: payment(), plan: { id: 'plan_pro_1' } })).toBe('revoke')
   })
 
   it('keeps access through past_due, because the provider is still retrying', () => {
     // The product decision this file exists to make arguable: a card that
-    // failed once is not a cancelled account.
-    expect(intentOf('subscription.past_due')).toBe('record')
-    expect(intentOf('subscription.unpaid')).toBe('record')
-    expect(toBillingEvent(payload('subscription.past_due'), 1_000)?.status).toBe('past_due')
+    // failed once is not a cancelled account. Whop retries twelve times over
+    // roughly three days, and most of those recover.
+    expect(intentOf('payment.failed', payment({ status: 'failed' }))).toBe('record')
+    expect(intentOf('invoice.past_due', { id: 'inv_1', user: { id: 'user_buyer' }, current_plan: { id: 'plan_pro_1' } }))
+      .toBe('record')
+    expect(toBillingEvent(envelope('payment.failed', payment()), 1_000)?.status).toBe('past_due')
   })
 
-  it('keeps access on a scheduled cancel until the period actually ends', () => {
-    const event = toBillingEvent(payload('subscription.scheduled_cancel'), 1_000)
+  it('records the trial warning Whop hands us for free', () => {
+    // One of §8's three mitigations, delivered rather than built.
+    const event = toBillingEvent(
+      envelope('membership.trial_ending_soon', membership({ status: 'trialing' })),
+      1_000,
+    )
     expect(event?.intent).toBe('record')
-    expect(event?.cancelAtPeriodEnd).toBe(true)
-    expect(event?.status).toBe('active')
+    expect(event?.status).toBe('trialing')
+  })
+
+  it('never lets the payload talk a revocation out of revoking', () => {
+    // The load-bearing limit. A dispute is money already clawed back; a payload
+    // still calling the membership active or trialing changes nothing (§14).
+    const disputed = toBillingEvent(
+      envelope('dispute.created', {
+        id: 'dis_1',
+        payment: payment({ membership: { id: 'mem_1', status: 'trialing' } }),
+        plan: { id: 'plan_pro_1' },
+      }),
+      1_000,
+    )
+    expect(disputed?.intent).toBe('revoke')
+    expect(disputed?.status).toBe('canceled')
+
+    const dunning = toBillingEvent(
+      envelope('payment.failed', payment({ membership: { id: 'mem_1', status: 'trialing' } })),
+      1_000,
+    )
+    expect(dunning?.status).toBe('past_due')
+  })
+})
+
+describe('the shapes that hide the useful fields one level down', () => {
+  it('attributes a refund through the payment it reverses', () => {
+    // A refund carries no metadata of its own; the payment it reverses does.
+    const event = toBillingEvent(envelope('refund.created', { id: 'ref_1', payment: payment() }), 1_000)
+    expect(event?.userId).toBe(USER)
+    expect(event?.providerSubscriptionId).toBe('mem_1')
+    expect(event?.providerCustomerId).toBe('user_buyer')
+    expect(event?.planId).toBe('plan_pro_1')
+  })
+
+  it('attributes a dispute by provider ids when there is no metadata at all', () => {
+    // A dispute's payment carries the membership and the user but no metadata,
+    // so `resolveUserId` in apply.ts falls back to the mirror. That fallback is
+    // only reachable if these two ids survive the parse.
+    const event = toBillingEvent(
+      envelope('dispute.created', {
+        id: 'dis_1',
+        payment: { id: 'pay_1', membership: { id: 'mem_1' }, user: { id: 'user_buyer' } },
+        plan: { id: 'plan_pro_1' },
+      }),
+      1_000,
+    )
+    expect(event?.userId).toBeNull()
+    expect(event?.providerSubscriptionId).toBe('mem_1')
+    expect(event?.providerCustomerId).toBe('user_buyer')
+    expect(event?.planId).toBe('plan_pro_1')
+  })
+
+  it('reads an invoice, which names the plan under a different key again', () => {
+    const event = toBillingEvent(
+      envelope('invoice.past_due', {
+        id: 'inv_1',
+        user: { id: 'user_buyer' },
+        current_plan: { id: 'plan_pro_1' },
+        payment: { id: 'pay_1' },
+      }),
+      1_000,
+    )
+    expect(event?.planId).toBe('plan_pro_1')
+    expect(event?.providerCustomerId).toBe('user_buyer')
+    // It names no membership, which is why apply.ts keeps the stored one.
+    expect(event?.providerSubscriptionId).toBeNull()
+  })
+})
+
+describe('the envelope', () => {
+  it('reads an ISO timestamp into epoch milliseconds', () => {
+    // Whop sends ISO 8601. The seconds-versus-milliseconds coercion Creem
+    // needed went with Creem.
+    const event = toBillingEvent(envelope('membership.activated', membership(), '2026-09-01T17:03:24.291Z'), 1_000)
+    expect(event?.occurredAt).toBe(Date.parse('2026-09-01T17:03:24.291Z'))
+  })
+
+  it('falls back to the arrival time when the timestamp is missing or unparseable', () => {
+    const missing = { id: 'msg_1', type: 'membership.activated', account_id: ACCOUNT, data: membership() }
+    expect(toBillingEvent(missing, 4_242)?.occurredAt).toBe(4_242)
+    expect(toBillingEvent(envelope('membership.activated', membership(), 'tuesday'), 4_242)?.occurredAt).toBe(4_242)
+  })
+
+  it('reads the account under either name Whop has used for it', () => {
+    // A webhook pinned to 2026-08-14 or later sends `account_id`; one pinned
+    // earlier, or with no pin at all, still sends `company_id`. Reading only the
+    // new name would make the route refuse every event from an unpinned webhook.
+    expect(readAccountId(envelope('membership.activated', membership()))).toBe(ACCOUNT)
+    expect(readAccountId({ id: 'msg_1', type: 'x', company_id: ACCOUNT, data: {} })).toBe(ACCOUNT)
+    expect(readAccountId({ id: 'msg_1', type: 'x', data: {} })).toBeNull()
+    expect(readAccountId(null)).toBeNull()
+  })
+
+  it('ignores an event it does not act on', () => {
+    expect(toBillingEvent(envelope('chat.message.created', { id: 'msg_x' }), 1_000)).toBeNull()
+    expect(isKnownEventType('chat.message.created')).toBe(false)
+    expect(isKnownEventType('membership.activated')).toBe(true)
+  })
+
+  it('ignores a payload with no type at all', () => {
+    expect(toBillingEvent({ data: {} }, 1_000)).toBeNull()
+    expect(toBillingEvent(null, 1_000)).toBeNull()
+    expect(toBillingEvent('membership.activated', 1_000)).toBeNull()
   })
 })
 
@@ -192,10 +307,9 @@ describe('readUserId', () => {
     expect(readUserId({ metadata: { user_id: USER } })).toBe(USER)
   })
 
-  it('reads metadata off a nested subscription, checkout or order', () => {
-    expect(readUserId({ subscription: { metadata: { user_id: USER } } })).toBe(USER)
-    expect(readUserId({ checkout: { metadata: { user_id: USER } } })).toBe(USER)
-    expect(readUserId({ order: { metadata: { user_id: USER } } })).toBe(USER)
+  it('reads metadata off a nested payment or membership', () => {
+    expect(readUserId({ payment: { metadata: { user_id: USER } } })).toBe(USER)
+    expect(readUserId({ membership: { metadata: { user_id: USER } } })).toBe(USER)
   })
 
   it('returns null rather than guessing when there is no metadata', () => {
@@ -216,19 +330,22 @@ describe('shouldApply', () => {
   })
 
   it('drops a retry that arrives after a newer event has landed', () => {
-    // The failure this prevents: a delayed subscription.paid retry reinstating
+    // Whop does not guarantee order and retries for about seventy-one hours.
+    // The failure this prevents: a delayed payment.succeeded retry reinstating
     // a plan that a later dispute.created already revoked.
     expect(shouldApply(2_000, 1_000)).toBe(false)
   })
 
   it('re-applies an identical timestamp, because applying is idempotent', () => {
+    // A redelivery carries the same `webhook-id` and the same timestamp, and
+    // upserting the same row twice grants the same plan twice.
     expect(shouldApply(1_000, 1_000)).toBe(true)
   })
 })
 
 describe('resolvedPlan', () => {
   const event = (intent: BillingEvent['intent']): BillingEvent => ({
-    eventId: 'evt_1',
+    eventId: 'msg_1',
     type: 't',
     intent,
     status: 'active',
@@ -236,9 +353,10 @@ describe('resolvedPlan', () => {
     userId: USER,
     providerCustomerId: null,
     providerSubscriptionId: null,
-    productId: null,
+    planId: null,
     currentPeriodEnd: null,
-    cancelAtPeriodEnd: false,
+    cancelAtPeriodEnd: null,
+    manageUrl: null,
   })
 
   it('lands a grant on whatever was purchased', () => {
@@ -253,7 +371,7 @@ describe('resolvedPlan', () => {
     expect(resolvedPlan(event('record'), 'pro')).toBeNull()
   })
 
-  it('grants nothing when the product did not map', () => {
+  it('grants nothing when the plan did not map', () => {
     expect(resolvedPlan(event('grant'), null)).toBeNull()
   })
 })

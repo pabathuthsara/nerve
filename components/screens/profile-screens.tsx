@@ -16,7 +16,7 @@ import { SUPPORT_EMAIL } from '@/components/site/site-chrome'
 import type { FocusArea } from '@/lib/data/focus'
 import { planWaitlistFlag } from '@/lib/data/ui-flags'
 import { BILLING_NOTE, CHECKOUT_NOTE, CHECKOUT_UNCONFIGURED_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE, repsLine, type PublicPlan } from '@/lib/site/plans'
-import { openBillingPortal, startCheckout } from '@/app/profile/subscription/actions'
+import { cancelSubscription, startCheckout } from '@/app/profile/subscription/actions'
 import { forgetCurrentUser } from '@/lib/data/session'
 import { roomToneAvailable } from '@/lib/audio/scenes'
 import { setSoundEnabled, soundEnabled } from '@/lib/hooks/use-rep-production'
@@ -276,7 +276,7 @@ function MicTest() {
  * merchant-of-record account that accumulates those disputes is an account that
  * gets closed. So the countdown is visible, the renewal date and price are
  * stated before the card is entered, and cancelling is a button on this screen
- * that reaches the provider's own portal without anybody emailing us.
+ * that cancels the subscription outright, without anybody emailing us.
  *
  * Two answers about a plan are on this screen and only this screen: what the
  * app ENFORCES (`useUserState().plan`, the number the paywall reads) and what
@@ -299,13 +299,14 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
   const toast = useToast()
   const [asking, setAsking] = useState<'pro' | 'elite' | null>(null)
   const [saving, setSaving] = useState(false)
-  const [busy, setBusy] = useState<Plan | 'portal' | null>(null)
+  const [busy, setBusy] = useState<Plan | 'cancel' | null>(null)
+  const [confirmCancel, setConfirmCancel] = useState(false)
 
   /**
    * A checkout that has landed but whose webhook has not.
    *
    * The provider returns the buyer here with `?bought=1` the moment the payment
-   * clears, and the plan moves in `/api/webhooks/creem` a second or two later.
+   * clears, and the plan moves in `/api/webhooks/whop` a second or two later.
    * Reloading once after a short pause is what turns "you are on Free" into the
    * truth without the user having to refresh — and the banner says what is
    * happening either way, because a page that silently disagrees with a receipt
@@ -328,15 +329,26 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
     toast.push(result.message ?? 'Could not open checkout.', 'red')
   }
 
-  const manage = async () => {
-    setBusy('portal')
-    const result = await openBillingPortal()
-    if (result.ok && result.url) {
-      window.location.assign(result.url)
+  /**
+   * Cancelling, which under this provider is a call rather than a redirect.
+   *
+   * Optimistic per §02 — the sheet closes and the toast lands immediately —
+   * and then reloaded, because the truth arrives by webhook a second later and
+   * the screen should end up showing what the provider actually recorded rather
+   * than what we hoped. A confirm step first, because it is destructive from
+   * the user's side even though nothing is lost until the period ends.
+   */
+  const cancel = async () => {
+    setConfirmCancel(false)
+    setBusy('cancel')
+    const result = await cancelSubscription()
+    setBusy(null)
+    if (!result.ok) {
+      toast.push(result.message ?? 'Could not cancel.', 'red')
       return
     }
-    setBusy(null)
-    toast.push(result.message ?? 'Could not open billing.', 'red')
+    toast.push(result.message ?? 'Cancelled. Nothing more is charged.', 'volt')
+    window.setTimeout(() => { reloadSubscription() }, 2000)
   }
 
   /**
@@ -362,7 +374,7 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
         is a warning, and volt is for the primary action (Arena). */}
     {checkoutOpen && testMode ? <Card className="billing-banner billing-banner--test"><FlaskConical size={18} strokeWidth={1.5} className="amber" /><p><strong>Test mode.</strong> Checkout here is a rehearsal against our payment provider&apos;s sandbox. No card is charged and no real subscription is created, whatever the receipt says.</p></Card> : null}
     {bought ? <Card className="billing-banner"><Check size={18} strokeWidth={1.5} className="volt" /><p>Payment received. Your plan updates here within a few seconds — the receipt is already on its way to your inbox.</p></Card> : null}
-    <CurrentPlan user={user} loading={loading} subscription={subscription} onManage={() => void manage()} busy={busy === 'portal'} />
+    <CurrentPlan user={user} loading={loading} subscription={subscription} onCancel={() => setConfirmCancel(true)} busy={busy === 'cancel'} />
     <section className="plan-section">
       <span className="label">Compare plans</span>
       <div className="plan-grid">
@@ -382,6 +394,23 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
       </div>
     </section>
     <p className="billing-note">{checkoutOpen ? TRIAL_NOTE : CHECKOUT_UNCONFIGURED_NOTE} {CHECKOUT_NOTE} {BILLING_NOTE} <Link href="/pricing" className="text-action">Full comparison</Link></p>
+    {/* Destructive from the user's side, so it asks — and the copy is the one
+        that matters most on this screen: cancelling does not take anything away
+        today. Somebody who believes it does will not cancel, they will charge
+        back, and §14 is blunt about which of those closes the account. */}
+    <Sheet open={confirmCancel} onClose={() => setConfirmCancel(false)} title="Cancel subscription">{(() => {
+      const endsOn = subscription?.currentPeriodEnd
+        ? new Date(subscription.currentPeriodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'long' })
+        : null
+      return <div className="sheet-stack">
+        <p>{subscription?.status === 'trialing'
+          ? `Your card is never charged. The trial runs to ${endsOn ?? 'the end of the seven days'} and voice stays open until then.`
+          : `Nothing more is charged. Voice stays open until ${endsOn ?? 'the end of the period you have paid for'}, then this drops to Free.`}</p>
+        <p className="muted">Your reps, transcripts, scores, streak and everything you have unlocked stay exactly where they are. You can start again any time.</p>
+        <Button variant="danger" fullWidth loading={busy === 'cancel'} onClick={() => void cancel()}>Cancel it</Button>
+        <Button variant="ghost" fullWidth onClick={() => setConfirmCancel(false)}>Keep it</Button>
+      </div>
+    })()}</Sheet>
     <Sheet open={asking !== null} onClose={() => setAsking(null)} title={joined ? "You're on the list" : `${asking === 'elite' ? 'Elite' : 'Pro'} isn't open yet`}>{joined ? <div className="sheet-stack"><Check size={34} strokeWidth={1.5} className="volt" /><p>We&apos;ll email you at <strong>{user?.email}</strong> the day {asking === 'elite' ? 'Elite' : 'Pro'} opens, and founding members keep the launch price.</p><Button fullWidth onClick={() => setAsking(null)}>Back to training</Button></div> : <div className="sheet-stack"><p>Checkout is not open yet. Put your name down and we&apos;ll email you at <strong>{user?.email}</strong> the day it is — founding members keep the launch price.</p><Button fullWidth loading={saving} onClick={() => { if (asking) void join(asking) }}>Tell me when it opens</Button><Button variant="ghost" fullWidth onClick={() => setAsking(null)}>Not now</Button></div>}</Sheet>
   </AppShell>
 }
@@ -395,11 +424,11 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
  * same date and completely different sentences — and the one people need to see
  * before the first charge is the first one.
  */
-function CurrentPlan({ user, loading, subscription, onManage, busy }: {
+function CurrentPlan({ user, loading, subscription, onCancel, busy }: {
   user: ReturnType<typeof useUserState>['data']
   loading: boolean
   subscription: SubscriptionState | null
-  onManage: () => void
+  onCancel: () => void
   busy: boolean
 }) {
   if (loading || !user) return <Card className="current-plan"><Skeleton height={72} /></Card>
@@ -440,11 +469,22 @@ function CurrentPlan({ user, loading, subscription, onManage, busy }: {
       </p>
       <span className="label mute">{detail}</span>
     </div>
-    {/* The cancel path, and the card-and-invoice path with it. Disabled only
-        when there is genuinely nothing to manage — a subscription nobody has
-        bought. §8 of the payments plan: a cancel that needs an email becomes a
-        chargeback, and chargebacks are what close the account. */}
-    <Button variant="secondary" loading={busy} disabled={!subscription} onClick={onManage}>Manage</Button>
+    {/* The way out, one tap, on our own screen. §8 of the payments plan: a
+        cancel that needs an email becomes a chargeback, and chargebacks are
+        what close the account. Drawn only when there is something to cancel and
+        it is not already cancelled — an already-ending subscription needs the
+        date, which the line above it has, not a second button.
+
+        The card and the invoices still live at the provider, so the link beside
+        it is the honest division of labour rather than a loose end. */}
+    <div className="plan-actions">
+      {subscription && !subscription.cancelAtPeriodEnd
+        ? <Button variant="secondary" loading={busy} onClick={onCancel}>Cancel</Button>
+        : null}
+      {subscription?.manageUrl
+        ? <a href={subscription.manageUrl} target="_blank" rel="noreferrer noopener" className="text-action">Card and invoices</a>
+        : null}
+    </div>
   </Card>
 }
 
@@ -461,8 +501,8 @@ function CurrentPlan({ user, loading, subscription, onManage, busy }: {
  *
  *   current       this is what you have.
  *   free          not something to buy. It is what you drop back to, and a
- *                 "downgrade" button here would offer a cancel that belongs in
- *                 the provider's portal beside the card and the invoices.
+ *                 "downgrade" button here would be a second cancel beside the
+ *                 one already on the current-plan card.
  *   buy           checkout is configured. Says trial rather than price when the
  *                 trial is still available, because the first thing that
  *                 happens is seven free days and a button that says $19 would

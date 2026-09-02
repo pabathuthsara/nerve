@@ -1,116 +1,163 @@
 import { describe, expect, it } from 'vitest'
 import { PUBLIC_PLANS } from '@/lib/site/plans'
-import { billingEnvironmentRefusal, checkoutConfigured, planForProduct, productForPlan, productMap, rehearsing, takingRealPayments } from './plans'
+import {
+  LIVE_API_BASE,
+  SANDBOX_API_BASE,
+  apiBase,
+  billingEnvironmentRefusal,
+  checkoutConfigured,
+  isLiveBase,
+  planForWhopPlan,
+  planMap,
+  rehearsing,
+  takingRealPayments,
+  whopPlanIdFor,
+} from './plans'
 
 const ENV = {
-  CREEM_PRODUCT_PRO: 'prod_pro_1',
-  CREEM_PRODUCT_ELITE: 'prod_elite_1',
+  WHOP_PLAN_PRO: 'plan_pro_1',
+  WHOP_PLAN_ELITE: 'plan_elite_1',
 }
 
-describe('productMap', () => {
-  it('maps each configured product to its plan', () => {
-    expect(productMap(ENV)).toEqual({ prod_pro_1: 'pro', prod_elite_1: 'elite' })
+/** Everything a deployment needs to sell, minus the base URL. */
+const WIRED = { ...ENV, WHOP_API_KEY: 'whop_key_abc', WHOP_ACCOUNT_ID: 'biz_1' }
+const LIVE = { ...WIRED, WHOP_API_BASE: LIVE_API_BASE }
+const SANDBOX = { ...WIRED, WHOP_API_BASE: SANDBOX_API_BASE }
+
+describe('planMap', () => {
+  it('maps each configured vendor plan to the plan it grants', () => {
+    expect(planMap(ENV)).toEqual({ plan_pro_1: 'pro', plan_elite_1: 'elite' })
   })
 
   it('leaves out a plan whose variable is unset or blank', () => {
-    expect(productMap({ CREEM_PRODUCT_PRO: 'prod_pro_1' })).toEqual({ prod_pro_1: 'pro' })
-    expect(productMap({ CREEM_PRODUCT_PRO: '   ' })).toEqual({})
+    expect(planMap({ WHOP_PLAN_PRO: 'plan_pro_1' })).toEqual({ plan_pro_1: 'pro' })
+    expect(planMap({ WHOP_PLAN_PRO: '   ' })).toEqual({})
   })
 
   it('trims a variable padded by a careless paste', () => {
-    expect(productMap({ CREEM_PRODUCT_PRO: ' prod_pro_1 ' })).toEqual({ prod_pro_1: 'pro' })
+    expect(planMap({ WHOP_PLAN_PRO: ' plan_pro_1 ' })).toEqual({ plan_pro_1: 'pro' })
   })
 })
 
-describe('planForProduct', () => {
-  const map = productMap(ENV)
+describe('planForWhopPlan', () => {
+  const map = planMap(ENV)
 
-  it('resolves a known product', () => {
-    expect(planForProduct('prod_pro_1', map)).toBe('pro')
-    expect(planForProduct('prod_elite_1', map)).toBe('elite')
+  it('resolves a known plan', () => {
+    expect(planForWhopPlan('plan_pro_1', map)).toBe('pro')
+    expect(planForWhopPlan('plan_elite_1', map)).toBe('elite')
   })
 
-  it('grants nothing for a product no variable names', () => {
+  it('grants nothing for a plan no variable names', () => {
     // Fails closed on purpose: the other reading of a typo'd variable is free
     // Elite for anyone who finds the checkout link.
-    expect(planForProduct('prod_someone_elses', map)).toBeNull()
-    expect(planForProduct(null, map)).toBeNull()
+    expect(planForWhopPlan('plan_someone_elses', map)).toBeNull()
+    expect(planForWhopPlan(null, map)).toBeNull()
   })
 
   it('grants nothing when nothing is configured', () => {
-    expect(planForProduct('prod_pro_1', productMap({}))).toBeNull()
+    expect(planForWhopPlan('plan_pro_1', planMap({}))).toBeNull()
   })
 })
 
-describe('productForPlan', () => {
-  it('returns the configured product', () => {
-    expect(productForPlan('pro', ENV)).toBe('prod_pro_1')
+describe('whopPlanIdFor', () => {
+  it('returns the configured vendor plan', () => {
+    expect(whopPlanIdFor('pro', ENV)).toBe('plan_pro_1')
   })
 
   it('names the missing variable rather than failing quietly', () => {
-    expect(() => productForPlan('elite', { CREEM_PRODUCT_PRO: 'prod_pro_1' })).toThrow(
-      'CREEM_PRODUCT_ELITE is not set',
+    expect(() => whopPlanIdFor('elite', { WHOP_PLAN_PRO: 'plan_pro_1' })).toThrow(
+      'WHOP_PLAN_ELITE is not set',
     )
   })
 })
 
 describe('the mapping covers what is actually sold', () => {
-  it('has a product variable for every paid plan on the pricing page', () => {
+  it('has a plan variable for every paid plan on the pricing page', () => {
     // Guards the drift where a fourth plan is authored in lib/site/plans.ts and
     // nobody adds the variable that would let anyone buy it.
     const paid = PUBLIC_PLANS.filter((plan) => plan.id !== 'free').map((plan) => plan.id)
     for (const plan of paid) {
-      expect(() => productForPlan(plan as 'pro' | 'elite', ENV)).not.toThrow()
+      expect(() => whopPlanIdFor(plan as 'pro' | 'elite', ENV)).not.toThrow()
     }
+  })
+})
+
+describe('the base URL is the whole environment discriminator', () => {
+  it('defaults to live when nothing is set', () => {
+    // Whop's keys carry no test/live prefix, so an unset base has to mean the
+    // real host — the alternative is a deployment that quietly believes it is a
+    // sandbox and refuses to sell.
+    expect(apiBase({})).toBe(LIVE_API_BASE)
+    expect(isLiveBase({})).toBe(true)
+  })
+
+  it('reads the sandbox host as not live', () => {
+    expect(isLiveBase(SANDBOX)).toBe(false)
+  })
+
+  it('tolerates a trailing slash and a changed path', () => {
+    // Matched on the host, so a paste with a trailing slash or a future path
+    // change cannot turn a live deployment into one this file thinks is a
+    // sandbox — which is the direction of this check that hands out real plans.
+    expect(isLiveBase({ WHOP_API_BASE: 'https://api.whop.com/api/v1/' })).toBe(true)
+    expect(isLiveBase({ WHOP_API_BASE: 'https://api.whop.com/api/v2' })).toBe(true)
+    expect(apiBase({ WHOP_API_BASE: 'https://api.whop.com/api/v1/' })).toBe(LIVE_API_BASE)
+  })
+
+  it('treats an unparseable base as not live rather than guessing', () => {
+    expect(isLiveBase({ WHOP_API_BASE: 'api.whop.com' })).toBe(false)
+    expect(isLiveBase({ WHOP_API_BASE: 'https://api.whop.com.evil.test/api/v1' })).toBe(false)
   })
 })
 
 describe('checkoutConfigured', () => {
   it('is true only when every paid plan can actually be sold', () => {
-    const full = { CREEM_API_KEY: 'creem_test_abc', CREEM_PRODUCT_PRO: 'prod_a', CREEM_PRODUCT_ELITE: 'prod_b' }
-    expect(checkoutConfigured(full)).toBe(true)
+    expect(checkoutConfigured(SANDBOX)).toBe(true)
   })
 
   it('refuses a half-configured deployment rather than selling one plan of two', () => {
     // A screen showing both plans with only one of them working is a support
     // ticket disguised as a feature.
-    expect(checkoutConfigured({ CREEM_API_KEY: 'creem_test_abc', CREEM_PRODUCT_PRO: 'prod_a' })).toBe(false)
-    expect(checkoutConfigured({ CREEM_PRODUCT_PRO: 'prod_a', CREEM_PRODUCT_ELITE: 'prod_b' })).toBe(false)
+    expect(checkoutConfigured({ ...SANDBOX, WHOP_PLAN_ELITE: undefined })).toBe(false)
+    expect(checkoutConfigured({ ...SANDBOX, WHOP_API_KEY: undefined })).toBe(false)
     expect(checkoutConfigured({})).toBe(false)
   })
 
+  it('refuses a deployment that cannot recognise its own account', () => {
+    // Every event is checked against WHOP_ACCOUNT_ID before it is applied, so a
+    // deployment without one has no business selling either.
+    expect(checkoutConfigured({ ...SANDBOX, WHOP_ACCOUNT_ID: undefined })).toBe(false)
+  })
+
   it('treats whitespace as unset, because a blank env var is a blank env var', () => {
-    expect(checkoutConfigured({ CREEM_API_KEY: '  ', CREEM_PRODUCT_PRO: 'prod_a', CREEM_PRODUCT_ELITE: 'prod_b' }))
-      .toBe(false)
+    expect(checkoutConfigured({ ...SANDBOX, WHOP_API_KEY: '  ' })).toBe(false)
   })
 })
 
-describe('a test key never sells in production', () => {
-  const LIVE = { CREEM_API_KEY: 'creem_live_abc', CREEM_PRODUCT_PRO: 'prod_a', CREEM_PRODUCT_ELITE: 'prod_b' }
-  const TEST = { CREEM_API_KEY: 'creem_test_abc', CREEM_PRODUCT_PRO: 'prod_a', CREEM_PRODUCT_ELITE: 'prod_b' }
-
-  it('refuses a fully configured TEST key on a production deployment', () => {
+describe('the sandbox never sells in production', () => {
+  it('refuses a fully configured SANDBOX base on a production deployment', () => {
     // The failure this prevents is silent and total: the sandbox accepts any
     // card, emits the same correctly signed webhooks, and `applyBillingEvent`
     // grants a real paid plan against a payment that never happened.
-    expect(checkoutConfigured({ ...TEST, VERCEL_ENV: 'production' })).toBe(false)
-    expect(checkoutConfigured({ ...TEST, NODE_ENV: 'production' })).toBe(false)
+    expect(checkoutConfigured({ ...SANDBOX, VERCEL_ENV: 'production' })).toBe(false)
+    expect(checkoutConfigured({ ...SANDBOX, NODE_ENV: 'production' })).toBe(false)
   })
 
-  it('allows a LIVE key in production', () => {
+  it('allows the LIVE base in production', () => {
     expect(checkoutConfigured({ ...LIVE, VERCEL_ENV: 'production' })).toBe(true)
   })
 
-  it('still allows a test key everywhere a test key belongs', () => {
+  it('still allows the sandbox everywhere the sandbox belongs', () => {
     // A preview deployment is NODE_ENV=production too, and a preview is exactly
     // where the sandbox should be exercised — so VERCEL_ENV wins where it exists.
-    expect(checkoutConfigured({ ...TEST, VERCEL_ENV: 'preview', NODE_ENV: 'production' })).toBe(true)
-    expect(checkoutConfigured({ ...TEST, VERCEL_ENV: 'development' })).toBe(true)
-    expect(checkoutConfigured(TEST)).toBe(true)
+    expect(checkoutConfigured({ ...SANDBOX, VERCEL_ENV: 'preview', NODE_ENV: 'production' })).toBe(true)
+    expect(checkoutConfigured({ ...SANDBOX, VERCEL_ENV: 'development' })).toBe(true)
+    expect(checkoutConfigured(SANDBOX)).toBe(true)
   })
 
-  it('refuses an unrecognised key prefix in production rather than guessing', () => {
-    expect(checkoutConfigured({ ...TEST, CREEM_API_KEY: 'sk_something', VERCEL_ENV: 'production' })).toBe(false)
+  it('refuses an unrecognised base in production rather than guessing', () => {
+    expect(checkoutConfigured({ ...WIRED, WHOP_API_BASE: 'https://staging.whop.test/api/v1', VERCEL_ENV: 'production' }))
+      .toBe(false)
   })
 })
 
@@ -118,71 +165,66 @@ describe('production refuses to grant plans from a non-live environment', () => 
   it('lets any environment through outside production', () => {
     // Local and preview deployments are where the sandbox is meant to be
     // exercised, so nothing is refused there.
-    expect(billingEnvironmentRefusal({ CREEM_API_KEY: 'creem_test_abc' })).toBeNull()
-    expect(billingEnvironmentRefusal({ CREEM_API_KEY: 'creem_test_abc', VERCEL_ENV: 'preview' })).toBeNull()
+    expect(billingEnvironmentRefusal(SANDBOX)).toBeNull()
+    expect(billingEnvironmentRefusal({ ...SANDBOX, VERCEL_ENV: 'preview' })).toBeNull()
     expect(billingEnvironmentRefusal({})).toBeNull()
   })
 
-  it('refuses a test key in production', () => {
-    // The hole this closes: the webhook only checks the signature, and the test
-    // host signs its events too. A test-mode webhook aimed at production with
-    // the test secret in its environment would grant real plans for payments
-    // made with a fake card — and test mode has public hosted payment links.
-    expect(billingEnvironmentRefusal({ CREEM_API_KEY: 'creem_test_abc', VERCEL_ENV: 'production' }))
-      .toMatch(/non-live/)
+  it('refuses a sandbox base in production', () => {
+    // The hole this closes: the webhook only checks the signature, and the
+    // sandbox signs its events too. A sandbox webhook aimed at production with
+    // the sandbox secret in its environment would grant real plans for payments
+    // made with a fake card — and the sandbox has public hosted checkout pages.
+    expect(billingEnvironmentRefusal({ ...SANDBOX, VERCEL_ENV: 'production' }))
+      .toMatch(/not the live Whop API/)
   })
 
   it('refuses production with no key at all rather than assuming live', () => {
-    expect(billingEnvironmentRefusal({ VERCEL_ENV: 'production' })).toMatch(/no CREEM_API_KEY/)
+    expect(billingEnvironmentRefusal({ VERCEL_ENV: 'production' })).toMatch(/no WHOP_API_KEY/)
   })
 
-  it('allows a live key in production', () => {
-    expect(billingEnvironmentRefusal({ CREEM_API_KEY: 'creem_live_abc', VERCEL_ENV: 'production' })).toBeNull()
+  it('allows the live base in production', () => {
+    expect(billingEnvironmentRefusal({ ...LIVE, VERCEL_ENV: 'production' })).toBeNull()
   })
 })
 
 describe('the sanctioned rehearsal on a production domain', () => {
-  const TEST_PROD = {
-    CREEM_API_KEY: 'creem_test_abc',
-    CREEM_PRODUCT_PRO: 'prod_a',
-    CREEM_PRODUCT_ELITE: 'prod_b',
-    VERCEL_ENV: 'production',
-  }
+  const SANDBOX_PROD = { ...SANDBOX, VERCEL_ENV: 'production' }
 
   it('is off unless something explicitly turns it on', () => {
     // The safe default is the absence of a variable. Nobody reaches this state
     // by copying a key from one environment to another.
     expect(rehearsing({})).toBe(false)
-    expect(rehearsing({ CREEM_TEST_MODE_IN_PRODUCTION: '' })).toBe(false)
-    expect(rehearsing({ CREEM_TEST_MODE_IN_PRODUCTION: '0' })).toBe(false)
-    expect(rehearsing({ CREEM_TEST_MODE_IN_PRODUCTION: 'false' })).toBe(false)
-    expect(checkoutConfigured(TEST_PROD)).toBe(false)
-    expect(billingEnvironmentRefusal(TEST_PROD)).toMatch(/non-live/)
+    expect(rehearsing({ WHOP_TEST_MODE_IN_PRODUCTION: '' })).toBe(false)
+    expect(rehearsing({ WHOP_TEST_MODE_IN_PRODUCTION: '0' })).toBe(false)
+    expect(rehearsing({ WHOP_TEST_MODE_IN_PRODUCTION: 'false' })).toBe(false)
+    expect(checkoutConfigured(SANDBOX_PROD)).toBe(false)
+    expect(billingEnvironmentRefusal(SANDBOX_PROD)).toMatch(/not the live Whop API/)
   })
 
   it('opens both gates when it is on, and only then', () => {
-    const on = { ...TEST_PROD, CREEM_TEST_MODE_IN_PRODUCTION: '1' }
+    const on = { ...SANDBOX_PROD, WHOP_TEST_MODE_IN_PRODUCTION: '1' }
     expect(rehearsing(on)).toBe(true)
     expect(checkoutConfigured(on)).toBe(true)
     expect(billingEnvironmentRefusal(on)).toBeNull()
     for (const truthy of ['1', 'true', 'TRUE', 'on']) {
-      expect(rehearsing({ CREEM_TEST_MODE_IN_PRODUCTION: truthy }), truthy).toBe(true)
+      expect(rehearsing({ WHOP_TEST_MODE_IN_PRODUCTION: truthy }), truthy).toBe(true)
     }
   })
 
   it('never claims to be taking real money while it is on', () => {
     // What the banner keys off. A rehearsal is theatre however production the
     // domain is, and the screen has to admit that to whoever finds it.
-    expect(takingRealPayments({ ...TEST_PROD, CREEM_TEST_MODE_IN_PRODUCTION: '1' })).toBe(false)
-    expect(takingRealPayments({ CREEM_API_KEY: 'creem_test_abc' })).toBe(false)
+    expect(takingRealPayments({ ...SANDBOX_PROD, WHOP_TEST_MODE_IN_PRODUCTION: '1' })).toBe(false)
+    expect(takingRealPayments(SANDBOX)).toBe(false)
     expect(takingRealPayments({})).toBe(false)
-    expect(takingRealPayments({ CREEM_API_KEY: 'creem_live_abc' })).toBe(true)
+    expect(takingRealPayments(LIVE)).toBe(true)
   })
 
   it('does not weaken the live path it exists alongside', () => {
     // Turning the flag on must not make a LIVE deployment behave differently,
     // or the rehearsal switch becomes a thing nobody remembers to remove.
-    const liveWithFlag = { CREEM_API_KEY: 'creem_live_abc', CREEM_PRODUCT_PRO: 'a', CREEM_PRODUCT_ELITE: 'b', VERCEL_ENV: 'production', CREEM_TEST_MODE_IN_PRODUCTION: '1' }
+    const liveWithFlag = { ...LIVE, VERCEL_ENV: 'production', WHOP_TEST_MODE_IN_PRODUCTION: '1' }
     expect(checkoutConfigured(liveWithFlag)).toBe(true)
     expect(billingEnvironmentRefusal(liveWithFlag)).toBeNull()
     expect(takingRealPayments(liveWithFlag)).toBe(true)

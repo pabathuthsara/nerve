@@ -131,7 +131,7 @@ Sparse and fast. Nothing eases longer than 240ms except the score reveal, which 
 | Storage | Supabase Storage | Session audio, private bucket, signed URLs, 30-day auto-purge |
 | Voice | OpenAI Realtime — `gpt-realtime-mini` over WebRTC | Shipped behind a `VoiceProvider` interface with an ElevenLabs adapter stubbed from day one. See the abstraction spec below |
 | Scoring | OpenAI text model, structured outputs | Runs post-session on the transcript, not in the hot path |
-| Payments | Merchant of Record — Creem (primary) or Polar | Stripe does not operate in Sri Lanka. See §14. Both support Sri Lankan sellers with local bank payout |
+| Payments | Merchant of Record — Whop | Stripe does not operate in Sri Lanka. See §14. Creem was primary and declined the account on 1 September 2026; Whop shipped the same day |
 | Analytics | PostHog | Session funnels, week-4 retention cohorts, feature flags |
 | Errors | Sentry | Session replay disabled on the live-session route for privacy |
 
@@ -706,7 +706,8 @@ Supabase Postgres. RLS on every table, keyed to `auth.uid()`, with zero exceptio
 
 | Provider | Sri Lankan sellers | Indicative fee | Verdict |
 |---|---|---|---|
-| Creem | Yes — local bank transfer | 3.9% + $0.40, plus payout fee of €7 or 1% | `[Primary]` Cheapest of the viable set, explicitly supports Sri Lanka |
+| ~~Creem~~ | Yes — local bank transfer | 3.9% + $0.40, plus payout fee of €7 or 1% | **Declined us 1 September 2026, final.** Category call, not a KYC gap — see `PAYMENTS-APPROVAL.md` §8 |
+| Whop | Yes — confirm the Sri Lankan payout rail in the withdrawal modal | ~3% platform + card processing; roughly $1.40–1.86 on $19 | `[Primary]` Chosen 1 September. Standard Webhooks signing, a checkout API that carries `user_id` through to the membership, a real sandbox, and a server-side cancel. Its prohibited list does not name dating, companionship or AI |
 | Polar | Yes — via Stripe Connect Express payouts | ≈ 4–5% + fixed fee | `[Backup]` Works, but its policy names “AI relationship services” as prohibited — a reviewer could misread us |
 | Dodo Payments | Yes — markets to emerging markets | Comparable | `[Backup]` Newer and less proven; keep as a third option |
 | Paddle | Not clearly listed | ≈ 5% + $0.50 | `[Rejected]` Its policy bans “dating services/applications, or any other products/services intended for this industry” outright |

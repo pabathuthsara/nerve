@@ -49,6 +49,26 @@ day. See [Before we submit](#before-we-submit).
 > browser, not against the repo: **21 checks pass, 0 fail.** The site is ready
 > to be looked at. What is left is not on the site — see §5.5.
 
+> **Submitted to Creem and permanently declined, 1 September 2026.** After a
+> compliance review of the site and the dashboard submission, Creem rejected the
+> payout account as "an unacceptable level of risk under our policies," pointed
+> at the prohibited-products and account-review guidance, and said the decision
+> is **final and not eligible for appeal**. The first rejection notice named
+> compliance generically; the final one names risk under policy and links the
+> prohibited list. Read together with §3, that is a category call — the
+> "AI companion or relationship chatbots … romantic AI characters" line, and/or
+> "dating sites" — not a fixable KYC or tax-ID gap.
+>
+> **What this changes.** The strategic assumption of this document — that a clean,
+> honestly-built site clears an MoR review — is now disproved for at least one
+> provider, and every other MoR on §2's list carries the same prohibition (Polar
+> names "AI relationship services"; Paddle names dating apps; Gumroad has
+> tightened around AI/companion content; Dodo would review the same site). So
+> **the blocker is the category as a reviewer reads it, not the provider.**
+> Provider-hopping without changing what a reviewer sees is likely to produce
+> more rejections, and each is disclosable on the next application. The real fork
+> is now in §8.
+
 ---
 
 ## 1. Why a merchant of record at all
@@ -70,25 +90,31 @@ without a foreign entity, and at this stage it is worth paying.
 
 ## 2. Who we apply to, in what order
 
-From §14's table, with Gumroad added 1 September as the named fallback:
+From §14's table, with Gumroad added 1 September as the named fallback and
+Whop added the same day as the one that was actually chosen:
 
 | Provider | Sri Lankan payout | Cost | Standing |
 |---|---|---|---|
-| **Creem** | Yes — local bank transfer | 3.9% + $0.40, payout fee €7 or 1% | **Primary.** Cheapest of the viable set and explicitly supports Sri Lanka. Onboarding asks for a tax ID — see §5.5 |
-| **Gumroad** | Yes — PayPal (receiving now available in Sri Lanka; confirm withdrawal limits) or Payoneer | 10% flat + card processing, so roughly 2–3× Creem's cut | **Fallback, chosen 1 September.** If Creem declines — on the tax ID or on the category review — we launch on Gumroad rather than keep applying. It is a merchant of record, needs no company and no tax ID to start, and its content rules are looser. The price is margin: at Pro's worst-case burn the cut takes the tier from about half to a bit under half, so it is a bridge to launch, not a permanent home. Re-check D2's price math against it before committing |
+| ~~**Creem**~~ | Yes — local bank transfer | 3.9% + $0.40, payout fee €7 or 1% | **Rejected 1 September 2026 — final, no appeal.** "Unacceptable level of risk under our policies," pointing at the prohibited list. Read as a category call (AI companion / dating), not a KYC or tax-ID gap. See the top revision note and §8 |
+| **Whop** | **Yes, confirmed 2 September against the live account: local bank transfer, in LKR or USD, flat $3.70 per withdrawal, 1–2 days.** Every major Sri Lankan bank is a supported destination. Nothing has to touch crypto, so there is no exchange-control question | ~3% platform + card processing; roughly $1.40–1.86 on $19 — about half Gumroad's cut and close to Creem's | **CHOSEN 1 September, and built the same day.** The only provider on this list whose prohibited list does **not** name dating, companionship or AI, and whose own guidelines age-gate "dating" as a supported category. It also has no pre-approval gate — which cuts both ways: no rejection at the door, and no assurance either, so a suspension is possible later with live subscriptions and a balance. The code is done (`PAYMENTS-WHOP.md`); the account, product, plans and webhook are not |
+| **Gumroad** | Yes — PayPal (receiving now available in Sri Lanka; confirm withdrawal limits) or Payoneer | 10% flat + card processing, so roughly 2–3× Creem's cut | **Second choice as of 1 September, superseded by Whop.** Was the named fallback if Creem declined; Whop beat it on every axis that matters — signed webhooks, a checkout API, a sandbox, a server-side cancel, and roughly half the fee. It is a merchant of record, needs no company and no tax ID to start, and its content rules are looser. The price is margin: at Pro's worst-case burn the cut takes the tier from about half to a bit under half, so it is a bridge to launch, not a permanent home. Re-check D2's price math against it before committing |
 | Polar | Yes — Stripe Connect Express | ≈ 4–5% + fixed | Its policy names "AI relationship services" as prohibited, and a reviewer could misread us as one |
 | Dodo Payments | Yes — markets to emerging markets | Comparable | Newer and less proven |
 | Paddle | Not clearly listed | ≈ 5% + $0.50 | Rejected. Bans "dating services/applications, or any other products/services intended for this industry" outright |
 | Lemon Squeezy | Yes | ≈ 5% + $0.50 | Avoid. Being folded into Stripe Managed Payments, which reaches far fewer countries — a migration we do not need |
 
-Apply to Creem first and wait. Applying to several at once is not a hedge: each
-one runs a human review of the same site, and being declined somewhere is a
-thing you may have to disclose later. **If Creem says no, the next move is
-Gumroad, not a third application** — the AI-character question in §3 follows us
-to every provider on this list, so a fourth review of the same site is unlikely
-to land differently, and Gumroad clears the two hurdles Creem raised: the tax ID,
-and probably the category. Its rules have tightened around AI and adult content
-too, so §3's positioning discipline applies there in full.
+**Superseded by events: Creem said no, and the next move was Whop rather than
+Gumroad.** The reasoning that stands is the reasoning against a third and fourth
+application — applying to several at once is not a hedge, because each one runs a
+human review of the same site, and being declined somewhere is a thing you may
+have to disclose later. Creem is now exactly that disclosure.
+
+What changed the answer is §8.C: Whop has **no pre-approval gate**, so it is not
+an application at all. That removes the review Gumroad would have run on the same
+site, but it does not remove the risk — it moves it from before the money to
+after it. §3's positioning discipline therefore applies in full and then some,
+because the review that does not happen at the door happens when a complaint or
+a chargeback pattern brings a human to the page.
 
 The database was built for this. `subscriptions` keeps provider identifiers
 deliberately abstract, so being declined by one provider costs a migration
@@ -326,3 +352,104 @@ provider and when.
 | 30 Aug 2026 | Mail fixed end to end: `support@hellonerve.com` created with a catch-all, Resend verified on `send.hellonerve.com`, DMARC published at `p=none`, Supabase Auth moved onto Resend, and `SUPPORT_EMAIL` pointed at the live domain in one place. §5.2 closed. Not deployed — it goes out with §5.3 |
 | 30 Aug 2026 | Every claim on this page re-checked against `hellonerve.com` rather than against the repo. `support@nerve.training` found to have no DNS at all; production found to be running the last commit while 28–30 Aug's work sits uncommitted, so §3's two-step age gate is not what a reviewer sees; the Google sign-up path found to loop before it can reach the §16.4 gate. The hero rep, which notes elsewhere still called owed, found recorded and live. Still not submitted to any provider |
 | 1 Sep 2026 | Creem onboarding reviewed field by field. Two new blockers. One: the prohibited-list item on "AI companion or relationship chatbots … romantic AI characters" is a reviewer judgement call we land on the right side of only if §3's framing holds. Two: onboarding requires a tax ID we do not have — recorded that a Sri Lankan personal TIN (IRD, no company) is the likely answer and worth getting regardless. **Fallback decided: if Creem declines on the tax ID or the category, we launch on Gumroad rather than run a third application** — MoR, no company or tax ID to start, looser content rules, at the cost of a ~10% + processing cut against Creem's ~4%. Noted that PayPal now supports receiving in Sri Lanka, which makes Gumroad's payout viable. Still not submitted to any provider |
+| 1 Sep 2026 | **Submitted to Creem via the dashboard.** First response: payout account rejected, "likely due to compliance requirements," generic, pointing at the prohibited-products and acceptable-use pages |
+| 1 Sep 2026 | **Creem's compliance team confirmed the rejection as final and not eligible for appeal** — "an unacceptable level of risk under our policies," linking the prohibited list. Read as a category call (§3): the AI-companion / dating prohibition, not a fixable KYC, entity or tax-ID gap. Creem is now a disclosable "declined by a payment processor" on any future MoR application. Strategy moves to §8; the assumption that an honest site clears an MoR review is disproved for this provider |
+
+| 1 Sep 2026 | **Whop assessed and chosen over Gumroad**, and the whole billing layer ported to it the same day. It is the first provider on the list that does not ban our category by name, and the only one with no pre-approval review — so the §14 abstraction was exercised for real: `signature.ts`, `plans.ts`, `events.ts`, `checkout.ts`, the webhook route and the subscription screen changed, and nothing downstream of the adapter did. Verified end to end — 1156 unit tests, `db:billing` through the real tables, and signed deliveries through the running route (`npm run whop:probe`). Recorded as §8.C. **Nothing is sold yet: the Whop account exists (`biz_G4B33AGA0sWgzq`) with no product, no plans, no webhook and no keys** |
+| 1 Sep 2026 | Two things about the Whop account noted while confirming it: it is classified `health_and_wellness / mental_health_app`, which sits on the wrong side of §16's no-clinical-claims rule and of §3's framing and should be changed; and its terms, privacy and refund fields are empty, which are the first things a reviewer opens. Both are §5 work, not code |
+| 2 Sep 2026 | **The payout question in §2 is closed, and the answer is good.** Queried against the live account: Sri Lanka gets local bank transfer to every major bank, delivered in LKR *or USD*, at a flat $3.70 per withdrawal with 1–2 day arrival. Not crypto-only. Batch withdrawals rather than taking them weekly, since the fee does not scale. Withdrawal schedule is `manual`, which is the right default |
+| 2 Sep 2026 | **Industry classification decided: `personal_development / communication_coaching`.** The account was created as `health_and_wellness / mental_health_app`, which contradicts terms clause 08 ("no part of this product treats a condition") and rule 10. The alternative considered and rejected was `dating_and_relationships` — accurate to how Creem read the scenario content, but not to what the service does, which involves no matchmaking and no user-to-user contact. **The risk this leaves open is §3's, unchanged:** if a reviewer reads the site as an AI-companion product, this classification will look like under-declaring, and §8.A is the mitigation |
+| 2 Sep 2026 | Still outstanding on the account and both dashboard-only, because the API has no field for either: the terms, privacy and refund URLs, and the API key. Everything else about the Whop setup is now one command (`npm run whop:setup`) |
+
+## 8. The fork after Creem
+
+Creem is closed and every other merchant of record on §2's list bans the same
+category by name or by close analogy. The Gumroad fallback in §2 was written for
+a tax-ID or entity rejection; it does **not** obviously survive a category
+rejection, because Gumroad has tightened around AI and companion content and
+would review the same site. So the question is no longer "which provider" — it
+is what a compliance reviewer sees when they open `hellonerve.com`.
+
+**Three paths, and the third is the one taken.** They are not mutually
+exclusive, and 8.A is worth doing regardless of the other two — a site that
+survives a hostile read is the asset that makes every other option cheaper.
+
+### 8.A — Change what the reviewer sees
+
+The product underneath is a communication-skills trainer. The landing FAQ already
+says the skill — start a conversation, read whether it is welcome, leave well —
+is the same one interviews and hard conversations at work need, and that those
+tracks "run on the same engine." Today the public site leads with the dating
+wedge and the sign-up rep puts the warmest, most companion-like character (Tess)
+in front of the reviewer first. A pivot:
+
+- Lead the landing page, the hero rep and the roster presentation with
+  professional and high-stakes-conversation practice — an interview, a
+  negotiation, a networking room, a difficult conversation with a colleague.
+- Move the dating-context scenes off the first screen a signed-out visitor and a
+  reviewer meet. They can stay in the product; they should not be the pitch.
+- Reconsider the sign-up rep. A reviewer who runs it currently meets exactly the
+  experience the prohibited list describes.
+
+Cost: this is a change to the §01 positioning wedge, not a copy tweak, and it
+needs a decision from whoever owns product direction. It is still far cheaper
+than 8.B, and it keeps the MoR tax-handling benefit that §1 is built on. After
+it, re-apply to **one** fresh MoR — Dodo (emerging-markets focus) or Polar —
+knowing Creem is now a disclosable prior decline.
+
+### 8.C — A provider with no gate at the door — TAKEN, 1 September
+
+Whop is the one merchant of record on §2's list whose prohibited list does not
+name dating, companionship or AI, and whose own guidelines treat "dating" as a
+supported, age-gated category. It also has no pre-approval review: an account is
+created, a product is created, and checkout works. Nobody reads the site first.
+
+That is the whole reason it changes the position — and it is worth being precise
+about what it does and does not buy:
+
+- **It buys a launch.** There is no reviewer to convince before revenue exists,
+  which is the exact thing Creem's rejection took away.
+- **It does not buy safety.** Enforcement is reactive. A suspension is still
+  possible, and it would land at the worst possible moment: live subscriptions,
+  an accumulated balance, and no second provider standing by.
+- **So 8.A is not optional, it is more urgent.** The review that does not happen
+  at the door happens when a complaint, a chargeback run or a routine sweep
+  brings a human to `hellonerve.com`. The framing has to hold on the day
+  somebody looks, not on the day we sign up.
+
+One thing about Whop is genuinely unverified from outside and has to be checked
+in the dashboard before anything is sold: **what Sri Lanka actually gets as a
+payout rail.** If it comes out crypto-only, that is an exchange-control question
+for an accountant before it is a product question.
+
+### 8.B — Incorporate abroad and self-serve payments
+
+This is the option §14 rejected as too heavy, reconsidered now that the light
+path has failed. A US LLC (formation service) plus a Mercury or Wise business
+account reaches Stripe, which does not run the same aggressive pre-screen an MoR
+does and is more permissive about a training framing. Cost: ~$500 formation plus
+an ongoing accountant, and — the reason §14 said no — **you become the merchant
+of record yourself**, so you owe sales tax and VAT everywhere the customer lives.
+For a solo founder that needs a tax-compliance service on top, which is more cost
+and more moving parts. Only worth it if the dating wedge is judged
+non-negotiable for go-to-market.
+
+### Not paths
+
+- **Adult-friendly processors** (CCBill, Verotel, Segpay) would take an "AI
+  companion" product, but accepting that classification torches the PG-13
+  positioning, the legal pages and §14's whole survival argument.
+- **Crypto-only checkout** kills mainstream conversion and appears on other
+  prohibited lists anyway.
+
+### Immediate, regardless of the fork
+
+- **Get the Sri Lankan personal TIN** (§5.5). Needed on every path.
+- **Do not fire off applications to Polar, Gumroad and Dodo with the current
+  site.** Each is a human review of the same pages, each decline is disclosable,
+  and three at once spends the goodwill for no new information.
+- **`NERVE-SPEC.md` §14 and §01 now need a decision, not a ticket.** §3 of this
+  page reads the universal MoR ban on dating products as *validating* the
+  positioning; Creem's rejection shows that reading was backwards — the ban is
+  also what stops us getting paid. The spec owner has to choose between the wedge
+  and the light payment path.

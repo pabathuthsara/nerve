@@ -649,7 +649,7 @@ export async function fetchSubscription(): Promise<SubscriptionState | null> {
 
   const { data } = await supabase
     .from('subscriptions')
-    .select('plan, status, current_period_end, cancel_at_period_end')
+    .select('plan, status, current_period_end, cancel_at_period_end, last_event')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -660,7 +660,21 @@ export async function fetchSubscription(): Promise<SubscriptionState | null> {
     status: data.status,
     currentPeriodEnd: data.current_period_end,
     cancelAtPeriodEnd: data.cancel_at_period_end,
+    manageUrl: manageUrlFrom(data.last_event),
   }
+}
+
+/**
+ * The provider's management page, off the stored event blob.
+ *
+ * Read defensively and validated as an absolute URL rather than trusted: this
+ * value comes from a vendor payload and ends up in an `href`, and a `javascript:`
+ * string in a webhook is the shape of attack this check costs nothing to close.
+ */
+function manageUrlFrom(lastEvent: unknown): string | null {
+  if (typeof lastEvent !== 'object' || lastEvent === null || Array.isArray(lastEvent)) return null
+  const value = (lastEvent as Record<string, unknown>)['manage_url']
+  return typeof value === 'string' && /^https:\/\//i.test(value) ? value : null
 }
 
 function isSubscriptionStatus(value: string): value is SubscriptionState['status'] {

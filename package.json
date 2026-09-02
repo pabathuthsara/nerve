@@ -27,7 +27,9 @@
     "db:field": "vite-node --config vitest.config.ts scripts/verify-field.ts",
     "db:spend": "vite-node --config vitest.config.ts scripts/verify-spend.ts",
     "db:billing": "vite-node --config vitest.config.ts scripts/verify-billing.ts",
-    "creem:verify": "vite-node --config vitest.config.ts scripts/verify-creem.ts",
+    "whop:setup": "vite-node --config vitest.config.ts scripts/setup-whop.ts",
+    "whop:verify": "vite-node --config vitest.config.ts scripts/verify-whop.ts",
+    "whop:probe": "vite-node --config vitest.config.ts scripts/verify-whop-webhook.ts",
     "db:user": "vite-node --config vitest.config.ts scripts/dev-user.ts",
     "db:repair-wins": "vite-node --config vitest.config.ts scripts/repair-wins.ts"
   },

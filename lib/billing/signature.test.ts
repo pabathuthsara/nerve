@@ -3,194 +3,158 @@ import {
   DEFAULT_TOLERANCE_SECONDS,
   SignatureError,
   checkTimestamp,
+  keyBytes,
   normaliseHeaders,
-  verifyCreemSignature,
+  verifyWhopSignature,
 } from './signature'
 
-const BODY = '{"id":"evt_1","type":"subscription.paid","object":{"id":"sub_1"}}'
+const BODY = '{"id":"msg_1","type":"membership.activated","data":{"id":"mem_1"}}'
 
-/** The legacy scheme: hex HMAC over the raw body, secret as UTF-8 bytes. */
-async function legacySignature(body: string, secret: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-  const signed = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body)))
-  return Array.from(signed)
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-}
+/** A `ws_` secret, which is what Whop actually issues. */
+const WS_SECRET = 'ws_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 
-/** The Standard Webhooks scheme: base64 HMAC over `id.timestamp.body`. */
-async function standardSignature(
+/**
+ * The Standard Webhooks scheme, signed the way Whop documents it: HMAC-SHA256
+ * over `id.timestamp.body`, keyed on the secret's own bytes, result base64.
+ */
+async function sign(
   body: string,
-  secretBase64: string,
+  secret: string,
   id: string,
   timestamp: number,
+  key = keyBytes(secret),
 ): Promise<string> {
-  const keyBytes = Uint8Array.from(atob(secretBase64), (char) => char.charCodeAt(0))
-  const key = await crypto.subtle.importKey(
+  const imported = await crypto.subtle.importKey(
     'raw',
-    keyBytes.slice().buffer as ArrayBuffer,
+    key.slice().buffer as ArrayBuffer,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   )
   const signed = new Uint8Array(
-    await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${id}.${timestamp}.${body}`)),
+    await crypto.subtle.sign('HMAC', imported, new TextEncoder().encode(`${id}.${timestamp}.${body}`)),
   )
   let binary = ''
   for (const byte of signed) binary += String.fromCharCode(byte)
   return btoa(binary)
 }
 
-describe('the legacy creem-signature scheme', () => {
-  it('accepts a body signed with the secret', async () => {
-    const signature = await legacySignature(BODY, 'whsec_test')
-    await expect(
-      verifyCreemSignature(BODY, { 'creem-signature': signature }, { secret: 'whsec_test' }),
-    ).resolves.toBeUndefined()
+const NOW = 1_788_178_846_000
+const TIMESTAMP = Math.floor(NOW / 1000)
+
+function headersFor(signature: string, id = 'msg_1', timestamp = TIMESTAMP) {
+  return {
+    'webhook-id': id,
+    'webhook-timestamp': String(timestamp),
+    'webhook-signature': `v1,${signature}`,
+  }
+}
+
+describe('how the ws_ secret becomes key bytes', () => {
+  it('uses the whole string, prefix included', async () => {
+    // This was the one genuinely unknown thing about the migration. Whop's
+    // documentation is explicit — "the key is your `ws_...` secret", passed
+    // exactly as given, prefix kept and not base64-decoded — and Standard
+    // Webhooks' own convention is the opposite, so it is asserted here rather
+    // than left to a comment.
+    expect(keyBytes(WS_SECRET)).toEqual(new TextEncoder().encode(WS_SECRET))
   })
 
-  it('accepts a sha256= prefix and any casing', async () => {
-    const signature = await legacySignature(BODY, 'whsec_test')
+  it('base64-decodes a whsec_ secret instead, chosen by the prefix', () => {
+    // Selected by the secret's own shape, never tried as a fallback: exactly
+    // one derivation is attempted per secret, so a failing signature never gets
+    // a second, easier check to pass.
+    expect(keyBytes(`whsec_${btoa('supersecret')}`)).toEqual(new TextEncoder().encode('supersecret'))
+  })
+})
+
+describe('verifyWhopSignature', () => {
+  it('accepts a correctly signed request', async () => {
+    const signature = await sign(BODY, WS_SECRET, 'msg_1', TIMESTAMP)
     await expect(
-      verifyCreemSignature(
-        BODY,
-        { 'creem-signature': `sha256=${signature.toUpperCase()}` },
-        { secret: 'whsec_test' },
-      ),
+      verifyWhopSignature(BODY, headersFor(signature), { secret: WS_SECRET, now: NOW }),
     ).resolves.toBeUndefined()
   })
 
   it('refuses a body that changed by one byte', async () => {
-    const signature = await legacySignature(BODY, 'whsec_test')
-    const tampered = BODY.replace('sub_1', 'sub_2')
+    const signature = await sign(BODY, WS_SECRET, 'msg_1', TIMESTAMP)
+    const tampered = BODY.replace('mem_1', 'mem_2')
     await expect(
-      verifyCreemSignature(tampered, { 'creem-signature': signature }, { secret: 'whsec_test' }),
+      verifyWhopSignature(tampered, headersFor(signature), { secret: WS_SECRET, now: NOW }),
     ).rejects.toThrow(SignatureError)
   })
 
   it('refuses a signature made with a different secret', async () => {
-    const signature = await legacySignature(BODY, 'someone-elses-secret')
+    const signature = await sign(BODY, 'ws_someone_elses', 'msg_1', TIMESTAMP)
     await expect(
-      verifyCreemSignature(BODY, { 'creem-signature': signature }, { secret: 'whsec_test' }),
+      verifyWhopSignature(BODY, headersFor(signature), { secret: WS_SECRET, now: NOW }),
     ).rejects.toThrow(SignatureError)
   })
 
-  it('refuses a request carrying no signature at all', async () => {
-    await expect(verifyCreemSignature(BODY, {}, { secret: 'whsec_test' })).rejects.toThrow(
-      'Request carries no webhook signature',
-    )
-  })
-})
-
-describe('the Standard Webhooks scheme', () => {
-  // "supersecret" as base64, which is the shape the provider issues.
-  const SECRET_BASE64 = btoa('supersecret')
-  const NOW = 1_788_178_846_000
-  const TIMESTAMP = Math.floor(NOW / 1000)
-
-  it('accepts a correctly signed request', async () => {
-    const signature = await standardSignature(BODY, SECRET_BASE64, 'msg_1', TIMESTAMP)
+  it('refuses a signature over a different webhook-id', async () => {
+    // The id is part of the signed string, so a replayed body under a fresh id
+    // does not verify.
+    const signature = await sign(BODY, WS_SECRET, 'msg_1', TIMESTAMP)
     await expect(
-      verifyCreemSignature(
-        BODY,
-        {
-          'webhook-id': 'msg_1',
-          'webhook-timestamp': String(TIMESTAMP),
-          'webhook-signature': `v1,${signature}`,
-        },
-        { secret: SECRET_BASE64, now: NOW },
-      ),
-    ).resolves.toBeUndefined()
-  })
-
-  it('strips a whsec_ prefix from the secret', async () => {
-    const signature = await standardSignature(BODY, SECRET_BASE64, 'msg_1', TIMESTAMP)
-    await expect(
-      verifyCreemSignature(
-        BODY,
-        {
-          'webhook-id': 'msg_1',
-          'webhook-timestamp': String(TIMESTAMP),
-          'webhook-signature': `v1,${signature}`,
-        },
-        { secret: `whsec_${SECRET_BASE64}`, now: NOW },
-      ),
-    ).resolves.toBeUndefined()
+      verifyWhopSignature(BODY, headersFor(signature, 'msg_2'), { secret: WS_SECRET, now: NOW }),
+    ).rejects.toThrow('No webhook-signature matched')
   })
 
   it('accepts when one of several rotated signatures matches', async () => {
-    const signature = await standardSignature(BODY, SECRET_BASE64, 'msg_1', TIMESTAMP)
+    const signature = await sign(BODY, WS_SECRET, 'msg_1', TIMESTAMP)
     await expect(
-      verifyCreemSignature(
+      verifyWhopSignature(
         BODY,
-        {
-          'webhook-id': 'msg_1',
-          'webhook-timestamp': String(TIMESTAMP),
-          'webhook-signature': `v1,ZmFrZQ== v1,${signature}`,
-        },
-        { secret: SECRET_BASE64, now: NOW },
+        { ...headersFor(signature), 'webhook-signature': `v1,ZmFrZQ== v1,${signature}` },
+        { secret: WS_SECRET, now: NOW },
       ),
     ).resolves.toBeUndefined()
   })
 
   it('refuses a replay from outside the tolerance', async () => {
     const stale = TIMESTAMP - DEFAULT_TOLERANCE_SECONDS - 1
-    const signature = await standardSignature(BODY, SECRET_BASE64, 'msg_1', stale)
+    const signature = await sign(BODY, WS_SECRET, 'msg_1', stale)
     await expect(
-      verifyCreemSignature(
-        BODY,
-        {
-          'webhook-id': 'msg_1',
-          'webhook-timestamp': String(stale),
-          'webhook-signature': `v1,${signature}`,
-        },
-        { secret: SECRET_BASE64, now: NOW },
-      ),
+      verifyWhopSignature(BODY, headersFor(signature, 'msg_1', stale), { secret: WS_SECRET, now: NOW }),
     ).rejects.toThrow('too old')
   })
 
-  it('does not fall back to the legacy check when a standard signature fails', async () => {
-    // The trap this guards: a request that presents standard headers and fails
-    // must be refused, not handed a second, easier check to pass.
-    const legacy = await legacySignature(BODY, SECRET_BASE64)
-    await expect(
-      verifyCreemSignature(
-        BODY,
-        {
-          'webhook-id': 'msg_1',
-          'webhook-timestamp': String(TIMESTAMP),
-          'webhook-signature': 'v1,bm90LXJpZ2h0',
-          'creem-signature': legacy,
-        },
-        { secret: SECRET_BASE64, now: NOW },
-      ),
-    ).rejects.toThrow('No webhook-signature matched')
-  })
-
   it('refuses an unknown signature version', async () => {
-    const signature = await standardSignature(BODY, SECRET_BASE64, 'msg_1', TIMESTAMP)
+    const signature = await sign(BODY, WS_SECRET, 'msg_1', TIMESTAMP)
     await expect(
-      verifyCreemSignature(
+      verifyWhopSignature(
         BODY,
-        {
-          'webhook-id': 'msg_1',
-          'webhook-timestamp': String(TIMESTAMP),
-          'webhook-signature': `v2,${signature}`,
-        },
-        { secret: SECRET_BASE64, now: NOW },
+        { ...headersFor(signature), 'webhook-signature': `v2,${signature}` },
+        { secret: WS_SECRET, now: NOW },
       ),
     ).rejects.toThrow(SignatureError)
+  })
+
+  it('refuses a request carrying no signature headers at all', async () => {
+    // There is no second scheme to fall through to. Creem's bare
+    // `creem-signature` header went with Creem, and an accepted fallback is an
+    // accepted weakness.
+    await expect(verifyWhopSignature(BODY, {}, { secret: WS_SECRET })).rejects.toThrow(
+      'Request carries no webhook signature',
+    )
+    await expect(
+      verifyWhopSignature(BODY, { 'creem-signature': 'abc' }, { secret: WS_SECRET }),
+    ).rejects.toThrow('Request carries no webhook signature')
+  })
+
+  it('refuses a request missing only the timestamp', async () => {
+    const signature = await sign(BODY, WS_SECRET, 'msg_1', TIMESTAMP)
+    await expect(
+      verifyWhopSignature(
+        BODY,
+        { 'webhook-id': 'msg_1', 'webhook-signature': `v1,${signature}` },
+        { secret: WS_SECRET, now: NOW },
+      ),
+    ).rejects.toThrow('Request carries no webhook signature')
   })
 })
 
 describe('checkTimestamp', () => {
-  const NOW = 1_788_178_846_000
   const SECONDS = Math.floor(NOW / 1000)
 
   it('accepts a timestamp inside the window', () => {
@@ -213,18 +177,17 @@ describe('checkTimestamp', () => {
 describe('an unset secret', () => {
   it('refuses rather than verifying nothing', async () => {
     await expect(
-      verifyCreemSignature(BODY, { 'creem-signature': 'anything' }, { secret: '' }),
-    ).rejects.toThrow('CREEM_WEBHOOK_SECRET is not set')
+      verifyWhopSignature(BODY, headersFor('anything'), { secret: '' }),
+    ).rejects.toThrow('WHOP_WEBHOOK_SECRET is not set')
   })
 })
 
 describe('normaliseHeaders', () => {
   it('lower-cases a plain object', () => {
-    expect(normaliseHeaders({ 'Creem-Signature': 'abc' })).toEqual({ 'creem-signature': 'abc' })
+    expect(normaliseHeaders({ 'Webhook-Id': 'msg_1' })).toEqual({ 'webhook-id': 'msg_1' })
   })
 
   it('reads a Headers instance', () => {
-    const headers = new Headers({ 'Creem-Signature': 'abc' })
-    expect(normaliseHeaders(headers)).toEqual({ 'creem-signature': 'abc' })
+    expect(normaliseHeaders(new Headers({ 'Webhook-Id': 'msg_1' }))).toEqual({ 'webhook-id': 'msg_1' })
   })
 })

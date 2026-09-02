@@ -26,7 +26,7 @@ need a decision rather than a ticket.
 | M1 — the loop | **Done.** Auth, eight-table schema with RLS, brief → live → scorecard → transcript, deterministic + judgement scoring |
 | M2 — progression & field | **Built.** All nine plan items: the three-minute format, the field end to end, the predicted-versus-actual chart, character memory, the §08 unlock rule with its once-ever moment, adaptive difficulty, the baseline and week-four re-test, share cards and the Sunday review. **Not closed:** §17's gate is twenty hand-scored transcripts and none are scored — the harness is built and ten are collected |
 | M3 — the premium layer | **Half.** Arena visual system, skeletons, real analysers, reduced motion. No sound kit, haptics, PWA, score choreography |
-| M4 — billing & safety | **Safety done; billing wired, unsold.** The whole of §16's app layer shipped 28 Aug — moderation on both streams, the age gate, the boundary sequence, the distress path and the report control (B3) — on top of the schema and the spend ceiling (B9, cleared 24 Aug). The Creem pipe shipped 31 Aug: signed webhook, provider-neutral event mapping, service-role entitlement writes, checkout carrying the user id (B2). What is left is not code — no approved merchant-of-record account, so nothing can be sold; and no buy button in front of `startCheckout` |
+| M4 — billing & safety | **Safety done; billing wired, unsold.** The whole of §16's app layer shipped 28 Aug — moderation on both streams, the age gate, the boundary sequence, the distress path and the report control (B3) — on top of the schema and the spend ceiling (B9, cleared 24 Aug). The pipe shipped 31 Aug on Creem: signed webhook, provider-neutral event mapping, service-role entitlement writes, checkout carrying the user id (B2). Creem declined on 1 Sep and the pipe was ported to Whop the same day — the adapter changed and nothing downstream of it did, which is the §14 abstraction doing its job. What is left is not code — no configured Whop product or plans yet, so nothing can be sold |
 | M5 — private beta | Blocked by M4, and by having nothing instrumented to learn from |
 
 Feature inventory (§10), counted honestly against the 69 MVP features:
@@ -220,17 +220,17 @@ voice-less, and both surfaces still read `lib/site/plans.ts`.
 abstract provider identifiers so that being declined by one provider costs a
 migration rather than a rewrite (§14). Both read-only to the user; a user
 cannot write themselves a subscription, and that is asserted.
-**Built (the pipe, 31 Aug):** the Creem loop, end to end and provider-neutral.
+**Built (the pipe, 31 Aug on Creem; ported to Whop 1 Sep):** the billing loop, end to end and provider-neutral.
 `lib/billing/signature.ts` verifies the webhook HMAC — both the Standard
 Webhooks and legacy schemes — with no provider SDK in the app layer, for the
 same reason §14 keeps the identifiers abstract. `lib/billing/events.ts`
 normalises the vendor's twelve event names into `grant` / `revoke` / `record`,
 so the entitlement logic never learns a provider's vocabulary.
 `lib/billing/apply.ts` writes the mirror first and the plan second, on the
-service role, and `app/api/webhooks/creem/route.ts` is the only thing in the
+service role, and `app/api/webhooks/whop/route.ts` is the only thing in the
 codebase that moves an account onto a paid plan. `lib/billing/checkout.ts`
 stamps `metadata.user_id` on every session — the sole link between a payment
-and an account. Product ids map to plans through `CREEM_PRODUCT_*`, because they
+and an account. Vendor plan ids map to plans through `WHOP_PLAN_*`, because they
 differ between test and live; an unrecognised product records the money and
 grants nothing.
 Three decisions are asserted rather than assumed: `past_due` keeps access
@@ -256,7 +256,7 @@ refusal is a distinct `kind` from `consumeRep` all the way to the sheet, because
 merchant-of-record variables, so the screen falls back to the notify-me list
 rather than showing a button that errors.
 **Proven on 1 Sep:** a real checkout on the production domain, in test mode
-behind `CREEM_TEST_MODE_IN_PRODUCTION`, delivered a signed webhook Creem sent
+behind `CREEM_TEST_MODE_IN_PRODUCTION` (now `WHOP_TEST_MODE_IN_PRODUCTION`), delivered a signed webhook Creem sent
 itself and moved the account to Pro with no hand at the database. The trial is
 switched on at the product (seven days, card captured) — so of the list below,
 the products and the environment variables are done in test mode and owed again

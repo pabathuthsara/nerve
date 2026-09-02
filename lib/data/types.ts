@@ -145,6 +145,12 @@ export interface SubscriptionState {
   currentPeriodEnd: string | null
   /** Already cancelled, still inside the period they paid for. */
   cancelAtPeriodEnd: boolean
+  /**
+   * The provider's own page for the card and the invoices, when it has told us
+   * one. Cancelling is ours and lives on this screen; changing a card is still
+   * theirs, and a subscription screen with no route to it is a support email.
+   */
+  manageUrl: string | null
 }
 
 /** The stored Sunday letter (§09, §11). */

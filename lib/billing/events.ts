@@ -4,12 +4,33 @@
  * The provider's vocabulary stops here. Everything downstream reads a
  * `BillingEvent`, which names what happened to *access* rather than what
  * happened at the vendor — so swapping merchant of record is an adapter and a
- * migration, not a rewrite of the entitlement logic (§14).
+ * migration, not a rewrite of the entitlement logic (§14). That claim was
+ * tested on 1 September, when Creem declined the account: this file and its
+ * table changed, and nothing downstream of it did.
  *
  * These are pure functions over a parsed payload, tested directly, for the
  * same reason `lib/data/rep-rules.ts` and `lib/safety/assess.ts` are: the
  * decision about whether somebody keeps a plan they paid for should be
  * arguable in a test file, not buried in a route handler.
+ *
+ * ── THE SHAPE WHOP ACTUALLY SENDS ────────────────────────────────────────
+ *
+ * The envelope is `{ id, type, timestamp, account_id, data }`, and `data` is
+ * the full object the event is about. Which object that is varies, and this is
+ * the whole reason the reads below are not simple field accesses:
+ *
+ *   `membership.*`   `data` IS the membership: `id` is the `mem_`, and `plan`,
+ *                    `product` and `user` are nested objects rather than ids.
+ *                    Only these events carry `renewal_period_end`.
+ *   `payment.*`      `data` is the PAYMENT: `id` is a `pay_`, and the
+ *                    membership hangs off it as `data.membership`. No period.
+ *   `refund.created` `data` is the refund and everything useful — metadata,
+ *   `dispute.created` membership, user — is one level down on `data.payment`.
+ *   `invoice.past_due` `data.user` and `data.current_plan`, and `data.payment`
+ *                    is a bare id.
+ *
+ * So the reads walk `data.payment ?? data` and then fall back to `data`, which
+ * covers all four shapes without a branch per event type.
  */
 
 import type { Plan } from '@/lib/data/types'
@@ -32,7 +53,7 @@ export type SubscriptionStatus =
   | 'incomplete'
 
 export interface BillingEvent {
-  /** The provider's event id, where it sends one. Used for the log, not for logic. */
+  /** The provider's event id (`msg_…`). Used for the log, not for logic. */
   eventId: string | null
   /** Provider event name, kept verbatim so an unmapped one is still legible. */
   type: string
@@ -42,12 +63,33 @@ export interface BillingEvent {
   occurredAt: number
   /** Supabase user id, when the payload carries one. */
   userId: string | null
+  /** Whop's own user (`user_…`) — the buyer, not the account. */
   providerCustomerId: string | null
+  /** The membership (`mem_…`). The subscription, in Whop's noun. */
   providerSubscriptionId: string | null
-  /** The purchased product, resolved to a plan by `lib/billing/plans.ts`. */
-  productId: string | null
+  /** The purchased `plan_…`, resolved to a plan by `lib/billing/plans.ts`. */
+  planId: string | null
+  /**
+   * When the current period ends, or null when this event does not say.
+   *
+   * Null is meaningfully different from a date and `applyBillingEvent` treats
+   * it that way: only membership events carry `renewal_period_end`, so a
+   * renewal `payment.succeeded` arriving with nothing must leave the stored
+   * date alone rather than blank the renewal line on the subscription screen.
+   */
   currentPeriodEnd: string | null
-  cancelAtPeriodEnd: boolean
+  /**
+   * Whether renewal is already scheduled to stop, or null when this event does
+   * not say.
+   *
+   * Same reasoning as `currentPeriodEnd`, and the same bug avoided: only
+   * membership events carry the flag, so a `payment.failed` arriving after a
+   * cancellation must not read a missing field as `false` and quietly un-cancel
+   * the subscription on the screen.
+   */
+  cancelAtPeriodEnd: boolean | null
+  /** Whop's own page for the card and the invoices, when the payload has one. */
+  manageUrl: string | null
 }
 
 /**
@@ -55,58 +97,64 @@ export interface BillingEvent {
  *
  * Two of these are product decisions rather than transcriptions:
  *
- *   `past_due` **keeps access**. The merchant of record retries a failed
- *   payment four times over six hours and most recover; cutting somebody off
- *   at the first failed retry punishes a card that expired on a Tuesday. The
- *   status is recorded so dunning can see it, and `expired` is what actually
- *   revokes.
+ *   `past_due` **keeps access**. Whop retries a failed payment twelve times
+ *   over about three days and most recover; cutting somebody off at the first
+ *   failed retry punishes a card that expired on a Tuesday. The status is
+ *   recorded so dunning can see it, and `membership.deactivated` is what
+ *   actually revokes.
  *
  *   `dispute.created` **revokes immediately**, unlike a refund's grace. A
  *   chargeback is money already clawed back and, per §14, an account that
  *   keeps its plan through a dispute is the pattern that gets a merchant
  *   account closed.
+ *
+ * `readStatus` marks the events whose payload is allowed to refine the status.
+ * See `narrowStatus` for why that is a short list.
  */
-const INTENTS: Record<string, { intent: BillingIntent; status: SubscriptionStatus }> = {
-  'checkout.completed': { intent: 'grant', status: 'active' },
-  'subscription.active': { intent: 'grant', status: 'active' },
-  'subscription.paid': { intent: 'grant', status: 'active' },
-  'subscription.trialing': { intent: 'grant', status: 'trialing' },
-  'subscription.update': { intent: 'grant', status: 'active' },
+const INTENTS: Record<
+  string,
+  { intent: BillingIntent; status: SubscriptionStatus; readStatus?: boolean }
+> = {
+  // The primary grant. Fires at trial start carrying `trialing`, and again
+  // when a membership comes back — so the status is read, never assumed.
+  'membership.activated': { intent: 'grant', status: 'active', readStatus: true },
+  // Renewals, and the trial's first real charge.
+  'payment.succeeded': { intent: 'grant', status: 'active', readStatus: true },
+  // Whop hands us one of §8's three trial mitigations for free.
+  'membership.trial_ending_soon': { intent: 'record', status: 'trialing', readStatus: true },
   // Scheduled, not done: they keep what they paid for until the period ends.
-  'subscription.scheduled_cancel': { intent: 'record', status: 'active' },
-  'subscription.past_due': { intent: 'record', status: 'past_due' },
-  'subscription.unpaid': { intent: 'record', status: 'past_due' },
-  'subscription.canceled': { intent: 'revoke', status: 'canceled' },
-  'subscription.expired': { intent: 'revoke', status: 'canceled' },
-  'subscription.paused': { intent: 'revoke', status: 'canceled' },
+  'membership.cancel_at_period_end_changed': { intent: 'record', status: 'active', readStatus: true },
+  'membership.deactivated': { intent: 'revoke', status: 'canceled' },
+  'payment.failed': { intent: 'record', status: 'past_due' },
+  'invoice.past_due': { intent: 'record', status: 'past_due' },
   'refund.created': { intent: 'revoke', status: 'canceled' },
   'dispute.created': { intent: 'revoke', status: 'canceled' },
 }
 
-/**
- * The provider's own subscription status, but only where it is allowed to win.
- *
- * `INTENTS` above is a set of product decisions, not a transcription, and most
- * of them must survive whatever the payload says: a `dispute.created` carrying
- * `status: "active"` is still a revocation, and `past_due` is still recorded as
- * `past_due` however the vendor labels the subscription mid-retry. So the
- * payload refines exactly one thing — a grant that would land on `active` may
- * land on `trialing` instead.
- *
- * That one case matters because it is the entire difference between "Renews
- * 8 Sep" and "your card is charged on 8 Sep unless you cancel first", and only
- * the second of those is honest to somebody who has not paid yet. It was found
- * on 1 Sep: a trialling checkout arrives as `checkout.completed`, which maps to
- * `active`, so the trial line in `CurrentPlan` could never be reached and every
- * trialling account was told its plan renews. §14 is blunt that a trial ending
- * quietly is the pattern that closes a merchant account.
- *
- * It is narrow on purpose. A subscription that stops calling itself trialing —
- * because the first charge went through — goes back to `active` through the
- * same path, since that is what the payload will then say.
- */
-function trialing(subscription: Record<string, unknown>, data: Record<string, unknown>): boolean {
-  return stringOf(subscription['status']) === 'trialing' || stringOf(data['status']) === 'trialing'
+/** Whop's membership status enum, narrowed onto the one this database stores. */
+function narrowStatus(raw: string | null): SubscriptionStatus | null {
+  switch (raw) {
+    case 'trialing':
+      return 'trialing'
+    case 'active':
+    // A membership scheduled to cancel still HAS access, which is the whole
+    // point of `cancel_at_period_end`. `canceling` is a pending state, not an
+    // ended one, and reading it as canceled would cut somebody off from the
+    // days they have already paid for.
+    case 'canceling':
+      return 'active'
+    case 'past_due':
+      return 'past_due'
+    case 'canceled':
+    case 'expired':
+    case 'completed':
+      return 'canceled'
+    case 'drafted':
+    case 'unresolved':
+      return 'incomplete'
+    default:
+      return null
+  }
 }
 
 /** Events we understand. Anything else is acknowledged and ignored. */
@@ -120,7 +168,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null
 }
 
-/** Reads `field` as a string, or as `{ id }` when the provider expanded it. */
+/** Reads `field` as a string, or as `{ id }` when the provider nested it. */
 function idOf(value: unknown): string | null {
   if (typeof value === 'string') return value || null
   const record = asRecord(value)
@@ -133,19 +181,50 @@ function stringOf(value: unknown): string | null {
 }
 
 /**
+ * The account the event belongs to, as the envelope names it.
+ *
+ * Both spellings are read because Whop renamed the field: a webhook pinned to
+ * `2026-08-14` or later sends `account_id`, and one pinned earlier — or with no
+ * pin at all — still sends `company_id`. Reading only the new name would make
+ * the route's account check refuse every event from an unpinned webhook, which
+ * is a silent outage rather than a loud one.
+ */
+export function readAccountId(payload: unknown): string | null {
+  const root = asRecord(payload)
+  if (!root) return null
+  return stringOf(root['account_id']) ?? stringOf(root['company_id'])
+}
+
+/**
+ * The membership status, read from wherever this event's shape keeps it.
+ *
+ * Deliberately not `data.status`. On a payment event that field is the
+ * PAYMENT's status — `succeeded`, `failed` — and reading it as a membership
+ * status would silently produce nonsense; the membership's own status hangs off
+ * `data.membership`. On a membership event `data` is the membership and the
+ * field is the right one.
+ */
+function membershipStatus(data: Record<string, unknown>, type: string): string | null {
+  const nested = asRecord(data['membership'])
+  if (nested) return stringOf(nested['status'])
+  if (type.startsWith('membership.')) return stringOf(data['status'])
+  return null
+}
+
+/**
  * Digs the Supabase user id out of wherever this event carries it.
  *
- * `metadata.user_id` is what `createCheckout` sets and what the subscription
- * keeps across renewals. The nested lookups matter because a renewal event is
- * shaped differently from the checkout that created it — the subscription is
- * top-level on one and nested on the other.
+ * `metadata.user_id` is what `createCheckout` sets on the checkout
+ * configuration, and Whop copies that metadata onto both the payment and the
+ * membership — so one lookup covers every event that has it at all. The nested
+ * `payment` lookup is for refunds, where the refund itself carries no metadata
+ * and the payment it reverses does.
  */
 export function readUserId(data: Record<string, unknown>): string | null {
   const candidates = [
     asRecord(data['metadata']),
-    asRecord(asRecord(data['subscription'])?.['metadata']),
-    asRecord(asRecord(data['checkout'])?.['metadata']),
-    asRecord(asRecord(data['order'])?.['metadata']),
+    asRecord(asRecord(data['payment'])?.['metadata']),
+    asRecord(asRecord(data['membership'])?.['metadata']),
   ]
   for (const metadata of candidates) {
     const value = metadata?.['user_id']
@@ -159,61 +238,64 @@ export function readUserId(data: Record<string, unknown>): string | null {
  * we do not act on.
  *
  * Returning null rather than throwing is deliberate: an unrecognised event is
- * a 200 and a shrug, because the alternative is the provider retrying a
- * `license.created` five times and then emailing about a failing endpoint.
+ * a 200 and a shrug, because the alternative is Whop retrying a
+ * `chat.message.created` twelve times over three days and then disabling the
+ * endpoint for consecutive failures.
  */
 export function toBillingEvent(payload: unknown, receivedAt: number): BillingEvent | null {
   const root = asRecord(payload)
   if (!root) return null
 
-  const type = stringOf(root['type']) ?? stringOf(root['eventType'])
+  const type = stringOf(root['type'])
   if (!type) return null
 
   const mapped = INTENTS[type]
   if (!mapped) return null
 
-  const data = asRecord(root['object']) ?? asRecord(root['data']) ?? {}
-  // On a checkout the subscription hangs off the payload; on a subscription
-  // event the payload is the subscription.
-  const subscription = asRecord(data['subscription']) ?? data
+  const data = asRecord(root['data']) ?? {}
+  // Refunds and disputes describe a payment; everything useful is one level
+  // down on it. For every other shape this is `data` itself.
+  const subject = asRecord(data['payment']) ?? data
 
-  const createdAt = root['created_at']
-  const occurredAt =
-    typeof createdAt === 'number'
-      // Providers send seconds or milliseconds depending on the event. Anything
-      // below this threshold is seconds — it is the year 2001 in milliseconds.
-      ? (createdAt < 1e12 ? createdAt * 1000 : createdAt)
-      : receivedAt
+  // ISO 8601, always. The seconds-versus-milliseconds coercion Creem needed is
+  // gone with Creem.
+  const parsed = Date.parse(stringOf(root['timestamp']) ?? '')
+  const occurredAt = Number.isNaN(parsed) ? receivedAt : parsed
+
+  const payloadStatus = mapped.readStatus ? narrowStatus(membershipStatus(data, type)) : null
 
   return {
     eventId: stringOf(root['id']),
     type,
     intent: mapped.intent,
-    status:
-      mapped.intent === 'grant' && mapped.status === 'active' && trialing(subscription, data)
-        ? 'trialing'
-        : mapped.status,
+    status: payloadStatus ?? mapped.status,
     occurredAt,
     userId: readUserId(data),
-    providerCustomerId: idOf(subscription['customer']) ?? idOf(data['customer']),
+    providerCustomerId: idOf(subject['user']) ?? idOf(data['user']) ?? idOf(data['member']),
     providerSubscriptionId:
-      idOf(data['subscription']) ?? (subscription === data ? idOf(data['id']) : null),
-    productId: idOf(subscription['product']) ?? idOf(data['product']),
-    currentPeriodEnd: stringOf(subscription['current_period_end_date']),
-    cancelAtPeriodEnd: type === 'subscription.scheduled_cancel',
+      idOf(subject['membership'])
+      ?? (type.startsWith('membership.') ? stringOf(data['id']) : null),
+    planId: idOf(subject['plan']) ?? idOf(data['plan']) ?? idOf(data['current_plan']),
+    // Only a membership carries a period, so this is null on payment, refund,
+    // dispute and invoice events. `applyBillingEvent` keeps the stored date.
+    currentPeriodEnd: stringOf(data['renewal_period_end']),
+    cancelAtPeriodEnd:
+      typeof data['cancel_at_period_end'] === 'boolean' ? data['cancel_at_period_end'] : null,
+    manageUrl: stringOf(data['manage_url']),
   }
 }
 
 /**
  * Whether an arriving event should be applied over what is already stored.
  *
- * The provider retries an unacknowledged event at 30 seconds, 5 minutes, 30
- * minutes and 6 hours, and a retry can land *after* a newer event has already
- * been applied. Without this, a delayed `subscription.paid` retry can reinstate
- * a plan that a later `dispute.created` revoked.
+ * Whop delivers at least once, does not guarantee order, and retries an
+ * unacknowledged event twelve times across roughly seventy-one hours — so a
+ * retry can land *after* a newer event has already been applied. Without this,
+ * a delayed `payment.succeeded` retry can reinstate a plan that a later
+ * `dispute.created` revoked.
  *
  * Equal timestamps re-apply. Applying is idempotent, and refusing them would
- * drop the second of two events genuinely issued in the same second.
+ * drop the second of two events genuinely issued in the same millisecond.
  */
 export function shouldApply(storedOccurredAt: number | null, incomingOccurredAt: number): boolean {
   if (storedOccurredAt === null) return true

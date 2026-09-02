@@ -28,7 +28,7 @@ import { planById } from '@/lib/site/plans'
 import type { Plan } from '@/lib/data/types'
 import type { BillingEvent } from './events'
 import { resolvedPlan, shouldApply } from './events'
-import { configuredProductMap, planForProduct } from './plans'
+import { configuredPlanMap, planForWhopPlan } from './plans'
 
 export interface ApplyResult {
   ok: boolean
@@ -93,7 +93,7 @@ export async function applyBillingEvent(event: BillingEvent): Promise<ApplyResul
 
   const { data: existing } = await admin
     .from('subscriptions')
-    .select('last_event, plan')
+    .select('last_event, plan, current_period_end, cancel_at_period_end, provider_customer_id, provider_subscription_id')
     .eq('user_id', userId)
     .maybeSingle()
 
@@ -102,7 +102,7 @@ export async function applyBillingEvent(event: BillingEvent): Promise<ApplyResul
     return { ok: true, detail: `${event.type} is older than the stored state; ignored`, userId }
   }
 
-  const purchased = planForProduct(event.productId, configuredProductMap())
+  const purchased = planForWhopPlan(event.planId, configuredPlanMap())
   const target = resolvedPlan(event, purchased)
 
   // A grant for a product we cannot map is the fail-closed case in
@@ -110,21 +110,45 @@ export async function applyBillingEvent(event: BillingEvent): Promise<ApplyResul
   const unmapped = event.intent === 'grant' && purchased === null
   const mirrorPlan = target ?? (existing?.plan as Plan | undefined) ?? 'free'
 
+  /**
+   * What this event does NOT say, the stored row still knows.
+   *
+   * Whop puts the renewal date and the pending-cancel flag on the membership
+   * and nowhere else, so a renewal `payment.succeeded` and a dunning
+   * `payment.failed` both arrive carrying neither. Writing the absence through
+   * would blank the renewal line on `/profile/subscription` on every renewal,
+   * and would silently un-cancel a subscription somebody had already cancelled
+   * the moment their card failed. An event is allowed to change these; it is
+   * not allowed to forget them.
+   *
+   * The two provider ids are here for a sharper version of the same reason:
+   * `invoice.past_due` names the user but not the membership, and losing the
+   * `mem_` off the mirror would break the cancel button — for the account whose
+   * payment has just failed, which is precisely the one most likely to want it.
+   */
+  const periodEnd = event.currentPeriodEnd ?? existing?.current_period_end ?? null
+  const cancelAtPeriodEnd = event.cancelAtPeriodEnd ?? existing?.cancel_at_period_end ?? false
+  const customerId = event.providerCustomerId ?? existing?.provider_customer_id ?? null
+  const subscriptionId = event.providerSubscriptionId ?? existing?.provider_subscription_id ?? null
+
   const { error: mirrorError } = await admin.from('subscriptions').upsert(
     {
       user_id: userId,
-      provider: 'creem',
-      provider_customer_id: event.providerCustomerId,
-      provider_subscription_id: event.providerSubscriptionId,
+      provider: 'whop',
+      provider_customer_id: customerId,
+      provider_subscription_id: subscriptionId,
       plan: mirrorPlan,
       status: event.status,
-      current_period_end: event.currentPeriodEnd,
-      cancel_at_period_end: event.cancelAtPeriodEnd,
+      current_period_end: periodEnd,
+      cancel_at_period_end: cancelAtPeriodEnd,
       last_event: {
         id: event.eventId,
         type: event.type,
         occurred_at: event.occurredAt,
-        product_id: event.productId,
+        plan_id: event.planId,
+        // Whop's own page for the card and the invoices. Kept on the mirror so
+        // the subscription screen can link to it without an API call.
+        manage_url: event.manageUrl,
       },
     },
     { onConflict: 'user_id' },
@@ -137,7 +161,7 @@ export async function applyBillingEvent(event: BillingEvent): Promise<ApplyResul
   if (unmapped) {
     return {
       ok: false,
-      detail: `${event.type} bought product ${event.productId}, which no CREEM_PRODUCT_* variable names; plan unchanged`,
+      detail: `${event.type} bought plan ${event.planId}, which no WHOP_PLAN_* variable names; plan unchanged`,
       userId,
     }
   }
@@ -154,7 +178,7 @@ export async function applyBillingEvent(event: BillingEvent): Promise<ApplyResul
       // A plan change is not a refill, the same rule `scripts/set-plan.ts`
       // follows: today's counter stands, so upgrading mid-afternoon does not
       // hand back the reps already spent.
-      renews_at: target === 'free' ? null : event.currentPeriodEnd,
+      renews_at: target === 'free' ? null : periodEnd,
     },
     { onConflict: 'user_id' },
   )

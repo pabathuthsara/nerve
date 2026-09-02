@@ -8,9 +8,11 @@
  * billing is never the arithmetic — it is a write that RLS refuses, an upsert
  * that conflicts on the wrong column, or a plan that moves when it should not.
  *
+ *   a card-backed trial records as trialing, never as active
  *   a paid subscription puts the account on the plan it bought
  *   the mirror records provider ids, period end and the event that did it
- *   an unmapped product records the money and moves NO plan
+ *   a field an event does not carry is kept, not blanked
+ *   an unmapped plan records the money and moves NO plan
  *   past_due keeps access, because the provider is still retrying
  *   expiry, cancellation and a dispute all land back on free
  *   a replayed event is idempotent, and a late retry cannot resurrect a plan
@@ -31,8 +33,9 @@ function check(passed: boolean, description: string): void {
   if (!passed) failures += 1
 }
 
-const PRO_PRODUCT = 'prod_verify_pro'
-const ELITE_PRODUCT = 'prod_verify_elite'
+const PRO_PLAN = 'plan_verify_pro'
+const ELITE_PLAN = 'plan_verify_elite'
+const ACCOUNT = 'biz_verify'
 
 async function main(): Promise<void> {
   const { loadEnvLocal } = await import('./env')
@@ -47,11 +50,11 @@ async function main(): Promise<void> {
   }
 
   // The harness owns the mapping rather than reading the developer's own
-  // products, so the run means the same thing on every machine.
-  process.env['CREEM_PRODUCT_PRO'] = PRO_PRODUCT
-  process.env['CREEM_PRODUCT_ELITE'] = ELITE_PRODUCT
+  // plans, so the run means the same thing on every machine.
+  process.env['WHOP_PLAN_PRO'] = PRO_PLAN
+  process.env['WHOP_PLAN_ELITE'] = ELITE_PLAN
 
-  // Imported after the environment is set: `configuredProductMap` reads it.
+  // Imported after the environment is set: `configuredPlanMap` reads it.
   const { applyBillingEvent } = await import('@/lib/billing/apply')
 
   const admin = createClient<Database>(url, secret, {
@@ -63,23 +66,61 @@ async function main(): Promise<void> {
   const password = `pw-${stamp}-xyz`
   let userId = ''
 
-  /** Builds and applies one provider event, the way the route would. */
+  /**
+   * Builds and applies one provider event, the way the route would.
+   *
+   * The payloads are Whop's real shapes rather than a convenient flat object,
+   * because half of what `toBillingEvent` does is know which noun each event is
+   * about: `membership.*` sends the membership, `payment.*` sends the payment
+   * with the membership nested, and a refund buries both a level further down.
+   * A harness that fed it flat objects would prove nothing about the parse.
+   */
   const deliver = async (
     type: string,
-    options: { product?: string; occurredAt?: number; periodEnd?: string | null } = {},
+    options: {
+      plan?: string
+      occurredAt?: number
+      periodEnd?: string | null
+      status?: string
+      cancelAtPeriodEnd?: boolean
+    } = {},
   ) => {
+    const membership = {
+      id: 'mem_verify_1',
+      status: options.status ?? 'active',
+      metadata: { user_id: userId },
+      plan: { id: options.plan ?? PRO_PLAN },
+      product: { id: 'prod_verify' },
+      user: { id: 'user_verify_1' },
+      cancel_at_period_end: options.cancelAtPeriodEnd ?? false,
+      renewal_period_end:
+        options.periodEnd === undefined ? '2099-01-01T00:00:00.000Z' : options.periodEnd,
+      manage_url: 'https://whop.com/orders/mem_verify_1',
+    }
+    const payment = {
+      id: 'pay_verify_1',
+      status: 'succeeded',
+      metadata: { user_id: userId },
+      membership: { id: membership.id, status: options.status ?? 'active' },
+      plan: { id: options.plan ?? PRO_PLAN },
+      user: { id: 'user_verify_1' },
+    }
+
+    const data = type.startsWith('membership.')
+      ? membership
+      : type === 'refund.created'
+        ? { id: 'ref_verify_1', payment }
+        : type === 'dispute.created'
+          ? { id: 'dis_verify_1', payment, plan: { id: options.plan ?? PRO_PLAN } }
+          : payment
+
     const payload = {
-      id: `evt_${Math.random().toString(36).slice(2)}`,
+      id: `msg_${Math.random().toString(36).slice(2)}`,
       type,
-      created_at: options.occurredAt ?? Date.now(),
-      object: {
-        id: 'sub_verify_1',
-        customer: 'cust_verify_1',
-        product: options.product ?? PRO_PRODUCT,
-        metadata: { user_id: userId },
-        current_period_end_date:
-          options.periodEnd === undefined ? '2099-01-01T00:00:00.000Z' : options.periodEnd,
-      },
+      api_version: 'v1',
+      account_id: ACCOUNT,
+      timestamp: new Date(options.occurredAt ?? Date.now()).toISOString(),
+      data,
     }
     const event = toBillingEvent(payload, Date.now())
     if (!event) throw new Error(`${type} did not parse into a billing event`)
@@ -118,17 +159,34 @@ async function main(): Promise<void> {
     console.log(`\nBilling — ${email}\n`)
 
     // --- a purchase grants the plan ----------------------------------------
-    console.log('a paid subscription')
-    const paid = await deliver('subscription.paid')
+    console.log('a card-backed trial starting')
+    // The 1 September bug, driven through the real tables: a trial that
+    // records as `active` tells the account its plan renews on the day its card
+    // is first charged, and §14 says a trial ending quietly closes a merchant
+    // account. Access is Pro from the first minute either way.
+    const trial = await deliver('membership.activated', { status: 'trialing' })
+    check(trial.ok, 'the activation applies')
+    check((await planNow()) === 'pro', 'a trialling account is on pro from the start')
+    check((await mirrorNow())?.status === 'trialing', 'and the mirror says trialing, not active')
+
+    console.log('\nthe first real charge')
+    const paid = await deliver('payment.succeeded')
     check(paid.ok, 'the event applies')
     check((await planNow()) === 'pro', 'the account is on pro')
     check((await repsNow()) === 3, 'reps_per_day matches the authored plan')
 
     const mirror = await mirrorNow()
-    check(mirror?.provider === 'creem', 'the mirror names the provider')
-    check(mirror?.provider_subscription_id === 'sub_verify_1', 'the mirror keeps the subscription id')
-    check(mirror?.provider_customer_id === 'cust_verify_1', 'the mirror keeps the customer id')
+    check(mirror?.provider === 'whop', 'the mirror names the provider')
+    check(mirror?.provider_subscription_id === 'mem_verify_1', 'the mirror keeps the membership id')
+    check(mirror?.provider_customer_id === 'user_verify_1', 'the mirror keeps the buyer id')
     check(mirror?.status === 'active', 'the mirror says active')
+    // A payment carries no period, so the date has to survive from the
+    // membership event that did. Writing the absence through would blank the
+    // renewal line on the subscription screen on every single renewal.
+    check(
+      mirror?.current_period_end !== null,
+      'the renewal date survives an event that does not carry one',
+    )
     check(
       typeof mirror?.last_event === 'object' && mirror?.last_event !== null,
       'the mirror kept the event that did it',
@@ -136,31 +194,37 @@ async function main(): Promise<void> {
 
     // --- idempotency --------------------------------------------------------
     console.log('\nthe same event twice')
-    const replay = await deliver('subscription.paid')
+    const replay = await deliver('payment.succeeded')
     check(replay.ok, 'a redelivery still succeeds')
     check((await planNow()) === 'pro', 'the plan is unchanged by the replay')
 
     // --- an upgrade ---------------------------------------------------------
     console.log('\nan upgrade')
-    await deliver('subscription.update', { product: ELITE_PRODUCT })
+    await deliver('membership.activated', { plan: ELITE_PLAN })
     check((await planNow()) === 'elite', 'the account moves to elite')
     check((await repsNow()) === 6, 'reps_per_day follows the new plan')
 
     // --- a failed payment keeps access -------------------------------------
     console.log('\na failed payment')
-    await deliver('subscription.past_due')
+    await deliver('payment.failed')
     check((await planNow()) === 'elite', 'access survives past_due, because the provider is retrying')
     check((await mirrorNow())?.status === 'past_due', 'but the mirror records past_due for dunning')
 
     // --- a scheduled cancel keeps access -----------------------------------
     console.log('\na scheduled cancel')
-    await deliver('subscription.scheduled_cancel')
+    await deliver('membership.cancel_at_period_end_changed', { plan: ELITE_PLAN, cancelAtPeriodEnd: true })
     check((await planNow()) === 'elite', 'they keep what they paid for until the period ends')
     check((await mirrorNow())?.cancel_at_period_end === true, 'the mirror flags the pending cancel')
 
+    // The flag must survive an event that says nothing about it. A payment
+    // failing after a cancellation used to read a missing field as `false` and
+    // quietly un-cancel the subscription on the screen.
+    await deliver('payment.failed', { plan: ELITE_PLAN })
+    check((await mirrorNow())?.cancel_at_period_end === true, 'and it survives an event that does not mention it')
+
     // --- expiry revokes ------------------------------------------------------
     console.log('\nexpiry')
-    await deliver('subscription.expired')
+    await deliver('membership.deactivated', { plan: ELITE_PLAN, status: 'expired' })
     check((await planNow()) === 'free', 'the account lands on free')
     // Zero since voice moved behind Pro: expiry is what turns the microphone
     // off, and it is read from the authored plan record rather than a literal
@@ -176,20 +240,20 @@ async function main(): Promise<void> {
 
     // --- a late retry cannot resurrect it ------------------------------------
     console.log('\na late retry of the original payment')
-    const late = await deliver('subscription.paid', { occurredAt: Date.now() - 86_400_000 })
+    const late = await deliver('payment.succeeded', { occurredAt: Date.now() - 86_400_000 })
     check(late.ok, 'the stale retry is acknowledged')
     check((await planNow()) === 'free', 'but it does NOT reinstate the plan it once granted')
 
     // --- an unmapped product ------------------------------------------------
-    console.log('\na product no variable names')
-    const unmapped = await deliver('subscription.paid', { product: 'prod_not_ours' })
+    console.log('\na plan no variable names')
+    const unmapped = await deliver('payment.succeeded', { plan: 'plan_not_ours' })
     check(!unmapped.ok, 'the apply reports a problem')
-    check((await planNow()) === 'free', 'no plan is granted from an unknown product')
-    check((await mirrorNow())?.provider_subscription_id === 'sub_verify_1', 'the money is still recorded')
+    check((await planNow()) === 'free', 'no plan is granted from an unknown plan id')
+    check((await mirrorNow())?.provider_subscription_id === 'mem_verify_1', 'the money is still recorded')
 
     // --- a dispute ------------------------------------------------------------
     console.log('\na dispute after a fresh purchase')
-    await deliver('subscription.paid')
+    await deliver('payment.succeeded')
     check((await planNow()) === 'pro', 'the repurchase grants pro again')
     await deliver('dispute.created')
     check((await planNow()) === 'free', 'a chargeback revokes on sight (§14)')

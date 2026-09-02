@@ -33,7 +33,7 @@ eleventh anything.
 | `unlocks` | user × unlock | When we first told them. What is unlocked stays derived. Kinds: level, tier, persona, technique, milestone |
 | `difficulty_offsets` | user × level | Per-user difficulty adjustment. Read-only to its owner; the downward direction is never announced (§08, §12) |
 | `share_cards` | user × card | Shareable artefacts. One owner-read policy and **no anonymous policy** — the public page resolves the token with the service role |
-| `subscriptions` | user | Mirror of the merchant of record. `/api/webhooks/creem` writes it, service role only; `npm run db:billing` |
+| `subscriptions` | user | Mirror of the merchant of record. `/api/webhooks/whop` writes it, service role only; `npm run db:billing` |
 | `weekly_reviews` | user × week | Generated Sunday, stored because it is about that week |
 | `safety_events` | incident | Boundary hits, distress flags, moderation, user reports |
 | `interview_setups` | user | Role, JD, CV pointer, custom questions (M4) |
@@ -572,7 +572,9 @@ npm run db:spend         # the spend ceiling: rate limit, daily cap, both kill s
 npm run db:billing       # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
 npm run db:types         # regenerate lib/db/types.ts from the live schema
 npm run db:plan -- you@example.com pro   # grant a plan (free 0/day, pro 3, elite 6)
-npm run creem:verify                     # the money preflight, before any deploy that can charge
+npm run whop:setup                       # creates the product, plans and webhook (dry run without --apply)
+npm run whop:verify                      # the money preflight, before any deploy that can charge
+npm run whop:probe                       # the webhook route itself, over HTTP, against a running server
 npm run db:repair-wins -- --dry          # wins the old outcome rule invented; drop --dry to fix
 npm run grade:collect                   # stored transcripts, in calibration-fixture shape
 npm run grade:calibrate                 # the §17 gate: drift on the deployed /api/grade
@@ -585,11 +587,11 @@ reads its rep counts from `lib/site/plans.ts` rather than keeping its own copy. 
 that has to be fixed by hand at 2am should not need a merchant of record to be
 reachable.
 
-`creem:verify` is the other half of `db:billing` and reads only. `db:billing`
+`whop:verify` is the other half of `db:billing` and reads only. `db:billing`
 proves OUR side — that a signed event moves the right plan — by building its own
 payloads and injecting its own product ids, so it proves nothing about the
-vendor. `creem:verify` asks the provider whether the account is configured the
-way the product claims: every `CREEM_PRODUCT_*` resolves, is active, belongs to
+vendor. `whop:verify` asks the provider whether the account is configured the
+way the product claims: every `WHOP_PLAN_*` resolves, is active, belongs to
 this environment, and charges exactly what `lib/site/plans.ts` advertises, with
 tax exclusive. It also refuses a test key on a production deployment, which is
 the failure worth having a script for — the sandbox emits the same correctly

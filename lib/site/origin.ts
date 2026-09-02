@@ -34,8 +34,14 @@
  * Kept here rather than at the call sites so that moving to a custom domain is
  * one edit in one file — and so the value cannot drift between the sitemap and
  * the OpenGraph tags the way it already had.
+ *
+ * Moved from the Vercel-generated domain to `hellonerve.com` on 2 September,
+ * when the site became something to market. The generated domain still
+ * resolves, so nothing was broken — but a canonical tag, a sitemap entry and
+ * an OpenGraph image URL are all things other people see and cache, and every
+ * one of them should name the address the product is actually sold from.
  */
-const PRODUCTION_FALLBACK = 'https://nerve-henna.vercel.app'
+const PRODUCTION_FALLBACK = 'https://hellonerve.com'
 
 /** Strip a trailing slash so callers can concatenate paths without doubling it. */
 function normalise(origin: string): string {

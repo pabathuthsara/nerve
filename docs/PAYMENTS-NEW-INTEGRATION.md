@@ -14,7 +14,7 @@ is answered.
 merchant-of-record account and are not code.** §11 is the record of what
 actually landed, item by item, and what is still owed by hand. The billing pipe
 underneath it was already built and verified (`lib/billing/`,
-`app/api/webhooks/creem/route.ts`, `npm run db:billing`) — see `LAUNCH-GAP.md`
+`app/api/webhooks/whop/route.ts`, `npm run db:billing`) — see `LAUNCH-GAP.md`
 B2.
 
 ---
@@ -316,6 +316,15 @@ as a real screen, and an upgrade route from the refusal in §5.2.
 ---
 
 ## 6 · Creem setup
+
+> **SUPERSEDED, 1 September 2026.** Creem declined the account and Whop replaced
+> it the same day. Everything below is the record of how Creem was configured
+> and is kept as history — it is not what to do now. The live setup is
+> `PAYMENTS-WHOP.md` §7, and the preflight is `npm run whop:verify`.
+>
+> §11 and §12 of this document are NOT superseded: they are the record of what
+> shipped on 31 August and what the first real checkout on 1 September caught,
+> and both still describe the product as it stands.
 
 ### 6.1 Products
 

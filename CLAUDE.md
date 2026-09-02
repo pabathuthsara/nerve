@@ -49,7 +49,9 @@ npm run db:rep        # the whole rep lifecycle, without a microphone
 npm run db:field      # the field loop: assign, accept, log, streak, milestones
 npm run db:spend      # the spend ceiling: rate limit, daily cap, both kill switches
 npm run db:billing    # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
-npm run creem:verify     # the money preflight: keys, products, prices, environment
+npm run whop:setup       # creates the Whop product, plans and webhook (dry run without --apply)
+npm run whop:verify      # the money preflight: keys, plans, prices, trial, webhook
+npm run whop:probe       # the webhook route over HTTP: signature, account check, status codes
 npm run grade:calibrate  # the §17 gate: grade drift on the deployed route
 ```
 
@@ -62,7 +64,7 @@ Never run `next build` into `.next` while a dev server is up — see the note in
 - Next.js 15 (App Router) on Vercel — RSC for read paths, client components only around the live session
 - Supabase — Postgres + Auth (email OTP, password, Google) + Storage; **RLS on every table, no exceptions**
 - OpenAI Realtime `gpt-realtime-mini` over WebRTC, behind a `VoiceProvider` interface, with an ElevenLabs adapter (§04)
-- Merchant of record for billing (Creem primary) — **not Stripe**; Stripe does not operate in Sri Lanka (§14)
+- Merchant of record for billing (Whop) — **not Stripe**; Stripe does not operate in Sri Lanka (§14). Creem was primary until it declined the account on 1 September; the swap cost an adapter, which is what §14's abstraction was built for
 - PostHog analytics and Sentry errors are specified and **not yet installed** — see `LAUNCH-GAP.md` B7
 
 ## Rules that are not negotiable
