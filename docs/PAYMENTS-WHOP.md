@@ -9,21 +9,32 @@ to be true before checkout opens.
 are not rewritten. `PAYMENTS-GUMROAD.md` is now the **second** choice, kept
 because a fallback that has been thought through is worth having.
 
-**Status: the code shipped 1 September 2026 and is complete. The live account
-needs one dashboard step and one command.**
+**Status: the code shipped 1 September 2026. The live Whop account was
+configured on 2 September. Nothing is deployed yet — that is one push.**
 
 Everything in §6 is built, typechecked, linted, tested and driven through the
 real database by `npm run db:billing`, and the whole trial lifecycle — activate,
 warn, charge — has been driven over HTTP through the running route.
 
-§7 is now **one dashboard step and one command**: mint an API key (§6.12 explains
-why that one cannot be automated), then `npm run whop:setup -- --apply` creates
-the product, both plans and the webhook with the prices and the trial read from
-`PUBLIC_PLANS`. The live account (`biz_G4B33AGA0sWgzq`, "Hellonerve") is verified,
-active, and has a working Sri Lankan bank payout rail (§7.7) — but no product,
-plans, webhook or keys yet. So `checkoutConfigured()` is false, the buy button is
-hidden, and the subscription screen shows the notify-me list, which is the
-correct state until that command runs.
+§7 ran on 2 September. What exists on `biz_G4B33AGA0sWgzq` ("Hellonerve"):
+
+| | |
+|---|---|
+| product | `prod_DlhZq3oMd4QHd` — "Nerve", hidden, `WHOP*NERVE` on the statement |
+| Pro | `plan_pyrhOCBHYRnFW` — $19, 30-day, 7-day trial, `initial_price` 0, hidden |
+| Elite | `plan_m0JD4mhTqeZnk` — $49, 30-day, 7-day trial, `initial_price` 0, hidden |
+| webhook | `hook_uBtOKRs6GhyR8` → `https://hellonerve.com/api/webhooks/whop`, all nine events, pinned `2026-08-31` |
+
+`npm run whop:verify` is clean: 0 failed, 0 warnings. All seven variables are in
+Vercel production.
+
+**Two things are still owed, and both are dashboard-only** (§13.9): the terms,
+privacy and refund URLs on the account, and the account's own industry, which is
+still `health_and_wellness / mental_health_app` and contradicts terms clause 08.
+
+**Nothing is deployed.** Production is still building the last commit on
+`elevenlabs-pipeline`, which has no `/api/webhooks/whop` — the path 308s there
+today. Merging `whop-payments` is what turns the buy button on.
 
 **Read §2.1 and §13 before doing §7.** Five of §2's six open questions were
 answered from Whop's own OpenAPI specification while building this, and three of
@@ -708,6 +719,8 @@ list. It does not require a deploy of code.
 | 2 Sep 2026 | **The email before the first charge shipped** (§6.13). Clause 07 and `TRIAL_NOTE` had promised it since 31 August with nothing behind it. Pure content function, thirteen tests, no key means no mail. Left unkeyed pending an answer from Whop on whether they send one already |
 | 2 Sep 2026 | Two more of §2's open questions answered against the live account: **trial eligibility is per person and Whop enforces it themselves** (§2.4), and **Sri Lanka gets local bank transfer in LKR or USD at a flat $3.70, not crypto** (§7.7). The last open question is §2.5, whether checkout forces the buyer to make a Whop account — which only a real checkout answers |
 | 2 Sep 2026 | The account's industry corrected from `health_and_wellness / mental_health_app` to `personal_development / communication_coaching`. The original contradicted terms clause 08 and rule 10 — a processor's own record of us should not say the opposite of our legal page |
+| 2 Sep 2026 | **§7 ran against the live account.** Product `prod_DlhZq3oMd4QHd`, plans `plan_pyrhOCBHYRnFW` (Pro) and `plan_m0JD4mhTqeZnk` (Elite), webhook `hook_uBtOKRs6GhyR8`. `whop:verify` clean, 0 failed 0 warnings. All seven variables in Vercel production. A live hidden plan was confirmed to mint a real `purchase_url` — the one risk in D1 that could have made the whole approach unsellable. Four undocumented API facts recorded in §13.9. Committed on `whop-payments`; **not deployed** |
+| 2 Sep 2026 | Two bugs fixed in `whop:verify` itself, both found by running it for the first time against a configured account: it called `GET /webhooks` without the required `account_id` and reported the webhook unreadable, and it printed `pass  this is the SANDBOX base` on a LIVE deployment — a check that reports backwards is worse than one that does not run |
 | 2 Sep 2026 | `SITE_ORIGIN`'s production fallback moved from the generated Vercel domain to `hellonerve.com`. Unrelated to Whop and found on the way: canonical tags, sitemap entries and OpenGraph image URLs are all things other people see and cache |
 
 ---
@@ -796,6 +809,29 @@ A webhook pinned to `2026-08-14` or later sends `account_id`; one pinned earlier
 or with **no pin at all**, still sends `company_id`. `readAccountId` reads both.
 Reading only the new name would have made the route's account check refuse every
 event from an unpinned webhook — a total outage that looks like nothing.
+
+### 13.9 · Four things only the live account could teach
+
+Found by running §7 against production on 2 September. None of them are in the
+specification, and each cost one failed call to discover.
+
+- **`GET /webhooks` requires `account_id`.** On `/products` and `/plans` it is a
+  filter; here its absence is a 400, not an empty list. This was wrong in
+  `whop:verify` too, where it reported the webhook as unreadable on a correctly
+  configured account.
+- **An Account API key cannot update its own account.** `PATCH /accounts/{id}`
+  answers **404**, not 403, for the key's own `biz_` — the endpoint is for
+  *connected* accounts. So the industry, description and target audience are
+  dashboard-only in practice, whatever the schema says.
+- **The `nerve` product slug was already taken**, globally rather than per
+  account. The account had no products at all and creation still failed with
+  "this whop link is already in use". It is `hellonerve` now.
+- **A `hidden` plan still mints a checkout.** This was the real risk in D1 —
+  hiding the plans from Whop's marketplace could have hidden them from
+  `POST /checkout_configurations` as well, which would have made the whole
+  approach unsellable. It does not: a live hidden plan returns an absolute
+  `purchase_url` with our `metadata.user_id` intact. Verified against
+  `plan_pyrhOCBHYRnFW` on 2 September.
 
 ### 13.8 · The grep in §6.11 does not come back empty, on purpose
 
