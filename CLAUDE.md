@@ -42,7 +42,7 @@ future sessions read those markers to decide what to do.
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint
-npm test              # vitest, ~665 assertions
+npm test              # vitest, 1176 assertions
 npm run build:check   # production build into .next-check, never .next
 npm run db:verify     # RLS from a second real account, 51 checks
 npm run db:rep        # the whole rep lifecycle, without a microphone
@@ -52,6 +52,7 @@ npm run db:billing    # the billing loop: grant, upgrade, dunning, expiry, dispu
 npm run whop:setup       # creates the Whop product, plans and webhook (dry run without --apply)
 npm run whop:verify      # the money preflight: keys, plans, prices, trial, webhook
 npm run whop:probe       # the webhook route over HTTP: signature, account check, status codes
+npm run legal:pdf        # the legal documents as PDFs, rendered from the running app
 npm run grade:calibrate  # the §17 gate: grade drift on the deployed route
 ```
 
@@ -109,7 +110,16 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    **Every route that spends money goes through `maySpend`** (`lib/db/spend.ts`)
    as well as `requireUser` — a session says who is asking, never how much they
    may spend. Adding a paid route means adding a bucket. `npm run db:spend`.
+   The one endpoint that grants a plan is `app/api/webhooks/whop/route.ts`, on
+   the service role. `lib/email/` sends the one message that goes out before a
+   card is charged — the third of the three trial mitigations §14 asks for, and
+   the only one the app itself owns.
 10. **No clinical claims anywhere.** "Confidence training", never "treatment". (§16)
+    This binds the payment provider's own record of us too: the Whop account is
+    `personal_development / communication_coaching`, and it was
+    `mental_health_app` for a day, which contradicted terms clause 08 in the one
+    place a compliance reviewer reads first. **Saving Whop's Business settings
+    form silently reverts it** — re-check after touching that page.
 11. **PG-13, enforced by moderation on both streams.** Payment-processor survival. (§16)
     Built, in `lib/safety/`. The verdict mapping, the escalation sequence and the
     age arithmetic are pure functions with tests — change them there, not in the
@@ -121,6 +131,24 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     `lib/safety/assess.ts` and asserted in its tests.
     **A change to what the product refuses is a change to what the legal pages
     claim** — `components/site/legal-pages.tsx` is part of the same edit.
+
+12. **A vendor's specification is not a vendor's payload, and a fixture nobody
+    received proves nothing.** Whop's OpenAPI spec documents `membership.*` with
+    nested `plan`/`user` objects; it actually sends flat `plan_id`, `user_id`
+    and `current_period_end`. Built from the spec alone, the first real purchase
+    put a paying customer on Pro **with no charge date** — the §14
+    trial-ending-quietly failure. `lib/billing/events.test.ts` now pins the real
+    captured deliveries verbatim, and they are the only fixtures in that file
+    Whop actually sent. When integrating anything external, read one real
+    payload before trusting the schema, and keep it as the test.
+
+13. **Anything a machine calls must be the host that answers 200 without a hop.**
+    `hellonerve.com` 308-redirects to **`www.hellonerve.com`**, which is
+    canonical. A browser follows that; a webhook sender often treats 3xx as a
+    failed delivery, and an OG scraper renders a blank card. The webhook URL,
+    `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL` and `SITE_ORIGIN`'s fallback
+    all name `www` for that reason. Related: **a Vercel env var added after a
+    build starts is not in that build** — set it, then redeploy.
 
 ## Design system — Arena
 
