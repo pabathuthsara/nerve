@@ -733,6 +733,9 @@ list. It does not require a deploy of code.
 | 2 Sep 2026 | Two more of §2's open questions answered against the live account: **trial eligibility is per person and Whop enforces it themselves** (§2.4), and **Sri Lanka gets local bank transfer in LKR or USD at a flat $3.70, not crypto** (§7.7). The last open question is §2.5, whether checkout forces the buyer to make a Whop account — which only a real checkout answers |
 | 2 Sep 2026 | The account's industry corrected from `health_and_wellness / mental_health_app` to `personal_development / communication_coaching`. The original contradicted terms clause 08 and rule 10 — a processor's own record of us should not say the opposite of our legal page |
 | 2 Sep 2026 | **§7 ran against the live account.** Product `prod_DlhZq3oMd4QHd`, plans `plan_pyrhOCBHYRnFW` (Pro) and `plan_m0JD4mhTqeZnk` (Elite), webhook `hook_uBtOKRs6GhyR8`. `whop:verify` clean, 0 failed 0 warnings. All seven variables in Vercel production. A live hidden plan was confirmed to mint a real `purchase_url` — the one risk in D1 that could have made the whole approach unsellable. Four undocumented API facts recorded in §13.9. Committed on `whop-payments`; **not deployed** |
+| 2 Sep 2026 | **First real purchase — and it exposed the worst bug in the migration.** `membership.activated` sends FLAT ids (`plan_id`, `user_id`, `current_period_end`) where the OpenAPI spec documents nested objects; `payment.succeeded` nests them as documented. The membership event resolved no plan, failed closed and was dropped, and the account landed on Pro **with no charge date** — §14's trial-ending-quietly failure. Fixed to read both spellings, with the real captured payloads pinned as fixtures (§13.11) |
+| 2 Sep 2026 | Repairing that surfaced a second, independent hole: both events are emitted in the same second, order is not guaranteed, and only the membership carries the period — so a payment landing first makes the membership event *stale* and `shouldApply` drops it. A stale event may now fill an unset field and change nothing else (§13.12). Would have recurred on some fraction of every future purchase |
+| 2 Sep 2026 | The first subscription repaired by replaying the dropped delivery once both fixes were live. `entitlements.renews_at` and `subscriptions.current_period_end` both read `2026-09-09T14:56:27Z`; status `trialing`, plan `pro`, 3 reps a day |
 | 2 Sep 2026 | **Deployed to production.** `elevenlabs-pipeline` merged fast-forward and pushed; Vercel is git-linked and released it. `whop:probe` and `whop:verify` both clean against `www.hellonerve.com`. Every public page 200s. **The buy button is live and real cards can be charged** |
 | 2 Sep 2026 | **The apex redirects to `www`, and the webhook had been registered against the apex** — §13.10. Repointed, along with `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL` and `PRODUCTION_FALLBACK`. The `og:image` was answering 308, so every social share of a site about to be marketed would have risked a blank card |
 | 2 Sep 2026 | Whop's `POST /webhooks/{id}/test` answers `success: true` with every field null and logs **no delivery**. So a Whop-sent delivery has still never been observed end to end — what is proven is that the route verifies signatures made with the production secret, which `whop:probe` does against the live domain. The gap closes on the first real purchase |
@@ -828,6 +831,60 @@ A webhook pinned to `2026-08-14` or later sends `account_id`; one pinned earlier
 or with **no pin at all**, still sends `company_id`. `readAccountId` reads both.
 Reading only the new name would have made the route's account check refuse every
 event from an unpinned webhook — a total outage that looks like nothing.
+
+### 13.11 · The specification is not the payload
+
+**The most expensive finding in this document, and it took a real purchase to
+make it.** §13.1 and §13.2 were written from `api-v1-stable.json` and are
+correct about `payment.*` and wrong about `membership.*`.
+
+What `membership.activated` actually sent on 2 September, pinned `2026-08-31`:
+
+```
+data.plan_id            plan_pyrhOCBHYRnFW      not data.plan.id
+data.product_id         prod_DlhZq3oMd4QHd      not data.product.id
+data.user_id            user_ZbQ2ZYU6qjfpE      not data.user.id
+data.current_period_end 2026-09-09T14:56:27Z    not data.renewal_period_end
+data.manage_url         — absent entirely —
+```
+
+Flat scalars, where the specification documents nested objects. `payment.*`
+nests them exactly as documented, so the two families disagree with each other
+and the spec describes only one.
+
+The consequence, on the first paying customer: `membership.activated` resolved
+no plan, failed closed and was dropped. `payment.succeeded` — which carries no
+period — then created the row. **The account got Pro with no charge date on
+it**, so `/profile/subscription` would have said "No card on file. Nothing
+renews and nothing is charged" to somebody whose card is charged in seven days.
+That is the §14 failure the whole trial design exists to prevent, reached
+through a door nobody was watching.
+
+Every id is now read in both spellings, and `events.test.ts` pins **the real
+captured payloads of both events, verbatim**. They are the only fixtures in
+that file Whop actually sent; every other one was written by a person, which is
+precisely what let this through. §6.10 asked for a real delivery as a fixture
+once T1 produced one — this is that, and the lesson is that it should have
+blocked the first sale rather than followed it.
+
+### 13.12 · Order is not guaranteed, and only one event knows the date
+
+The same purchase, found while repairing it.
+
+Both events are emitted **in the same second**, and Whop is explicit that
+delivery order is not guaranteed. Only the membership event carries the period.
+So when the payment lands first, the membership event that follows is *older by
+timestamp*, and `shouldApply` — correctly — refuses to let it move the plan.
+
+Refusing to let it move the plan is not the same as refusing to read it.
+Dropping it whole reproduces §13.11's symptom from a completely different
+cause, and it would have recurred on some fraction of every future purchase.
+
+So `applyBillingEvent` now lets a stale event **fill a field that is unset, and
+never change one that is not.** It still cannot touch the plan, the status or
+the entitlement: a late `payment.succeeded` cannot resurrect a plan a dispute
+revoked, which is the entire reason `shouldApply` exists. `db:billing` drives
+all six of those assertions through the real tables.
 
 ### 13.10 · The apex redirects, and the webhook was pointed at it
 
