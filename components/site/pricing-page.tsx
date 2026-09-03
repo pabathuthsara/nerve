@@ -20,6 +20,7 @@
 
 import Link from 'next/link'
 import { Check } from 'lucide-react'
+import { Mark, planMark } from '@/components/marks'
 import { SiteSection, SITE_LINKS, SUPPORT_EMAIL } from './site-chrome'
 import { BILLING_NOTE, CHECKOUT_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE, repsLine } from '@/lib/site/plans'
 
@@ -58,6 +59,26 @@ const BILLING_FAQ = [
   },
 ]
 
+/**
+ * What a plan does and does not change, as rows (V13).
+ *
+ * `varies` marks the single row that differs between plans, and the page's
+ * whole argument is that there is exactly one of them. Values come from
+ * `repsLine` so the numbers here cannot disagree with the cards above — §14
+ * has a merchant-of-record reviewer reading this page, and two prices on one
+ * screen is the failure `lib/site/plans.ts` exists to prevent.
+ */
+const PLAN_MATRIX: { label: string; varies?: boolean; values: (boolean | string)[] }[] = [
+  { label: 'Voice reps with a live character', varies: true, values: PUBLIC_PLANS.map((plan) => repsLine(plan)) },
+  { label: 'The full scorecard — six dimensions, evidence, transcript', values: [true, true, true] },
+  { label: 'Every character: tiers open on scores, never on price', values: [true, true, true] },
+  { label: 'Every field challenge, at every tier', values: [true, true, true] },
+  { label: 'The predicted-versus-actual anxiety chart', values: [true, true, true] },
+  { label: 'Streaks, ranks and the Sunday review letter', values: [true, true, true] },
+  { label: 'Text mode against the same characters, unmetered', values: [true, true, true] },
+  { label: 'One voice rep at sign-up, before you decide anything', values: [true, true, true] },
+]
+
 export function PricingPage() {
   return (
     <>
@@ -65,11 +86,9 @@ export function PricingPage() {
         <span className="label">Pricing</span>
         <h1 className="display-xl">You pay for minutes<br />with a live character.<br />Nothing else.</h1>
         <p>
-          The outside half of this product — the challenges, the log, the anxiety chart,
-          the streak — is free on every plan and always will be. Charging for the part
-          that happens in the real world would be charging for the part that works.
-          The voice is the part that costs us money per second, so the voice is the
-          part you pay for.
+          The outside half — the challenges, the log, the anxiety chart, the streak — is
+          free on every plan and always will be. The voice is the part that costs us
+          money per second, so the voice is the part you pay for.
         </p>
       </section>
 
@@ -78,7 +97,7 @@ export function PricingPage() {
           <article key={plan.id} className={`plan-board__card${plan.id === 'pro' ? ' plan-board__card--lead' : ''}`}>
             <header>
               <div className="plan-board__name">
-                <span className="label">{plan.name}</span>
+                <span className="mark-row"><Mark name={planMark(plan.id)} size={18} current={plan.id === 'pro'} /><span className="label">{plan.name}</span></span>
                 {plan.id === 'free' ? null : <span className="arena-chip">{TRIAL_DAYS} days free</span>}
               </div>
               <div className="plan-board__price">
@@ -115,26 +134,29 @@ export function PricingPage() {
         title={<>The only thing<br />a plan changes.</>}
         lede="A plan buys voice minutes and nothing else. It does not buy characters, scorecards, field challenges or progression — the top of the roster is opened by scoring, never by paying, and a free account keeps every part of the loop that happens outside the microphone."
       >
-        <div className="split-grid">
-          <div>
-            <span className="label">What a plan changes</span>
-            <ul className="tick-list">
-              <li>Whether you can run a voice rep at all</li>
-              <li>How many you may run in a day</li>
-              <li>Nothing else</li>
-            </ul>
+        {/* V13. Two columns of prose asked the reader to hold six items in
+            their head and diff them. The argument is *one row varies and the
+            rest do not*, which a matrix says in a glance and a pair of lists
+            cannot say at all. */}
+        <div className="plan-matrix" role="table" aria-label="What each plan includes">
+          <div className="plan-matrix__head" role="row">
+            <span role="columnheader">Included</span>
+            {PUBLIC_PLANS.map((plan) => <span key={plan.id} role="columnheader" className="label">{plan.name}</span>)}
           </div>
-          <div>
-            <span className="label">What it never changes</span>
-            <ul className="tick-list">
-              <li>The full scorecard — six dimensions, evidence, transcript</li>
-              <li>Which characters you can reach: tiers open on scores, never on price</li>
-              <li>Every field challenge at every tier, and the anxiety chart</li>
-              <li>Streaks, ranks and the Sunday review letter</li>
-              <li>Text mode against the same characters, unmetered</li>
-              <li>Your first voice rep, which happens before you decide anything</li>
-            </ul>
-          </div>
+          {PLAN_MATRIX.map((row) => (
+            <div key={row.label} className={`plan-matrix__row${row.varies ? ' plan-matrix__row--varies' : ''}`} role="row">
+              <span role="cell">{row.label}</span>
+              {row.values.map((value, index) => (
+                <span key={PUBLIC_PLANS[index]?.id ?? index} role="cell" className="plan-matrix__cell">
+                  {value === true
+                    ? <Check size={15} strokeWidth={1.9} aria-label="Included" />
+                    : value === false
+                      ? <i aria-label="Not included" />
+                      : <b className="data">{value}</b>}
+                </span>
+              ))}
+            </div>
+          ))}
         </div>
         <p className="site-aside">
           Running out of voice reps never breaks a streak. The day still counts if you did

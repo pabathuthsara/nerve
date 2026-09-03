@@ -19,6 +19,7 @@ import { baselineVerdict, compareToBaseline, RETEST_AFTER_DAYS } from '@/lib/dat
 import { AppShell } from '@/components/app-shell'
 import { Card, EmptyState, Skeleton } from '@/components/ui'
 import { ShareButton } from '@/components/share/share-button'
+import { dayCount } from '@/lib/data/rank'
 
 export function BaselineScreen() {
   const { data: state, loading } = useBaseline()
@@ -31,7 +32,7 @@ export function BaselineScreen() {
   }
 
   if (!state) {
-    return <AppShell title="Then and now"><EmptyState title="No baseline yet" description="Your first graded rep becomes the measurement everything after it is compared against. Run one." action={<Link className="arena-button arena-button--primary" href="/train">Start a rep</Link>} /></AppShell>
+    return <AppShell title="Then and now"><EmptyState mark="state-chart" title="No baseline yet" description="Your first graded rep becomes the measurement everything after it is compared against. Run one." action={<Link className="arena-button arena-button--primary" href="/train">Start a rep</Link>} /></AppShell>
   }
 
   const retestHref = `/rep/${state.baseline.personaId}/brief`
@@ -49,7 +50,7 @@ export function BaselineScreen() {
   const thenCard = before.data
   const nowCard = after.data
   if (!thenCard || !nowCard) {
-    return <AppShell title="Then and now"><EmptyState title="One of the two is missing" description="A comparison needs both scorecards. One of these reps was never graded, or has since been deleted." action={<Link className="arena-button arena-button--primary" href="/profile/history">See your history</Link>} /></AppShell>
+    return <AppShell title="Then and now"><EmptyState mark="state-chart" title="One of the two is missing" description="A comparison needs both scorecards. One of these reps was never graded, or has since been deleted." action={<Link className="arena-button arena-button--primary" href="/profile/history">See your history</Link>} /></AppShell>
   }
 
   const retestSession = sessions.find((session) => session.id === state.retestSessionId)
@@ -69,7 +70,7 @@ export function BaselineScreen() {
   const up = comparison.delta > 0
   const flat = comparison.delta === 0
 
-  return <AppShell title="Then and now"><div className="screen-heading compact"><span className="label">{state.personaName} · {daysApart} days apart</span><h1 className="display-lg">Then and now</h1></div><Card className="baseline-card"><div className="baseline-pair"><div><span className="label">Day one</span><span className="composite data baseline-pair__then">{comparison.thenScore}</span></div><span className={`baseline-delta data${up ? ' volt' : flat ? '' : ' amber'}`}>{up ? '+' : ''}{comparison.delta}</span><div><span className="label">Now</span><span className="composite data">{comparison.nowScore}</span></div></div><p className="baseline-note">{baselineVerdict(comparison)}</p></Card>{comparison.subScores.length ? <Card className="baseline-rows"><span className="label">Sub-score by sub-score</span>{comparison.subScores.map((row) => <BaselineRow key={row.key} row={row} />)}</Card> : null}<div className="scorecard-actions"><Link className="arena-button arena-button--secondary" href={`/session/${state.baseline.sessionId}/scorecard`}>The first one</Link><Link className="arena-button arena-button--secondary" href={`/session/${state.retestSessionId}/scorecard`}>The re-test</Link><ShareButton kind="baseline" label="Make a card" /></div></AppShell>
+  return <AppShell title="Then and now"><div className="screen-heading compact"><span className="label">{state.personaName} · {dayCount(daysApart)} apart</span><h1 className="display-lg">Then and now</h1></div><Card className="baseline-card"><div className="baseline-pair"><div><span className="label">Day one</span><span className="composite data baseline-pair__then">{comparison.thenScore}</span></div><span className={`baseline-delta data${up ? ' volt' : flat ? '' : ' amber'}`}>{up ? '+' : ''}{comparison.delta}</span><div><span className="label">Now</span><span className="composite data">{comparison.nowScore}</span></div></div><p className="baseline-note"><span className="baseline-span" aria-hidden="true"><i /><b className="data">{dayCount(daysApart)}</b><i /></span>{baselineVerdict(comparison)}</p></Card>{comparison.subScores.length ? <Card className="baseline-rows"><span className="label">Sub-score by sub-score</span>{comparison.subScores.map((row) => <BaselineRow key={row.key} row={row} />)}</Card> : null}<div className="scorecard-actions"><Link className="arena-button arena-button--secondary" href={`/session/${state.baseline.sessionId}/scorecard`}>The first one</Link><Link className="arena-button arena-button--secondary" href={`/session/${state.retestSessionId}/scorecard`}>The re-test</Link><ShareButton kind="baseline" label="Make a card" /></div></AppShell>
 }
 
 /**

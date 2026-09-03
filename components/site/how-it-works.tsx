@@ -18,15 +18,38 @@ import { SiteSection, SITE_LINKS } from './site-chrome'
 import { RANK_NAMES, RANK_BLURBS, RANKS } from '@/lib/data/rank'
 import { REJECTION_MILESTONES } from '@/lib/field/milestones'
 import { UNLOCK_REPS, UNLOCK_SCORE } from '@/lib/data/progression'
+import { Mark, fieldTierMark, milestoneMark, rankMark } from '@/components/marks'
+import { RepTimeline, SplitBar } from './figures'
 
+/**
+ * The rep, beat by beat (V12).
+ *
+ * `position` is where the beat sits on a 0:00–3:00 track, as a percentage.
+ * "Before" and "After" sit outside the three minutes and carry no position —
+ * they are drawn as list rows only, because putting them on the track would
+ * make the track lie about how long a rep is.
+ */
 const TIMELINE = [
-  { at: 'Before', title: 'Sixty words of brief', copy: 'Where you are, who she is, what she is in the middle of, and what would make this go badly. Then the brief goes away.' },
-  { at: '0:00', title: 'You speak first', copy: 'Nothing prompts you and nothing rescues you. She is not waiting to be helpful — she has her own reason for being in the room and it is not you.' },
-  { at: 'Anywhere', title: 'The room happens to both of you', copy: 'Her friend comes back. The train is announced. She gets a message. Recovering from an interruption you did not cause is most of what actually happens.' },
-  { at: '2:30', title: 'She starts to wind down', copy: 'One direction, once, thirty seconds out — and what she does with the last half minute was decided by everything before it. You are not told which way it went.' },
-  { at: '3:00', title: 'The clock stops, she finishes her sentence', copy: 'Cutting a character off mid-line to save twelve seconds would truncate the best moment in the product. The clock reads zero; she is simply finishing, the way people do.' },
-  { at: 'After', title: 'The scorecard', copy: 'Composite, six dimensions, evidence quoted from your own lines, and the two dimensions to take into the next rep.' },
+  { at: 'Before', position: null, title: 'Sixty words of brief', copy: 'Where you are, who she is, what she is in the middle of. Then the brief goes away.' },
+  { at: '0:00', position: 0, title: 'You speak first', copy: 'Nothing prompts you and nothing rescues you. She has her own reason for being in the room and it is not you.' },
+  { at: 'Anywhere', position: 45, title: 'The room happens to both of you', copy: 'Her friend comes back. The train is announced. Recovering from an interruption you did not cause is most of what happens.' },
+  { at: '2:30', position: 83.333, title: 'She starts to wind down', copy: 'One direction, once, thirty seconds out. You are not told which way it went.' },
+  { at: '3:00', position: 100, title: 'The clock stops, she finishes her sentence', copy: 'Cutting a character off mid-line would truncate the best moment in the product. She is simply finishing, the way people do.' },
+  { at: 'After', position: null, title: 'The scorecard', copy: 'Composite, six dimensions, evidence quoted from your own lines, and the two to take into the next rep.' },
 ]
+
+/** The four rungs of graded exposure (§09), in order. */
+const TIERS = [
+  { n: 1, kind: 'In the app', title: 'End a rep yourself.', copy: 'No social risk at all. Day one work — hearing yourself do the thing once.' },
+  { n: 2, kind: 'Transactional', title: 'Ask a stranger for the time.', copy: 'A person, a sentence, an answer. The point is the asking, not the information.' },
+  { n: 3, kind: 'Social', title: 'Compliment a choice, then leave.', copy: 'Say your piece and go. If they are working or alone at night, this is not the moment.' },
+  { n: 4, kind: 'The real thing', title: 'Take a no well.', copy: 'Make an ask, and when it comes back no, leave warmly inside ten seconds. No bargaining.' },
+] as const
+
+/** The beats that sit on the clock, for the track above the list. */
+const TIMELINE_MARKS = TIMELINE
+  .filter((step): step is typeof TIMELINE[number] & { position: number } => step.position !== null)
+  .map((step) => ({ at: step.at, label: step.title, position: step.position }))
 
 export function HowItWorks() {
   return (
@@ -42,6 +65,10 @@ export function HowItWorks() {
       </section>
 
       <SiteSection kicker="Anatomy" title={<>What happens in<br />the three minutes.</>} wide>
+        {/* V12. Five of the six beats are positions in time and the sixth is a
+            WINDOW — the wind-down — which is the one thing prose is worst at
+            and a shaded band is best at. The list underneath keeps the words. */}
+        <RepTimeline marks={TIMELINE_MARKS} />
         <ol className="timeline">
           {TIMELINE.map((step) => (
             <li key={step.at}>
@@ -65,6 +92,10 @@ export function HowItWorks() {
         title={<>Sixty per cent measured.<br />Forty per cent judged.</>}
         lede="The measured half is arithmetic on the transcript and cannot be argued with. The judged half runs at temperature zero against a fixed rubric and has to quote you to justify itself — if it cannot find the evidence, it returns nothing rather than inventing it."
       >
+        {/* V12. A ratio is the single easiest thing in the world to draw, and
+            the section spent 140 words describing one. The two lists below
+            then do what lists are good at: saying what is in each half. */}
+        <SplitBar left={{ value: 60, label: 'measured' }} right={{ value: 40, label: 'judged' }} />
         <div className="split-grid">
           <div>
             <span className="label">Measured from the transcript</span>
@@ -142,27 +173,17 @@ export function HowItWorks() {
         lede="Four tiers of graded exposure, in order, because going too hard too early sensitises rather than habituates. Nothing at any tier depends on somebody saying yes."
         wide
       >
+        {/* V12. Four rungs of rising exposure, and the mark counts its own —
+            tier 3 is three rungs — so the picture and the label cannot drift. */}
         <ol className="tier-grid">
-          <li>
-            <span className="label">Tier 1 · In the app</span>
-            <strong>End a rep yourself.</strong>
-            <p>No social risk at all. Day one work — hearing yourself do the thing once.</p>
-          </li>
-          <li>
-            <span className="label">Tier 2 · Transactional</span>
-            <strong>Ask a stranger for the time.</strong>
-            <p>A person, a sentence, an answer. The point is the asking, not the information.</p>
-          </li>
-          <li>
-            <span className="label">Tier 3 · Social</span>
-            <strong>Compliment a choice, then leave.</strong>
-            <p>Say your piece and go. If they are working, in headphones or alone at night, this is not the moment — walk on and find another one.</p>
-          </li>
-          <li>
-            <span className="label">Tier 4 · The real thing</span>
-            <strong>Take a no well.</strong>
-            <p>Make an ask, and when it comes back no, say something warm and leave inside ten seconds. No bargaining, no joke to soften it, no second attempt.</p>
-          </li>
+          {TIERS.map((tier) => (
+            <li key={tier.n}>
+              <Mark name={fieldTierMark(tier.n)} size={24} />
+              <span className="label">Tier {tier.n} · {tier.kind}</span>
+              <strong>{tier.title}</strong>
+              <p>{tier.copy}</p>
+            </li>
+          ))}
         </ol>
         <p className="site-aside">
           Before each one you say how nervous you expect to be. Afterwards you say how
@@ -175,7 +196,10 @@ export function HowItWorks() {
         <ul className="milestone-list">
           {REJECTION_MILESTONES.map((milestone) => (
             <li key={milestone.at}>
-              <span className="data">{milestone.at}</span>
+              <span className="milestone-list__mark">
+                <Mark name={milestoneMark(milestone.at)} size={30} />
+                <span className="data">{milestone.at}</span>
+              </span>
               <div>
                 <strong>{milestone.title}</strong>
                 <p>{milestone.body}</p>
@@ -187,9 +211,13 @@ export function HowItWorks() {
       </SiteSection>
 
       <SiteSection kicker="Standing" title={<>Four ranks, and none of them<br />are a badge shelf.</>}>
+        {/* V12. Four names in four boxes said nothing about which was above
+            which. The chevrons ascend and the top one closes, which is what
+            §08 means by a rail rather than a badge shelf. */}
         <ol className="rank-list">
           {RANKS.map((rank) => (
             <li key={rank}>
+              <Mark name={rankMark(rank)} size={26} />
               <strong className="display-md">{RANK_NAMES[rank]}</strong>
               <p>{RANK_BLURBS[rank]}</p>
             </li>

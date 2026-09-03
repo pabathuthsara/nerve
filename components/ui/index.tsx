@@ -24,6 +24,7 @@ import {
   type TextareaHTMLAttributes,
 } from 'react'
 import { useBreakpoint } from '@/lib/hooks/use-breakpoint'
+import { Mark, type MarkName } from '@/components/marks'
 import type { Band } from '@/lib/data/types'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
@@ -95,8 +96,17 @@ export function Skeleton({ width = '100%', height = 16, className = '', style }:
   return <div className={`skeleton ${className}`} aria-hidden="true" style={{ width, height, ...style }} />
 }
 
-export function EmptyState({ icon, title, description, action }: { icon?: ReactNode; title: string; description: string; action?: ReactNode }) {
-  return <div className="empty-state">{icon ?? <Inbox size={32} strokeWidth={1.5} />}<h2 className="display-md">{title}</h2><p>{description}</p>{action}</div>
+/**
+ * `mark` is the one that should be passed (V22).
+ *
+ * There are twenty-five empty states in this product and until now every one
+ * of them drew the same tray — "This rep was not graded", "The roster is
+ * empty" and "Nothing logged yet" were visually the same screen. The default
+ * is kept so a new call site is never broken, but it is a fallback rather than
+ * a choice: pass the mark for the surface you are standing on.
+ */
+export function EmptyState({ icon, mark, title, description, action }: { icon?: ReactNode; mark?: MarkName; title: string; description: string; action?: ReactNode }) {
+  return <div className="empty-state">{icon ?? (mark ? <Mark name={mark} size={32} /> : <Inbox size={32} strokeWidth={1.5} />)}<h2 className="display-md">{title}</h2><p>{description}</p>{action}</div>
 }
 
 export function LockOverlay({ requirement, children }: { requirement: string; children: ReactNode }) {

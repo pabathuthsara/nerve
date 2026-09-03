@@ -65,6 +65,19 @@ export function TermsDocument() {
       title="Terms of use"
       summary="The agreement for using Nerve. It is written to be read, so it is in ordinary sentences rather than in capitals."
     >
+      {/* V14. Privacy has carried a summary grid since it was written; terms
+          and safety did not, so the two documents a reviewer opens first were
+          3,200 words with no way in. Four facts, drawn from the clauses below
+          and never in place of them — nothing in the clause text is touched,
+          because a disputing customer quotes that and a merchant of record
+          reads the PDF rendered from it. */}
+      <div className="legal__summary">
+        <div><span className="label">Who this is for</span><strong>Adults, 18 and over, verified at sign-up</strong></div>
+        <div><span className="label">What it is</span><strong>Confidence training. Not therapy, treatment or clinical care</strong></div>
+        <div><span className="label">Refunds</span><strong>Fourteen days from a charge, no argument</strong></div>
+        <div><span className="label">Governing law</span><strong>Sri Lanka</strong></div>
+      </div>
+
       <Clause n="01" title="What Nerve is">
         <p>
           Nerve is a conversation training product. You hold timed spoken conversations with
@@ -370,6 +383,13 @@ export function SafetyDocument() {
       title="Safety & scope"
       summary="What this product is for, what it refuses to be, and what happens when a session stops being training."
     >
+      <div className="legal__summary">
+        <div><span className="label">Content bound</span><strong>PG-13, on both sides of every conversation</strong></div>
+        <div><span className="label">Moderation</span><strong>Automated, on every turn, both streams</strong></div>
+        <div><span className="label">If a session goes wrong</span><strong>It ends, and the training frame is dropped</strong></div>
+        <div><span className="label">Reporting</span><strong>A control on every rep&rsquo;s result, scorecard and transcript</strong></div>
+      </div>
+
       <Clause n="01" title="This is training, not care">
         <p>
           Nerve is confidence and conversation training. It makes no clinical claim of any kind:

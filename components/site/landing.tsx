@@ -15,8 +15,10 @@
  */
 
 import Link from 'next/link'
-import { ArrowRight, Check, Minus } from 'lucide-react'
+import { ArrowRight, Check } from 'lucide-react'
+import { Mark, dimensionMark } from '@/components/marks'
 import { RepReplay } from './rep-replay'
+import { LoopDiagram } from './figures'
 import { SiteSection, SITE_LINKS } from './site-chrome'
 import { PRESENTATION } from '@/lib/personas/presentation'
 import { PERSONA_VISUAL } from '@/lib/personas/visual'
@@ -46,20 +48,39 @@ const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven'
 const ROSTER_COUNT = COUNT_WORDS[ROSTER.length] ?? String(ROSTER.length)
 
 /** The six §07 dimensions, in the rubric's own words, shortened for a card. */
+/**
+ * The six, in §07's order (V7).
+ *
+ * The copy was two full sentences each — 180 words in a grid nobody reads
+ * standing up — and the long form belongs on `/how-it-works`, which is the
+ * page for somebody who has decided to find out. Here each one gets its mark
+ * and the shortest true sentence, so the grid is scannable in three seconds
+ * and the section's argument survives.
+ */
 const DIMENSIONS = [
-  { name: 'Opening', copy: 'Did you get a conversation started at all. An awkward opener that lands beats a polished one that never comes.' },
-  { name: 'Curiosity', copy: 'Did you ask about her, and go past the first answer. Depth, not count.' },
-  { name: 'Listening', copy: 'Did you use what she gave you, or wait for your turn to talk.' },
-  { name: 'Signal reading', copy: 'Did you read how interested she was, and adjust. Missing a clear no scores low.' },
-  { name: 'Composure', copy: 'Did you stay steady. Recovering from an awkward moment counts for more than never having one.' },
-  { name: 'Close', copy: 'How it ended. Leaving warmly without pushing scores high, including when you were turned down.' },
+  { key: 'opening', name: 'Opening', copy: 'Did you start it at all.' },
+  { key: 'curiosity', name: 'Curiosity', copy: 'Did you go past her first answer.' },
+  { key: 'listening', name: 'Listening', copy: 'Did you use what she gave you.' },
+  { key: 'signalReading', name: 'Signal reading', copy: 'Did you read her, and adjust.' },
+  { key: 'composure', name: 'Composure', copy: 'Did you stay steady when it wobbled.' },
+  { key: 'close', name: 'Close', copy: 'Did you leave well, including on a no.' },
 ]
 
+/**
+ * The four boundaries (V9).
+ *
+ * Four paragraphs behind four identical `Minus` glyphs, which said "here is a
+ * list" and nothing about which item you were looking at. Each now carries its
+ * own mark — three struck through because they are things this product refuses
+ * to be, and a shield on the fourth because PG-13 is a bound we hold rather
+ * than an absence. The copy is one sentence each; the full position is on
+ * `/legal/safety`, which is linked directly beneath.
+ */
 const NOT = [
-  { title: 'Not a reply generator', copy: 'We never write your lines. Every competitor does the frightening part on your behalf, which builds nothing and collapses the moment you are in a real room.' },
-  { title: 'Not a companion app', copy: 'Characters are training equipment. They are not available for open-ended chat, they do not miss you, and every session has a hard time limit.' },
-  { title: 'Not therapy', copy: 'No clinical claims, here or anywhere in the product. If you are working with a clinician on social anxiety, this is practice alongside that, never instead of it.' },
-  { title: 'Not adult content', copy: 'Sessions are bounded at PG-13. Characters are written to decline rather than play along, steering a rep there breaches the terms, and the bound is not one we are able to waive.' },
+  { mark: 'bound-script' as const, title: 'Not a reply generator', copy: 'We never write your lines. Doing the frightening part on your behalf builds nothing.' },
+  { mark: 'bound-companion' as const, title: 'Not a companion app', copy: 'Characters are equipment. They do not miss you, and every session has a hard time limit.' },
+  { mark: 'bound-clinical' as const, title: 'Not therapy', copy: 'No clinical claims anywhere in the product. Practice alongside a clinician, never instead of one.' },
+  { mark: 'bound-adult' as const, title: 'Not adult content', copy: 'Bounded at PG-13. Characters decline rather than play along, and the bound is not ours to waive.' },
 ]
 
 const FAQ = [
@@ -191,20 +212,14 @@ function ScoringLaw() {
     >
       <ScorecardArtifact />
       <ul className="dimension-grid">
-        {DIMENSIONS.map((dimension, index) => (
+        {DIMENSIONS.map((dimension) => (
           <li key={dimension.name}>
-            <span className="data dimension-grid__index">{String(index + 1).padStart(2, '0')}</span>
+            <Mark name={dimensionMark(dimension.key) ?? 'kind-technique'} size={22} />
             <strong>{dimension.name}</strong>
             <p>{dimension.copy}</p>
           </li>
         ))}
       </ul>
-      <p className="site-aside">
-        Sixty per cent of the composite is measured directly from the transcript — how much
-        you talked, how long you let a silence sit, how many of your questions were real
-        ones. The other forty is judged against a fixed rubric that has to quote you to
-        justify itself.
-      </p>
     </SiteSection>
   )
 }
@@ -214,22 +229,22 @@ function Loop() {
     {
       kicker: 'One',
       title: 'Run the rep',
-      copy: 'Pick a character, read the sixty-word brief, and start. Three minutes, real time, real interruptions. She has her own reason for being there and it is not you.',
+      copy: 'Three minutes, real time, real interruptions. She has her own reason for being there and it is not you.',
     },
     {
       kicker: 'Two',
       title: 'Read the scorecard',
-      copy: 'The composite, the six dimensions, the two you were weakest on, and one thing you actually did well — named first, quoting you, before anything critical.',
+      copy: 'Six dimensions, the two you were weakest on, and one thing you did well — named first, quoting you.',
     },
     {
       kicker: 'Three',
       title: 'Do one small thing outside',
-      copy: 'A challenge graded to where you are. Ask a stranger for the time. Ask what they are reading. Compliment a choice and then leave. Nothing that depends on a yes.',
+      copy: 'A challenge graded to where you are. Nothing at any tier depends on somebody saying yes.',
     },
     {
       kicker: 'Four',
       title: 'Log what happened',
-      copy: 'Rate how nervous you expected to be, then how nervous you were. The gap between those two lines is the chart the whole product is building toward.',
+      copy: 'How nervous you expected to be, then how nervous you were. The gap is the chart everything builds toward.',
     },
   ]
   return (
@@ -240,20 +255,24 @@ function Loop() {
       lede="The simulator is where you can afford to be bad at this. The point of being good at it is out there, so every rep hands you something small to do in the real world and asks you to log what actually happened."
       wide
     >
-      <ol className="loop-grid">
-        {steps.map((step) => (
-          <li key={step.kicker}>
-            <span className="label">{step.kicker}</span>
-            <h3 className="display-md">{step.title}</h3>
-            <p>{step.copy}</p>
-          </li>
-        ))}
-      </ol>
+      {/* V8. The list said there were four steps; only the diagram says the
+          fourth one leads back to the first, which is the entire argument the
+          section is making. */}
+      <div className="loop-layout">
+        <LoopDiagram steps={steps} />
+        <ol className="loop-grid">
+          {steps.map((step, index) => (
+            <li key={step.kicker}>
+              <span className="data loop-grid__index">{String(index + 1).padStart(2, '0')}</span>
+              <h3 className="display-md">{step.title}</h3>
+              <p>{step.copy}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
       <p className="site-aside">
         Every challenge is written by hand and reviewed before it ships, against one
-        test: the worst realistic outcome is a polite no. Nothing asks you to persist
-        after a refusal, film anybody, or make somebody who is working the subject of
-        an exercise.
+        test: the worst realistic outcome is a polite no.
       </p>
     </SiteSection>
   )
@@ -285,14 +304,16 @@ function Roster() {
                 <span className="mute">{presentation.setting}</span>
               </div>
               <p className="roster-card__blurb">{presentation.blurb}</p>
+              {/* V10. `a · b · c` in a definition list read as one grey
+                  string; the two lists say opposite things and now look it. */}
               <dl className="roster-card__dials">
                 <div>
                   <dt className="label">Responds to</dt>
-                  <dd>{presentation.respondsTo.join(' · ')}</dd>
+                  <dd>{presentation.respondsTo.map((item) => <span key={item} className="dial-chip dial-chip--yes">{item}</span>)}</dd>
                 </div>
                 <div>
                   <dt className="label">Shuts down on</dt>
-                  <dd>{presentation.shutsDownOn.join(' · ')}</dd>
+                  <dd>{presentation.shutsDownOn.map((item) => <span key={item} className="dial-chip">{item}</span>)}</dd>
                 </div>
               </dl>
             </li>
@@ -330,10 +351,9 @@ function TextMode() {
         <p className="thread-demo__bubble thread-demo__bubble--her">I did. I bought two. One is for me.</p>
       </div>
       <p className="site-aside">
-        It is deliberately the lesser thing. Warmth in text is capped below the point
-        a rep can be won, so it cannot produce the ending a voice rep can — that is
-        enforced in code, not in a note. It keeps the habit alive on a bad night and
-        then hands you back to the microphone.
+        Deliberately the lesser thing: warmth in text is capped below the point a rep
+        can be won, so it cannot produce the ending a voice rep can. That is enforced
+        in code, not in a note.
       </p>
     </SiteSection>
   )
@@ -349,7 +369,7 @@ function NotThis() {
       <ul className="not-grid">
         {NOT.map((item) => (
           <li key={item.title}>
-            <Minus size={16} strokeWidth={2} aria-hidden="true" />
+            <Mark name={item.mark} size={22} />
             <div>
               <strong>{item.title}</strong>
               <p>{item.copy}</p>

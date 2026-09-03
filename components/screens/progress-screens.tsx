@@ -21,6 +21,8 @@ import type { WeeklyReview } from '@/lib/data/types'
 import { AppShell } from '@/components/app-shell'
 import { Card, EmptyState, Skeleton, Stat } from '@/components/ui'
 import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
+import { dayCount } from '@/lib/data/rank'
+import { Mark, dimensionMark } from '@/components/marks'
 
 /** The six, in §07's order. */
 const SUB_SCORES = ['opening', 'curiosity', 'listening', 'signalReading', 'composure', 'close']
@@ -44,7 +46,7 @@ export function ProgressScreen() {
   }
 
   if (points.length === 0) {
-    return <AppShell title="Progress"><EmptyState title="Nothing to plot yet" description="Every graded rep adds a point to these lines. The first one is the hardest and the only one that has to happen today." action={<Link className="arena-button arena-button--primary" href="/train">Run a rep</Link>} /></AppShell>
+    return <AppShell title="Progress"><EmptyState mark="state-chart" title="Nothing to plot yet" description="Every graded rep adds a point to these lines. The first one is the hardest and the only one that has to happen today." action={<Link className="arena-button arena-button--primary" href="/train">Run a rep</Link>} /></AppShell>
   }
 
   const composites = points.map((point) => point.composite)
@@ -57,7 +59,7 @@ export function ProgressScreen() {
       <div className="screen-heading">
         <span className="label">Last {points.length} graded {points.length === 1 ? 'rep' : 'reps'}</span>
         <h1 className="display-lg">Progress</h1>
-        <p>How you played, over time. Outcome is not in here — it never was (§07).</p>
+        <p>How you played, over time. Outcome is not in here — it never was.</p>
       </div>
 
       <div className="progress-stack">
@@ -94,7 +96,7 @@ export function ProgressScreen() {
                 return (
                   <div key={key} className="subscore-cell">
                     <div className="subscore-cell__head">
-                      <span className="label">{SUB_SCORE_LABELS[key] ?? key}</span>
+                      <span className="mark-row"><Mark name={dimensionMark(key) ?? 'kind-technique'} size={15} /><span className="label">{SUB_SCORE_LABELS[key] ?? key}</span></span>
                       <strong className="data">{series.length > 0 ? series[series.length - 1] : '—'}</strong>
                     </div>
                     {series.length >= 2
@@ -222,7 +224,7 @@ export function WeeklyReviewScreen({ weekStart }: { weekStart: string }) {
 
   const review = reviews.find((entry) => entry.weekStart === weekStart)
   if (!review) {
-    return <AppShell title="Weekly review"><EmptyState title="No review for that week" description="Reviews are written on Sunday, for weeks with something in them." action={<Link className="arena-button arena-button--primary" href="/progress">All reviews</Link>} /></AppShell>
+    return <AppShell title="Weekly review"><EmptyState mark="state-letter" title="No review for that week" description="Reviews are written on Sunday, for weeks with something in them." action={<Link className="arena-button arena-button--primary" href="/progress">All reviews</Link>} /></AppShell>
   }
 
   return (
@@ -241,7 +243,7 @@ export function WeeklyReviewScreen({ weekStart }: { weekStart: string }) {
           <Stat label="Reps" value={review.stats.reps} />
           <Stat label="Asks made" value={review.stats.asksMade} />
           <Stat label="Rejections" value={review.stats.rejections} />
-          <Stat label="Streak" value={`${review.stats.streak} days`} />
+          <Stat label="Streak" value={dayCount(review.stats.streak)} />
         </div>
       </div>
     </AppShell>

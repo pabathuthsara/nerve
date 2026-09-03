@@ -99,8 +99,15 @@ export function SiteFooter() {
           </div>
         </nav>
       </div>
+      {/* V15. These are §16's load-bearing commitments and the first thing a
+          compliance reviewer scans a footer for — they were a single grey
+          run-on sentence. Three pills, so each one is findable. */}
       <div className="site-footer__fine">
-        <span>18+ only. Training, not therapy or clinical care. Sessions are bounded at PG-13.</span>
+        <span className="site-footer__pills">
+          <b>18+ only</b>
+          <b>Training, not therapy or clinical care</b>
+          <b>Sessions bounded at PG-13</b>
+        </span>
         <span className="data">© {new Date().getFullYear()} NERVE</span>
       </div>
     </footer>

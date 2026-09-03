@@ -69,6 +69,7 @@ import { Button, Chip, DateOfBirth, Input, Sheet } from '@/components/ui'
 import { MIN_AGE } from '@/lib/safety/age'
 import { tap } from '@/lib/haptics'
 import { FluidPersona } from '@/components/fluid-persona'
+import { Mark, focusMark, type MarkName } from '@/components/marks'
 import { chooseTodayPersona } from '@/lib/data/progression'
 import type { FirstRepCandidate } from '@/lib/data/first-rep'
 import type { FocusArea } from '@/lib/data/focus'
@@ -245,6 +246,7 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
           {route === '/onboarding/focus'
             ? <FocusStep
                 value={focusArea}
+                firstRep={firstRep}
                 onChoose={(value) => { setFocusArea(value); commit(() => saveOnboardingChoice({ focusArea: value }), step, step + 1) }}
               />
             : null}
@@ -358,6 +360,10 @@ function AgeStep() {
 
   return (
     <section className="onboarding-question onboarding-age">
+      {/* V20. One mark and nothing else — the shield is a bound we hold, and
+          a screen that decorates an age gate is a screen that frames a rule
+          as a formality. */}
+      <Mark name="bound-adult" size={34} />
       <span className="label">Before you start</span>
       <h1 className="display-lg">One thing first.</h1>
       <p>Nerve is for adults. We ask once and we keep the date, nothing else.</p>
@@ -419,16 +425,18 @@ function TrackStep({ value, onChoose }: { value: Track | null; onChoose: (value:
       <Option
         label="Talking to people I'm attracted to"
         sub="Approach, conversation, getting the number"
+        mark="state-roster"
         selected={value === 'dating'}
         onClick={() => onChoose('dating')}
       />
       <Option
         label="Job interviews"
         sub="Behavioural, technical, panel"
+        mark="kind-technique"
         busy={recording}
         onClick={askForInterview}
       />
-      <Option label="Speaking English more naturally" sub="Coming soon" disabled aside={<Chip>Soon</Chip>} />
+      <Option label="Speaking English more naturally" sub="Coming soon" mark="dim-listening" disabled aside={<Chip>Soon</Chip>} />
     </Question>
   )
 }
@@ -443,7 +451,17 @@ const FOCUS_OPTIONS: readonly { label: string; value: FocusArea }[] = [
 /** Shared with `/profile/settings`, which is where this answer can be changed. */
 export { FOCUS_OPTIONS }
 
-function FocusStep({ value, onChoose }: { value: FocusArea | null; onChoose: (value: FocusArea) => void }) {
+/**
+ * V19. The copy promised this answer "picks who you meet first" and then
+ * showed nothing — while the run has already resolved her, two lines up, with
+ * the same `chooseTodayPersona` the answer will actually be spent on.
+ *
+ * So the moment an option is chosen, she appears. It is the most compelling
+ * image in the product, shown at the exact moment somebody is being asked to
+ * care, and it costs one prop: the orb was already being rendered on the step
+ * after this one.
+ */
+function FocusStep({ value, firstRep, onChoose }: { value: FocusArea | null; firstRep: FirstRepCandidate | null; onChoose: (value: FocusArea) => void }) {
   return (
     <Question
       eyebrow="Step two"
@@ -451,8 +469,14 @@ function FocusStep({ value, onChoose }: { value: FocusArea | null; onChoose: (va
       sub="This one earns its keep: it picks who you meet first, your first challenge out in the world, and the technique on your brief."
     >
       {FOCUS_OPTIONS.map((option) => (
-        <Option key={option.value} label={option.label} selected={value === option.value} onClick={() => onChoose(option.value)} />
+        <Option key={option.value} label={option.label} mark={focusMark(option.value) ?? undefined} selected={value === option.value} onClick={() => onChoose(option.value)} />
       ))}
+      {value && firstRep ? (
+        <p className="focus-preview" aria-live="polite">
+          <FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={18} size={42} />
+          <span><span className="label">First up</span> {firstRep.name} — {firstRep.setting.toLowerCase()}</span>
+        </p>
+      ) : null}
     </Question>
   )
 }
@@ -512,9 +536,18 @@ function Question({ eyebrow, title, sub, children }: { eyebrow: string; title: s
  * `busy` is the one place on the run that waits for a write, and it is the
  * card that says so rather than a spinner (§02).
  */
-function Option({ label, sub, aside, disabled = false, selected = false, busy = false, onClick }: {
+function Option({ label, sub, mark, aside, disabled = false, selected = false, busy = false, onClick }: {
   label: string
   sub?: string
+  /**
+   * V18. The two answers that steer the whole product rendered as a stack of
+   * `<strong>` and `<small>` — a settings form, on the screen that decides who
+   * you meet and what every rep is about. The focus answers reuse the SIX
+   * DIMENSION MARKS deliberately: the vocabulary is learned here, in the first
+   * ninety seconds somebody spends in the product, and then means the same
+   * thing on the brief, the scorecard, Progress and the library.
+   */
+  mark?: MarkName
   aside?: React.ReactNode
   disabled?: boolean
   selected?: boolean
@@ -530,6 +563,7 @@ function Option({ label, sub, aside, disabled = false, selected = false, busy = 
       aria-pressed={onClick ? selected : undefined}
       onClick={onClick}
     >
+      {mark ? <Mark name={mark} size={22} current={selected} /> : null}
       <span><strong>{label}</strong>{sub ? <small>{sub}</small> : null}</span>
       {aside}
     </button>

@@ -23,10 +23,11 @@
  */
 
 import Link from 'next/link'
-import { ChevronLeft, Eye, EyeOff, MailCheck, ShieldAlert } from 'lucide-react'
+import { ChevronLeft, Eye, EyeOff, ShieldAlert } from 'lucide-react'
 import { useActionState, useEffect, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, DateOfBirth, Hairline, Input } from '@/components/ui'
+import { Mark } from '@/components/marks'
 import { checkAge, MIN_AGE } from '@/lib/safety/age'
 import {
   devSignIn,
@@ -169,7 +170,7 @@ function VerifyEmail({ email }: { email: string }) {
   const [seconds, setSeconds] = useState(0)
   useEffect(() => { if (state.ok) setSeconds(60) }, [state.ok])
   useEffect(() => { if (seconds <= 0) return; const timer = window.setTimeout(() => setSeconds((value) => value - 1), 1000); return () => window.clearTimeout(timer) }, [seconds])
-  return <div className="auth-state"><MailCheck size={34} strokeWidth={1.5} className="volt" /><AuthHeading title="Check your email" />{email ? <p>We sent a link to <strong>{email}</strong>.</p> : <p>We sent you a sign-in link. Open it in this browser.</p>}{state.message ? <FormError>{state.message}</FormError> : null}<form action={action} style={{ width: '100%' }}><input type="hidden" name="email" value={email} readOnly /><Button type="submit" variant="secondary" fullWidth loading={busy} disabled={seconds > 0 || !email}>{seconds > 0 ? <span className="data">Resend in {seconds}s</span> : 'Resend'}</Button></form><Link className="arena-button arena-button--ghost arena-button--full" href="/signup">Wrong address? Start over</Link></div>
+  return <div className="auth-state"><Mark name="state-letter" size={38} current /><AuthHeading title="Check your email" />{email ? <p>We sent a link to <strong>{email}</strong>.</p> : <p>We sent you a sign-in link. Open it in this browser.</p>}{state.message ? <FormError>{state.message}</FormError> : null}<form action={action} style={{ width: '100%' }}><input type="hidden" name="email" value={email} readOnly /><Button type="submit" variant="secondary" fullWidth loading={busy} disabled={seconds > 0 || !email}>{seconds > 0 ? <span className="data">Resend in {seconds}s</span> : 'Resend'}</Button></form><Link className="arena-button arena-button--ghost arena-button--full" href="/signup">Wrong address? Start over</Link></div>
 }
 
 function ForgotPassword() {
@@ -177,7 +178,7 @@ function ForgotPassword() {
   const [email, setEmail] = useState('')
   // Always the same answer, sent or not: "no account with that address" is
   // account enumeration with a helpful tone of voice.
-  if (state.ok) return <div className="auth-state"><MailCheck size={34} strokeWidth={1.5} className="volt" /><AuthHeading title="Check your email" /><p>If <strong>{email}</strong> has an account, a reset link is on its way.</p><Link className="arena-button arena-button--ghost arena-button--full" href="/login">Back to log in</Link></div>
+  if (state.ok) return <div className="auth-state"><Mark name="state-letter" size={38} current /><AuthHeading title="Check your email" /><p>If <strong>{email}</strong> has an account, a reset link is on its way.</p><Link className="arena-button arena-button--ghost arena-button--full" href="/login">Back to log in</Link></div>
   return <><AuthHeading title="Reset password" /><p className="auth-intro">Enter the address you train with. We&apos;ll send one secure reset link.</p><form className="auth-form" action={action}>{state.message ? <FormError>{state.message}</FormError> : null}<Input label="Email" name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /><Button type="submit" size="lg" fullWidth loading={busy}>Send reset link</Button></form><AuthFoot><Link href="/login" className="volt-link">Back to log in</Link></AuthFoot></>
 }
 
@@ -189,7 +190,7 @@ function ForgotPassword() {
 function ResetPassword({ ready }: { ready: boolean }) {
   const [state, action, busy] = useActionState(setPassword, EMPTY)
   if (!ready) return <div className="auth-state"><ShieldAlert size={34} strokeWidth={1.5} className="amber" /><AuthHeading title="Link expired" /><p>This reset link is no longer valid. Request a fresh one.</p><Link className="arena-button arena-button--primary arena-button--full" href="/forgot-password">Get a new link</Link></div>
-  if (state.ok) return <div className="auth-state"><MailCheck size={34} strokeWidth={1.5} className="volt" /><AuthHeading title="Password set" /><p>You&apos;re ready to get back to work.</p><Link className="arena-button arena-button--primary arena-button--full" href="/train">Go to training</Link></div>
+  if (state.ok) return <div className="auth-state"><Mark name="bound-adult" size={38} current /><AuthHeading title="Password set" /><p>You&apos;re ready to get back to work.</p><Link className="arena-button arena-button--primary arena-button--full" href="/train">Go to training</Link></div>
   return <><AuthHeading title="Set password" /><form className="auth-form" action={action}>{state.message ? <FormError>{state.message}</FormError> : null}<Input label="New password" name="password" type="password" autoComplete="new-password" minLength={8} required /><Input label="Confirm password" name="confirm" type="password" autoComplete="new-password" minLength={8} required /><Button type="submit" size="lg" fullWidth loading={busy}>Set password</Button></form></>
 }
 

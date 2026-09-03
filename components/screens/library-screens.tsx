@@ -35,6 +35,7 @@ import { AppShell } from '@/components/app-shell'
 import { Card, Chip, EmptyState, Skeleton } from '@/components/ui'
 import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
 import { capture } from '@/components/analytics'
+import { Mark, dimensionMark, libraryKindMark } from '@/components/marks'
 
 /**
  * Where this card was opened from, for B7's `technique_opened`.
@@ -70,7 +71,7 @@ export function LibraryScreen() {
   // Seeded content, so an empty list means `npm run db:content` has not run
   // rather than that the user has nothing yet. Say the true thing.
   if (cards.length === 0) {
-    return <AppShell title="Library"><EmptyState title="The library is empty" description="Technique cards are authored in the repo and seeded. None have reached this database yet." /></AppShell>
+    return <AppShell title="Library"><EmptyState mark="state-library" title="The library is empty" description="Technique cards are authored in the repo and seeded. None have reached this database yet." /></AppShell>
   }
 
   return (
@@ -87,9 +88,15 @@ export function LibraryScreen() {
       <div className="library-stack">
         {groups.map((group) => (
           <section key={group.key} className="library-group">
+            {/* V28. The same six marks the scorecard uses, so a card
+                recommended off a weak sub-score is visibly the same thing
+                when the user arrives here. */}
             <div className="library-group__head">
-              <h2 className="display-md">{group.title}</h2>
-              <p>{group.blurb}</p>
+              <Mark name={dimensionMark(group.key) ?? 'kind-technique'} size={20} />
+              <div>
+                <h2 className="display-md">{group.title}</h2>
+                <p>{group.blurb}</p>
+              </div>
             </div>
             <div className="library-grid">
               {group.cards.map((card) => <CardTile key={card.slug} card={card} read={read.includes(card.slug)} />)}
@@ -105,7 +112,7 @@ function CardTile({ card, read }: { card: LibraryCard; read: boolean }) {
   return (
     <Link href={`/library/${card.slug}`} className={`library-tile${read ? ' library-tile--read' : ''}`}>
       <Card>
-        <span className="label">{KIND_LABELS[card.kind]}{card.setting ? ` · ${card.setting}` : ''}{read ? <> · <Check size={11} strokeWidth={2} /> Read</> : null}</span>
+        <span className="library-tile__kind"><Mark name={libraryKindMark(card.kind)} size={16} muted={read} /><span className="label">{KIND_LABELS[card.kind]}{card.setting ? ` · ${card.setting}` : ''}{read ? <> · <Check size={11} strokeWidth={2} /> Read</> : null}</span></span>
         <strong className="display-sm">{card.title}</strong>
         <p>{card.summary}</p>
       </Card>
@@ -160,7 +167,7 @@ export function LibraryCardScreen({ slug }: { slug: string }) {
 
   if (loading) return <AppShell title="Library"><Skeleton height={420} /></AppShell>
   if (!card) {
-    return <AppShell title="Library"><EmptyState title="No such card" description="This technique is not in the library." action={<Link className="arena-button arena-button--primary" href="/library">Back to the library</Link>} /></AppShell>
+    return <AppShell title="Library"><EmptyState mark="state-library" title="No such card" description="This technique is not in the library." action={<Link className="arena-button arena-button--primary" href="/library">Back to the library</Link>} /></AppShell>
   }
 
   return (
@@ -168,12 +175,12 @@ export function LibraryCardScreen({ slug }: { slug: string }) {
       <div className="library-detail">
         <Link href="/library" className="label volt-link library-detail__back"><ArrowLeft size={14} strokeWidth={1.6} /> Library</Link>
         <div className="screen-heading">
-          <span className="label">{KIND_LABELS[card.kind]}{card.setting ? ` · ${card.setting}` : ''}</span>
+          <span className="library-tile__kind"><Mark name={libraryKindMark(card.kind)} size={16} /><span className="label">{KIND_LABELS[card.kind]}{card.setting ? ` · ${card.setting}` : ''}</span></span>
           <h1 className="display-lg">{card.title}</h1>
           <p>{card.summary}</p>
         </div>
         <div className="chip-row">
-          {card.targets.map((target) => <Chip key={target}>{SUB_SCORE_LABELS[target] ?? target}</Chip>)}
+          {card.targets.map((target) => <span key={target} className="mark-row"><Mark name={dimensionMark(target) ?? 'kind-technique'} size={15} /><Chip>{SUB_SCORE_LABELS[target] ?? target}</Chip></span>)}
         </div>
         {/* Authored as paragraphs separated by a blank line, so that is what is
             rendered. No markdown parser for two paragraphs of hand-written prose. */}
@@ -191,7 +198,10 @@ export function LibraryCardScreen({ slug }: { slug: string }) {
         {card.drill ? (
           <section>
             <h2 className="display-md">The drill</h2>
-            <Card className="try-next"><p>{card.drill}</p></Card>
+            {/* V29. A card body, its examples and its drill were three
+                paragraphs in one texture. The drill is the only part that is
+                an instruction, so it is the only part that carries a mark. */}
+            <Card className="try-next"><Mark name={libraryKindMark(card.kind)} size={20} current /><p>{card.drill}</p></Card>
           </section>
         ) : null}
         <PractiseThis card={card} personas={personas} repsLeft={user?.repsRemainingToday ?? null} />

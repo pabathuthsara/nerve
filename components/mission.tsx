@@ -18,14 +18,36 @@
  *                     coaching.
  */
 
-import { Crosshair } from 'lucide-react'
 import type { Mission } from '@/lib/data/mission'
+import { Mark, dimensionMark } from '@/components/marks'
+
+/**
+ * The mission's own dimension mark, not a generic crosshair (V1).
+ *
+ * All three sizes used to open with the same `Crosshair`, which said "this is
+ * an objective" and nothing about WHICH objective — while `Mission.key` is
+ * already the sub-score key the scorecard, Progress and the library all group
+ * by. Drawing that key means the mark a user meets on the scorecard is the
+ * same one on Train, on the brief and in text mode, which is the connective
+ * tissue the mission was introduced to be.
+ *
+ * Falls back to the crosshair-shaped default only if a mission key ever has no
+ * mark, which `lib/marks/registry.test.ts` makes impossible for the six that
+ * exist.
+ */
+function missionMark(mission: Mission) {
+  return dimensionMark(mission.key) ?? 'dim-opening'
+}
 
 export function MissionCard({ mission, kicker = 'Your mission' }: { mission: Mission; kicker?: string }) {
   return (
     <section className="mission-card">
       <div className="mission-card__head">
-        <Crosshair size={16} strokeWidth={1.75} className="volt" aria-hidden="true" />
+        {/* Ink-2, not volt. The card already carries a volt left border, and
+            Arena allows volt once per screen — on Train this mark sat beside
+            a volt rank, a volt Start button and a volt streak pill. The
+            border is the accent; the mark is the identity. */}
+        <Mark name={missionMark(mission)} size={17} />
         <span className="label">{kicker} · {mission.target}</span>
       </div>
       <p className="mission-card__objective">{mission.objective}</p>
@@ -37,7 +59,7 @@ export function MissionCard({ mission, kicker = 'Your mission' }: { mission: Mis
 export function MissionNote({ mission }: { mission: Mission }) {
   return (
     <p className="mission-note">
-      <Crosshair size={14} strokeWidth={1.75} aria-hidden="true" />
+      <Mark name={missionMark(mission)} size={15} />
       <span><span className="label">{mission.target}</span> {mission.objective}</span>
     </p>
   )

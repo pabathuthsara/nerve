@@ -14,5 +14,10 @@ supabase/.branches
 .vercel
 .env*.local
 legal-pdf/
+# `npm run shots` output. Generated on demand from the running app, and nothing
+# on the site embeds it — the screenshots that did were taken back out (see
+# `docs/VISUAL-AUDIT.md`, "What was taken back out"). A megabyte of stale
+# captures in the deployment is worse than no captures.
+public/shots/
 
 .DS_Store

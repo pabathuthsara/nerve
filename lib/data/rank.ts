@@ -91,3 +91,15 @@ export function rankIndex(rank: Rank): number {
   const index = RANKS.indexOf(rank)
   return index < 0 ? 0 : index
 }
+
+/**
+ * `1 day`, not `1 days`.
+ *
+ * Four screens printed a streak as `${n} days` and every one of them said
+ * "1 days" on somebody's first day — which is the day the streak matters most
+ * and the first thing a new account sees on Train. One helper, because the
+ * bug was four copies of the same missing conditional.
+ */
+export function dayCount(days: number): string {
+  return `${days} ${days === 1 ? 'day' : 'days'}`
+}

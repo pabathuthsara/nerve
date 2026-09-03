@@ -16,6 +16,7 @@ import { useState } from 'react'
 import { acknowledgeMilestone } from '@/app/field/actions'
 import type { Milestone } from '@/lib/field/milestones'
 import { Button, Sheet } from '@/components/ui'
+import { Mark, milestoneMark } from '@/components/marks'
 import { ShareButton } from '@/components/share/share-button'
 
 export function MilestoneSheet({ milestone, onClose }: { milestone: Milestone | null; onClose: () => void }) {
@@ -35,7 +36,10 @@ export function MilestoneSheet({ milestone, onClose }: { milestone: Milestone | 
     <Sheet open={milestone !== null} onClose={dismiss} title={milestone?.title ?? ''}>
       {milestone ? (
         <div className="sheet-stack">
-          <div className="milestone-count"><span className="composite data">{milestone.at}</span><span className="label">Rejections collected</span></div>
+          {/* V38. One ring per milestone reached, beside the count. The
+              number stays the hero — it is the thing being celebrated — so
+              the mark is Ink-2 and never competes with it. */}
+          <div className="milestone-count"><Mark name={milestoneMark(milestone.at)} size={38} /><div><span className="composite data">{milestone.at}</span><span className="label">Rejections collected</span></div></div>
           <p>{milestone.body}</p>
           <p className="muted">{milestone.note}</p>
           {/* Opt-in, never automatic (§08). The moment fires on its own; the
