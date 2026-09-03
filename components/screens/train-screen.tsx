@@ -2,20 +2,25 @@
 
 import Link from 'next/link'
 import { Check, ChevronRight, Mic, RotateCcw, X } from 'lucide-react'
-import { useState } from 'react'
-import { useBaseline, useFieldToday, useLatestFocus, usePersonaProgress, usePersonas, useSessionHistory, useUserState, useWeeklyReview } from '@/lib/data'
-import type { PersonaProgress, SessionSummary } from '@/lib/data/types'
+import { useEffect, useState } from 'react'
+import { useBaseline, useFieldToday, useLatestFocus, useLifetimeStats, usePersonaProgress, usePersonas, useSessionHistory, useUserState, useWeeklyReview } from '@/lib/data'
+import type { LifetimeStats, PersonaProgress, SessionSummary, UserState } from '@/lib/data/types'
 import { chooseTodayPersona, LEVEL_NAMES, levelTone } from '@/lib/data/progression'
-import { RANKS, RANK_BLURBS, RANK_NAMES, nextRankRequirement, rankIndex, type Rank } from '@/lib/data/rank'
+import { RANKS, RANK_BLURBS, RANK_NAMES, dayCount, nextRankRequirement, rankIndex, type Rank } from '@/lib/data/rank'
+import { lifetimeLine, pressureMinutes } from '@/lib/data/counters'
+import { daysBetween, localDay } from '@/lib/data/day'
 import { FieldActions, FieldSheets, useFieldFlow } from '@/components/field/flow'
 import { MilestoneSheet } from '@/components/field/milestone-sheet'
 import { REJECTION_MILESTONES, type Milestone } from '@/lib/field/milestones'
-import { AppShell, RepsRemaining, StreakCounter } from '@/components/app-shell'
-import { Button, Card, Chip, Sheet, Skeleton, Stat } from '@/components/ui'
+import { AppShell, RepsRemaining, StreakCounter, useResetCountdown } from '@/components/app-shell'
+import { Button, Card, Chip, Skeleton, Stat } from '@/components/ui'
+import { PaywallSheet } from '@/components/modals'
+import { TRIAL_DAYS, planById } from '@/lib/site/plans'
 import { ShareButton } from '@/components/share/share-button'
 import { FluidPersona } from '@/components/fluid-persona'
 import { MissionCard } from '@/components/mission'
 import { missionFor } from '@/lib/data/mission'
+import { Mark, fieldTierMark, rankMark } from '@/components/marks'
 
 export function TrainScreen() {
   return <AppShell title="Train"><TrainContent /></AppShell>
@@ -49,6 +54,9 @@ function TrainContent() {
   const userState = useUserState()
   const { data: user, loading: userLoading } = userState
   const { data: sessions, loading: sessionsLoading } = useSessionHistory()
+  // R7 and R15. The counters that only go up, and the evidence a comeback
+  // screen is built on.
+  const { data: lifetime } = useLifetimeStats()
   const { data: personas, loading: personaLoading } = usePersonas()
   const { data: progressRaw, loading: progressLoading } = usePersonaProgress()
   // The standing objective. `focus` is the last graded rep's two weakest
@@ -67,6 +75,9 @@ function TrainContent() {
     onMilestone: (at) => setMilestone(REJECTION_MILESTONES.find((entry) => entry.at === at) ?? null),
   })
   const [paywallOpen, setPaywallOpen] = useState(false)
+  // The real countdown, not `PaywallSheet`'s hard-coded default. Meaningless on
+  // a locked account — nothing resets — and the sheet does not show it there.
+  const resetIn = useResetCountdown(user?.repsResetAt)
   const loading = userLoading || personaLoading || progressLoading
   // Chosen for you, not picked off a list: the decision before the rep is the
   // part people use to avoid the rep.
@@ -79,6 +90,11 @@ function TrainContent() {
   const last = sessions[0]
   const challenge = assignment?.challenge
   const remaining = user?.repsRemainingToday ?? 0
+  // Not the same thing as `remaining === 0`. A Pro account at three of three is
+  // out for today and has three more at midnight; a free account has none, ever
+  // (`lib/data/allowance.ts`), and telling those two people the same sentence is
+  // what makes a paywall read as a bug.
+  const voiceLocked = user?.voiceLocked ?? false
   const repHref = persona ? `/rep/${persona.id}/brief` : '/roster'
 
   return (
@@ -89,6 +105,12 @@ function TrainContent() {
             {userLoading || !user ? <><Skeleton width={108} height={32} /><Skeleton width={108} height={20} /></> : <><RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} locked={user.voiceLocked} /><StreakCounter days={user.streakDays} /></>}
           </div>
           {user && !user.onboardingComplete ? <FinishSetup /> : null}
+          {/* R15 first, then R14, and never both: somebody back after a
+              fortnight does not also need to be told their streak is at risk
+              tonight — it is already gone, and saying so twice is the guilt
+              copy §4 of the audit rules out. */}
+          {user ? <ComebackCard user={user} lifetime={lifetime} /> : null}
+          {user ? <StreakAtRiskCard user={user} hasChallenge={Boolean(challenge)} /> : null}
           {/* Above the character, not below it. The mission is what the rep is
               for; the character is who you happen to be running it against. */}
           <MissionCard mission={mission} />
@@ -110,12 +132,33 @@ function TrainContent() {
                     reps are gone the screen reorganises around what is still
                     open instead of around waiting. */}
                 <div className="today-card__action">
-                  {remaining > 0
-                    ? <Link href={repHref} className="arena-button arena-button--primary arena-button--lg arena-button--full">Start rep</Link>
-                    : <Link href={`/text/${persona.id}`} className="arena-button arena-button--primary arena-button--lg arena-button--full">Talk to {persona.name} in text</Link>}
-                  {remaining > 0
-                    ? <Link href="/roster" className="arena-button arena-button--ghost arena-button--sm arena-button--full"><RotateCcw size={16} strokeWidth={1.5} /> Someone else</Link>
-                    : <Button variant="ghost" size="sm" fullWidth onClick={() => setPaywallOpen(true)}>Voice reps are done for today</Button>}
+                  {remaining > 0 ? <>
+                    <Link href={repHref} className="arena-button arena-button--primary arena-button--lg arena-button--full">Start rep</Link>
+                    <Link href="/roster" className="arena-button arena-button--ghost arena-button--sm arena-button--full"><RotateCcw size={16} strokeWidth={1.5} /> Someone else</Link>
+                  </> : voiceLocked ? <>
+                    {/* THE ONE PLACE A FREE ACCOUNT MEETS THE OFFER.
+                        This used to route straight to text: the primary button
+                        read "Talk to Nadia in text" and the word Pro appeared
+                        nowhere on the screen a free user lands on every day. It
+                        was the right shape for the wrong state — F-14 is about a
+                        PAYING account at the end of its day, where there is
+                        nothing to sell and text is genuinely the open door.
+                        A free account is the opposite case: the door is shut
+                        until somebody buys a key, and walking them quietly past
+                        it is not restraint, it is a funnel with no ask in it.
+                        The button keeps saying the thing they actually want to
+                        do, and the sheet says what it costs and offers text as
+                        the second option rather than as the only one. */}
+                    <Button size="lg" fullWidth onClick={() => setPaywallOpen(true)}>Start rep with {persona.name}</Button>
+                    <Link href={`/text/${persona.id}`} className="arena-button arena-button--ghost arena-button--sm arena-button--full">Or type to her — always free</Link>
+                  </> : <>
+                    {/* Out for today on a plan that HAS voice. Nothing to sell:
+                        it comes back at midnight, and pushing Elite at somebody
+                        who is already paying and already trained today is how a
+                        plan limit turns into an advert (§14). */}
+                    <Link href={`/text/${persona.id}`} className="arena-button arena-button--primary arena-button--lg arena-button--full">Talk to {persona.name} in text</Link>
+                    <Button variant="ghost" size="sm" fullWidth onClick={() => setPaywallOpen(true)}>Voice reps are done for today</Button>
+                  </>}
                 </div>
               </div>
             </article>
@@ -130,12 +173,26 @@ function TrainContent() {
                 counter that resets at midnight, so it does not pretend to be
                 one. A pill reading 0 / 0 with a countdown under it looks like a
                 bug and hides the only thing the user can do about it. */}
-            <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Reps remaining" value={user.voiceLocked ? 'Voice on Pro' : `${user.repsRemainingToday} / ${user.repsPerDay}`} size="lg" detail={user.signupRepAvailable ? 'Your sign-up rep, on us' : user.voiceLocked ? 'The field, text and your streak stay free' : undefined} />}</div>
-            <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Current streak" value={`${user.streakDays} days`} size="lg" />}</div>
+            {/* A figure when there is a figure, and an offer when there is not.
+                `Voice on Pro` was being typeset as a `stat--lg` value — mono, up
+                to 2.4rem, `white-space: nowrap` — inside a `1fr` grid column, so
+                on the one screen a free account lands on every day it pushed the
+                column wider than the track and **the whole right rail overflowed
+                the viewport**. Prose in a slot built for a numeral.
+                It is a link now rather than a dead label: this is the cell that
+                says what the account cannot do, so it is also the cheapest place
+                to say what fixes it. */}
+            <div>{userLoading || !user ? <Skeleton height={50} /> : user.voiceLocked ? <VoiceOfferStat /> : <Stat label="Reps remaining" value={`${user.repsRemainingToday} / ${user.repsPerDay}`} size="lg" detail={user.signupRepAvailable ? 'Your sign-up rep, on us' : undefined} />}</div>
+            <div>{userLoading || !user ? <Skeleton height={50} /> : <Stat label="Current streak" value={dayCount(user.streakDays)} size="lg" />}</div>
+            {/* R7. The in-app half had no monotonic counter at all — the streak
+                resets and `rejectionsCollected` lives entirely in the field, so
+                every number on this screen could go down. This one cannot, and
+                it sits beside the one that can on purpose. */}
+            <div>{lifetime && lifetime.totalReps > 0 ? <Stat label="Reps run" value={lifetime.totalReps} size="lg" detail={`${pressureMinutes(lifetime.totalMs)} minutes under pressure`} /> : null}</div>
           </div>
           <Card className="field-card">
             {challengeLoading || !challenge ? <><Skeleton width={82} height={24} /><Skeleton height={28} /><Skeleton height={42} /><Skeleton height={36} /></> : flow.status === 'done' || flow.status === 'skipped' ? <div className="field-card__head"><span>{flow.status === 'done' ? <Check size={18} strokeWidth={1.5} className="volt" /> : <X size={18} strokeWidth={1.5} className="muted" />} <span className="label">{flow.status === 'done' ? 'Field rep logged' : 'Logged honestly'}</span></span><Link className="label volt-link" href="/field">The log</Link></div> : <>
-              <div className="field-card__head"><span className="label">Today in the field</span><Chip>Tier {challenge.tier}</Chip></div>
+              <div className="field-card__head"><span className="mark-row"><Mark name={fieldTierMark(challenge.tier)} size={17} /><span className="label">Today in the field</span></span><Chip>Tier {challenge.tier}</Chip></div>
               <div><h2 className="display-md">{challenge.title}</h2><p className="field-card__copy">{challenge.brief}</p></div>
               <FieldActions flow={flow} size="sm" />
             </>}
@@ -151,10 +208,117 @@ function TrainContent() {
       </div>
       <FieldSheets flow={flow} title={challenge?.title ?? ''} />
       <MilestoneSheet milestone={milestone} onClose={() => setMilestone(null)} />
-      <Sheet open={paywallOpen} onClose={() => setPaywallOpen(false)} title="Today&apos;s voice reps are done">
-        <div style={{ display: 'grid', gap: 20 }}><p className="muted" style={{ margin: 0 }}>Your voice reps reset tonight. Text mode and the field stay open, and neither of them uses a rep.</p><div className="plan-mini"><Stat label="Pro" value="3 / day" /><Stat label="Elite" value="6 / day" /></div>{persona ? <Link href={`/text/${persona.id}`} className="arena-button arena-button--secondary arena-button--full">Keep talking in text</Link> : null}<Link href="/profile/subscription" className="arena-button arena-button--primary arena-button--full">See plans</Link><Button variant="ghost" fullWidth onClick={() => setPaywallOpen(false)}>Maybe later</Button></div>
-      </Sheet>
+      {/* `PaywallSheet`, not a second one written here. The sheet this replaced
+          said "Your voice reps reset tonight" to everybody — which is false for
+          a free account, where nothing resets — and hard-coded `3 / day` and
+          `6 / day`, so a price or a rep count changed in `lib/site/plans.ts`
+          would have been changed in one place and not the other. The shared
+          sheet reads both from that record and tells the two accounts apart. */}
+      <PaywallSheet
+        open={paywallOpen}
+        onClose={() => setPaywallOpen(false)}
+        locked={voiceLocked}
+        reset={resetIn}
+        personaId={persona?.id ?? null}
+      />
     </>
+  )
+}
+
+/**
+ * The counter cell, on an account that has no counter.
+ *
+ * Free grants no voice reps at all (`lib/site/plans.ts`), so there is no
+ * fraction to print and nothing resets at midnight. It says what is true, what
+ * it costs, and what stays free either way — the last clause matters, because
+ * §14's rule is that running out must never read as losing the account.
+ *
+ * The price and the trial length come from `lib/site/plans.ts` rather than
+ * being written here, for the reason that file exists.
+ */
+function VoiceOfferStat() {
+  const pro = planById('pro')
+  return (
+    <Link className="stat stat--offer" href="/profile/subscription">
+      <span className="label">Reps remaining</span>
+      <span className="stat__value">Voice is on Pro</span>
+      <span className="mute">{TRIAL_DAYS} days free, then {pro.price} a month. The field, text and your streak stay free.</span>
+    </Link>
+  )
+}
+
+/**
+ * Is it evening where the user actually is?
+ *
+ * Read in an effect rather than at render, because the server has no local
+ * clock and a wall-clock read during SSR is a hydration mismatch on the screen
+ * a returning user lands on first.
+ */
+function useEveningHere(fromHour = 20): boolean {
+  const [evening, setEvening] = useState(false)
+  useEffect(() => { setEvening(new Date().getHours() >= fromHour) }, [fromHour])
+  return evening
+}
+
+/**
+ * The streak save, before it is needed (RETENTION-AUDIT R14).
+ *
+ * §14's rule that running out must never break the streak is implemented — a
+ * field ask keeps the day, and it costs no voice minutes — and **nobody has
+ * ever been told.** That is a streak freeze with no consumable and no economy
+ * behind it, sitting in the database being invisible.
+ *
+ * One line, one button, and only in the evening: a card that says this at nine
+ * in the morning is nagging, and §4 of the audit rules out anything that
+ * punishes absence. It says what is true and offers the cheapest way to fix it.
+ * It disappears the moment the day is claimed.
+ */
+function StreakAtRiskCard({ user, hasChallenge }: { user: UserState; hasChallenge: boolean }) {
+  const evening = useEveningHere()
+  if (!evening || user.streakActiveToday || user.streakDays < 1) return null
+  return (
+    <Card className="streak-risk">
+      <div>
+        <span className="label">Day {user.streakDays + 1}</span>
+        <p className="streak-risk__line">Nothing logged yet. A field ask keeps the day, and it costs no reps.</p>
+      </div>
+      <Link className="arena-button arena-button--secondary arena-button--sm" href={hasChallenge ? '/field' : '/roster'}>
+        {hasChallenge ? 'Today’s ask' : 'Find a rep'}
+      </Link>
+    </Card>
+  )
+}
+
+/** Seven days away is a comeback rather than a gap. */
+const COMEBACK_DAYS = 7
+
+/**
+ * The comeback (RETENTION-AUDIT R15).
+ *
+ * Return after a week away and the product behaved as though nothing had
+ * happened, except that the streak was silently zero. Almost nobody builds this
+ * screen and it is the cheapest win-back there is — and it is the one place a
+ * lost streak can be made to read as a fact rather than as a punishment.
+ *
+ * The counters are the whole argument: the streak is a thing that resets and
+ * the reps are a thing that does not, so the sentence is "your streak is gone;
+ * the reps aren't" over a number that is exactly where they left it. No guilt,
+ * no "we missed you", nothing that scores the absence — §4 of the audit is
+ * explicit that this product already costs the user courage and must not charge
+ * them shame on top of it.
+ */
+function ComebackCard({ user, lifetime }: { user: UserState; lifetime: LifetimeStats | null }) {
+  if (!user.lastTrainedOn || user.streakActiveToday) return null
+  const away = daysBetween(user.lastTrainedOn, localDay(new Date(), null))
+  if (away < COMEBACK_DAYS) return null
+  const line = lifetime ? lifetimeLine({ reps: lifetime.totalReps, totalMs: lifetime.totalMs }) : null
+  return (
+    <Card className="comeback">
+      <span className="label">{away} days away</span>
+      <h2 className="display-md">You&apos;re back</h2>
+      <p className="comeback__line">Your streak is gone. The reps aren&apos;t — nothing you have already done can be taken off you, and today is day one of the next run.</p>
+      {line ? <p className="comeback__counter data">{line}</p> : null}
+    </Card>
   )
 }
 
@@ -168,7 +332,7 @@ function TrainContent() {
 function WeeklyReviewCard() {
   const { data: review, loading } = useWeeklyReview()
   if (loading || !review) return null
-  return <Card className="weekly-card"><div className="field-card__head"><span className="label">Your week</span><Chip>{formatWeek(review.weekStart)}</Chip></div><p className="weekly-card__copy">{review.copy}</p><div className="weekly-card__figures"><Stat label="Reps" value={review.stats.reps} /><Stat label="Asks" value={review.stats.asksMade} /><Stat label="Refusals" value={review.stats.rejections} /></div><ShareButton kind="weekly" label="Make a card" /></Card>
+  return <Card className="weekly-card"><div className="field-card__head"><span className="mark-row"><Mark name="state-letter" size={17} /><span className="label">Your week</span></span><Chip>{formatWeek(review.weekStart)}</Chip></div><div className="weekly-card__figures"><Stat label="Reps" value={review.stats.reps} /><Stat label="Asks" value={review.stats.asksMade} /><Stat label="Refusals" value={review.stats.rejections} /></div><p className="weekly-card__copy">{review.copy}</p><ShareButton kind="weekly" label="Make a card" /></Card>
 }
 
 function formatWeek(weekStart: string): string {
@@ -188,7 +352,7 @@ function BaselineCard() {
   if (loading || !state) return null
   if (!state.due && !state.retestSessionId) return null
   const done = state.retestSessionId !== null
-  return <Card className="baseline-offer"><div className="field-card__head"><span className="label">{done ? 'Week four' : 'Four weeks in'}</span><Chip tone="volt">{state.baseline.score} → ?</Chip></div><div><h2 className="display-md">{done ? 'Then and now' : 'Re-take the measurement'}</h2><p className="field-card__copy">{done ? `Your first rep scored ${state.baseline.score}. See what four weeks did to it.` : `${state.personaName}, same level, same three minutes. The only thing that has changed is you.`}</p></div><div className="field-card__actions">{done ? <Link className="arena-button arena-button--secondary arena-button--sm" href="/progress/baseline">See both</Link> : <Link className="arena-button arena-button--primary arena-button--sm" href={`/rep/${state.baseline.personaId}/brief`}>Take it</Link>}</div></Card>
+  return <Card className="baseline-offer"><div className="field-card__head"><span className="mark-row"><Mark name="state-chart" size={17} /><span className="label">{done ? 'Week four' : 'Four weeks in'}</span></span><Chip tone="volt">{state.baseline.score} → ?</Chip></div><div><h2 className="display-md">{done ? 'Then and now' : 'Re-take the measurement'}</h2><p className="field-card__copy">{done ? `Your first rep scored ${state.baseline.score}. See what four weeks did to it.` : `${state.personaName}, same level, same three minutes. The only thing that has changed is you.`}</p></div><div className="field-card__actions">{done ? <Link className="arena-button arena-button--secondary arena-button--sm" href="/progress/baseline">See both</Link> : <Link className="arena-button arena-button--primary arena-button--sm" href={`/rep/${state.baseline.personaId}/brief`}>Take it</Link>}</div></Card>
 }
 
 export function SessionRow({ session }: { session: SessionSummary }) {
@@ -212,6 +376,16 @@ export function SessionRow({ session }: { session: SessionSummary }) {
  * Rank is the slow number. The level moves when you unlock a character; this
  * moves when you have proven you can hold one, and it is deliberately harder
  * to move than the thing next to it.
+ *
+ * **V21.** The rail drew four identical dots with the names underneath, which
+ * told you the order and nothing else: `Rookie · Regular · Contender · Closer`
+ * in one weight, one size and one grey, so knowing where you stood meant
+ * reading the words and remembering which way they ran. The four rank marks
+ * are ascending chevrons and the top one closes, so the shape carries the
+ * standing and the word only confirms it. The held one is the single volt
+ * thing on the card; the ones behind it are Ink-2 and the ones ahead are muted,
+ * which is the difference between a rail and a badge shelf drawn rather than
+ * stated.
  */
 function RankRail({ rank }: { rank: Rank }) {
   const here = rankIndex(rank)
@@ -219,8 +393,11 @@ function RankRail({ rank }: { rank: Rank }) {
   return (
     <Card className="rank-rail">
       <div className="rank-rail__head">
-        <span className="label">Rank</span>
-        <strong className="display-md volt">{RANK_NAMES[rank]}</strong>
+        <Mark name={rankMark(rank)} size={26} current />
+        <div>
+          <span className="label">Rank</span>
+          <strong className="display-md volt">{RANK_NAMES[rank]}</strong>
+        </div>
       </div>
       <ol className="rank-rail__track" aria-label={`Rank ${RANK_NAMES[rank]}, ${here + 1} of ${RANKS.length}`}>
         {RANKS.map((entry, index) => (
@@ -229,7 +406,7 @@ function RankRail({ rank }: { rank: Rank }) {
             className={index === here ? 'is-here' : index < here ? 'is-done' : undefined}
             aria-current={index === here ? 'step' : undefined}
           >
-            <i />
+            <Mark name={rankMark(entry)} size={19} current={index === here} muted={index > here} />
             <span className="label">{RANK_NAMES[entry]}</span>
           </li>
         ))}

@@ -295,6 +295,44 @@ part of the flow. This is deliberate: `requireUser` and `maySpend` both still
 apply, so the most expensive endpoint in the product is never reachable
 anonymously, and the per-account spend ceiling still bounds it.
 
+#### Where a free account actually meets the offer (3 September)
+
+The lock stayed in one place, and it still does — nothing below is a gate.
+These are the surfaces that *say* what the lock is, and until 3 September two
+of the most-visited ones did not say it at all.
+
+| Surface | What a free account sees |
+|---|---|
+| The chrome | `Voice on Pro`, linking to `/profile/subscription` |
+| Train — the day's character | **`Start rep with <her>`**, opening `PaywallSheet` |
+| Train — the counter cell | `Voice is on Pro`, the trial and the price, linking to the plan |
+| A character's page | **`Unlock voice reps — 7 days free`**, with text under it |
+| The brief | `PaywallSheet`, on Start |
+| The scorecard, the result screen | `PaywallSheet`, on `Run it back` |
+| The end of a text scene | `Do this out loud — 7 days free` |
+
+**What was wrong.** Train's primary button read `Talk to Nadia in text` and the
+character's page read `Talk to her in text`, both routing straight there with
+the offer as a muted footnote underneath. That shape is correct for a *paying*
+account at the end of its day — F-14 closed a real activation cliff by
+reorganising around what is still open rather than around waiting — and it is
+exactly wrong for an account whose reps do not come back at midnight because
+there never were any. The two states had been sharing one branch.
+
+They do not now. A free account is asked; a paying account that is simply out
+for today is not, because there is nothing to sell it and §14 is explicit that
+running out must never read as losing the account. Text mode is still offered
+in every one of those places, as the second option rather than as the only one:
+`lib/site/plans.ts` says a plan changes voice volume and nothing else, and that
+has to keep being true on the screen as well as in the record.
+
+**One thing that was fixed on the way.** Train's sheet was a second one written
+inline, which said *"Your voice reps reset tonight"* to everybody — false for a
+free account, where nothing resets — and hard-coded `3 / day` and `6 / day`, so
+a price or a rep count changed here would have been changed in one place and
+not the other. It is `PaywallSheet` now, which reads both from this record and
+tells the two accounts apart.
+
 ### 5.3 The trial
 
 - `startCheckout` (`app/profile/subscription/actions.ts`) already exists and

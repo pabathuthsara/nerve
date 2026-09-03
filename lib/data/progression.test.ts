@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
 import { ARM_THRESHOLD, KEEP_THRESHOLD } from './rep-rules'
+import { rankFor } from './rank'
 import {
+  earnedLevels,
   engineRung,
+  nextUnlockProgress,
   qualifyingByLevel,
   uiLevel,
   uiWarmth,
   unlockedLevels,
+  unlockProgress,
+  unlockProgressLabel,
   unlockRequirement,
+  FIRST_UNLOCK_REPS,
   UNLOCK_REPS,
   UNLOCK_SCORE,
   wonFromOutcome,
@@ -115,14 +121,62 @@ describe('unlocks are counted from scores, not wins', () => {
     expect([...everything].sort()).toEqual([1, 2, 3, 4])
   })
 
-  it('has tiers 1 and 2 open from the start', () => {
-    // Tess and Nadia. A first session that has to be earned is a first session
-    // nobody has, and the two free tiers are the two receptive ones.
+  it('has tier 1 open from the start, and nothing else', () => {
+    // Tess, and only Tess. A first session that has to be earned is a first
+    // session nobody has — but everything above it is a rung, which is the
+    // whole of RETENTION-AUDIT R2: while tier 2 was free the first unlock any
+    // account could reach was tier 3, so no new user ever saw one.
     const open = unlockedLevels({})
     expect(open.has(1)).toBe(true)
-    expect(open.has(2)).toBe(true)
+    expect(open.has(2)).toBe(false)
     expect(open.has(3)).toBe(false)
     expect(open.has(4)).toBe(false)
+  })
+
+  it('never shuts a tier somebody has already played', () => {
+    // §08: a tier only ever opens. Gating tier 2 is the one change that could
+    // reach backwards, so a qualifying rep AT a tier is proof it was open —
+    // an account that scored 79 against Nadia while she was free must not find
+    // her locked because it never scored 70+ against Tess.
+    const open = unlockedLevels(qualifyingByLevel([{ level: 2, composite: 79 }]))
+    expect(open.has(2)).toBe(true)
+    expect(open.has(1)).toBe(true)
+    // And it takes nothing away from the gate: one rep at tier 2 is still not
+    // the two that tier 3 costs.
+    expect(open.has(3)).toBe(false)
+  })
+
+  it('still gates tier 2 for an account with no qualifying reps at all', () => {
+    // The rule above must not become a way around R2. A new account has no
+    // qualifying reps anywhere, so the gate is exactly as it was authored.
+    expect(unlockedLevels({}).has(2)).toBe(false)
+    expect(unlockedLevels({ 1: 0, 2: 0 }).has(2)).toBe(false)
+  })
+
+  it('never leaves a hole in the ladder', () => {
+    // The regression R2 introduced and this closes: the gates name only the
+    // tier directly below, so an account with two qualifying reps at tier 2 and
+    // none at tier 1 satisfied tier 3 and failed tier 2 — Maya and Robin open
+    // with Nadia locked between them. Closed downwards, never upwards: closing
+    // upwards would take a character away from somebody who earned her (§08).
+    const open = unlockedLevels(qualifyingByLevel([
+      { level: 2, composite: 92 },
+      { level: 2, composite: 88 },
+    ]))
+    expect([...open].sort()).toEqual([1, 2, 3])
+  })
+
+  it('opens tier 2 on one qualifying rep against Tess', () => {
+    // One, not two. The free grant is a single voice rep ever (§14), so a gate
+    // costing two graded reps is a gate the account standing at it cannot pay.
+    expect(unlockedLevels({ 1: 0 }).has(2)).toBe(false)
+    expect(unlockedLevels({ 1: FIRST_UNLOCK_REPS }).has(2)).toBe(true)
+  })
+
+  it('mints no rank for the tier it just made earnable', () => {
+    // `rankFor` reads tiers CLEARED (`UNLOCK_REPS` of them), never tiers open.
+    // Gating tier 2 must not move the rail with it.
+    expect(rankFor(qualifyingByLevel([{ level: 1, composite: 92 }]))).toBe('rookie')
   })
 
   it('advances a clean rep that ended in rejection', () => {
@@ -137,9 +191,63 @@ describe('unlocks are counted from scores, not wins', () => {
 
   it('says what a tier costs in the same words everywhere', () => {
     expect(unlockRequirement(1)).toBeNull()
-    expect(unlockRequirement(2)).toBeNull()
+    // `1 rep`, not `1 reps`. The gate a new account meets first is the one
+    // place the ladder is not uniform, and it is also the sentence they read.
+    expect(unlockRequirement(2)).toBe(`Score ${UNLOCK_SCORE}+ in 1 rep at Level 1`)
     expect(unlockRequirement(3)).toBe(`Score ${UNLOCK_SCORE}+ in ${UNLOCK_REPS} reps at Level 2`)
     expect(unlockRequirement(4)).toBe(`Score ${UNLOCK_SCORE}+ in ${UNLOCK_REPS} reps at Level 3`)
+  })
+})
+
+describe('what is open and what was earned are two questions', () => {
+  it('only mints a moment for a gate that was actually met', () => {
+    // The back-compat rules make `unlockedLevels` generous on purpose, so that
+    // gating tier 2 could not shut a character somebody already had. An account
+    // grandfathered in that way has not just unlocked anything, and telling it
+    // otherwise is the noise the unlock filter existed to avoid.
+    const grandfathered = qualifyingByLevel([{ level: 2, composite: 79 }])
+    expect(unlockedLevels(grandfathered).has(2)).toBe(true)
+    expect(earnedLevels(grandfathered).has(2)).toBe(false)
+  })
+
+  it('mints tier 2 for the rep that actually opened it', () => {
+    const earned = earnedLevels(qualifyingByLevel([{ level: 1, composite: 92 }]))
+    expect([...earned]).toEqual([2])
+  })
+
+  it('never mints tier 1, which nobody earns', () => {
+    expect(earnedLevels({ 1: 9, 2: 9, 3: 9 }).has(1)).toBe(false)
+  })
+})
+
+describe('the unlock meter (R8)', () => {
+  it('moves because of the rep that just happened', () => {
+    // The defect: `unlockRequirement` returns the same sentence before and
+    // after the rep that advanced it, so the one screen that could show
+    // progress showed a constant.
+    const before = unlockProgress(3, { 2: 0 })
+    const after = unlockProgress(3, { 2: 1 })
+    expect(before).toEqual({ level: 3, fromLevel: 2, have: 0, need: UNLOCK_REPS })
+    expect(after).toEqual({ level: 3, fromLevel: 2, have: 1, need: UNLOCK_REPS })
+    expect(unlockProgressLabel(after!)).toBe(`1 of ${UNLOCK_REPS} reps at ${UNLOCK_SCORE}+ on Level 02`)
+  })
+
+  it('is silent once the tier is open, and for a tier that was never gated', () => {
+    expect(unlockProgress(3, { 2: UNLOCK_REPS })).toBeNull()
+    expect(unlockProgress(1, {})).toBeNull()
+  })
+
+  it('never reads more than the gate costs', () => {
+    // Four qualifying reps at a tier is not "4 of 2".
+    expect(unlockProgress(3, { 2: 9 })).toBeNull()
+    expect(unlockProgress(4, { 3: 1, 2: 9 })).toEqual({ level: 4, fromLevel: 3, have: 1, need: UNLOCK_REPS })
+  })
+
+  it('points at the lowest tier still shut', () => {
+    // The result screen shows one meter, and the ladder is climbed in order.
+    expect(nextUnlockProgress({})).toEqual({ level: 2, fromLevel: 1, have: 0, need: FIRST_UNLOCK_REPS })
+    expect(nextUnlockProgress({ 1: 1 })).toEqual({ level: 3, fromLevel: 2, have: 0, need: UNLOCK_REPS })
+    expect(nextUnlockProgress({ 1: 1, 2: 2, 3: 2 })).toBeNull()
   })
 })
 

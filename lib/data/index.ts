@@ -35,6 +35,7 @@ import {
   fetchLibraryCard,
   fetchLibraryReads,
   fetchPersonas,
+  fetchRepRecords,
   fetchScorecard,
   fetchSession,
   fetchSessions,
@@ -45,6 +46,7 @@ import {
   fetchWeeklyReview,
   fetchWeeklyReviews,
 } from './queries'
+import type { RepRecord } from './records'
 import type {
   LibraryCard,
   ProgressPoint,
@@ -268,6 +270,16 @@ export function useScorecard(sessionId: string): Loadable<Scorecard | null> {
 
 export function useTranscript(sessionId: string): Loadable<TranscriptTurn[]> {
   return useAsync(() => fetchTranscript(sessionId), NO_TURNS, [sessionId])
+}
+
+/**
+ * The contact shelf (R10). Four slots, some of them empty on purpose.
+ *
+ * Read on Profile only. The gaps are the mechanic — a finite roster with a
+ * visible hole in it is a different sentence from a badge shelf.
+ */
+export function useRepRecords(): Loadable<RepRecord[]> {
+  return useAsync(fetchRepRecords, [], [])
 }
 
 export function useLifetimeStats(): Loadable<LifetimeStats | null> {

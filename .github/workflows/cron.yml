@@ -1,0 +1,100 @@
+# The hourly schedule Vercel's Hobby plan will not run.
+#
+# `LAUNCH-GAP.md` records why this exists: `/api/cron/weekly-review` is hourly
+# on purpose — Vercel crons run in UTC and "Sunday morning" is the user's
+# Sunday, so the route asks each account's own clock and leans on the
+# `(user_id, week_start)` unique constraint to write the letter once. The Hobby
+# plan refuses any expression more frequent than daily, and the first
+# production deploy failed on exactly that. Rather than make it daily and
+# reintroduce the timezone bug the route was written to avoid, the cron was
+# removed from `vercel.json` and nothing has called it since.
+#
+# That was the deferred decision, and RETENTION-AUDIT R6 is the reason to take
+# it: the Sunday letter is called "the fourth reason to come back" in
+# `lib/data/weekly.ts`, it is fully built and fully tested, and it has never
+# been generated for anybody. This is the first of the three ways out the
+# blocker names — free, preserves the design, and costs one more place that
+# holds the secret.
+#
+# ── WHAT HAS TO BE SET BEFORE THIS DOES ANYTHING ────────────────────────────
+#
+#   secrets.CRON_SECRET   the same value as the Vercel env var. Both routes
+#                         refuse outright when it is unset, so a missing secret
+#                         is a 401 rather than an open endpoint.
+#   vars.APP_URL          optional. Defaults to the canonical host below.
+#   RESEND_API_KEY        on Vercel, for the nudge only. Without it every send
+#                         is a logged no-op and the run still reports 200.
+#
+# ── WHY THE URL NAMES `www` ─────────────────────────────────────────────────
+#
+# `hellonerve.com` 308-redirects to `www.hellonerve.com`. A browser follows
+# that; `curl` without `-L` does not, and this workflow deliberately does not
+# follow redirects — a 308 here should fail loudly rather than quietly succeed
+# against the wrong host. Same trap that had the Whop webhook pointed at a
+# redirect (CLAUDE.md rule 13).
+
+name: Cron
+
+on:
+  schedule:
+    # Seven minutes past every hour. Off the hour on purpose: GitHub delays
+    # runs scheduled on the hour under load, and both routes care about which
+    # hour they land in rather than which minute.
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+# One run at a time. A queued second run would send a second copy of an email
+# whose only other guard is a per-user day stamp.
+concurrency:
+  group: nerve-cron
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      # Without the secret both routes answer 401 by design, and a workflow that
+      # fails every hour is a workflow whose failures nobody reads any more. It
+      # says what is missing, once, and stops — so the first real failure after
+      # the secret is set is a signal rather than the hundredth red cross.
+      - name: Check the secret is set
+        id: guard
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::notice::CRON_SECRET is not set on this repository, so nothing was called."
+            echo "::notice::Add it under Settings → Secrets and variables → Actions, with the same value as the Vercel env var."
+            echo "armed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "armed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: The Sunday letter, for anybody whose Sunday it is
+        if: steps.guard.outputs.armed == 'true'
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://www.hellonerve.com' }}
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o /tmp/weekly.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/weekly-review")
+          cat /tmp/weekly.json; echo
+          test "$status" = "200"
+
+      - name: The streak nudge, for anybody whose evening it is
+        # Runs even if the letter failed: they are independent jobs of work and
+        # one bad hour for the weekly route should not cost a whole evening of
+        # nudges.
+        if: always() && steps.guard.outputs.armed == 'true'
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://www.hellonerve.com' }}
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o /tmp/nudge.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/streak-nudge")
+          cat /tmp/nudge.json; echo
+          test "$status" = "200"

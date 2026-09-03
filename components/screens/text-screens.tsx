@@ -33,6 +33,7 @@ import { DistressModal } from '@/components/modals'
 import { useLatestFocus } from '@/lib/data'
 import { missionFor } from '@/lib/data/mission'
 import { cueRail, railVisible } from '@/lib/text/cues'
+import { TRIAL_DAYS } from '@/lib/site/plans'
 
 export function TextRepScreen({ personaId }: { personaId: string }) {
   const { data: persona, loading: personaLoading } = usePersona(personaId)
@@ -179,9 +180,20 @@ export function TextRepScreen({ personaId }: { personaId: string }) {
             <p>That is the scene over. Start fresh to run it again, or take it into a real rep.</p>
             <div className="text-rep__ended-actions">
               <Button size="sm" onClick={() => setFreshOpen(true)}>Start fresh</Button>
+              {/* The best-qualified prospect in the product, and this used to
+                  send them to `/train`.
+
+                  Text is capped below `ARM_THRESHOLD` on purpose — it can never
+                  produce the number a voice rep exists to earn — so somebody who
+                  has just run a whole text scene to its end has met the ceiling
+                  of the free tier at the exact moment they were enjoying it. A
+                  free account gets the offer here; a paying one that is simply
+                  out for today does not, because there is nothing to sell it. */}
               {(user?.repsRemainingToday ?? 0) > 0
                 ? <Link className="arena-button arena-button--ghost arena-button--sm" href={`/rep/${personaId}/brief`}>Run the voice rep</Link>
-                : <Link className="arena-button arena-button--ghost arena-button--sm" href="/train">Back to training</Link>}
+                : user?.voiceLocked
+                  ? <Link className="arena-button arena-button--secondary arena-button--sm" href="/profile/subscription">Do this out loud — {TRIAL_DAYS} days free</Link>
+                  : <Link className="arena-button arena-button--ghost arena-button--sm" href="/train">Back to training</Link>}
             </div>
           </div>
         ) : null}

@@ -60,6 +60,16 @@ export interface UserState {
    */
   voiceLocked: boolean
   streakDays: number
+  /**
+   * Today already counted (R14).
+   *
+   * A rep or a logged ask claims the day (§09, §14: running out must never
+   * break the streak). Carried so Train can say the streak is at risk without
+   * saying it to somebody who has already trained.
+   */
+  streakActiveToday: boolean
+  /** The last local day a rep or an ask counted, `YYYY-MM-DD`. Null if never. */
+  lastTrainedOn: string | null
   plan: Plan
   trainingWheels: boolean
   onboardingComplete: boolean
@@ -85,6 +95,14 @@ export interface Persona {
   portraitUrl: string
   locked: boolean
   unlockRequirement: string | null
+  /**
+   * How far along the gate this tier stands behind is (R8).
+   *
+   * Null when she is unlocked. `unlockRequirement` is the same fact as a static
+   * sentence and stays for anything that cannot draw a bar; this is the version
+   * that moves because of the rep that just happened.
+   */
+  unlockProgress: { level: Level; fromLevel: Level; have: number; need: number } | null
 }
 
 /**
@@ -205,6 +223,14 @@ export interface SessionSummary {
 /** The profile header. Every figure is derived from stored reps. */
 export interface LifetimeStats {
   totalReps: number
+  /**
+   * Every millisecond ever spent talking to somebody who might say no (R7).
+   *
+   * A monotonic counter for the in-app half, which had none — `streak` resets
+   * and `rejectionsCollected` lives entirely in the field. It cannot be lost
+   * at, which is the property that makes it worth printing on a loss screen.
+   */
+  totalMs: number
   /**
    * Mean composite across every graded rep (§07).
    *

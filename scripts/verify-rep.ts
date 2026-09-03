@@ -399,15 +399,21 @@ async function main(): Promise<void> {
       .eq('kind', kind)
       .is('announced_at', null)
 
-    // Roster tiers 1 and 2 are open from the start, so they are not moments —
-    // telling somebody they have unlocked what they were given is worse than
-    // saying nothing.
+    // Nothing here was EARNED, so nothing here is a moment.
+    //
+    // Tier 1 is open from the start. Tier 2 is a rung since RETENTION-AUDIT R2
+    // — one qualifying rep against Tess — and this account has none: its single
+    // qualifying rep is against Nadia, which opens tier 2 for ACCESS (§08 says
+    // a tier only ever opens, so a gate added later cannot shut a character
+    // somebody already played) without earning it. `syncLevel` records off
+    // `earnedLevels` rather than off the open set precisely so that the
+    // difference does not become a celebration for something already true.
     const { data: levelsWaiting } = await pending('level')
-    check((levelsWaiting?.length ?? 0) === 0, 'a roster tier that was always open is never announced')
+    check((levelsWaiting?.length ?? 0) === 0, 'a tier opened by grandfathering is never announced')
 
-    // The field tier is a different story and SHOULD be here. A fresh account
-    // reaches engine level 4 the moment its first rep is graded, because UI
-    // tiers 1 and 2 are free, and §09 opens Tier 2 challenges at sim level 4.
+    // The field tier is a different story and SHOULD be here. This account's
+    // ladder position lands at the rung Nadia stands on the moment its first
+    // rep is graded, and §09 opens Tier 2 challenges from there.
     const { data: tiersWaiting } = await pending('tier')
     check(
       tiersWaiting?.length === 1 && tiersWaiting[0]?.ref === '2',

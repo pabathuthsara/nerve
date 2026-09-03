@@ -26,7 +26,17 @@ the real world and log the outcome.
    Read it before touching anything public-facing — every provider on the
    shortlist bans dating products by name, so the landing page is an
    application document.
-4. **`docs/NERVE-SPEC.md` is the specification.** Section numbers (§04, §07,
+4. **`docs/RETENTION-AUDIT.md` is why the loop pulls, and what it cost to make
+   it.** Seventeen findings, all resolved on 3 September: R2–R17 shipped, **R1
+   was decided (free stays at `repsPerDay: 0`)** and §5 was held open on the
+   record. Nothing there is outstanding as work; two secrets are (R6). Read its §2 before adding any celebration —
+   the loud moment is keyed to a personal-best composite and never to a win —
+   and its §4, which is the list of mechanics that stay refused: no confetti, no
+   leaderboards, no guilt copy, no fourth haptic. **A gate lives in
+   `UNLOCK_RULES`**: tier 2 costs one qualifying rep against Tess, and
+   `rankFor` reads tiers *cleared* rather than tiers *open*, so a new gate must
+   not move the rank rail with it.
+5. **`docs/NERVE-SPEC.md` is the specification.** Section numbers (§04, §07,
    §14…) are cited throughout the code and the docs; when a rule here says
    "§07", that is where it comes from. Read it before implementing anything
    substantial.
@@ -53,6 +63,7 @@ npm run whop:setup       # creates the Whop product, plans and webhook (dry run 
 npm run whop:verify      # the money preflight: keys, plans, prices, trial, webhook
 npm run whop:probe       # the webhook route over HTTP: signature, account check, status codes
 npm run legal:pdf        # the legal documents as PDFs, rendered from the running app
+npm run shots            # product screenshots from the running app; no page embeds them (VISUAL-AUDIT §V2)
 npm run grade:calibrate  # the §17 gate: grade drift on the deployed route
 ```
 
@@ -80,7 +91,10 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    silently; thirty seconds from the end she is told either to leave or to
    offer her number; she keeps it if she is still at 55 or above. She never
    speaks digits. The rules live in `lib/data/rep-rules.ts` as pure functions
-   with tests — change them there, not in the hook.
+   with tests — change them there, not in the hook. **How the result is read is
+   part of that file too**: `resultReading` owns `close`, `lateSurge` and
+   `nearMiss`, so "she was never interested" and "you missed by four" are one
+   decision with tests rather than two arithmetic expressions in a component.
 4. **No spinners.** Skeletons that match the shape of the arriving content. (§02)
 5. **Never announce a downward difficulty adjustment.** Silent. (§08, §12)
 6. **No coaching during a live rep.** Timer, waveform, mission. Nothing else. (§05)
@@ -157,11 +171,33 @@ Dark only, no light mode. Athletic performance aesthetic: data is the hero.
 - Ground `#0B0C0A` · Surface `#131511` · Surface-2 `#191C16` · Line `#242820`
 - Volt `#C4F82A` — the ONLY accent. Live state, primary action, composite score, current
   position. If volt appears twice on a screen, one of them is wrong.
+  **The exception is an earned moment** — a personal best, a rank, an unlock, a
+  milestone — which may take the full frame in volt for under two seconds
+  before returning to sober. One component owns it (`BestBeat`, in
+  `components/screens/session-screens.tsx`), it is `aria-hidden`, and
+  `prefers-reduced-motion` removes it entirely. **It is keyed to a personal-best
+  composite and never to `session.won`**, because §07 says outcome is worth zero
+  and a system that detonates on a win is scoring the result — see
+  `docs/RETENTION-AUDIT.md` §2, which is the argument for the whole exception.
+  Every other rule in Arena is a rule about restraint, which left the system
+  with one emotional register and a first win rendering in the same language as
+  a lost rep.
 - Cool `#5AA9FF` — second data series only, never an action colour
 - Amber `#FFB020` / Red `#FF4D3D` — semantic only, never branding
 - Ink `#EDEFE8` · Ink-2 `#9DA396` · Ink-3 `#6A7062`
 - Type: Barlow Condensed 700 (display, uppercase) / IBM Plex Sans (body) / IBM Plex Mono (data)
 - **Border radius max 2px.** Hairlines, never shadows. `tabular-nums` on all digits.
+
+**Marks, not icons.** Thirty things a user is meant to recognise on sight —
+four ranks, four roster tiers, four field tiers, six score dimensions, five
+library kinds, four rejection milestones, three plans — are drawn from
+`components/marks/`, and the mapping lives in `lib/marks/registry.ts` with a
+test that walks the real unions. A mark is Ink-2 and takes volt **only** through
+`current`, which is how a forty-two glyph set stays inside "volt appears once
+per screen". Add a glyph in both files or `tsc` and the suite will say so.
+`docs/VISUAL-AUDIT.md` is the argument for all of it — including §1, which is
+why the obvious answer to "too much text" (photographs of people) is the one
+thing this product must never ship.
 
 **The one carve-out: persona avatars.** Characters have to be told apart at a
 glance, so each carries a hue — on a constrained material ramp authored in

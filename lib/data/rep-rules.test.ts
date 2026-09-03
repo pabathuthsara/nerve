@@ -28,7 +28,9 @@ import {
   shouldWrapUp,
   WRAP_UP_MS,
   resultReading,
+  pointsShort,
   INTERVIEW_THRESHOLD,
+  NEAR_MISS_POINTS,
 } from './rep-rules'
 import { PERSONAS } from '@/lib/personas'
 
@@ -249,5 +251,57 @@ describe('scene beats', () => {
     for (const persona of Object.values(PERSONAS)) {
       expect(persona.want.trim().length, persona.name).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('the near-miss (R4)', () => {
+  it('separates missing by four from never being in it', () => {
+    // The whole finding: both of these rendered as the same screen, under the
+    // same headline, with the same layout.
+    const four = resultReading({ decisionWarmth: ARM_THRESHOLD - 4, finalWarmth: 60, interview: false, won: false })
+    expect(four.close).toBe(4)
+    expect(four.nearMiss).toBe(true)
+
+    const cold = resultReading({ decisionWarmth: 20, finalWarmth: 22, interview: false, won: false })
+    expect(cold.close).toBe(ARM_THRESHOLD - 20)
+    expect(cold.nearMiss).toBe(false)
+  })
+
+  it('stops being nearly at the authored boundary, and stays honest past it', () => {
+    const inside = resultReading({ decisionWarmth: ARM_THRESHOLD - NEAR_MISS_POINTS, finalWarmth: 57, interview: false, won: false })
+    const outside = resultReading({ decisionWarmth: ARM_THRESHOLD - NEAR_MISS_POINTS - 1, finalWarmth: 56, interview: false, won: false })
+    expect(inside.nearMiss).toBe(true)
+    expect(outside.nearMiss).toBe(false)
+  })
+
+  it('counts a late surge as a near-miss however the arithmetic falls', () => {
+    // `close` is negative here — she was told to leave at 64 and the meter
+    // finished at 71 — and getting there after she answered is the definition
+    // of nearly, so the sign must not decide it.
+    const late = resultReading({ decisionWarmth: 64, finalWarmth: 71, interview: false, won: false })
+    expect(late.lateSurge).toBe(true)
+    expect(late.nearMiss).toBe(true)
+  })
+
+  it('never calls a win a near-miss', () => {
+    // A rep decided one point over the bar is close in the arithmetic and is
+    // not a near-miss in any sense the screen cares about.
+    const won = resultReading({ decisionWarmth: ARM_THRESHOLD + 1, finalWarmth: 80, interview: false, won: true })
+    expect(won.nearMiss).toBe(false)
+  })
+
+  it('reads the interview bar rather than the dating one', () => {
+    const interview = resultReading({ decisionWarmth: INTERVIEW_THRESHOLD - 3, finalWarmth: 68, interview: true, won: false })
+    expect(interview.close).toBe(3)
+    expect(interview.nearMiss).toBe(true)
+  })
+
+  it('spells the headline, because it is said rather than measured', () => {
+    expect(pointsShort(4)).toBe('Four points')
+    expect(pointsShort(1)).toBe('One point')
+    expect(pointsShort(8)).toBe('Eight points')
+    // Nothing above the near-miss window ever reaches this, but a numeral is a
+    // better answer than `undefined points`.
+    expect(pointsShort(12)).toBe('12 points')
   })
 })

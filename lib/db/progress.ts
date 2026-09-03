@@ -24,7 +24,7 @@ import {
   voiceRefusal,
   type RefusalKind,
 } from '@/lib/data/allowance'
-import { engineRung, qualifyingByLevel, uiLevel, unlockedLevels, UNLOCK_RULES } from '@/lib/data/progression'
+import { earnedLevels, engineRung, qualifyingByLevel, uiLevel, unlockedLevels } from '@/lib/data/progression'
 import { rankFor } from '@/lib/data/rank'
 import { unlockedTier, type FieldHistory } from '@/lib/field/assignment'
 import type { Level } from '@/lib/data/types'
@@ -318,7 +318,22 @@ const RECONNECT_WINDOW_MS = 10 * 60 * 1000
  * §01 is one rep a day, and a streak that rewards six reps on Sunday is a
  * streak that teaches bingeing.
  */
-export async function recordTrainingDay(userId: string): Promise<void> {
+export interface TrainingDay {
+  /** The streak after this day, whether or not this call is what set it. */
+  streak: number
+  /**
+   * True when THIS call is what claimed the day.
+   *
+   * The whole of RETENTION-AUDIT R14 hangs off this boolean. §14's rule that
+   * running out must never break the streak is implemented — a field ask keeps
+   * the day — and it has always been a silent database behaviour. A caller that
+   * knows it was the thing that kept the day can say so, and a streak freeze
+   * nobody is told about is a streak freeze nobody values.
+   */
+  claimed: boolean
+}
+
+export async function recordTrainingDay(userId: string): Promise<TrainingDay | null> {
   const admin = supabaseAdmin()
   const zone = await timezoneFor(userId)
   const today = localDay(new Date(), zone)
@@ -329,7 +344,10 @@ export async function recordTrainingDay(userId: string): Promise<void> {
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (!row || row.last_active_on === today) return
+  if (!row) return null
+  // Already claimed, by a rep or by an earlier ask. Nothing moves, and nothing
+  // is announced — "Day 6 kept" said twice in one day is noise.
+  if (row.last_active_on === today) return { streak: row.current, claimed: false }
 
   const continued = row.last_active_on !== null && daysBetween(row.last_active_on, today) === 1
   const streak = continued ? row.current + 1 : 1
@@ -342,6 +360,8 @@ export async function recordTrainingDay(userId: string): Promise<void> {
       last_active_on: today,
     })
     .eq('user_id', userId)
+
+  return { streak, claimed: true }
 }
 
 /**
@@ -434,11 +454,17 @@ export async function syncLevel(userId: string): Promise<void> {
   const counts = qualifyingByLevel(reps)
   const open = unlockedLevels(counts)
 
-  // Tiers 1 and 2 are open from the start, so they are not moments — telling
-  // somebody they have unlocked what they were given is worse than saying
-  // nothing. Only a tier with a rule can be earned.
-  await recordUnlocks(userId, [...open]
-    .filter((tier) => UNLOCK_RULES[tier] !== null)
+  // `earnedLevels`, not `open`. Tier 1 is open from the start, so it is not a
+  // moment — telling somebody they have unlocked what they were given is worse
+  // than saying nothing. Since RETENTION-AUDIT R2 every tier above the first is
+  // earnable, and tier 2 fires on one qualifying rep against Tess, which is the
+  // first unlock a new account can actually reach.
+  //
+  // `open` is deliberately wider than this: it also carries the two rules that
+  // stop the new gate reaching backwards (a tier you have already played, and
+  // anything below an open one). Those are access, not achievement — an
+  // account grandfathered into tier 2 must not be told it just unlocked it.
+  await recordUnlocks(userId, [...earnedLevels(counts)]
     .map((tier) => ({ kind: 'level' as const, ref: String(tier) })))
 
   const topTier = Math.max(...open) as Level

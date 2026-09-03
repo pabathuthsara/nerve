@@ -808,6 +808,22 @@ free, preserves the design, adds a second place that has to hold the secret; a
 Pro upgrade, which unlocks the expression as authored; or a daily cron and an
 accepted drift. Deferred rather than decided.
 
+> **Decided on 3 September: the first one** (`RETENTION-AUDIT.md` R6, which
+> calls this the cheapest retention point on the board). `.github/workflows/cron.yml`
+> runs at seven past every hour and curls two routes with `CRON_SECRET` as a
+> bearer token: `/api/cron/weekly-review`, and the new
+> `/api/cron/streak-nudge`. The URL names `www` and the workflow does not follow
+> redirects, so the apex 308 fails loudly rather than quietly succeeding against
+> the wrong host.
+>
+> **It does nothing until two secrets are set, and both are founder tasks.**
+> `CRON_SECRET` as a GitHub Actions repository secret, holding the same value as
+> the Vercel env var — without it both routes answer 401 rather than running
+> open. And `RESEND_API_KEY` on Vercel for the nudge, without which every send
+> is a logged no-op and the run still reports success. The weekly letter needs
+> only the first. Until the first is set, no letter is generated for anybody and
+> the pricing page's promise to free accounts is still unkept.
+
 **Blocker total: roughly 10.5 working days**, down from 21 after the database
 pass, 16 with B8 cleared, 15 with B9, 14 with B10, back down as B11's half day
 was spent, and down again with B1 and B3 — plus merchant-of-record review time,

@@ -139,13 +139,33 @@ warmth digits off the screen from level 4 — the top rung is where the user
 should be reading a person instead of a meter, which is precisely her skill, and
 that rule now lands on exactly the character it was written for.
 
-Tier 1 and tier 2 are open from the start. **Tier 3 costs two reps scoring 70+
-at tier 2, and tier 4 two at tier 3** (§08) — the score, never the outcome. A
-clean rep that ended in rejection can score 92 and advance you; a lucky one that
-got her number and scored 54 does not. Unlocks are derived from the reps you
-have actually run, not stored, so they cannot disagree with your own history.
-Robin's gate is unchanged by the renumber: it was two qualifying reps against
-Maya before and it is two qualifying reps against Maya now.
+Tier 1 is open from the start and nothing else is. **Tier 2 costs one rep
+scoring 70+ at tier 1, tier 3 two at tier 2, and tier 4 two at tier 3** (§08) —
+the score, never the outcome. A clean rep that ended in rejection can score 92
+and advance you; a lucky one that got her number and scored 54 does not. Unlocks
+are derived from the reps you have actually run, not stored, so they cannot
+disagree with your own history. Robin's gate is unchanged by the renumber: it
+was two qualifying reps against Maya before and it is two qualifying reps
+against Maya now.
+
+**Tier 2 became a rung on 3 September** (`RETENTION-AUDIT.md` R2). It was free,
+and the consequence was that no new account could ever reach an unlock: levels 1
+and 2 were both given, so the first gate on the whole ladder was tier 3 behind
+two graded reps at 70+, which is a gate nobody meets while they are still
+deciding whether to stay. Nadia was always there, and nothing was earned by
+arriving at her. One qualifying rep rather than two, because the free grant is a
+single voice rep ever (§14) and a two-rep gate is one the account standing at it
+cannot pay. The rank rail did not move with it — `rankFor` reads tiers *cleared*
+rather than tiers *open*, precisely so that a tier becoming available mints
+nothing.
+
+The ladder is also **closed downwards**: a tier below an open one is open, even
+if its own gate was never met. Each rule names only the tier directly below, so
+before tier 2 was gated it did not matter; afterwards an account with two
+qualifying reps against Nadia and none against Tess satisfied tier 3 and failed
+tier 2, which drew Maya and Robin open with Nadia locked between them. Closed
+downwards rather than upwards, because §08 says a tier only ever opens and
+closing upwards would take a character away from somebody who had earned her.
 
 **Tier 1 is winnable by design, and still has to be won.** Tess arms four turns
 into a three-minute rep for somebody who says four real sentences. Fifteen turns

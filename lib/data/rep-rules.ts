@@ -183,6 +183,22 @@ export function dueSceneBeat(input: {
   return input.elapsedFraction >= next.at ? next : null
 }
 
+/**
+ * How far under the bar still counts as nearly.
+ *
+ * Eight points, and the number is the product decision rather than the
+ * arithmetic: RETENTION-AUDIT R4 is that a rep which missed by four and a rep
+ * that was never in it rendered as the same screen, and "she wasn't interested
+ * from the start" is a reasonable thing to tell the second person and a
+ * demotivating lie to tell the first.
+ *
+ * Wide enough that a real near-miss lands inside it and narrow enough that it
+ * stays true — at nine or ten points under, "you were close" is flattery, and
+ * a product that flatters on a loss is a product whose praise is worth nothing
+ * on a win.
+ */
+export const NEAR_MISS_POINTS = 8
+
 export interface ResultReading {
   /** The number to show against the threshold. */
   warmth: number
@@ -197,6 +213,19 @@ export interface ResultReading {
    * two numbers at the point of rendering.
    */
   lateSurge: boolean
+  /**
+   * How far under the bar the decision was taken. Negative on a late surge,
+   * which is the only way a lost rep can read above the threshold.
+   */
+  close: number
+  /**
+   * Near enough that the screen is allowed to say so (R4).
+   *
+   * A late surge is always a near-miss however the arithmetic falls: getting
+   * there thirty seconds after she answered is the definition of nearly, and
+   * `close` is negative in that case rather than small.
+   */
+  nearMiss: boolean
 }
 
 /**
@@ -231,7 +260,34 @@ export function resultReading(input: {
     ? !input.won && input.finalWarmth > threshold
     : warmth < threshold && input.finalWarmth > threshold
 
-  return { warmth, threshold, fallback, lateSurge }
+  const close = threshold - warmth
+
+  return {
+    warmth,
+    threshold,
+    fallback,
+    lateSurge,
+    close,
+    nearMiss: !input.won && (lateSurge || (close > 0 && close <= NEAR_MISS_POINTS)),
+  }
+}
+
+/**
+ * `Four points`, not `4 points` — and `One point`, not `1 points`.
+ *
+ * The near-miss headline is the most motivating sentence the result screen can
+ * produce, and a numeral in a headline reads as data. This is the one place in
+ * the product where a number is deliberately spelled: everywhere else digits
+ * are the house style (`tabular-nums` on all of them), and the difference is
+ * that this one is being *said* rather than measured.
+ */
+const SPELLED = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'] as const
+
+export function pointsShort(points: number): string {
+  const whole = Math.max(0, Math.round(points))
+  const word = SPELLED[whole] ?? String(whole)
+  const capital = word.charAt(0).toUpperCase() + word.slice(1)
+  return `${capital} ${whole === 1 ? 'point' : 'points'}`
 }
 
 /**

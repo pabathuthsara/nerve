@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Check, ChevronRight, Download, FlaskConical, Headphones, LogOut, Mic, RotateCcw, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useFieldStats, useLifetimeStats, usePlanWaitlist, useSessionHistory, useSubscription, useUserState } from '@/lib/data'
+import { useFieldStats, useLifetimeStats, usePlanWaitlist, useRepRecords, useSessionHistory, useSubscription, useUserState } from '@/lib/data'
 import type { FieldStats, Plan, SessionSummary, SubscriptionState } from '@/lib/data/types'
 import { signOut } from '@/app/auth/actions'
 import { resetPerson } from '@/components/analytics'
@@ -15,6 +15,10 @@ import { FOCUS_OPTIONS } from '@/components/screens/onboarding-screens'
 import { SUPPORT_EMAIL } from '@/components/site/site-chrome'
 import type { FocusArea } from '@/lib/data/focus'
 import { planWaitlistFlag } from '@/lib/data/ui-flags'
+import { dayCount } from '@/lib/data/rank'
+import { Mark, tierMark } from '@/components/marks'
+import { FluidPersona } from '@/components/fluid-persona'
+import { recordLabel, type RepRecord } from '@/lib/data/records'
 import { BILLING_NOTE, CHECKOUT_NOTE, CHECKOUT_UNCONFIGURED_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE, repsLine, type PublicPlan } from '@/lib/site/plans'
 import { cancelSubscription, startCheckout } from '@/app/profile/subscription/actions'
 import { forgetCurrentUser } from '@/lib/data/session'
@@ -58,10 +62,78 @@ function ProfileHome() {
   const { data: stats, loading: statsLoading } = useLifetimeStats()
   const { data: field, loading: fieldLoading } = useFieldStats()
   const [signOutOpen, setSignOutOpen] = useState(false)
-  return <AppShell title="Profile"><div className="profile-head">{userLoading || !user ? <><Skeleton width={64} height={64} style={{ borderRadius: '50%' }} /><div style={{ flex: 1 }}><Skeleton width={170} height={34} /><Skeleton width={210} height={14} style={{ marginTop: 8 }} /></div></> : <><Avatar name={user.displayName} size={64} /><div><h1 className="display-lg">{user.displayName}</h1><span className="muted">{user.email}</span></div><Chip tone="volt">{user.plan}</Chip></>}</div><section><span className="label">Lifetime stats</span>{statsLoading || !stats ? <div className="profile-stats">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} height={92} />)}</div> : <div className="profile-stats"><Stat label="Total reps" value={stats.totalReps} /><Stat label="Avg score" value={stats.averageScore === null ? '—' : stats.averageScore} /><Stat label="Best time" value={stats.bestTimeMs === null ? '—' : formatTime(stats.bestTimeMs)} /><Stat label="Avg warmth gain" value={stats.averageWarmthGain === null ? '—' : `${stats.averageWarmthGain > 0 ? '+' : ''}${stats.averageWarmthGain}`} /><Stat label="Current streak" value={`${stats.currentStreak} days`} /><Stat label="Longest streak" value={`${stats.longestStreak} days`} /></div>}{stats && stats.currentStreak >= 7 ? <div style={{ margin: '-8px 0 24px' }}><ShareButton kind="streak" label={`Share ${stats.currentStreak} days`} /></div> : null}</section><FieldSummary stats={field} loading={fieldLoading} /><Card className="profile-chart-card"><div className="card-heading"><div><span className="label">Last 20 sessions</span><h2 className="display-md">Warmth over time</h2></div><div className="chart-legend"><span><i /> Warmth</span><span><i className="cool" /> Score</span></div></div>{sessionLoading ? <Skeleton height={150} /> : <WarmthChart sessions={sessions} />}</Card><nav className="profile-links"><ProfileLink href="/progress" label="Progress" /><ProfileLink href="/profile/history" label="Session history" /><ProfileLink href="/profile/subscription" label="Subscription" /><ProfileLink href="/profile/settings" label="Settings" /></nav><Button variant="ghost" onClick={() => setSignOutOpen(true)}><LogOut size={18} strokeWidth={1.5} /> Sign out</Button><Sheet open={signOutOpen} onClose={() => setSignOutOpen(false)} title="Sign out?"><div className="sheet-stack"><p>Your saved reps stay exactly where they are.</p><form action={signOut} onSubmit={() => { forgetCurrentUser(); resetPerson() }}><Button type="submit" fullWidth>Sign out</Button></form><Button variant="ghost" fullWidth onClick={() => setSignOutOpen(false)}>Stay here</Button></div></Sheet></AppShell>
+  return <AppShell title="Profile"><div className="profile-head">{userLoading || !user ? <><Skeleton width={64} height={64} style={{ borderRadius: '50%' }} /><div style={{ flex: 1 }}><Skeleton width={170} height={34} /><Skeleton width={210} height={14} style={{ marginTop: 8 }} /></div></> : <><Avatar name={user.displayName} size={64} /><div><h1 className="display-lg">{user.displayName}</h1><span className="muted">{user.email}</span></div><Chip tone="volt">{user.plan}</Chip></>}</div><section><span className="label">Lifetime stats</span>{statsLoading || !stats ? <div className="profile-stats">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} height={92} />)}</div> : <div className="profile-stats"><Stat label="Total reps" value={stats.totalReps} /><Stat label="Avg score" value={stats.averageScore === null ? '—' : stats.averageScore} /><Stat label="Best time" value={stats.bestTimeMs === null ? '—' : formatTime(stats.bestTimeMs)} /><Stat label="Avg warmth gain" value={stats.averageWarmthGain === null ? '—' : `${stats.averageWarmthGain > 0 ? '+' : ''}${stats.averageWarmthGain}`} /><Stat label="Current streak" value={dayCount(stats.currentStreak)} /><Stat label="Longest streak" value={dayCount(stats.longestStreak)} /></div>}{stats && stats.currentStreak >= 7 ? <div style={{ margin: '-8px 0 24px' }}><ShareButton kind="streak" label={`Share ${stats.currentStreak} days`} /></div> : null}</section><ContactShelf /><FieldSummary stats={field} loading={fieldLoading} /><Card className="profile-chart-card"><div className="card-heading"><div><span className="label">Last 20 sessions</span><h2 className="display-md">Warmth over time</h2></div><div className="chart-legend"><span><i /> Warmth</span><span><i className="cool" /> Score</span></div></div>{sessionLoading ? <Skeleton height={150} /> : <WarmthChart sessions={sessions} />}</Card><nav className="profile-links"><ProfileLink href="/progress" label="Progress" /><ProfileLink href="/profile/history" label="Session history" /><ProfileLink href="/profile/subscription" label="Subscription" /><ProfileLink href="/profile/settings" label="Settings" /></nav><Button variant="ghost" onClick={() => setSignOutOpen(true)}><LogOut size={18} strokeWidth={1.5} /> Sign out</Button><Sheet open={signOutOpen} onClose={() => setSignOutOpen(false)} title="Sign out?"><div className="sheet-stack"><p>Your saved reps stay exactly where they are.</p><form action={signOut} onSubmit={() => { forgetCurrentUser(); resetPerson() }}><Button type="submit" fullWidth>Sign out</Button></form><Button variant="ghost" fullWidth onClick={() => setSignOutOpen(false)}>Stay here</Button></div></Sheet></AppShell>
 }
 
 function formatTime(ms: number) { const seconds = Math.round(ms / 1000); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
+
+/**
+ * The contact shelf (RETENTION-AUDIT R10).
+ *
+ * A win used to mint nothing at all. She never speaks digits — product law, and
+ * not moving — but the rep is a thing that happened, and this is the record of
+ * it: her name, the level, the date, how long it took, and one line of what
+ * worked. The strings are guarded by `assertPublishable` in
+ * `lib/data/records.ts`, because a record that reads as a relationship is the
+ * companion-app framing §16 forbids and §14 calls a payment account waiting to
+ * be closed.
+ *
+ * **The empty slots are the mechanic.** The roster is finite — four characters,
+ * four records — so an unfilled slot is not a missing feature, it is the hole
+ * where Robin's record is not. §08's "a rail rather than a badge shelf"
+ * objection does not apply: a rail says where you are, a badge says you have
+ * one, and a collection with visible gaps says what is missing.
+ */
+function ContactShelf() {
+  const { data: records, loading } = useRepRecords()
+  if (loading) return <section><span className="label">Cleared</span><div className="record-shelf">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} height={168} />)}</div></section>
+  if (records.length === 0) return null
+  const cleared = records.filter((record) => record.cleared !== null).length
+  return (
+    <section>
+      <div className="card-heading">
+        <div><span className="label">Cleared</span><h2 className="display-md">The roster</h2></div>
+        <span className="label mute data">{cleared} / {records.length}</span>
+      </div>
+      <div className="record-shelf">{records.map((record) => <RecordCard key={record.personaId} record={record} />)}</div>
+    </section>
+  )
+}
+
+function RecordCard({ record }: { record: RepRecord }) {
+  const cleared = record.cleared
+  if (!cleared) {
+    // The gap, drawn rather than left out. Her orb at its coldest and her name,
+    // and nothing that reads as a locked feature — she is not locked, she is
+    // simply not cleared.
+    return (
+      <article className="record-card record-card--empty">
+        <FluidPersona name={record.personaName} personaId={record.personaId} warmth={10} size={44} />
+        <div>
+          <span className="label">{recordLabel(record.level, false)}</span>
+          <strong className="display-md">{record.personaName}</strong>
+        </div>
+        <p className="record-card__empty-line">Not yet.</p>
+      </article>
+    )
+  }
+  return (
+    <Link className="record-card" href={`/session/${cleared.sessionId}/scorecard`}>
+      <span className="record-card__mark"><Mark name={tierMark(record.level)} size={17} /></span>
+      <div>
+        <span className="label">{recordLabel(record.level)}</span>
+        <strong className="display-md">{record.personaName}</strong>
+        <span className="label mute">{record.settingShort}</span>
+      </div>
+      <p className="record-card__meta data">{recordDate(cleared.at)} · {formatTime(cleared.durationMs)}{cleared.composite === null ? '' : ` · ${cleared.composite}`}</p>
+      {cleared.wentWell ? <p className="record-card__line">{cleared.wentWell}</p> : null}
+    </Link>
+  )
+}
+
+function recordDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
 
 /**
  * The field, in three numbers (§09).
@@ -91,7 +163,7 @@ function WarmthChart({ sessions }: { sessions: SessionSummary[] }) {
   // until it looks like twenty is a chart that lies about how much work you
   // have done.
   const values = sessions.slice(0, 20).reverse()
-  if (values.length < 2) return <EmptyState title="Not enough reps yet" description="Two reps and this becomes a line worth reading." />
+  if (values.length < 2) return <EmptyState mark="state-chart" title="Not enough reps yet" description="Two reps and this becomes a line worth reading." />
   const x = (index: number) => 12 + index * (376 / Math.max(1, values.length - 1))
   const points = values.map((session, index) => `${x(index)},${112 - session.finalWarmth}`).join(' ')
   const scored = values.map((session, index) => ({ session, index })).filter((entry) => entry.session.compositeScore !== null)
@@ -128,7 +200,7 @@ function HistoryScreen() {
     return [...buckets.entries()]
   }, [filtered])
 
-  return <AppShell title="History"><div className="screen-heading compact"><span className="label">Review the work</span><h1 className="display-lg">Session history</h1></div><div className="history-toolbar"><Tabs items={['ALL', 'WINS', 'LOSSES'] as const} value={filter} onChange={setFilter} label="History filter" /><label className="persona-filter"><span className="label">Persona</span><select value={persona} onChange={(event) => setPersona(event.target.value)}><option value="all">All personas</option>{personas.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label></div>{loading ? <div className="history-list">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} height={72} />)}</div> : groups.length ? <div className="history-groups">{groups.map(([label, rows]) => <section key={label}><header className="sticky-group">{label}</header>{rows.map((session) => <SessionRow key={session.id} session={session} />)}</section>)}</div> : <EmptyState title={sessions.length ? 'Nothing under this filter' : 'No reps yet'} description={sessions.length ? 'Widen the filter to see the rest of your work.' : 'Run the first one. It gives this page something honest to show.'} action={sessions.length ? undefined : <Link className="arena-button arena-button--primary" href="/train">Start your first</Link>} />}</AppShell>
+  return <AppShell title="History"><div className="screen-heading compact"><span className="label">Review the work</span><h1 className="display-lg">Session history</h1></div><div className="history-toolbar"><Tabs items={['ALL', 'WINS', 'LOSSES'] as const} value={filter} onChange={setFilter} label="History filter" /><label className="persona-filter"><span className="label">Persona</span><select value={persona} onChange={(event) => setPersona(event.target.value)}><option value="all">All personas</option>{personas.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label></div>{loading ? <div className="history-list">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} height={72} />)}</div> : groups.length ? <div className="history-groups">{groups.map(([label, rows]) => <section key={label}><header className="sticky-group">{label}</header>{rows.map((session) => <SessionRow key={session.id} session={session} />)}</section>)}</div> : <EmptyState mark={sessions.length ? 'state-filter' : 'state-session'} title={sessions.length ? 'Nothing under this filter' : 'No reps yet'} description={sessions.length ? 'Widen the filter to see the rest of your work.' : 'Run the first one. It gives this page something honest to show.'} action={sessions.length ? undefined : <Link className="arena-button arena-button--primary" href="/train">Start your first</Link>} />}</AppShell>
 }
 
 function dayLabel(iso: string): string {
@@ -192,7 +264,7 @@ function SettingsScreen() {
     entitlement, so it is the user's to change. */}<SettingRow label="What you're training for" detail="Steers who you meet, your field challenges, and the technique on your brief"><select className="setting-select" aria-label="What you're training for" value={focus} disabled={loading} onChange={(event) => { const next = event.target.value as FocusArea; if (!next) return; setFocus(next); save(saveFocusArea(next), 'Focus saved.') }}>{focus ? null : <option value="">Not set</option>}{FOCUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></SettingRow><ToggleRow label="Show warmth number during reps" detail="Removed automatically at Level 4" value={warmth} onChange={(next) => { setWarmth(next); save(saveTrainingWheels(next), next ? 'Warmth number on.' : 'Warmth number off.') }} /><ToggleRow label="Rep sounds" detail="The countdown, the thirty-second mark and the score reveal" value={sound} onChange={(next) => { setSound(next); setSoundEnabled(next); toast.push(next ? 'Rep sounds on.' : 'Rep sounds off.', 'volt') }} /><ToggleRow label="Room ambience" detail="Keep the scene present between turns" value={room && ambience} disabled={!room} onChange={(next) => { setAmbience(next); save(saveAudioPreferences({ ambience: next }), next ? 'Ambience on.' : 'Ambience off.') }} /></SettingsGroup><SettingsGroup label="Data"><SettingRow label="Character memory" detail="One line each, about the encounter — never about how you did"><Button size="sm" variant="secondary" disabled={forgetting} onClick={() => setForgetOpen(true)}><RotateCcw size={16} strokeWidth={1.5} /> Clear all</Button></SettingRow><div className="setting-row setting-row--stacked"><div><strong>Shared cards</strong><span>Every card you have published, and the link that kills it</span></div><SharedCards /></div><SettingRow label="Export my data" detail="Sessions, scores, and transcript"><Button size="sm" variant="secondary" disabled><Download size={16} strokeWidth={1.5} /> Export</Button></SettingRow><SettingRow label="Delete account" detail="Permanent and immediate"><Button size="sm" variant="danger" onClick={() => setDeleteOpen(true)}><Trash2 size={16} strokeWidth={1.5} /> Delete</Button></SettingRow></SettingsGroup>{/* §16.2 — the permanent signpost, in settings as well as on /legal/safety.
     Quiet, always there, and phrased so it never becomes a clinical claim of
     its own (§16.1): it says what this is not, and points at the people who do
-    the thing it is not. */}<SettingsGroup label="Safety"><div className="setting-row setting-row--stacked"><div><strong>Training, not care</strong><span>Nerve is confidence training. It is not therapy, treatment or clinical care, and it does not diagnose anything. If you are working with a clinician on social anxiety, keep working with them — this is not a substitute for that and is not offered as one.</span></div></div><SettingRow label="Acceptable use and safety"><Link href="/legal/safety" className="text-action">Read</Link></SettingRow><SettingRow label="Report a problem" detail="On the result screen of any rep" /></SettingsGroup><SettingsGroup label="About"><SettingRow label="Version" detail="1.0.0 · Arena" /><SettingRow label="Terms"><Link href="/legal/terms" className="text-action">Read</Link></SettingRow><SettingRow label="Privacy"><Link href="/legal/privacy" className="text-action">Read</Link></SettingRow><SettingRow label="Support" detail={SUPPORT_EMAIL}><a href={`mailto:${SUPPORT_EMAIL}`} className="text-action">Email</a></SettingRow></SettingsGroup></div><Sheet open={micOpen} onClose={() => setMicOpen(false)} title="Test microphone"><MicTest /></Sheet><Sheet open={forgetOpen} onClose={() => setForgetOpen(false)} title="Clear character memory"><div className="sheet-stack"><p>Every character forgets the line she was carrying, and the next rep opens cold.</p><p className="muted">This clears that line and nothing else. Your reps, transcripts, scores, streak and everything you have unlocked stay exactly where they are.</p><Button variant="danger" fullWidth disabled={forgetting} onClick={() => { setForgetting(true); setForgetOpen(false); void forgetAllMemory().then((result) => toast.push(result.ok ? 'Every character has forgotten.' : result.message ?? 'That did not clear.', result.ok ? 'volt' : 'red')).finally(() => setForgetting(false)) }}>Clear it</Button><Button variant="ghost" fullWidth onClick={() => setForgetOpen(false)}>Keep it</Button></div></Sheet><Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete account"><div className="sheet-stack"><div className="danger-list"><span>All session recordings and transcripts</span><span>Your scores, streaks, and progression</span><span>Your account and billing access</span></div><p className="muted">Deletion is handled by support until the account-deletion path is built. Email <a className="text-action" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> and it happens within a day.</p><Input label="Type DELETE to confirm" value={deleteText} onChange={(event) => setDeleteText(event.target.value)} /><Button variant="danger" fullWidth disabled>Delete everything</Button><Button variant="ghost" fullWidth onClick={() => setDeleteOpen(false)}>Keep my account</Button></div></Modal></AppShell>
+    the thing it is not. */}<SettingsGroup label="Safety"><div className="setting-row setting-row--stacked setting-row--note"><Mark name="bound-clinical" size={22} /><div><strong>Training, not care</strong><span>Nerve is confidence training. It is not therapy, treatment or clinical care, and it does not diagnose anything. If you are working with a clinician on social anxiety, keep working with them — this is not a substitute for that and is not offered as one.</span></div></div><SettingRow label="Acceptable use and safety"><Link href="/legal/safety" className="text-action">Read</Link></SettingRow><SettingRow label="Report a problem" detail="On the result screen of any rep" /></SettingsGroup><SettingsGroup label="About"><SettingRow label="Version" detail="1.0.0 · Arena" /><SettingRow label="Terms"><Link href="/legal/terms" className="text-action">Read</Link></SettingRow><SettingRow label="Privacy"><Link href="/legal/privacy" className="text-action">Read</Link></SettingRow><SettingRow label="Support" detail={SUPPORT_EMAIL}><a href={`mailto:${SUPPORT_EMAIL}`} className="text-action">Email</a></SettingRow></SettingsGroup></div><Sheet open={micOpen} onClose={() => setMicOpen(false)} title="Test microphone"><MicTest /></Sheet><Sheet open={forgetOpen} onClose={() => setForgetOpen(false)} title="Clear character memory"><div className="sheet-stack"><p>Every character forgets the line she was carrying, and the next rep opens cold.</p><p className="muted">This clears that line and nothing else. Your reps, transcripts, scores, streak and everything you have unlocked stay exactly where they are.</p><Button variant="danger" fullWidth disabled={forgetting} onClick={() => { setForgetting(true); setForgetOpen(false); void forgetAllMemory().then((result) => toast.push(result.ok ? 'Every character has forgotten.' : result.message ?? 'That did not clear.', result.ok ? 'volt' : 'red')).finally(() => setForgetting(false)) }}>Clear it</Button><Button variant="ghost" fullWidth onClick={() => setForgetOpen(false)}>Keep it</Button></div></Sheet><Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete account"><div className="sheet-stack"><div className="danger-list"><span>All session recordings and transcripts</span><span>Your scores, streaks, and progression</span><span>Your account and billing access</span></div><p className="muted">Deletion is handled by support until the account-deletion path is built. Email <a className="text-action" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> and it happens within a day.</p><Input label="Type DELETE to confirm" value={deleteText} onChange={(event) => setDeleteText(event.target.value)} /><Button variant="danger" fullWidth disabled>Delete everything</Button><Button variant="ghost" fullWidth onClick={() => setDeleteOpen(false)}>Keep my account</Button></div></Modal></AppShell>
 }
 
 function SettingsGroup({ label, children }: { label: string; children: React.ReactNode }) { return <section><span className="label settings-label">{label}</span><div className="settings-card">{children}</div></section> }

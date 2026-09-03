@@ -2,9 +2,11 @@
 
 import Link from 'next/link'
 import { Check, LifeBuoy, LockKeyhole, Mic, MicOff, Radio, Trophy, WifiOff } from 'lucide-react'
+import { Mark, fieldTierMark, tierMark } from '@/components/marks'
 import { useEffect, useState } from 'react'
 import { Button, Modal, Sheet, Stat } from './ui'
-import type { FieldTier, Level, PendingUnlock } from '@/lib/data/types'
+import type { PendingUnlock } from '@/lib/data/types'
+import { FIELD_TIER_COPY, LEVEL_COPY } from '@/lib/data/level-copy'
 import { detectBrowser, micRecovery, type Browser } from '@/lib/data/mic'
 import { DISTRESS_COPY, DISTRESS_RESOURCES } from '@/lib/safety/resources'
 import { TRIAL_DAYS, planById, repsLine } from '@/lib/site/plans'
@@ -83,60 +85,61 @@ export function HowItWorksSheet({ open, onClose }: OpenProps) { return <Sheet op
  * because the sim level did (§09). The copy is hand-written per tier rather
  * than assembled — it used to name Jules and Samara for every level, including
  * the ones they are not on.
+ *
+ * It now reads that copy from `lib/data/level-copy.ts` rather than owning it,
+ * because the roster shows the same words **before** the gate (R9) and a tier
+ * that argues one thing on the way up and another on arrival is a tier nobody
+ * believes.
  */
 export function LevelUnlockedSheet({ open, onClose, unlock }: OpenProps & { unlock: PendingUnlock | null }) {
   if (!unlock) return null
   const copy = unlock.kind === 'tier' ? FIELD_TIER_COPY[unlock.ref] : LEVEL_COPY[unlock.ref]
   const href = unlock.kind === 'tier' ? '/field' : '/roster'
-  return <Sheet open={open} onClose={onClose} title={copy.title}><div className="sheet-stack"><Trophy size={34} strokeWidth={1.5} className="volt" /><p>{copy.body}</p>{copy.names.length ? <div className="mini-personas">{copy.names.map((name) => <span key={name}>{name}</span>)}</div> : null}<Link className="arena-button arena-button--primary arena-button--full" href={href}>{copy.action}</Link><Button variant="ghost" fullWidth onClick={onClose}>Not now</Button></div></Sheet>
-}
-
-interface UnlockCopy { title: string; body: string; names: string[]; action: string }
-
-/** Roster tiers. Tiers 1 and 2 are open from the start and never fire. */
-const LEVEL_COPY: Record<Level, UnlockCopy> = {
-  1: { title: 'Level 01 unlocked', body: 'Open from the start.', names: [], action: 'See the roster' },
-  2: { title: 'Level 02 unlocked', body: 'Open from the start.', names: [], action: 'See the roster' },
-  3: {
-    title: 'Level 03 unlocked',
-    body: 'Maya came to the coffee shop on her own and meant it. She will answer what you ask and then stop, and the pause after that is yours to fill. This is the level where a strong opening followed by nothing stops being good enough.',
-    names: ['Maya'],
-    action: 'See her',
-  },
-  4: {
-    title: 'Level 04 unlocked',
-    body: 'The last one. Robin is polite the whole way through and never says anything cutting, and that is the hard part — the work is deciding whether this is a no while she is still being perfectly nice about it. The warmth number is gone from here. You read her, or you guess.',
-    names: ['Robin'],
-    action: 'See her',
-  },
-}
-
-/** Field tiers (§09). T1 is day one and never fires. */
-const FIELD_TIER_COPY: Record<FieldTier, UnlockCopy> = {
-  1: { title: 'Tier 1 unlocked', body: 'Open from the start.', names: [], action: 'See the field' },
-  2: {
-    title: 'Tier 2 unlocked',
-    body: 'Low stakes, outside the app. Asking for a discount, a free refill, something that is not on the menu. No social risk at all — the only thing at stake is hearing the word no out loud.',
-    names: [],
-    action: 'See today’s',
-  },
-  3: {
-    title: 'Tier 3 unlocked',
-    body: 'Real interaction now, and still nothing romantic. Complimenting a stranger and walking on, asking to join a table. The worst realistic outcome is still a polite no.',
-    names: [],
-    action: 'See today’s',
-  },
-  4: {
-    title: 'Tier 4 unlocked',
-    body: 'The real thing. Asking for a name, a number, someone out with a specific plan. Everything you have been practising, with nobody grading it but you.',
-    names: [],
-    action: 'See today’s',
-  },
+  // V37. A stock trophy stood for both a roster tier and a field tier — two
+  // different ladders, one glyph. Each now shows the rung actually opened.
+  const mark = unlock.kind === 'tier' ? fieldTierMark(unlock.ref) : tierMark(unlock.ref)
+  return <Sheet open={open} onClose={onClose} title={copy.title}><div className="sheet-stack"><Mark name={mark} size={34} current /><p>{copy.body}</p>{copy.names.length ? <div className="mini-personas">{copy.names.map((name) => <span key={name}>{name}</span>)}</div> : null}<Link className="arena-button arena-button--primary arena-button--full" href={href}>{copy.action}</Link><Button variant="ghost" fullWidth onClick={onClose}>Not now</Button></div></Sheet>
 }
 
 export function TrainingWheelsOffModal({ open, onClose }: OpenProps) { return <Modal open={open} onClose={onClose} title="Read her, not the meter"><div className="sheet-stack"><Radio size={34} strokeWidth={1.5} className="volt" /><p>From here, no numbers. Read the way her form moves, along with her timing and tone.</p><Button fullWidth onClick={onClose}>Understood</Button></div></Modal> }
 
 export function FirstWinSheet({ open, onClose }: OpenProps) { return <Sheet open={open} onClose={onClose} title="That&apos;s the loop"><div className="sheet-stack"><Check size={34} strokeWidth={1.5} className="volt" /><p>Do it again tomorrow. One completed rep keeps the streak alive.</p><Button fullWidth onClick={onClose}>Got it</Button></div></Sheet> }
+
+/**
+ * The first rejection (R5). Once ever, and the counterpart that was missing.
+ *
+ * Statistically the most likely outcome of rep one and the highest-churn
+ * moment in the product: there was a `FirstWinSheet` for the outcome that
+ * mostly does not happen and nothing at all for the one that mostly does.
+ *
+ * **It is also the right home for the scorecard explainer**, which §12 calls
+ * load-bearing for retention. That sheet used to wait for a scorecard the user
+ * might only reach after a win they might never get — so the sentence that
+ * makes this whole product make sense ("a clean rep that ends in rejection can
+ * score 92") arrived, if at all, as a footnote to a victory. A user who learns
+ * it *at the moment they were rejected* has learned the product.
+ *
+ * Whichever of the two fires first stamps both keys, so nobody is told the
+ * same thing twice — see `markScoringExplained` in `session-screens.tsx`.
+ *
+ * The tone is the whole job. No consolation, no encouragement to try again
+ * right now, nothing that reads as the app being kind about a failure: this is
+ * a statement that the thing that just happened is the exercise.
+ */
+export function FirstLossSheet({ open, onClose }: OpenProps) {
+  return (
+    <Sheet open={open} onClose={onClose} title="That&apos;s the rep">
+      <div className="sheet-stack">
+        <Mark name="state-session" size={34} />
+        <p><strong>This one is supposed to happen.</strong> Most reps end with her leaving. That is not the failure state — it is the thing you came here to get used to.</p>
+        <p>Whether she gave you her number is worth nothing. It is recorded, and it contributes zero points.</p>
+        <p>What is scored is how you played: how much of the talking was yours, whether you asked real questions, whether you used what she gave you, whether you read her, and how you left.</p>
+        <p className="muted">A clean rep that ends in rejection can score 92. A sloppy one that got lucky scores 54. That is on purpose — you own the process, and nobody owns the result.</p>
+        <Button fullWidth onClick={onClose}>Got it</Button>
+      </div>
+    </Sheet>
+  )
+}
 
 
 

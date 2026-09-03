@@ -64,7 +64,7 @@ export function useFieldFlow(assignment: FieldAssignment | null, callbacks: Flow
   const run = useCallback(
     (
       optimistic: FieldStatus,
-      action: () => Promise<{ ok: boolean; message: string | null; milestone?: number }>,
+      action: () => Promise<{ ok: boolean; message: string | null; milestone?: number; streakKept?: number }>,
       success: string,
     ) => {
       const previous = override
@@ -74,7 +74,14 @@ export function useFieldFlow(assignment: FieldAssignment | null, callbacks: Flow
       void action()
         .then((result) => {
           if (result.ok) {
-            toast.push(success, 'volt')
+            // R14. `Day 6 kept.` — said only when this ask is what claimed the
+            // day. §14's rule that running out must never break the streak has
+            // always been implemented and has never once been visible, which
+            // makes it a streak freeze costing no consumable that nobody knows
+            // they have. It replaces the generic line rather than stacking a
+            // second toast on top of it: two toasts for one action is noise,
+            // and this is the more specific of the two things that happened.
+            toast.push(result.streakKept !== undefined ? `Day ${result.streakKept} kept.` : success, 'volt')
             onChanged?.()
             if (result.milestone !== undefined) onMilestone?.(result.milestone)
             return

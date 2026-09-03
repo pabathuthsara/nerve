@@ -148,12 +148,35 @@ export const UNLOCK_SCORE = 70
 export const UNLOCK_REPS = 2
 
 /**
+ * What tier 2 costs, and the one place the ladder is not uniform.
+ *
+ * One qualifying rep against Tess, rather than two (RETENTION-AUDIT R2). Tier
+ * 2 used to be given away, which meant **the first unlock a new account could
+ * possibly reach was tier 3**, behind two graded reps at 70+ — so the unlock
+ * mechanic did not exist for anybody who had not already decided to stay. The
+ * sheet fires on rep one to three now, and the user meets the thing the whole
+ * ladder is made of while they are still deciding.
+ *
+ * One rather than two on purpose. Tess was authored to be winnable by somebody
+ * who has not yet decided whether this product is for them
+ * (`lib/personas/tess.ts`), which makes her the right gate — and a gate that
+ * costs two graded reps on a free account is a gate nobody standing at it can
+ * pay, because the free grant is one voice rep ever (§14).
+ *
+ * `rankFor` is untouched by this and must stay untouched: it keys off tiers
+ * CLEARED (`UNLOCK_REPS` of them) rather than tiers open, precisely so that a
+ * tier becoming available mints no standing.
+ */
+export const FIRST_UNLOCK_REPS = 1
+
+/**
  * What each tier costs to open.
  *
  * Derived from history rather than stored: an unlock is a fact about the reps
  * you have already run, and a stored copy of a derived fact is a stored copy
- * that can disagree with it. Tiers 1 and 2 are open from the start — a first
- * session that has to be earned is a first session nobody has.
+ * that can disagree with it. **Tier 1 is open from the start and nothing else
+ * is** — a first session that has to be earned is a first session nobody has,
+ * and everything above it is a rung.
  *
  * **This gate used to count wins.** A win is whether she gave her number, which
  * §07 is careful to make never the thing that counts — and until the outcome
@@ -167,20 +190,92 @@ export const UNLOCK_REPS = 2
  * reps against Maya, and is tier 4 behind two qualifying reps against Maya —
  * the same requirement, one row further down. What changed is that Maya is now
  * earned rather than given, which is where she sat in §06's own eight-rung
- * ladder before the roster shrank; the two free tiers are the two receptive
- * ones, and a first session still costs nothing.
+ * ladder before the roster shrank.
+ *
+ * **Tier 2 became a rung on 3 September** (RETENTION-AUDIT R2). It was free,
+ * which meant no new account could ever reach an unlock: levels 1 and 2 were
+ * both given, and the first gate on the ladder was tier 3 behind two graded
+ * reps at 70+. Nadia was always there, and nothing was earned by arriving at
+ * her. She costs one qualifying rep against Tess now — see `FIRST_UNLOCK_REPS`
+ * — and a first session still costs nothing.
  */
 export const UNLOCK_RULES: Record<Level, { level: Level; reps: number } | null> = {
   1: null,
-  2: null,
+  2: { level: 1, reps: FIRST_UNLOCK_REPS },
   3: { level: 2, reps: UNLOCK_REPS },
   4: { level: 3, reps: UNLOCK_REPS },
 }
 
+/**
+ * A tier, written as the thing it costs.
+ *
+ * Kept for the two places that have no rep counts to hand — a lock overlay
+ * rendered off a `Persona` row before history has been read, and the seed data
+ * that describes the ladder in prose. Everywhere a count IS available,
+ * `unlockProgressLabel` is the one to use: it is the same sentence with the
+ * user's own position in it, and RETENTION-AUDIT R8 is specifically about the
+ * static version never changing after the rep that advanced it.
+ */
 export function unlockRequirement(level: Level): string | null {
   const rule = UNLOCK_RULES[level]
   if (!rule) return null
-  return `Score ${UNLOCK_SCORE}+ in ${rule.reps} reps at Level ${rule.level}`
+  return `Score ${UNLOCK_SCORE}+ in ${repWord(rule.reps)} at Level ${rule.level}`
+}
+
+/** `1 rep`, not `1 reps`. The same bug `dayCount` exists for. */
+function repWord(reps: number): string {
+  return `${reps} ${reps === 1 ? 'rep' : 'reps'}`
+}
+
+/**
+ * Where an account actually stands against a tier it has not opened (R8).
+ *
+ * `unlockRequirement` returns the same sentence before and after the rep that
+ * advanced it, which makes the one screen that could show progress show a
+ * constant instead. This returns the numbers, so a bar can move.
+ *
+ * Null means the tier is already open, or was never gated. `have` is capped at
+ * `need` — a user who has run four qualifying reps at a tier they never went
+ * back to is not "4 of 2".
+ */
+export interface UnlockProgress {
+  /** The tier that opens. */
+  level: Level
+  /** The tier the qualifying reps have to be run at. */
+  fromLevel: Level
+  have: number
+  need: number
+}
+
+export function unlockProgress(
+  level: Level,
+  qualifyingByLevel: Record<number, number>,
+): UnlockProgress | null {
+  const rule = UNLOCK_RULES[level]
+  if (!rule) return null
+  const have = Math.min(rule.reps, qualifyingByLevel[rule.level] ?? 0)
+  if (have >= rule.reps) return null
+  return { level, fromLevel: rule.level, have, need: rule.reps }
+}
+
+/** `1 of 2 reps at 70+ on Level 02`. The meter's own words (R8). */
+export function unlockProgressLabel(progress: UnlockProgress): string {
+  return `${progress.have} of ${repWord(progress.need)} at ${UNLOCK_SCORE}+ on Level ${String(progress.fromLevel).padStart(2, '0')}`
+}
+
+/**
+ * The next tier this account can open, and how far along it is.
+ *
+ * The result screen shows one meter after every rep, and "the next one" is the
+ * lowest tier still shut — climbing the ladder out of order is not a thing the
+ * roster allows, so the lowest is always the one being worked towards.
+ */
+export function nextUnlockProgress(qualifyingByLevel: Record<number, number>): UnlockProgress | null {
+  for (const level of [1, 2, 3, 4] as Level[]) {
+    const progress = unlockProgress(level, qualifyingByLevel)
+    if (progress) return progress
+  }
+  return null
 }
 
 /**
@@ -196,7 +291,62 @@ export function unlockedLevels(qualifyingByLevel: Record<number, number>): Set<L
     const rule = UNLOCK_RULES[level]
     if (!rule || (qualifyingByLevel[rule.level] ?? 0) >= rule.reps) open.add(level)
   }
+
+  /**
+   * Two rules that only ever ADD, and both exist because R2 gated tier 2.
+   *
+   * §08 is explicit that a tier only ever opens — "a bad week does not take a
+   * character away" — and gating a tier that used to be free is the one change
+   * that can retroactively shut one. These two make sure it cannot.
+   *
+   * **A tier you have already run a qualifying rep at is open.** You can only
+   * start a rep against somebody the roster let you reach, so a graded 70+ at a
+   * tier is proof that tier was open to you — and an account that scored 79
+   * against Nadia back when she was free must not find her locked because it
+   * never happened to score 70+ against Tess. This is the rule that stops the
+   * gate reaching backwards; it takes nothing away from the gate itself,
+   * because a new account has no qualifying reps anywhere.
+   *
+   * **And the ladder cannot have a hole in it.** Each gate names only the tier
+   * directly below, so an account with two qualifying reps against Nadia and
+   * none against Tess satisfied tier 3 and failed tier 2 — the roster drew
+   * **Maya and Robin open with Nadia locked between them**, which is not a
+   * ladder. Closed downwards, never upwards: closing upwards would take Maya
+   * away from somebody who had earned her.
+   */
+  for (const level of [1, 2, 3, 4] as Level[]) {
+    if ((qualifyingByLevel[level] ?? 0) > 0) open.add(level)
+  }
+
+  const top = Math.max(...open)
+  for (const level of [1, 2, 3, 4] as Level[]) {
+    if (level < top) open.add(level)
+  }
   return open
+}
+
+/**
+ * The tiers whose own gate has actually been met.
+ *
+ * `unlockedLevels` answers *what may I open*, and since R2 it answers it
+ * generously: a tier you have already played is open, and a tier below an open
+ * one is open, both so that gating tier 2 could not reach backwards and shut a
+ * character somebody already had (§08 — a tier only ever opens).
+ *
+ * This answers a different question — *what did they earn* — and it is the one
+ * `syncLevel` records a moment for. An account grandfathered into tier 2
+ * because it once scored 79 against Nadia is not shown "Level 02 unlocked": it
+ * did not just unlock anything, and a celebration for something that was
+ * already true is exactly the noise the `UNLOCK_RULES[tier] !== null` filter
+ * existed to avoid in the first place.
+ */
+export function earnedLevels(qualifyingByLevel: Record<number, number>): Set<Level> {
+  const earned = new Set<Level>()
+  for (const level of [1, 2, 3, 4] as Level[]) {
+    const rule = UNLOCK_RULES[level]
+    if (rule && (qualifyingByLevel[rule.level] ?? 0) >= rule.reps) earned.add(level)
+  }
+  return earned
 }
 
 /**

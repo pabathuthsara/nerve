@@ -22,7 +22,9 @@ import { EMPTY_WEEK, type WeekStats } from './weekly'
 import { nextTierRequirement, unlockedTier } from '@/lib/field/assignment'
 import { milestoneFor, type Milestone } from '@/lib/field/milestones'
 import { LIBRARY_READ_PREFIX, MEMORY_BEAT_FLAG, planWaitlistFlag } from './ui-flags'
-import { localDay, nextLocalMidnight } from './day'
+import { daysBetween, localDay, nextLocalMidnight } from './day'
+import { currentStreak } from './counters'
+import { buildRepRecords, type RepRecord } from './records'
 import {
   repsAllowedToday,
   repsRemainingToday,
@@ -30,7 +32,7 @@ import {
   signupRepSpentOn,
   voicelessPlan,
 } from './allowance'
-import { qualifyingByLevel, uiBand, uiLevel, uiWarmth, unlockRequirement, unlockedLevels, wonFromOutcome } from './progression'
+import { qualifyingByLevel, uiBand, uiLevel, uiWarmth, unlockProgress, unlockRequirement, unlockedLevels, wonFromOutcome } from './progression'
 import { toScorecard, type StoredMetricScore, type StoredWarmthEvent } from './scorecard'
 import { RANKS, type Rank } from './rank'
 import type {
@@ -95,7 +97,7 @@ export async function fetchUserState(): Promise<UserState | null> {
       .select('plan, reps_per_day, reps_used_today, reps_day, renews_at, onboarding_rep_used_at')
       .eq('user_id', user.id)
       .maybeSingle(),
-    supabase.from('streaks').select('current').eq('user_id', user.id).maybeSingle(),
+    supabase.from('streaks').select('current, last_active_on').eq('user_id', user.id).maybeSingle(),
   ])
 
   const timezone = profile?.timezone ?? null
@@ -156,7 +158,25 @@ export async function fetchUserState(): Promise<UserState | null> {
     // the pill, the brief gate and the refusal sheet cannot disagree about
     // whether this account can open a microphone at all.
     voiceLocked: voicelessPlan(entitlement?.reps_per_day ?? 0) && !signupRep,
-    streakDays: streak?.current ?? 0,
+    // R15. Not `streak.current` straight off the row: that column is only
+    // rewritten when somebody trains, so an account two weeks idle still held
+    // the number it stopped on and Train showed a live streak to somebody who
+    // had broken it a fortnight ago.
+    streakDays: currentStreak({
+      stored: streak?.current ?? 0,
+      lastActiveOn: streak?.last_active_on ?? null,
+      today,
+      daysBetween,
+    }),
+    // R14. Whether today has already been claimed — by a rep or by a field ask.
+    // Train reads it to decide whether the evening reminder is honest: a card
+    // saying "nothing logged yet" to somebody who trained at breakfast is the
+    // guilt copy §4 of the audit rules out.
+    streakActiveToday: streak?.last_active_on === today,
+    // R15. The last local day anything counted, so Train can tell somebody
+    // coming back after a fortnight that it noticed. Null on an account that
+    // has never trained — which is a first day, not a comeback.
+    lastTrainedOn: streak?.last_active_on ?? null,
     plan,
     trainingWheels: profile?.training_wheels ?? true,
     onboardingComplete: profile?.onboarding_complete ?? false,
@@ -210,14 +230,63 @@ export async function fetchPersonas(): Promise<Persona[]> {
   // — and this read used to count wins off `outcome`, so the locked state was
   // decided by the grader's opinion of the conversation rather than by anything
   // the user demonstrated (§07, §08).
-  const open = unlockedLevels(qualifyingByLevel(
+  const counts = qualifyingByLevel(
     (sessions ?? []).flatMap((session) => {
       const level = levelBySlug.get(session.persona_slug)
       return level ? [{ level, composite: compositeBySession.get(session.id) ?? null }] : []
     }),
-  ))
+  )
+  const open = unlockedLevels(counts)
 
-  return personas.map((row) => toPersona(row, open))
+  return personas.map((row) => toPersona(row, open, counts))
+}
+
+/**
+ * The contact shelf (R10). One row per character, filled or empty.
+ *
+ * Derived rather than stored, like every other record in this product: the reps
+ * that cleared each tier are already in `sessions`, and a stored copy of a
+ * derived fact is a copy that can disagree with it. That also means the shelf
+ * cannot be written by anybody, including its owner — which is the §14 rule
+ * about anything a user could pay to change, applied to the one artefact here
+ * somebody would most want to fake.
+ *
+ * `went_well` is the judge's one line about what worked (§07). It is read here
+ * rather than the whole scorecard because that is all a record carries.
+ */
+export async function fetchRepRecords(): Promise<RepRecord[]> {
+  const supabase = supabaseBrowser()
+  const [{ data: personaRows }, { data: sessionRows }, { data: scoreRows }] = await Promise.all([
+    supabase.from('personas').select('slug, name, level, setting_short').eq('track', 'dating').eq('published', true).order('level'),
+    supabase.from('sessions').select('id, persona_slug, started_at, duration_s, outcome, won').not('ended_at', 'is', null),
+    supabase.from('scores').select('session_id, composite, went_well'),
+  ])
+
+  const scoreBySession = new Map((scoreRows ?? []).map((row) => [row.session_id, row]))
+
+  return buildRepRecords(
+    (personaRows ?? []).map((row) => ({
+      id: row.slug,
+      name: row.name,
+      level: uiLevel(row.level),
+      settingShort: row.setting_short ?? '',
+    })),
+    (sessionRows ?? []).map((row) => {
+      const score = scoreBySession.get(row.id)
+      return {
+        id: row.id,
+        personaId: row.persona_slug,
+        startedAt: row.started_at,
+        durationMs: (row.duration_s ?? 0) * 1000,
+        // `won` first, `outcome` only as the last resort — reaching for the
+        // grade here is how the roster's locked state once came to be decided
+        // by the grader's opinion of the conversation (§07).
+        won: row.won ?? wonFromOutcome(row.outcome),
+        composite: typeof score?.composite === 'number' ? score.composite : null,
+        wentWell: typeof score?.went_well === 'string' ? score.went_well : null,
+      }
+    }),
+  )
 }
 
 export async function fetchPersona(slug: string): Promise<Persona | null> {
@@ -225,7 +294,7 @@ export async function fetchPersona(slug: string): Promise<Persona | null> {
   return all.find((persona) => persona.id === slug) ?? null
 }
 
-function toPersona(row: PersonaRow, open: Set<Level>): Persona {
+function toPersona(row: PersonaRow, open: Set<Level>, counts: Record<number, number> = {}): Persona {
   const level = uiLevel(row.level)
   const locked = !open.has(level)
   return {
@@ -241,6 +310,9 @@ function toPersona(row: PersonaRow, open: Set<Level>): Persona {
     portraitUrl: row.portrait_url ?? '',
     locked,
     unlockRequirement: locked ? unlockRequirement(level) : null,
+    // R8. The same gate, with the user's own position in it, so the roster
+    // draws a bar that moved rather than a sentence that never does.
+    unlockProgress: locked ? unlockProgress(level, counts) : null,
   }
 }
 
@@ -456,7 +528,7 @@ export async function fetchLifetimeStats(): Promise<LifetimeStats> {
       .select('duration_s, outcome, won, start_warmth, final_warmth')
       .not('ended_at', 'is', null),
     user
-      ? supabase.from('streaks').select('current, longest').eq('user_id', user.id).maybeSingle()
+      ? supabase.from('streaks').select('current, longest, last_active_on').eq('user_id', user.id).maybeSingle()
       : Promise.resolve({ data: null }),
     supabase.from('scores').select('composite'),
   ])
@@ -479,10 +551,22 @@ export async function fetchLifetimeStats(): Promise<LifetimeStats> {
 
   return {
     totalReps: sessions.length,
+    // R7. Every second ever spent talking to somebody who might say no. It is
+    // summed rather than stored because it is a fact about the reps that exist,
+    // and a stored copy of a derived fact is a copy that can disagree with it.
+    totalMs: sessions.reduce((sum, row) => sum + Math.max(0, (row.duration_s ?? 0) * 1000), 0),
     averageScore: composites.length ? Math.round(composites.reduce((sum, value) => sum + value, 0) / composites.length) : null,
     bestTimeMs: winTimes.length ? Math.min(...winTimes) : null,
     averageWarmthGain: gains.length ? Math.round(gains.reduce((sum, gain) => sum + gain, 0) / gains.length) : null,
-    currentStreak: streak?.current ?? 0,
+    // R15, same as `fetchUserState`: the stored column is only rewritten when
+    // somebody trains, so a broken streak has to be read as broken rather than
+    // reported at the number it stopped on.
+    currentStreak: currentStreak({
+      stored: streak?.current ?? 0,
+      lastActiveOn: streak?.last_active_on ?? null,
+      today: localDay(new Date(), null),
+      daysBetween,
+    }),
     longestStreak: streak?.longest ?? 0,
   }
 }

@@ -110,9 +110,22 @@ export function TrackSwitcher({ track, onChange, compact = false }: { track: Tra
  * be the pill lying every minute, on every screen. That case says what is
  * actually true and points at the one screen that can change it.
  */
-export function RepsRemaining({ count, resetAt, locked = false }: { count: number; resetAt: string; locked?: boolean }) {
-  const [remaining, setRemaining] = useState('04:12')
+/**
+ * How long until the day's reps come back, as `HH:MM`.
+ *
+ * Shared, because two things say it and they must not disagree: the pill in the
+ * chrome, and the countdown on `PaywallSheet` — which took a `reset` prop with
+ * a hard-coded `'04:12'` default and was being handed that default by every
+ * caller except the brief. A paywall telling somebody their reps return in four
+ * hours and twelve minutes, every time, on any screen, is the one lie on a
+ * screen that is asking for money.
+ *
+ * Ticks once a minute, because it is displayed to the minute.
+ */
+export function useResetCountdown(resetAt: string | null | undefined): string {
+  const [remaining, setRemaining] = useState('00:00')
   useEffect(() => {
+    if (!resetAt) return
     const update = () => {
       const ms = Math.max(0, new Date(resetAt).getTime() - Date.now())
       const hours = Math.floor(ms / 3_600_000)
@@ -123,6 +136,11 @@ export function RepsRemaining({ count, resetAt, locked = false }: { count: numbe
     const timer = window.setInterval(update, 60_000)
     return () => window.clearInterval(timer)
   }, [resetAt])
+  return remaining
+}
+
+export function RepsRemaining({ count, resetAt, locked = false }: { count: number; resetAt: string; locked?: boolean }) {
+  const remaining = useResetCountdown(resetAt)
   if (locked) {
     return <Link className="reps-pill reps-pill--locked" href="/profile/subscription">Voice on Pro</Link>
   }

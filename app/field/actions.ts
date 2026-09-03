@@ -47,6 +47,16 @@ export interface FieldResult {
    * so losing this to a dropped response costs the timing, not the moment.
    */
   milestone?: number
+  /**
+   * The streak day this ask just kept (R14).
+   *
+   * Present only when the ask is what claimed the day — a user who already ran
+   * a rep this morning is told nothing, because their streak was never at risk.
+   * §14's rule that running out must never break the streak has always been
+   * implemented and has never once been said out loud; this is the half that
+   * says it.
+   */
+  streakKept?: number
 }
 
 const SIGNED_OUT: FieldResult = {
@@ -379,8 +389,9 @@ export async function logAsk(input: {
   // The same ask is what opens field tier 4, so the tier is re-checked here
   // rather than on the next graded rep. This is the only place the T4 moment
   // can fire on the day it was earned.
+  let day: Awaited<ReturnType<typeof recordTrainingDay>> = null
   if (input.asked) {
-    await recordTrainingDay(user.id)
+    day = await recordTrainingDay(user.id)
     await syncFieldTier(user.id)
   }
 
@@ -389,7 +400,13 @@ export async function logAsk(input: {
   revalidatePath('/field')
   revalidatePath('/train')
   revalidatePath('/profile')
-  return { ok: true, message: null, assignment: null, ...(milestone ? { milestone } : {}) }
+  return {
+    ok: true,
+    message: null,
+    assignment: null,
+    ...(milestone ? { milestone } : {}),
+    ...(day?.claimed ? { streakKept: day.streak } : {}),
+  }
 }
 
 /**
