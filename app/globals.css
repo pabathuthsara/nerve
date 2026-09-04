@@ -2048,6 +2048,29 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .plan-board__price { display: flex; align-items: baseline; gap: 8px; }
 .plan-board__price strong { font-size: 40px; font-weight: 500; line-height: 1; }
 .plan-board__price .mute { font-size: 12px; }
+/* The weekly alternative, under the headline price. Ink-3 and small: it is the
+   second option, and promoting it to the same weight would make the card argue
+   with itself about which price it is quoting. */
+.plan-board__alt { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--text-mute); }
+.plan-board__alt b { color: var(--text-dim); font-weight: 500; }
+
+/* The billing-period control on /profile/subscription. Hairlines and 2px, per
+   Arena; volt marks the current position and nothing else here takes it. */
+.plan-section__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.period-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+.period-toggle__option {
+  appearance: none; background: transparent; border: 0; cursor: pointer;
+  padding: 6px 14px; font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text-mute);
+}
+.period-toggle__option + .period-toggle__option { border-left: 1px solid var(--line); }
+.period-toggle__option:hover { color: var(--text-dim); }
+.period-toggle__option.is-current { background: var(--volt); color: var(--ground); }
+.period-toggle__option:focus-visible { outline: 2px solid var(--volt); outline-offset: -2px; }
+
+/* The effective monthly rate on a weekly card. Stated, never buried. */
+.plan-card__equiv { font-size: 12px; line-height: 1.5; margin: -4px 0 4px; }
+
 .plan-board__tagline { max-width: 34ch; margin: 2px 0 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.6; }
 .plan-board__reps { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-block: 1px solid var(--line); padding: 12px 0; }
 .plan-board__reps strong { color: var(--text); font-size: 16px; }

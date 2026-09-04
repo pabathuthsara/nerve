@@ -90,6 +90,115 @@ export interface PublicPlan {
  */
 export const TRIAL_DAYS = 7
 
+/**
+ * ── BILLING PERIODS, 4 SEPTEMBER ─────────────────────────────────────────
+ *
+ * A billing period is NOT a plan, and keeping those two ideas apart is what
+ * makes this cheap. `Plan` is an entitlement identity — it decides
+ * `reps_per_day` and the daily spend cap, and nothing else. A period decides
+ * what the card is charged and how often. Pro is three reps a day whether it
+ * was bought by the week or by the month, so adding a period costs no new
+ * `Plan` value, no migration, no CHECK constraint and **no new mark glyph**.
+ *
+ * **Weekly Pro carries no trial, deliberately.** A seven-day trial in front of
+ * a seven-day billing period charges on day 7 and again on day 14, which is
+ * incoherent to read and worse to dispute. The week IS the trial — it is paid,
+ * it ends by itself, and nobody has to remember to cancel before a number they
+ * did not choose. §8 of the payments plan wants the trial's dispute surface
+ * shrunk; this removes it from the cheapest door entirely.
+ *
+ * **Weekly is dearer per day than monthly, and that is the ladder, not a
+ * trick.** $7 a week is about $30 a month against Pro's $19: the buyer pays a
+ * premium for not committing, and sees both numbers on the same screen. What
+ * would be a trick is a cheap weekly price offered as the *only* cheap door,
+ * with the effective rate undisclosed.
+ *
+ * Elite is monthly only. Elite is the commitment tier and a weekly Elite
+ * contradicts what it is for, as well as putting a sixth price on a page that
+ * has to stay readable.
+ */
+export type BillingPeriod = 'weekly' | 'monthly'
+
+export interface PlanOffer {
+  plan: Exclude<Plan, 'free'>
+  period: BillingPeriod
+  /** Already formatted. The same string the pricing page prints. */
+  price: string
+  /** Major units, for arithmetic and for the preflight's price check. */
+  priceUsd: number
+  /** What the provider bills on. Whop takes days. */
+  billingDays: number
+  /** Free days before the first charge. **Zero means no trial at all.** */
+  trialDays: number
+  /** The environment variable holding this offer's vendor plan id. */
+  env: string
+}
+
+export const OFFERS: readonly PlanOffer[] = [
+  {
+    plan: 'pro',
+    period: 'weekly',
+    price: '$7',
+    priceUsd: 7,
+    billingDays: 7,
+    // No trial. See the note above — this is the point of the weekly offer.
+    trialDays: 0,
+    env: 'WHOP_PLAN_PRO_WEEKLY',
+  },
+  {
+    plan: 'pro',
+    period: 'monthly',
+    price: '$19',
+    priceUsd: 19,
+    billingDays: 30,
+    trialDays: TRIAL_DAYS,
+    env: 'WHOP_PLAN_PRO',
+  },
+  {
+    plan: 'elite',
+    period: 'monthly',
+    price: '$49',
+    priceUsd: 49,
+    billingDays: 30,
+    trialDays: TRIAL_DAYS,
+    env: 'WHOP_PLAN_ELITE',
+  },
+]
+
+/** Every offer for a plan, cheapest period first. */
+export function offersFor(plan: Plan): readonly PlanOffer[] {
+  return OFFERS.filter((offer) => offer.plan === plan)
+}
+
+/** One offer, or undefined when that plan is not sold on that period. */
+export function offerFor(plan: Plan, period: BillingPeriod): PlanOffer | undefined {
+  return OFFERS.find((offer) => offer.plan === plan && offer.period === period)
+}
+
+/** Whether a plan can be bought on a period at all. Elite is monthly only. */
+export function isSoldOn(plan: Plan, period: BillingPeriod): boolean {
+  return offerFor(plan, period) !== undefined
+}
+
+/** The periods anything is sold on, in the order the tabs show them. */
+export const BILLING_PERIODS: readonly BillingPeriod[] = ['weekly', 'monthly']
+
+/** How a period is written wherever a price is quoted. */
+export function periodLabel(period: BillingPeriod): string {
+  return period === 'weekly' ? '/ week' : '/ month'
+}
+
+/**
+ * What the weekly offer costs a month, for the comparison the page must show.
+ *
+ * Quoting $7 without this is the omission that would make the ladder dishonest.
+ * 4.345 is 52/12 rather than 4, because a month is not four weeks and a buyer
+ * who multiplies by four and then sees their statement is a support ticket.
+ */
+export function monthlyEquivalent(offer: PlanOffer): number {
+  return offer.period === 'weekly' ? offer.priceUsd * (52 / 12) : offer.priceUsd
+}
+
 export const PUBLIC_PLANS: readonly PublicPlan[] = [
   {
     id: 'free',
@@ -118,7 +227,10 @@ export const PUBLIC_PLANS: readonly PublicPlan[] = [
     features: [
       'Three voice reps a day',
       'Enough to fail one, change something, and go again in a sitting',
-      `${TRIAL_DAYS} days free to start, and cancel in two taps before it charges`,
+      // Deliberately does not promise a trial: the weekly offer has none, and
+      // this list is printed under both. The trial is stated on the monthly
+      // offer itself, where it is true.
+      'By the week with no trial and no card kept, or by the month',
       'Everything in Free — nothing is held back from it',
     ],
     open: true,

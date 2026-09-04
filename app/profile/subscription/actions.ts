@@ -20,7 +20,7 @@
 import { currentUser, supabaseServer } from '@/lib/db/server'
 import { cancelMembership, createCheckout } from '@/lib/billing/checkout'
 import { checkoutConfigured } from '@/lib/billing/plans'
-import { PUBLIC_PLANS } from '@/lib/site/plans'
+import { PUBLIC_PLANS, isSoldOn, type BillingPeriod } from '@/lib/site/plans'
 import { SUPPORT_EMAIL } from '@/components/site/site-chrome'
 import type { Plan } from '@/lib/data/types'
 
@@ -48,7 +48,19 @@ function isPurchasable(value: string): value is Exclude<Plan, 'free'> {
   return PUBLIC_PLANS.some((plan) => plan.id === value && plan.id !== 'free')
 }
 
-export async function startCheckout(plan: string): Promise<CheckoutActionResult> {
+/**
+ * The period, validated the same way the plan is and for the same reason.
+ *
+ * Both arrive from a browser. An unrecognised period must not fall through to
+ * monthly: somebody who clicked a $7 weekly button and got a $19 monthly
+ * checkout has been charged a price they did not agree to, which is a refund at
+ * best and a dispute at worst.
+ */
+function isPeriod(value: string): value is BillingPeriod {
+  return value === 'weekly' || value === 'monthly'
+}
+
+export async function startCheckout(plan: string, period = 'monthly'): Promise<CheckoutActionResult> {
   const user = await currentUser()
   if (!user) {
     return { ok: false, url: null, message: 'Sign in first — a plan belongs to an account.' }
@@ -56,6 +68,20 @@ export async function startCheckout(plan: string): Promise<CheckoutActionResult>
 
   if (!isPurchasable(plan)) {
     return { ok: false, url: null, message: 'That is not a plan you can buy.' }
+  }
+
+  if (!isPeriod(period)) {
+    return { ok: false, url: null, message: 'That is not a billing period you can buy.' }
+  }
+
+  // Elite is monthly only. Refused here rather than silently downgraded to the
+  // period we do sell — see `isPeriod` above on charging an unagreed price.
+  if (!isSoldOn(plan, period)) {
+    return {
+      ok: false,
+      url: null,
+      message: `${plan === 'elite' ? 'Elite' : 'That plan'} is only sold by the month.`,
+    }
   }
 
   /**
@@ -119,6 +145,7 @@ export async function startCheckout(plan: string): Promise<CheckoutActionResult>
   const result = await createCheckout({
     userId: user.id,
     plan,
+    period,
     ...(origin ? { successUrl: `${origin}/profile/subscription?bought=1` } : {}),
   })
 

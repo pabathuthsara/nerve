@@ -20,6 +20,7 @@ import 'server-only'
 
 import { apiBase, apiVersionDate, whopPlanIdFor } from './plans'
 import type { Plan } from '@/lib/data/types'
+import type { BillingPeriod } from '@/lib/site/plans'
 
 /**
  * Where a relative `purchase_url` is anchored.
@@ -45,6 +46,14 @@ function headers(apiKey: string): Record<string, string> {
 export interface CheckoutRequest {
   userId: string
   plan: Exclude<Plan, 'free'>
+  /**
+   * Which billing period was bought. Defaults to monthly, which is what every
+   * caller meant before periods existed.
+   *
+   * It picks the vendor plan and nothing else — the entitlement that lands is
+   * the same either way, because `Plan` is the entitlement and a period is not.
+   */
+  period?: BillingPeriod
   /** Where the provider returns the buyer. Absolute URL. */
   successUrl?: string
 }
@@ -130,7 +139,7 @@ export async function createCheckout(request: CheckoutRequest): Promise<Checkout
 
   let planId: string
   try {
-    planId = whopPlanIdFor(request.plan)
+    planId = whopPlanIdFor(request.plan, request.period ?? 'monthly')
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : 'No plan for that plan.' }
   }

@@ -26,6 +26,13 @@ the real world and log the outcome.
    Read it before touching anything public-facing — every provider on the
    shortlist bans dating products by name, so the landing page is an
    application document.
+   **`docs/MARKETING-PLAN.md` is how customers arrive, and where the result is
+   written down.** The 60-day US launch block — 4 September to 2 November, $340,
+   a day-by-day with five gates. It is a living document: tick the day, log the
+   number, record what the gate decided. Its §4 is the six things switched off
+   in our own account, two of which break `whop:verify` or a promise in the
+   terms if they are flipped carelessly — read it before unhiding the Whop
+   product or adding a plan.
 4. **`docs/RETENTION-AUDIT.md` is why the loop pulls, and what it cost to make
    it.** Seventeen findings, all resolved on 3 September: R2–R17 shipped, **R1
    was decided (free stays at `repsPerDay: 0`)** and §5 was held open on the
@@ -132,8 +139,19 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     This binds the payment provider's own record of us too: the Whop account is
     `personal_development / communication_coaching`, and it was
     `mental_health_app` for a day, which contradicted terms clause 08 in the one
-    place a compliance reviewer reads first. **Saving Whop's Business settings
-    form silently reverts it** — re-check after touching that page.
+    place a compliance reviewer reads first.
+    **It reverts to `mental_health_app` on its own, and not only from the
+    dashboard.** Saving Whop's Business settings form does it; so does an API
+    `PATCH /accounts` that sets nothing but an image — one call carrying only
+    `opengraph_image` put it back to `health_and_wellness / mental_health_app`
+    on 4 September. Treat **every** account write as a write to the industry
+    classification, send the classification alongside whatever else is being
+    set, and read the response back.
+    Note also that **the API key cannot write the account at all** (404); only
+    a user-token credential can, which is why `whop:setup` prints the account
+    fields for a human instead of setting them. `npm run whop:verify` now
+    asserts the classification, so the preflight fails rather than the
+    compliance review.
 11. **PG-13, enforced by moderation on both streams.** Payment-processor survival. (§16)
     Built, in `lib/safety/`. The verdict mapping, the escalation sequence and the
     age arithmetic are pure functions with tests — change them there, not in the

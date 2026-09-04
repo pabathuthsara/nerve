@@ -22,12 +22,25 @@
  */
 
 import type { Plan } from '@/lib/data/types'
+import { OFFERS, type BillingPeriod } from '@/lib/site/plans'
 
-/** Env var per paid plan. Free is never purchased, so it has none. */
-const PLAN_ENV: Readonly<Record<Exclude<Plan, 'free'>, string>> = {
-  pro: 'WHOP_PLAN_PRO',
-  elite: 'WHOP_PLAN_ELITE',
-}
+/**
+ * Env var per OFFER, not per plan.
+ *
+ * This used to be `Record<Plan, string>` — one vendor plan for one of ours —
+ * which stopped being true the moment Pro was sold by the week as well as by
+ * the month. Several vendor plans now resolve to the same `Plan`, and that is
+ * the whole trick that lets a billing period cost no migration: `pro` is three
+ * reps a day whichever plan id was bought, so `applyBillingEvent` needs no idea
+ * that periods exist.
+ *
+ * Derived from `OFFERS` rather than written twice. A period added there and
+ * forgotten here would be a checkout that cannot be opened, or worse, a
+ * purchase the webhook cannot resolve — which fails closed and grants nothing,
+ * silently, after a real card has been charged.
+ */
+const PLAN_ENV: readonly { plan: Exclude<Plan, 'free'>; period: BillingPeriod; variable: string }[] =
+  OFFERS.map((offer) => ({ plan: offer.plan, period: offer.period, variable: offer.env }))
 
 /** Whop's live API. The default, and the only host that counts as real money. */
 export const LIVE_API_BASE = 'https://api.whop.com/api/v1'
@@ -44,9 +57,9 @@ export type PlanMap = Readonly<Record<string, Plan>>
  */
 export function planMap(env: Record<string, string | undefined>): PlanMap {
   const map: Record<string, Plan> = {}
-  for (const [plan, variable] of Object.entries(PLAN_ENV)) {
+  for (const { plan, variable } of PLAN_ENV) {
     const id = env[variable]?.trim()
-    if (id) map[id] = plan as Plan
+    if (id) map[id] = plan
   }
   return map
 }
@@ -158,7 +171,7 @@ export function checkoutConfigured(
    */
   if (isProductionRuntime(env) && !isLiveBase(env) && !rehearsing(env)) return false
 
-  return Object.values(PLAN_ENV).every((variable) => !!env[variable]?.trim())
+  return PLAN_ENV.every(({ variable }) => !!env[variable]?.trim())
 }
 
 /**
@@ -256,12 +269,16 @@ function isProductionRuntime(env: Record<string, string | undefined>): boolean {
  */
 export function whopPlanIdFor(
   plan: Exclude<Plan, 'free'>,
+  period: BillingPeriod = 'monthly',
   env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
 ): string {
-  const variable = PLAN_ENV[plan]
-  const id = env[variable]?.trim()
+  const entry = PLAN_ENV.find((row) => row.plan === plan && row.period === period)
+  if (!entry) {
+    throw new Error(`${plan} is not sold by the ${period === 'weekly' ? 'week' : 'month'}.`)
+  }
+  const id = env[entry.variable]?.trim()
   if (!id) {
-    throw new Error(`${variable} is not set, so there is no plan to sell for the ${plan} plan.`)
+    throw new Error(`${entry.variable} is not set, so there is no plan to sell for ${plan} ${period}.`)
   }
   return id
 }

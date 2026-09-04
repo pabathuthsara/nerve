@@ -35,6 +35,15 @@ function check(passed: boolean, description: string): void {
 
 const PRO_PLAN = 'plan_verify_pro'
 const ELITE_PLAN = 'plan_verify_elite'
+/**
+ * The WEEKLY Pro vendor plan.
+ *
+ * A different vendor plan resolving to the SAME entitlement is the whole
+ * periods model, and it is the thing that would break silently: an unmapped
+ * plan id fails closed and grants nothing, so a buyer would be charged $7 and
+ * left on free. This is the id that proves the second row of `planMap` works.
+ */
+const PRO_WEEKLY_PLAN = 'plan_verify_pro_weekly'
 const ACCOUNT = 'biz_verify'
 
 async function main(): Promise<void> {
@@ -52,6 +61,7 @@ async function main(): Promise<void> {
   // The harness owns the mapping rather than reading the developer's own
   // plans, so the run means the same thing on every machine.
   process.env['WHOP_PLAN_PRO'] = PRO_PLAN
+  process.env['WHOP_PLAN_PRO_WEEKLY'] = PRO_WEEKLY_PLAN
   process.env['WHOP_PLAN_ELITE'] = ELITE_PLAN
 
   // Imported after the environment is set: `configuredPlanMap` reads it.
@@ -243,6 +253,22 @@ async function main(): Promise<void> {
     const late = await deliver('payment.succeeded', { occurredAt: Date.now() - 86_400_000 })
     check(late.ok, 'the stale retry is acknowledged')
     check((await planNow()) === 'free', 'but it does NOT reinstate the plan it once granted')
+
+    // --- the weekly offer -----------------------------------------------------
+    //
+    // Same entitlement, different vendor plan. If this ever grants anything but
+    // `pro` with three reps, somebody has paid $7 for the wrong thing — or for
+    // nothing, because an unresolved plan id fails closed.
+    console.log('\nthe weekly offer, which is a different plan id for the same entitlement')
+    await deliver('payment.succeeded', { plan: PRO_WEEKLY_PLAN })
+    check((await planNow()) === 'pro', 'a WEEKLY purchase grants pro, not a separate plan')
+    check((await repsNow()) === 3, 'and the same 3 reps a day the monthly offer grants')
+    // Put it back where this block found it. The check that follows asserts an
+    // unknown plan id grants NOTHING, and its precondition is an account on
+    // free — leaving this one on pro would let that assertion pass for the
+    // wrong reason, which is worse than failing.
+    await deliver('membership.deactivated', { plan: PRO_WEEKLY_PLAN, status: 'expired' })
+    check((await planNow()) === 'free', 'and it expires back to free like any other')
 
     // --- an unmapped product ------------------------------------------------
     console.log('\na plan no variable names')

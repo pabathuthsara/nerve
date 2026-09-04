@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PUBLIC_PLANS } from '@/lib/site/plans'
+import { OFFERS } from '@/lib/site/plans'
 import {
   LIVE_API_BASE,
   SANDBOX_API_BASE,
@@ -16,6 +16,7 @@ import {
 
 const ENV = {
   WHOP_PLAN_PRO: 'plan_pro_1',
+  WHOP_PLAN_PRO_WEEKLY: 'plan_pro_week_1',
   WHOP_PLAN_ELITE: 'plan_elite_1',
 }
 
@@ -26,7 +27,15 @@ const SANDBOX = { ...WIRED, WHOP_API_BASE: SANDBOX_API_BASE }
 
 describe('planMap', () => {
   it('maps each configured vendor plan to the plan it grants', () => {
-    expect(planMap(ENV)).toEqual({ plan_pro_1: 'pro', plan_elite_1: 'elite' })
+    // Several vendor plans resolve to ONE of ours. That is the periods model:
+    // a weekly Pro and a monthly Pro are the same entitlement, so nothing
+    // downstream of here — applyBillingEvent, reps_per_day, the spend cap —
+    // needs to know a billing period exists at all.
+    expect(planMap(ENV)).toEqual({
+      plan_pro_1: 'pro',
+      plan_pro_week_1: 'pro',
+      plan_elite_1: 'elite',
+    })
   })
 
   it('leaves out a plan whose variable is unset or blank', () => {
@@ -60,12 +69,25 @@ describe('planForWhopPlan', () => {
 })
 
 describe('whopPlanIdFor', () => {
-  it('returns the configured vendor plan', () => {
-    expect(whopPlanIdFor('pro', ENV)).toBe('plan_pro_1')
+  it('returns the configured vendor plan, monthly by default', () => {
+    expect(whopPlanIdFor('pro', 'monthly', ENV)).toBe('plan_pro_1')
+    expect(whopPlanIdFor('pro', undefined, ENV)).toBe('plan_pro_1')
+  })
+
+  it('resolves the weekly offer to its own vendor plan', () => {
+    // The whole point of the period model: one Plan, several vendor plans.
+    expect(whopPlanIdFor('pro', 'weekly', ENV)).toBe('plan_pro_week_1')
+    expect(whopPlanIdFor('pro', 'weekly', ENV)).not.toBe(whopPlanIdFor('pro', 'monthly', ENV))
+  })
+
+  it('refuses a period a plan is not sold on', () => {
+    // Elite is monthly only, and a checkout that silently opened a monthly
+    // Elite for somebody who clicked weekly would be charging the wrong price.
+    expect(() => whopPlanIdFor('elite', 'weekly', ENV)).toThrow('not sold by the week')
   })
 
   it('names the missing variable rather than failing quietly', () => {
-    expect(() => whopPlanIdFor('elite', { WHOP_PLAN_PRO: 'plan_pro_1' })).toThrow(
+    expect(() => whopPlanIdFor('elite', 'monthly', { WHOP_PLAN_PRO: 'plan_pro_1' })).toThrow(
       'WHOP_PLAN_ELITE is not set',
     )
   })
@@ -75,9 +97,8 @@ describe('the mapping covers what is actually sold', () => {
   it('has a plan variable for every paid plan on the pricing page', () => {
     // Guards the drift where a fourth plan is authored in lib/site/plans.ts and
     // nobody adds the variable that would let anyone buy it.
-    const paid = PUBLIC_PLANS.filter((plan) => plan.id !== 'free').map((plan) => plan.id)
-    for (const plan of paid) {
-      expect(() => whopPlanIdFor(plan as 'pro' | 'elite', ENV)).not.toThrow()
+    for (const offer of OFFERS) {
+      expect(() => whopPlanIdFor(offer.plan, offer.period, ENV)).not.toThrow()
     }
   })
 })

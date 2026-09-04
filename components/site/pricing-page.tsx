@@ -22,7 +22,10 @@ import Link from 'next/link'
 import { Check } from 'lucide-react'
 import { Mark, planMark } from '@/components/marks'
 import { SiteSection, SITE_LINKS, SUPPORT_EMAIL } from './site-chrome'
-import { BILLING_NOTE, CHECKOUT_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE, repsLine } from '@/lib/site/plans'
+import {
+  BILLING_NOTE, CHECKOUT_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE,
+  monthlyEquivalent, offerFor, periodLabel, repsLine,
+} from '@/lib/site/plans'
 
 const BILLING_FAQ = [
   {
@@ -98,12 +101,29 @@ export function PricingPage() {
             <header>
               <div className="plan-board__name">
                 <span className="mark-row"><Mark name={planMark(plan.id)} size={18} current={plan.id === 'pro'} /><span className="label">{plan.name}</span></span>
-                {plan.id === 'free' ? null : <span className="arena-chip">{TRIAL_DAYS} days free</span>}
+                {/* Only where it is true. Pro is also sold by the week with no
+                    trial, and the chip describes the MONTHLY offer. */}
+                {plan.id === 'free' ? null : <span className="arena-chip">{TRIAL_DAYS} days free monthly</span>}
               </div>
               <div className="plan-board__price">
                 <strong className="data">{plan.price ?? '$0'}</strong>
                 <span className="mute">{plan.price ? '/ month' : 'no card, ever'}</span>
               </div>
+              {/* Both prices, side by side, rather than a toggle.
+                  Every button on this page goes to /signup — the purchase
+                  happens inside the account — so a stateful tab would make this
+                  a client component and hide half the offer to no purchase.
+                  The effective monthly rate is stated because weekly costs MORE
+                  per month, and a ladder that hides that is a trick. */}
+              {offerFor(plan.id, 'weekly')
+                ? (() => {
+                  const weekly = offerFor(plan.id, 'weekly')!
+                  return <p className="plan-board__alt">
+                    or <b className="data">{weekly.price}</b> {periodLabel(weekly.period)} —
+                    about ${monthlyEquivalent(weekly).toFixed(0)} a month, no trial, stop whenever
+                  </p>
+                })()
+                : null}
               <p className="plan-board__tagline">{plan.tagline}</p>
             </header>
             <div className="plan-board__reps">

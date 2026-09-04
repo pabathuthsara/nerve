@@ -32,7 +32,7 @@
  * it can charge nothing; it is refused outright on the live base.
  */
 
-import { PUBLIC_PLANS, TRIAL_DAYS } from '@/lib/site/plans'
+import { OFFERS, PUBLIC_PLANS, TRIAL_DAYS, planById } from '@/lib/site/plans'
 import {
   apiBase,
   apiVersionDate,
@@ -179,22 +179,57 @@ async function main(): Promise<void> {
   if (!accountResponse.ok) {
     check(false, `WHOP_ACCOUNT_ID resolves at the provider (${accountResponse.status})`)
   } else {
-    const account = (await accountResponse.json()) as { id: string; title: string | null; status?: string }
+    const account = (await accountResponse.json()) as {
+      id: string; title: string | null; status?: string
+      industry_group?: string; industry_type?: string
+      logo_url?: string | null; banner_image_url?: string | null; opengraph_image_url?: string | null
+    }
     check(account.id === accountId, `the key can read ${accountId} — "${account.title ?? 'untitled'}"`)
     if (account.status) {
       check(account.status === 'active', `the account is active (${account.status})`)
     }
+
+    // How the account describes itself, asserted rather than trusted.
+    //
+    // This is not cosmetic and it does not stay put. Rule 10 forbids clinical
+    // claims anywhere, clause 08 of the terms says in as many words that no
+    // part of this product treats a condition, and `mental_health_app` is the
+    // first thing a compliance reviewer reads. It has now reverted to that
+    // value TWICE: once from saving Whop's Business settings form, and once
+    // from an API PATCH that set nothing but an OpenGraph image.
+    //
+    // So it is checked here, in the preflight that runs before money moves,
+    // because the revert is silent and the cost of missing it is the payment
+    // account.
+    check(
+      account.industry_type === 'communication_coaching'
+        && account.industry_group === 'personal_development',
+      `it is classified as personal_development / communication_coaching`
+      + ` (${account.industry_group} / ${account.industry_type})`,
+    )
+    if (account.industry_type === 'mental_health_app') {
+      console.log('  ----        REVERTED. Run `npm run whop:setup -- --apply`, and if that')
+      console.log('  ----        cannot write it, fix it through the MCP or the dashboard.')
+      console.log('  ----        It contradicts terms clause 08 and CLAUDE.md rule 10.')
+    }
+
+    // The images. A blank logo is not a launch blocker, but a link that renders
+    // as an empty card is the difference between a shared post and a dead one,
+    // and every channel in MARKETING-PLAN.md is a shared link.
+    check(Boolean(account.logo_url), 'it has a logo')
+    check(Boolean(account.opengraph_image_url), 'it has an OpenGraph image, so shared links are not blank')
   }
 
   console.log('\nplans')
 
-  const paid = PUBLIC_PLANS.filter((plan) => plan.id !== 'free')
   const productIds = new Set<string>()
 
-  for (const plan of paid) {
-    const variable = `WHOP_PLAN_${plan.id.toUpperCase()}`
+  for (const offer of OFFERS) {
+    const plan = planById(offer.plan)
+    const variable = offer.env
     const id = process.env[variable]?.trim()
-    console.log(`\n  ${plan.name} — ${variable}`)
+    const periodWord = offer.period === 'weekly' ? 'week' : 'month'
+    console.log(`\n  ${plan.name} ${offer.period} — ${variable}`)
     if (!id) {
       check(false, `${variable} is set`)
       continue
@@ -209,7 +244,8 @@ async function main(): Promise<void> {
     const vendor = (await response.json()) as WhopPlan
     check(true, `${id} resolves — "${vendor.title ?? 'untitled'}"`)
     check(vendor.plan_type === 'renewal', `it is a subscription, not a one-off (${vendor.plan_type})`)
-    check(vendor.billing_period === 30, `it bills every 30 days (${vendor.billing_period ?? 'unset'})`)
+    check(vendor.billing_period === offer.billingDays,
+      `it bills every ${offer.billingDays} days (${vendor.billing_period ?? 'unset'})`)
 
     /**
      * The price on the receipt and the price on the pricing page are the same
@@ -221,7 +257,7 @@ async function main(): Promise<void> {
      * the intended price, which is the reason it is asserted rather than
      * assumed.
      */
-    const expected = dollars(plan.price)
+    const expected = offer.priceUsd
     check(vendor.renewal_price === expected,
       `it renews at what lib/site/plans.ts advertises ($${vendor.renewal_price} vs $${expected})`)
     check(vendor.currency.toLowerCase() === 'usd', `it is priced in USD (${vendor.currency})`)
@@ -232,19 +268,34 @@ async function main(): Promise<void> {
      * Four surfaces promise seven free days. A plan created without a trial
      * looks identical from every other angle and charges the card on day zero.
      */
-    check(vendor.trial_period_days === TRIAL_DAYS,
-      `it gives the ${TRIAL_DAYS} free days every surface promises (${vendor.trial_period_days ?? 'none'})`)
+    /**
+     * `null` and `0` both mean "no trial", and only one of them is what we sent.
+     *
+     * The weekly plan was created with `trial_period_days: 0` and Whop stored
+     * `null` — a vendor's payload disagreeing with the vendor's own input, which
+     * is rule 12 in miniature. Comparing strictly against 0 would fail a plan
+     * that is exactly right, and a preflight that cries wolf on a correct plan
+     * is a preflight people start ignoring.
+     */
+    const vendorTrial = vendor.trial_period_days ?? 0
+    if (offer.trialDays === 0) {
+      check(vendorTrial === 0,
+        `it has NO trial, because the ${periodWord} is the trial (${vendorTrial})`)
+    } else {
+      check(vendorTrial === offer.trialDays,
+        `it gives the ${offer.trialDays} free days every surface promises (${vendorTrial})`)
+    }
 
-    // A card-backed trial charges nothing up front. A non-zero initial price
-    // takes money on the day the trial starts, which is the same broken promise
-    // in a different field.
+    // Nothing is taken up front. On a trial plan a non-zero initial price
+    // charges on day zero; on a no-trial plan it charges the period's price
+    // twice. Same field, two different broken promises.
     check(vendor.initial_price === 0,
-      `nothing is charged when the trial starts (initial_price ${vendor.initial_price})`)
+      `nothing is charged before the first period (initial_price ${vendor.initial_price})`)
 
     // Inclusive tax silently cuts each tier by the local VAT rate, and §14's
     // margin arithmetic treats the price as gross revenue.
     check(vendor.tax_type !== 'inclusive',
-      `tax is not inclusive, so we keep the full ${plan.price} (${vendor.tax_type})`)
+      `tax is not inclusive, so we keep the full ${offer.price} (${vendor.tax_type})`)
 
     // We sell from our own pricing page through a checkout configuration. A
     // visible plan is a listing on Whop's public marketplace, which §16 and
@@ -320,9 +371,12 @@ async function main(): Promise<void> {
   console.log('\nthe email before the first charge')
   const resendKey = process.env['RESEND_API_KEY']?.trim()
   if (!resendKey) {
-    warn(false, 'RESEND_API_KEY is unset — no trial-ending email will be sent')
-    note('      Terms clause 07 and TRIAL_NOTE both promise one. Either set this,')
-    note('      or confirm the merchant of record sends its own.')
+    warn(false, 'RESEND_API_KEY is unset IN THIS SHELL — the email cannot be checked from here')
+    note('      This reads the local environment, and the email is sent by the')
+    note('      DEPLOYMENT. An unset key here says nothing about production —')
+    note('      check with `vercel env ls production` before believing it.')
+    note('      If it is unset there too, terms clause 07 and TRIAL_NOTE both')
+    note('      promise an email that will not arrive.')
   } else {
     const sender = FROM.match(/<([^>]+)>/)?.[1] ?? FROM
     const domain = sender.split('@')[1] ?? ''
@@ -358,7 +412,8 @@ async function main(): Promise<void> {
     if (live) {
       check(false, 'refused: --checkout opens a real session and this is the LIVE base')
     } else {
-      for (const plan of paid) {
+      for (const offer of OFFERS) {
+        const plan = planById(offer.plan)
         // Same trap the Server Action fell into: `NEXT_PUBLIC_SITE_URL` is set
         // to an empty string here, and `??` does not fall back on `''`.
         const site = [process.env['NEXT_PUBLIC_SITE_URL'], process.env['NEXT_PUBLIC_APP_URL']]
@@ -367,10 +422,12 @@ async function main(): Promise<void> {
           ?? 'http://localhost:3000'
         const result = await createCheckout({
           userId: `preflight-${Date.now()}`,
-          plan: plan.id as Exclude<typeof plan.id, 'free'>,
+          plan: offer.plan,
+          period: offer.period,
           successUrl: `${site.replace(/\/+$/, '')}/profile/subscription?bought=1`,
         })
-        check(result.ok && !!result.url, `${plan.name}: createCheckout returns a URL${result.ok ? '' : ` — ${result.message}`}`)
+        check(result.ok && !!result.url,
+          `${plan.name} ${offer.period}: createCheckout returns a URL${result.ok ? '' : ` — ${result.message}`}`)
         if (result.url) console.log(`        ${result.url}`)
       }
     }

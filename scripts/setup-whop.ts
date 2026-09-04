@@ -29,7 +29,7 @@
  * be minted from here — see the handover note at the bottom of the output.
  */
 
-import { PUBLIC_PLANS, TRIAL_DAYS } from '@/lib/site/plans'
+import { OFFERS, PUBLIC_PLANS, TRIAL_DAYS, planById } from '@/lib/site/plans'
 import { apiBase, apiVersionDate, isLiveBase } from '@/lib/billing/plans'
 
 /**
@@ -56,6 +56,67 @@ const ACCOUNT = {
     'Adults practising social confidence and conversation skills. 18+, moderated, PG-13.',
   route: 'nerve',
 } as const
+
+/**
+ * The affiliate programme (MARKETING-PLAN.md, Day 2).
+ *
+ * These four fields live on the PRODUCT, not on the account — there is no
+ * account-level affiliate rate, which is worth knowing because the dashboard
+ * presents it as a company setting. Read one real product payload and it is
+ * plain: `global_affiliate_percentage`, `global_affiliate_status`,
+ * `member_affiliate_percentage`, `member_affiliate_status`.
+ *
+ * **Why 40 and not Whop's default 30.** Affiliates are the only part of the
+ * acquisition machine that keeps running when the one person posting stops,
+ * and the plan's highest-severity risk is precisely that he is the whole
+ * engine. 30% is the default every other seller offers, so it is the rate a
+ * faceless creator scrolls past. 40% recurring on a $19 subscription is a
+ * legible offer to somebody who already knows what those numbers mean.
+ *
+ * **50% for members**, because a member who converts has used the product and
+ * their recommendation carries what an unpaid stranger's cannot.
+ *
+ * The cost is zero until it earns: an affiliate is paid out of revenue that
+ * would not exist without them. This is the one growth lever in the plan with
+ * no cash outlay and no ceiling set by available hours.
+ *
+ * **`disabled` is the state this account shipped in**, not an accident —
+ * the product was created with both statuses off because there was nothing to
+ * affiliate for. Turning them on is a deliberate change, which is why it is
+ * here and reviewed rather than clicked.
+ */
+const AFFILIATES = {
+  global_affiliate_percentage: 40,
+  global_affiliate_status: 'enabled',
+  member_affiliate_percentage: 50,
+  member_affiliate_status: 'enabled',
+} as const
+
+/**
+ * What an affiliate is told, on the company record.
+ *
+ * Authored here for the same reason the account description is: it is a public
+ * representation of the business, and a dashboard textarea somebody edited once
+ * is not reviewable. Lead with communication coaching and never with dating —
+ * `PAYMENTS-APPROVAL.md` §3, and the same rule the store description follows.
+ *
+ * The footage folder is the one thing this cannot supply: it has to be a real
+ * URL to real screen-recorded reps, and it is the single thing that decides
+ * whether an affiliate can post without talking to us first. Fill it in and
+ * re-run.
+ */
+const AFFILIATE_INSTRUCTIONS = [
+  'Nerve is confidence training for conversation. Users take timed three-minute voice reps against AI characters and get scored on how they handled it — never on whether they succeeded.',
+  '',
+  'WHAT YOU EARN',
+  '40% of every payment, for as long as your referral keeps paying. 50% if you are a Nerve member yourself. Pro is $19/month and Elite is $49/month, both with a 7-day free trial, so a single referral on Pro is $7.60 a month to you for as long as they stay.',
+  '',
+  'WHAT WORKS',
+  'Screen-record an actual rep and cut it. The warmth meter moving in real time is the product, and no other app in this category can show a real recording — everything else is fabricated text over B-roll. The strongest angle is the contradiction at the heart of the scoring: a conversation that ends in rejection can still score 92, because the score is for process and never for outcome.',
+  '',
+  'WHAT NOT TO DO',
+  'No manipulation framing, no scripts for pushing past a no, and nothing that reads as a technique for wearing somebody down. The product itself refuses to train that and scores it down. Keep it about the skill, never about the target. Content that breaks this gets the affiliate link revoked, because it puts our payment processing at risk.',
+].join('\n')
 
 /**
  * The product's slug on Whop, which is global across every seller rather than
@@ -253,9 +314,13 @@ async function main(): Promise<void> {
     if (apply) {
       const patched = await call('PATCH', `/products/${encodeURIComponent(productId)}`, {
         description: PRODUCT_DESCRIPTION,
+        // Hidden is a DECISION, not a default — see MARKETING-PLAN.md §4.1.
+        // Public discoverability raises our visibility to processor review and
+        // this account watched Creem decline it on 1 September.
         visibility: 'hidden',
+        ...AFFILIATES,
       }, `product-update:${productId}`)
-      if (patched.ok) done('its description and visibility refreshed')
+      if (patched.ok) done('its description, visibility and affiliate rates refreshed')
       else fail(`could not update the product (${patched.status})`)
     }
   } else if (apply) {
@@ -271,8 +336,7 @@ async function main(): Promise<void> {
       visibility: 'hidden',
       custom_statement_descriptor: 'WHOP*NERVE',
       redirect_purchase_url: 'https://www.hellonerve.com/profile/subscription?bought=1',
-      global_affiliate_status: 'disabled',
-      member_affiliate_status: 'disabled',
+      ...AFFILIATES,
     }, `product:${PRODUCT_ROUTE}`)
     if (created.ok) {
       productId = created.data['id'] as string
@@ -284,58 +348,121 @@ async function main(): Promise<void> {
     done('create the product "Nerve", unlisted, statement descriptor WHOP*NERVE')
   }
 
-  // ── two plans ────────────────────────────────────────────────────────────
+  // ── the affiliate programme ──────────────────────────────────────────────
+  //
+  // Read back rather than assumed. The rates are set on the product above; this
+  // reports what the account actually holds now, because "I sent a PATCH" and
+  // "the rate is 40" are different claims and only the second one earns money.
+  step('the affiliate programme')
+  if (productId) {
+    const check = await call('GET', `/products/${encodeURIComponent(productId)}`)
+    if (check.ok) {
+      const gs = check.data['global_affiliate_status']
+      const gp = check.data['global_affiliate_percentage']
+      const ms = check.data['member_affiliate_status']
+      const mp = check.data['member_affiliate_percentage']
+      const want = AFFILIATES
+      const line = (label: string, status: unknown, pct: unknown, wantStatus: string, wantPct: number) => {
+        if (status === wantStatus && pct === wantPct) console.log(`  ok    ${label} — ${pct}%, ${status}`)
+        else if (apply) fail(`${label} is ${pct}% ${status}, wanted ${wantPct}% ${wantStatus}`)
+        else done(`${label}: ${pct}% ${status} → ${wantPct}% ${wantStatus}`)
+      }
+      line('global affiliates', gs, gp, want.global_affiliate_status, want.global_affiliate_percentage)
+      line('member affiliates', ms, mp, want.member_affiliate_status, want.member_affiliate_percentage)
+    }
+  }
+
+  // The brief lives on the COMPANY record, which is the same id under a
+  // different representation — `affiliate_instructions` does not exist on
+  // /accounts.
+  const company = await call('GET', `/companies/${encodeURIComponent(accountId)}`)
+  const briefNow = company.ok ? company.data['affiliate_instructions'] : undefined
+  if (briefNow === AFFILIATE_INSTRUCTIONS) {
+    console.log('  ok    the affiliate brief is current')
+  } else if (apply) {
+    const wrote = await call('PATCH', `/companies/${encodeURIComponent(accountId)}`, {
+      affiliate_instructions: AFFILIATE_INSTRUCTIONS,
+    }, 'affiliate-brief')
+    if (wrote.ok) done('the affiliate brief written')
+    else fail(`could not write the affiliate brief (${wrote.status}) — ${JSON.stringify(wrote.data).slice(0, 200)}`)
+  } else {
+    done(briefNow ? 'update the affiliate brief' : 'write the affiliate brief (currently empty)')
+  }
+  note('whether commission recurs on renewals is not exposed on any payload this script can read — confirm it once in the dashboard')
+
+  // ── one vendor plan per OFFER ────────────────────────────────────────────
+  //
+  // Not one per plan. Pro is sold by the week and by the month, which is two
+  // vendor plans resolving to one entitlement — see `OFFERS` in
+  // `lib/site/plans.ts`. Everything below reads the offer rather than the plan
+  // so that price, billing period and trial length come from one authored
+  // record and cannot be typed twice.
   step('the plans')
-  const paid = PUBLIC_PLANS.filter((plan) => plan.id !== 'free')
   const planIds: Record<string, string> = {}
 
   const plans = await call('GET', `/plans?account_id=${encodeURIComponent(accountId)}&first=100`)
   const existingPlans = (plans.data['data'] as Record<string, unknown>[] | undefined) ?? []
 
-  for (const plan of paid) {
-    const price = dollars(plan.price)
+  for (const offer of OFFERS) {
+    const plan = planById(offer.plan)
+    // The key that survives a rename. Titles get edited in dashboards; this
+    // does not, and it is what stops a second run creating a duplicate plan
+    // beside the one somebody renamed.
+    const key = `${offer.plan}-${offer.period}`
+    const periodWord = offer.period === 'weekly' ? 'week' : 'month'
+
     const body = {
       account_id: accountId,
       ...(productId ? { product_id: productId } : {}),
-      title: `Nerve ${plan.name}`,
-      description: `${plan.repsPerDay} voice reps a day. ${plan.tagline}`,
+      title: `Nerve ${plan.name} ${offer.period === 'weekly' ? 'Weekly' : 'Monthly'}`,
+      description: `${plan.repsPerDay} voice reps a day, billed by the ${periodWord}.`
+        + (offer.trialDays === 0 ? ' No trial — the week is the trial.' : ` ${offer.trialDays} days free first.`),
       plan_type: 'renewal',
-      billing_period: 30,
+      billing_period: offer.billingDays,
       currency: 'usd',
-      // Nothing is charged when the trial starts. A non-zero initial price
-      // takes the money on day zero, which is the promise broken in a
-      // different field from the obvious one.
+      // Nothing is charged when a TRIAL starts. On an offer with no trial this
+      // is still 0 and still correct: Whop takes the renewal price at the start
+      // of the first period, so a non-zero initial price here would charge the
+      // week's price twice on day zero.
       initial_price: 0,
-      renewal_price: price,
-      trial_period_days: TRIAL_DAYS,
+      renewal_price: offer.priceUsd,
+      // Zero means no trial. Weekly Pro is sold without one on purpose — a
+      // seven-day trial in front of a seven-day period charges on day 7 and
+      // again on day 14, which is incoherent to read and worse to dispute.
+      trial_period_days: offer.trialDays,
       // Hidden, for the same reason the product is: this is sold from our
       // pricing page, not from Whop's marketplace.
       visibility: 'hidden',
       release_method: 'buy_now',
       unlimited_stock: true,
-      metadata: { nerve_plan: plan.id },
+      metadata: { nerve_plan: offer.plan, nerve_period: offer.period },
     }
 
-    const found = existingPlans.find(
-      (p) => (p['metadata'] as Record<string, unknown> | null)?.['nerve_plan'] === plan.id
-        || p['title'] === `Nerve ${plan.name}`,
-    )
+    const found = existingPlans.find((p) => {
+      const meta = p['metadata'] as Record<string, unknown> | null
+      if (meta?.['nerve_plan'] === offer.plan && meta?.['nerve_period'] === offer.period) return true
+      // The plans created before periods existed carry `nerve_plan` and no
+      // `nerve_period`. They are the MONTHLY ones — adopt them rather than
+      // creating a duplicate beside a plan somebody is already paying on.
+      return meta?.['nerve_plan'] === offer.plan && !meta?.['nerve_period'] && offer.period === 'monthly'
+    })
 
-    console.log(`\n  ${plan.name} — $${price}/mo, ${TRIAL_DAYS}-day trial, ${plan.repsPerDay} reps a day`)
+    console.log(`\n  ${plan.name} ${offer.period} — $${offer.priceUsd}/${periodWord}, `
+      + `${offer.trialDays === 0 ? 'no trial' : `${offer.trialDays}-day trial`}, ${plan.repsPerDay} reps a day`)
 
     if (found) {
       const id = found['id'] as string
-      planIds[plan.id] = id
+      planIds[key] = id
       console.log(`  ok    already exists — ${id}`)
       if (apply) {
-        const patched = await call('PATCH', `/plans/${encodeURIComponent(id)}`, body, `plan-update:${plan.id}`)
-        if (patched.ok) done('price, trial and visibility refreshed')
+        const patched = await call('PATCH', `/plans/${encodeURIComponent(id)}`, body, `plan-update:${key}`)
+        if (patched.ok) done('price, period, trial and visibility refreshed')
         else fail(`could not update the plan (${patched.status}) — ${JSON.stringify(patched.data).slice(0, 200)}`)
       }
     } else if (apply) {
-      const created = await call('POST', '/plans', body, `plan:${plan.id}`)
+      const created = await call('POST', '/plans', body, `plan:${key}`)
       if (created.ok) {
-        planIds[plan.id] = created.data['id'] as string
+        planIds[key] = created.data['id'] as string
         done(`created — ${created.data['id']}`)
       } else {
         fail(`could not create the plan (${created.status}) — ${JSON.stringify(created.data).slice(0, 300)}`)
@@ -403,8 +530,13 @@ async function main(): Promise<void> {
     console.log(`    WHOP_API_VERSION_DATE=${version ?? '2026-08-31'}`)
     console.log(`    WHOP_WEBHOOK_SECRET=${'<printed above, once>'}`)
     console.log(`    WHOP_ACCOUNT_ID=${accountId}`)
-    console.log(`    WHOP_PLAN_PRO=${planIds['pro'] ?? '<not created>'}`)
-    console.log(`    WHOP_PLAN_ELITE=${planIds['elite'] ?? '<not created>'}`)
+    // One line per offer, keyed off the same record the app reads, so a new
+    // period cannot be created here and then be unbuyable for want of a
+    // variable nobody was told to set.
+    for (const offer of OFFERS) {
+      const id = planIds[`${offer.plan}-${offer.period}`] ?? '<not created>'
+      console.log(`    ${offer.env}=${id}`)
+    }
     console.log('\n  Then: npm run whop:verify')
   }
 

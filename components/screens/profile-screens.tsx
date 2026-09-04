@@ -19,7 +19,11 @@ import { dayCount } from '@/lib/data/rank'
 import { Mark, tierMark } from '@/components/marks'
 import { FluidPersona } from '@/components/fluid-persona'
 import { recordLabel, type RepRecord } from '@/lib/data/records'
-import { BILLING_NOTE, CHECKOUT_NOTE, CHECKOUT_UNCONFIGURED_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE, repsLine, type PublicPlan } from '@/lib/site/plans'
+import {
+  BILLING_NOTE, CHECKOUT_NOTE, CHECKOUT_UNCONFIGURED_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE,
+  offerFor, offersFor, periodLabel, monthlyEquivalent, repsLine,
+  type BillingPeriod, type PublicPlan,
+} from '@/lib/site/plans'
 import { cancelSubscription, startCheckout } from '@/app/profile/subscription/actions'
 import { forgetCurrentUser } from '@/lib/data/session'
 import { roomToneAvailable } from '@/lib/audio/scenes'
@@ -372,6 +376,8 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
   const [asking, setAsking] = useState<'pro' | 'elite' | null>(null)
   const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState<Plan | 'cancel' | null>(null)
+  // Monthly by default — see the note beside the toggle.
+  const [period, setPeriod] = useState<BillingPeriod>('monthly')
   const [confirmCancel, setConfirmCancel] = useState(false)
 
   /**
@@ -390,9 +396,9 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
     return () => window.clearTimeout(timer)
   }, [bought, reloadSubscription])
 
-  const buy = async (plan: 'pro' | 'elite') => {
+  const buy = async (plan: 'pro' | 'elite', period: BillingPeriod) => {
     setBusy(plan)
-    const result = await startCheckout(plan)
+    const result = await startCheckout(plan, period)
     if (result.ok && result.url) {
       window.location.assign(result.url)
       return
@@ -448,7 +454,13 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
     {bought ? <Card className="billing-banner"><Check size={18} strokeWidth={1.5} className="volt" /><p>Payment received. Your plan updates here within a few seconds — the receipt is already on its way to your inbox.</p></Card> : null}
     <CurrentPlan user={user} loading={loading} subscription={subscription} onCancel={() => setConfirmCancel(true)} busy={busy === 'cancel'} />
     <section className="plan-section">
-      <span className="label">Compare plans</span>
+      <div className="plan-section__head">
+        <span className="label">Compare plans</span>
+        {/* Monthly is the default because it is the better deal, and a toggle
+            that opens on the dearer effective rate is one that hopes you do
+            not do the arithmetic. */}
+        <PeriodToggle value={period} onChange={setPeriod} />
+      </div>
       <div className="plan-grid">
         {PUBLIC_PLANS.map((plan) => (
           <PlanCard
@@ -456,10 +468,11 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
             plan={plan}
             current={current}
             checkoutOpen={checkoutOpen}
+            period={period}
             busy={busy === plan.id}
             waitlisted={waitlisted.includes(plan.id as 'pro' | 'elite')}
             trialAvailable={subscription === null}
-            onBuy={plan.id === 'free' ? undefined : () => void buy(plan.id as 'pro' | 'elite')}
+            onBuy={plan.id === 'free' ? undefined : (bought) => void buy(plan.id as 'pro' | 'elite', bought)}
             onNotify={plan.id === 'free' ? undefined : () => setAsking(plan.id as 'pro' | 'elite')}
           />
         ))}
@@ -581,23 +594,63 @@ function CurrentPlan({ user, loading, subscription, onCancel, busy }: {
  *                 be describing the second thing.
  *   notify        checkout is not configured yet. The honest button.
  */
-function PlanCard({ plan, current, checkoutOpen, busy = false, waitlisted = false, trialAvailable = false, onBuy, onNotify }: {
+/**
+ * Weekly or monthly, as a segmented control rather than a select.
+ *
+ * Two options that change the whole board should both be visible with their
+ * prices implied; a dropdown hides one of them behind a click. Volt marks the
+ * chosen segment, which is the "current position" use the design system
+ * reserves it for.
+ */
+function PeriodToggle({ value, onChange }: { value: BillingPeriod; onChange: (next: BillingPeriod) => void }) {
+  return <div className="period-toggle" role="group" aria-label="Billing period">
+    {(['weekly', 'monthly'] as const).map((option) => (
+      <button
+        key={option}
+        type="button"
+        className={`period-toggle__option${value === option ? ' is-current' : ''}`}
+        aria-pressed={value === option}
+        onClick={() => onChange(option)}
+      >
+        {option === 'weekly' ? 'Weekly' : 'Monthly'}
+      </button>
+    ))}
+  </div>
+}
+
+function PlanCard({ plan, current, checkoutOpen, period, busy = false, waitlisted = false, trialAvailable = false, onBuy, onNotify }: {
   plan: PublicPlan
   current: Plan
   checkoutOpen: boolean
+  /** Which period the board is showing. A plan not sold on it falls back. */
+  period: BillingPeriod
   busy?: boolean
   waitlisted?: boolean
   /** No subscription has ever existed on this account, so the trial is unused. */
   trialAvailable?: boolean
-  onBuy?: () => void
+  onBuy?: (period: BillingPeriod) => void
   onNotify?: () => void
 }) {
   const active = plan.id === current
+  /**
+   * The offer this card is actually selling.
+   *
+   * Elite is monthly only, so on the weekly tab it falls back to its monthly
+   * offer rather than disappearing — a plan that vanishes when you change a
+   * toggle reads as a bug, and the card says "/ month" either way so nobody is
+   * misled about what they are buying.
+   */
+  const offer = offerFor(plan.id, period) ?? offersFor(plan.id)[0]
+  // The trial is a property of the OFFER, not of the plan. Weekly has none.
+  const offersTrial = trialAvailable && (offer?.trialDays ?? 0) > 0
+
   const action = (() => {
     if (active) return <Button variant="secondary" fullWidth disabled>Current plan</Button>
     if (plan.id === 'free') return <Button variant="secondary" fullWidth disabled>Included</Button>
-    if (checkoutOpen) {
-      return <Button fullWidth loading={busy} onClick={onBuy}>{trialAvailable ? `Start ${TRIAL_DAYS} days free` : `Switch to ${plan.name}`}</Button>
+    if (checkoutOpen && offer) {
+      return <Button fullWidth loading={busy} onClick={() => onBuy?.(offer.period)}>
+        {offersTrial ? `Start ${TRIAL_DAYS} days free` : `Switch to ${plan.name}`}
+      </Button>
     }
     if (waitlisted) return <Button variant="secondary" fullWidth onClick={onNotify}><Check size={15} strokeWidth={1.5} /> On the list</Button>
     return <Button fullWidth onClick={onNotify}>Notify me</Button>
@@ -606,9 +659,15 @@ function PlanCard({ plan, current, checkoutOpen, busy = false, waitlisted = fals
   return <Card className={`plan-card${active ? ' plan-card--current' : ''}`}>
     <div className="plan-card__head">
       <div>{active ? <Chip tone="volt">Current</Chip> : <span className="label">Plan</span>}<h2 className="display-md">{plan.name}</h2></div>
-      <span className="data">{plan.price ? `${plan.price} / mo` : '$0'}</span>
+      <span className="data">{offer ? `${offer.price} ${periodLabel(offer.period)}` : '$0'}</span>
     </div>
     <Stat label="Voice reps" value={repsLine(plan)} />
+    {/* The effective monthly rate, stated rather than left to be discovered on
+        a statement. Weekly costs more per month than monthly does, and a ladder
+        that hides that is the trick this one is trying not to be. */}
+    {offer?.period === 'weekly'
+      ? <p className="plan-card__equiv mute">About ${monthlyEquivalent(offer).toFixed(0)} a month. No trial, and nothing is kept on file after you stop.</p>
+      : null}
     <ul>{plan.features.map((feature) => <li key={feature}><Check size={15} strokeWidth={1.5} /> {feature}</li>)}</ul>
     {action}
   </Card>
