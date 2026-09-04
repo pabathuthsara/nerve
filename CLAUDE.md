@@ -137,9 +137,16 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    the only one the app itself owns.
 10. **No clinical claims anywhere.** "Confidence training", never "treatment". (§16)
     This binds the payment provider's own record of us too: the Whop account is
-    `personal_development / communication_coaching`, and it was
-    `mental_health_app` for a day, which contradicted terms clause 08 in the one
+    `software / personal_development / public_speaking_coaching`, and it was
+    `mental_health_app` for days, which contradicted terms clause 08 in the one
     place a compliance reviewer reads first.
+    **It is `public_speaking_coaching` and not `communication_coaching` for a
+    reason.** The obvious vertical is a child of `dating_and_relationships` in
+    Whop's taxonomy — it sits in the enum beside `mens_dating_coaching` and
+    `relationship_coaching` — so pairing it with `personal_development` is an
+    invalid combination that the API accepts, echoes back, and then silently
+    resets to `health_and_wellness / mental_health_app`. Two writes were lost to
+    that before the pattern was spotted. Never re-pick it.
     **It reverts to `mental_health_app` on its own, and not only from the
     dashboard.** Saving Whop's Business settings form does it; so does an API
     `PATCH /accounts` that sets nothing but an image — one call carrying only

@@ -202,9 +202,9 @@ async function main(): Promise<void> {
     // because the revert is silent and the cost of missing it is the payment
     // account.
     check(
-      account.industry_type === 'communication_coaching'
+      account.industry_type === 'public_speaking_coaching'
         && account.industry_group === 'personal_development',
-      `it is classified as personal_development / communication_coaching`
+      `it is classified as personal_development / public_speaking_coaching`
       + ` (${account.industry_group} / ${account.industry_type})`,
     )
     if (account.industry_type === 'mental_health_app') {

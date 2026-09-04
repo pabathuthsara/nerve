@@ -49,7 +49,7 @@ import { apiBase, apiVersionDate, isLiveBase } from '@/lib/billing/plans'
 const ACCOUNT = {
   business_type: 'software',
   industry_group: 'personal_development',
-  industry_type: 'communication_coaching',
+  industry_type: 'public_speaking_coaching',
   description:
     'Confidence training for conversation. Timed three-minute voice reps against AI characters, scored on how the conversation was handled rather than on whether it succeeded, plus graded real-world challenges. Training, not therapy or clinical care.',
   target_audience:
