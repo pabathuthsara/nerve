@@ -16,6 +16,8 @@
  * both callers are a Server Action or a route handler.
  */
 
+import { vendorRequestId } from './request-id'
+
 const CHAT_ENDPOINT = 'https://api.openai.com/v1/chat/completions'
 
 export interface ChatMessage {
@@ -36,10 +38,10 @@ export type ChatFailure =
   /** No key configured. Ours, not theirs — a 500. */
   | { kind: 'not_configured'; message: string }
   /** Could not reach them, or they refused. A 502. */
-  | { kind: 'upstream'; message: string; status?: number }
+  | { kind: 'upstream'; message: string; status?: number; requestId?: string }
 
 export type ChatStream =
-  | { ok: true; body: ReadableStream<Uint8Array> }
+  | { ok: true; body: ReadableStream<Uint8Array>; requestId?: string }
   | { ok: false; error: ChatFailure }
 
 export type ChatCompletion =
@@ -68,6 +70,15 @@ async function post(request: ChatRequest, stream: boolean): Promise<Response | C
         stream,
         ...(stream ? { stream_options: { include_usage: true } } : {}),
       }),
+      // Next patches global fetch and tries to CACHE this, which means teeing
+      // and buffering the whole SSE body before any of it is forwarded — the
+      // dev log says so outright ("Failed to set fetch cache
+      // https://api.openai.com/v1/chat/completions"). On a streaming character
+      // model that converts token-by-token delivery into one blocking call, so
+      // her first word waits for her last. The pipeline's whole latency budget
+      // (PIPELINE.md — onset ~90ms, nothing else in the path) assumes this
+      // streams. Measured 2.6–3.3s per turn on `/api/voice/llm` before this.
+      cache: 'no-store',
       ...(request.signal ? { signal: request.signal } : {}),
     })
   } catch (cause) {
@@ -79,6 +90,7 @@ async function post(request: ChatRequest, stream: boolean): Promise<Response | C
 export async function streamChat(request: ChatRequest): Promise<ChatStream> {
   const response = await post(request, true)
   if (!(response instanceof Response)) return { ok: false, error: response }
+  const requestId = vendorRequestId(response.headers)
 
   if (!response.ok || !response.body) {
     const detail = await response.text().catch(() => '')
@@ -87,11 +99,12 @@ export async function streamChat(request: ChatRequest): Promise<ChatStream> {
       error: {
         kind: 'upstream',
         status: response.status,
+        ...(requestId ? { requestId } : {}),
         message: `Character model refused (${response.status}). ${detail.slice(0, 400)}`,
       },
     }
   }
-  return { ok: true, body: response.body }
+  return { ok: true, body: response.body, ...(requestId ? { requestId } : {}) }
 }
 
 /** The whole reply, for callers with nothing to hide the generation behind. */

@@ -103,7 +103,12 @@ export const nadia: Persona = {
 
   voice: {
     timbre: 'feminine',
-    ids: { openai: 'marin' },
+    ids: {
+      openai: 'marin',
+      // Laura — enthusiast, quirky attitude. Humour 69 is the highest on the
+      // roster and the quirk is what `marin` gives her that the legacy set did not.
+      elevenlabs: 'FGY2WhTYpPnrIDTdsKH5',
+    },
     pace: 1.0,
   },
 

@@ -608,6 +608,7 @@ export type Database = {
       }
       sessions: {
         Row: {
+          pipeline_telemetry: Json | null
           audio_expires_at: string | null
           audio_path: string | null
           created_at: string
@@ -631,6 +632,7 @@ export type Database = {
           won: boolean | null
         }
         Insert: {
+          pipeline_telemetry?: Json | null
           audio_expires_at?: string | null
           audio_path?: string | null
           created_at?: string
@@ -654,6 +656,7 @@ export type Database = {
           won?: boolean | null
         }
         Update: {
+          pipeline_telemetry?: Json | null
           audio_expires_at?: string | null
           audio_path?: string | null
           created_at?: string
@@ -930,6 +933,9 @@ export type Database = {
           seconds: number
           session_id: string | null
           user_id: string
+          usage_key: string | null
+          usage_source: string | null
+          usage_details: Json | null
         }
         Insert: {
           cost_cents: number
@@ -941,6 +947,9 @@ export type Database = {
           seconds: number
           session_id?: string | null
           user_id: string
+          usage_key?: string | null
+          usage_source?: string | null
+          usage_details?: Json | null
         }
         Update: {
           cost_cents?: number
@@ -952,6 +961,9 @@ export type Database = {
           seconds?: number
           session_id?: string | null
           user_id?: string
+          usage_key?: string | null
+          usage_source?: string | null
+          usage_details?: Json | null
         }
         Relationships: [
           {
@@ -959,6 +971,151 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voice_sessions: {
+        Row: {
+          id: string
+          session_id: string | null
+          user_id: string
+          persona_slug: string
+          provider: string
+          model: string
+          context: Json
+          state: string
+          budget_usd: number
+          grade_reserve_usd: number
+          spent_usd: number
+          reserved_usd: number
+          resource_limits: Json
+          resources: Json
+          quota_kind: string
+          quota_day: string
+          quota_stamp: string
+          refunded_at: string | null
+          activated_at: string | null
+          created_at: string
+          expires_at: string
+          grade_expires_at: string
+          closed_at: string | null
+        }
+        Insert: {
+          id: string
+          session_id?: string | null
+          user_id: string
+          persona_slug: string
+          provider: string
+          model: string
+          context?: Json
+          state?: string
+          budget_usd: number
+          grade_reserve_usd: number
+          spent_usd?: number
+          reserved_usd?: number
+          resource_limits: Json
+          resources?: Json
+          quota_kind: string
+          quota_day: string
+          quota_stamp?: string
+          refunded_at?: string | null
+          activated_at?: string | null
+          created_at?: string
+          expires_at: string
+          grade_expires_at: string
+          closed_at?: string | null
+        }
+        Update: {
+          id?: string
+          session_id?: string | null
+          user_id?: string
+          persona_slug?: string
+          provider?: string
+          model?: string
+          context?: Json
+          state?: string
+          budget_usd?: number
+          grade_reserve_usd?: number
+          spent_usd?: number
+          reserved_usd?: number
+          resource_limits?: Json
+          resources?: Json
+          quota_kind?: string
+          quota_day?: string
+          quota_stamp?: string
+          refunded_at?: string | null
+          activated_at?: string | null
+          created_at?: string
+          expires_at?: string
+          grade_expires_at?: string
+          closed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_sessions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voice_operations: {
+        Row: {
+          session_id: string
+          operation_id: string
+          user_id: string
+          kind: string
+          model: string
+          max_cost_usd: number
+          cost_usd: number | null
+          resources: Json
+          usage: Json
+          metadata: Json
+          state: string
+          estimated: boolean
+          created_at: string
+          settled_at: string | null
+        }
+        Insert: {
+          session_id: string
+          operation_id: string
+          user_id: string
+          kind: string
+          model: string
+          max_cost_usd: number
+          cost_usd?: number | null
+          resources?: Json
+          usage?: Json
+          metadata?: Json
+          state?: string
+          estimated?: boolean
+          created_at?: string
+          settled_at?: string | null
+        }
+        Update: {
+          session_id?: string
+          operation_id?: string
+          user_id?: string
+          kind?: string
+          model?: string
+          max_cost_usd?: number
+          cost_usd?: number | null
+          resources?: Json
+          usage?: Json
+          metadata?: Json
+          state?: string
+          estimated?: boolean
+          created_at?: string
+          settled_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_operations_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "voice_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -995,6 +1152,52 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      voice_session_open: {
+        Args: {
+          p_user_id: string; p_persona_slug: string; p_provider: string; p_model: string;
+          p_context: Json; p_budget_usd: number; p_grade_reserve_usd: number;
+          p_live_seconds: number; p_grade_seconds: number; p_resource_limits: Json
+        }
+        Returns: Json
+      }
+      voice_operation_reserve: {
+        Args: {
+          p_user_id: string; p_session_id: string; p_persona_slug: string | null;
+          p_operation_id: string; p_kind: string; p_model: string; p_max_cost_usd: number; p_resources: Json
+        }
+        Returns: Json
+      }
+      voice_operation_settle: {
+        Args: {
+          p_user_id: string; p_session_id: string; p_operation_id: string;
+          p_cost_usd: number | null; p_resources: Json | null; p_usage: Json; p_metadata: Json; p_status: string
+        }
+        Returns: Json
+      }
+      voice_session_activate: {
+        Args: { p_user_id: string; p_session_id: string }
+        Returns: Json
+      }
+      voice_session_get: {
+        Args: { p_user_id: string; p_session_id: string | null; p_persona_slug: string | null }
+        Returns: Json
+      }
+      voice_session_close: {
+        Args: { p_user_id: string; p_session_id: string; p_abort: boolean }
+        Returns: Json
+      }
+      voice_session_refund_empty: {
+        Args: { p_user_id: string; p_session_id: string }
+        Returns: Json
+      }
+      voice_session_abort_attempt: {
+        Args: { p_user_id: string; p_session_id: string; p_operation_id: string | null }
+        Returns: Json
+      }
+      voice_spend_committed_cents: {
+        Args: { p_user_id: string }
+        Returns: number
+      }
       export_my_data: { Args: never; Returns: Json }
       spend_allowance: {
         Args: {

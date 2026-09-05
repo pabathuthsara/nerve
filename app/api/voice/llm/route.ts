@@ -9,8 +9,9 @@
 
 import { requireUser } from '@/lib/db/api-auth'
 import { maySpend } from '@/lib/db/spend'
-import { personaContext } from '@/lib/db/persona-context'
+import { after } from 'next/server'
 import { handleLlmRequest } from '@/lib/voice/elevenlabs/server'
+import { createLegacyVoiceResponse } from '@/lib/voice/elevenlabs/legacy'
 
 export const runtime = 'edge'
 
@@ -20,33 +21,12 @@ export async function POST(request: Request): Promise<Response> {
   const auth = await requireUser(request)
   if ('response' in auth) return auth.response
 
-  // Proxies a standing vendor key, so the ceiling matters more here than the
-  // session check does: a valid session with a loop behind it still spends.
-  const allowed = await maySpend(auth.userId, 'llm')
-  if (!allowed.ok) return allowed.response
-
-  // Character memory and the user's name (§08), resolved from the
-  // authenticated user rather than the body. The persona id is the one thing
-  // the client gets to choose here, and it has to be read before the body is
-  // consumed downstream — so the slug is peeked from a clone.
-  const overlay = await personaContext(auth.userId, await personaSlug(request))
-
-  return handleLlmRequest(request, overlay)
-}
-
-/**
- * The persona id, read without consuming the request.
- *
- * `handleLlmRequest` parses the same body; a stream can only be read once, so
- * this reads a clone. It is a slug and nothing else — the contract is still
- * compiled from it server-side, and a slug that names nobody simply produces
- * no memory.
- */
-async function personaSlug(request: Request): Promise<string | null> {
-  try {
-    const body = (await request.clone().json()) as { personaId?: unknown }
-    return typeof body.personaId === 'string' ? body.personaId : null
-  } catch {
-    return null
+  if (auth.userId === 'internal') {
+    const allowed = await maySpend(auth.userId, 'llm')
+    if (!allowed.ok) return allowed.response
+    return handleLlmRequest(request)
   }
+  const { response, finished } = await createLegacyVoiceResponse(request, auth.userId, 'llm')
+  after(() => finished)
+  return response
 }

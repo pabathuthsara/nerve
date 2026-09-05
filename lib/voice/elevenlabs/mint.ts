@@ -27,6 +27,13 @@ import { resolvePipelineConfig, type PipelineEnv } from './config'
 
 const CLIENT_SECRETS_ENDPOINT = 'https://api.openai.com/v1/realtime/client_secrets'
 const SUBSCRIPTION_ENDPOINT = 'https://api.elevenlabs.io/v1/user/subscription'
+const SUBSCRIPTION_TIMEOUT_MS = 750
+const SUBSCRIPTION_CACHE_MS = 15_000
+const TRANSCRIPTION_MINT_TIMEOUT_MS = 10_000
+
+type CreditSnapshot = { used: number | null; limit: number | null }
+const subscriptionCache = new Map<string, { expiresAt: number; value: CreditSnapshot }>()
+const subscriptionPending = new Map<string, Promise<CreditSnapshot>>()
 
 /** The stamped model on this arm is the voice model — the thing being A/B'd. */
 export const PIPELINE_MODEL_ID = 'elevenlabs-pipeline'
@@ -44,6 +51,11 @@ export interface MintedPipelineSession {
   model: string
   rate: Rate
   pipeline: PipelineClientConfig
+  /** Present after the server has atomically opened an owned voice rep. */
+  sessionId?: string
+  startupAttemptId?: string
+  /** Capability advertisement permits old clients/mints during a deployment. */
+  turn?: { endpoint: string }
   credits: {
     budget: number
     warnAt: number
@@ -140,46 +152,48 @@ async function mintTranscriptionSecret(
   apiKey: string,
   stt: ElevenLabsPipelineConfig['stt'],
 ): Promise<string> {
-  let response: Response
   try {
-    response = await fetch(CLIENT_SECRETS_ENDPOINT, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        session: {
-          type: 'transcription',
-          audio: {
-            input: {
-              format: { type: 'audio/pcm', rate: stt.sampleRate },
-              transcription: { model: stt.model },
-              // Turn-taking is ours. See ./vad.ts.
-              turn_detection: null,
+    return await boundedRequest(async (signal) => {
+      const response = await fetch(CLIENT_SECRETS_ENDPOINT, {
+        method: 'POST',
+        cache: 'no-store',
+        signal,
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session: {
+            type: 'transcription',
+            audio: {
+              input: {
+                format: { type: 'audio/pcm', rate: stt.sampleRate },
+                transcription: { model: stt.model },
+                // Turn-taking is ours. See ./vad.ts.
+                turn_detection: null,
+              },
             },
           },
-        },
-      }),
-    })
+        }),
+      })
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '')
+        throw new VoiceError(
+          'token_mint_failed',
+          'elevenlabs',
+          `Transcription mint refused (${response.status}). ${detail.slice(0, 500)}`,
+        )
+      }
+      const minted = (await response.json()) as { value?: string; client_secret?: { value?: string } }
+      const secret = minted.value ?? minted.client_secret?.value
+      if (!secret) {
+        throw new VoiceError('token_mint_failed', 'elevenlabs', 'Transcription mint returned no secret.')
+      }
+      return secret
+    }, TRANSCRIPTION_MINT_TIMEOUT_MS)
   } catch (cause) {
+    if (cause instanceof VoiceError) throw cause
     throw new VoiceError('token_mint_failed', 'elevenlabs', 'Could not reach the transcription mint.', {
       cause,
     })
   }
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new VoiceError(
-      'token_mint_failed',
-      'elevenlabs',
-      `Transcription mint refused (${response.status}). ${detail.slice(0, 500)}`,
-    )
-  }
-
-  const minted = (await response.json()) as { value?: string; client_secret?: { value?: string } }
-  const secret = minted.value ?? minted.client_secret?.value
-  if (!secret) {
-    throw new VoiceError('token_mint_failed', 'elevenlabs', 'Transcription mint returned no secret.')
-  }
-  return secret
 }
 
 /**
@@ -191,19 +205,62 @@ async function mintTranscriptionSecret(
  */
 export async function readSubscription(
   apiKey: string,
-): Promise<{ used: number | null; limit: number | null }> {
-  try {
-    const response = await fetch(SUBSCRIPTION_ENDPOINT, {
-      headers: { 'xi-api-key': apiKey },
-    })
-    if (!response.ok) return { used: null, limit: null }
-    const body = (await response.json()) as Record<string, unknown>
-    return {
-      used: numberOf(body['character_count']),
-      limit: numberOf(body['character_limit']),
+): Promise<CreditSnapshot> {
+  const cached = subscriptionCache.get(apiKey)
+  if (cached && cached.expiresAt > Date.now()) return cached.value
+  const pending = subscriptionPending.get(apiKey)
+  if (pending) return pending
+
+  const request = fetchSubscription(apiKey).then((value) => {
+    // A transient failure is not a fresh zero balance. Preserve a successful
+    // recent reading, and avoid hammering a slow status endpoint on reconnect.
+    const snapshot = value.used === null ? cached?.value ?? value : value
+    if (subscriptionCache.size >= 8) {
+      const oldest = subscriptionCache.keys().next().value
+      if (oldest !== undefined) subscriptionCache.delete(oldest)
     }
+    subscriptionCache.set(apiKey, { expiresAt: Date.now() + SUBSCRIPTION_CACHE_MS, value: snapshot })
+    return snapshot
+  }).finally(() => subscriptionPending.delete(apiKey))
+  subscriptionPending.set(apiKey, request)
+  return request
+}
+
+async function fetchSubscription(apiKey: string): Promise<CreditSnapshot> {
+  try {
+    return await boundedRequest(async (signal) => {
+      const response = await fetch(SUBSCRIPTION_ENDPOINT, {
+        headers: { 'xi-api-key': apiKey },
+        cache: 'no-store',
+        signal,
+      })
+      if (!response.ok) return { used: null, limit: null }
+      const body = (await response.json()) as Record<string, unknown>
+      return {
+        used: numberOf(body['character_count']),
+        limit: numberOf(body['character_limit']),
+      }
+    }, SUBSCRIPTION_TIMEOUT_MS)
   } catch {
     return { used: null, limit: null }
+  }
+}
+
+/** Bound both the network wait and cancellation. A status endpoint is advisory;
+ *  it must never keep the start screen waiting indefinitely. */
+async function boundedRequest<T>(request: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  const abort = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      abort.abort()
+      reject(new Error('Voice provider request timed out.'))
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([request(abort.signal), timeout])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
 }
 

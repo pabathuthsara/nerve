@@ -199,6 +199,46 @@ though the line got longer.
 Locked behaviours are not mentioned at all. Telling a model what it may not do
 invites it to think about doing it, and every word is charged on every later turn.
 
+## Casting
+
+`voice.timbre` is what the character *is*; `voice.ids.openai` is the voice she
+is actually rendered in. Nothing compared them until 4 September, and for as
+long as Maya has stood at rung 3 she has been a woman rendered in a man's voice.
+
+| | Tess (L1) | Nadia (L2) | Maya (L3) | Robin (L4) |
+|---|---|---|---|---|
+| voice | `sage` | `marin` | `coral` | `alloy` |
+| pace | 1.02 | 1.0 | 1.0 | 0.98 |
+| generation | legacy | **current** | legacy | legacy |
+
+**OpenAI ships exactly two current-generation voices and only one is a woman.**
+`marin` and `cedar` arrived with `gpt-realtime` and are the two the vendor
+recommends; the other eight are the older set, restated in that generation but
+not rebuilt. Nadia holds `marin`. There is no second one to give anybody else,
+which is the whole reason the roster does not simply move to the best voices —
+*there is one*, and it is taken.
+
+That scarcity is what produced the bug. Maya was moved off `coral` to `cedar`
+because `coral` was reported as distorted and `cedar` was new, and the note
+recorded only its novelty. `cedar` is the male half of the pair. The distortion
+was really the cancelled-audio fault fixed in the same change (`AUDIO.md`), so
+the reason to leave `coral` had already evaporated. She is back on it.
+
+Two invariants now hold this, both in `conformance.test.ts`:
+
+- **Every character is cast explicitly, and never twice.** Falling through
+  `VOICE_BY_TIMBRE` is a failure, not a default — Alex once landed on Maya's
+  voice that way, and Robin and Nadia were once both `marin`.
+- **No `feminine` character is cast on a masculine voice.** The list is `ash`,
+  `ballad`, `cedar`, `echo`, `verse` — deliberately only the unambiguous ones,
+  by ear, since OpenAI publishes descriptions and not genders. `alloy` is left
+  out as genuinely androgynous rather than quietly reclassified to keep Robin
+  green, which means **Robin's casting is an open question and not a passing
+  one**: she is `timbre: 'feminine'` on the most neutral voice in the set.
+
+The first test could not have caught the second bug. `cedar` was named
+explicitly and was unique, so the casting was deliberate — and wrong.
+
 ## Trajectories
 
 ### The shipped ladder

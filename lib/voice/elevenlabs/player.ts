@@ -32,6 +32,9 @@ export interface PcmPlayerOptions {
   sampleRate: number
   /** Where the audio goes — the room's input, or the destination. */
   destination: AudioNode
+  /** Earliest first audio on the AudioContext clock. Generation can run while
+   *  this optional personality beat elapses. Later chunks stay contiguous. */
+  notBefore?: number
   /** Fired once, when the first sample of a turn actually leaves the speaker. */
   onFirstAudio?: (contextTime: number) => void
   /** Fired when the queue drains and nothing more is expected. */
@@ -53,6 +56,7 @@ export class PcmPlayer {
   private readonly destination: AudioNode
   private readonly onFirstAudio: ((contextTime: number) => void) | undefined
   private readonly onDrained: (() => void) | undefined
+  private readonly notBefore: number
 
   private segments: Segment[] = []
   private nextStartAt = 0
@@ -60,6 +64,7 @@ export class PcmPlayer {
   private started = false
   private closed = false
   private startTimer: ReturnType<typeof setTimeout> | null = null
+  private readonly drainWaiters = new Set<() => void>()
   /** Playback gaps caused by the network not keeping up. Telemetry only. */
   private underruns = 0
 
@@ -69,6 +74,7 @@ export class PcmPlayer {
     this.destination = options.destination
     this.onFirstAudio = options.onFirstAudio
     this.onDrained = options.onDrained
+    this.notBefore = Number.isFinite(options.notBefore) ? options.notBefore! : 0
   }
 
   get isPlaying(): boolean {
@@ -119,7 +125,9 @@ export class PcmPlayer {
     source.buffer = buffer
     source.connect(this.destination)
 
-    const earliest = this.context.currentTime + (this.started ? 0 : LEAD_IN_SECONDS)
+    const earliest = this.started
+      ? this.context.currentTime
+      : Math.max(this.context.currentTime + LEAD_IN_SECONDS, this.notBefore)
     if (this.started && this.nextStartAt < this.context.currentTime) this.underruns += 1
     const startAt = Math.max(earliest, this.nextStartAt)
 
@@ -140,7 +148,10 @@ export class PcmPlayer {
     source.onended = () => {
       if (this.closed) return
       const last = this.segments[this.segments.length - 1]
-      if (last && last.source === source) this.onDrained?.()
+      if (last && last.source === source) {
+        for (const resolve of this.drainWaiters) resolve()
+        this.onDrained?.()
+      }
     }
   }
 
@@ -168,14 +179,31 @@ export class PcmPlayer {
       }
     }
     this.segments = []
+    for (const resolve of this.drainWaiters) resolve()
     return played
   }
 
   /** Wait for the queue to finish. Resolves immediately if it already has. */
   async waitForDrain(): Promise<void> {
     if (this.closed || !this.started) return
-    const remaining = this.scheduled - this.playedSeconds
-    if (remaining <= 0) return
-    await new Promise<void>((resolve) => setTimeout(resolve, remaining * 1000 + 30))
+    if (this.playedSeconds >= this.scheduled) return
+    await new Promise<void>((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const finish = () => {
+        if (timer !== undefined) clearTimeout(timer)
+        this.drainWaiters.delete(finish)
+        resolve()
+      }
+      const check = () => {
+        if (this.closed || this.playedSeconds >= this.scheduled) { finish(); return }
+        // Includes the optional onset pause and any scheduled underrun gaps.
+        // An AudioContext can suspend while wall time runs, so recheck its
+        // clock before declaring that unheard words have finished playing.
+        const remaining = Math.max(0, this.nextStartAt - this.context.currentTime)
+        timer = setTimeout(check, Math.max(10, remaining * 1000 + 10))
+      }
+      this.drainWaiters.add(finish)
+      check()
+    })
   }
 }

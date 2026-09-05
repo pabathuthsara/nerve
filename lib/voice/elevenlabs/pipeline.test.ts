@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { stripDeliveryTags } from './persona'
 
 import { nadia } from '../../personas/nadia'
 import { DEFAULT_CALIBRATION, resolveSilenceMs } from '../types'
@@ -268,12 +269,13 @@ describe('per-stage telemetry', () => {
     expect(stages.sttMs).toEqual({ median: 0, p90: 0, count: 0 })
   })
 
-  it('drops implausible samples rather than letting one stall skew the median', () => {
+  it('retains long stalls and rejects invalid negative samples', () => {
     const m = meter()
     m.record('llmFirstTokenMs', 200)
     m.record('llmFirstTokenMs', 45_000)
     m.record('llmFirstTokenMs', -5)
-    expect(m.stages().llmFirstTokenMs.count).toBe(1)
+    expect(m.stages().llmFirstTokenMs.count).toBe(2)
+    expect(m.stages().llmFirstTokenMs.p90).toBeGreaterThan(20_000)
   })
 
   it('prices characters, not tokens, and both TTS models identically', () => {
@@ -541,5 +543,66 @@ describe('voice design', () => {
     // Both models, all seven lines. Small enough to spend off a free plan.
     expect(auditionCharacterCost()).toBeLessThan(500)
     expect(auditionCharacterCost(AUDITION_LINES, 1) * 2).toBe(auditionCharacterCost())
+  })
+})
+
+describe('the v3 stream is MIXED, and that is what duplicated her', () => {
+  // A real `eleven_v3_conversational` /with-timestamps stream, captured today:
+  // six aligned frames carrying the text incrementally, then a trailing
+  // audio-only frame. Not all-aligned, not all-unaligned.
+  const CLIP = "Not yet. It's a bit all over the place."
+
+  it('carries the text incrementally across aligned frames, never cumulatively', () => {
+    // If alignment were cumulative, appending each frame would multiply her
+    // reply on its own. It is not — the frames sum to the clip exactly.
+    const frames = ['Not', " yet. It's", ' a bit all', ' over the place.']
+    expect(frames.join('')).toBe(CLIP)
+  })
+
+  it('does not append the whole clip again on a trailing unaligned frame', () => {
+    const turn = new SpokenTurn()
+    // Six aligned frames.
+    let t = 0
+    for (const chunk of ['Not', " yet. It's", ' a bit all', ' over the place.']) {
+      const chars = [...chunk]
+      t += 0.4
+      turn.appendAligned({
+        characters: chars,
+        characterStartTimesSeconds: chars.map(() => 0),
+        characterEndTimesSeconds: chars.map(() => t),
+      })
+    }
+    expect(turn.fullText.trim()).toBe(CLIP)
+
+    // The trailing audio-only frame adds DURATION and no text. Before the fix
+    // this branch ran with `textAppended` still false and re-appended the whole
+    // clip, so every reply was spoken and logged twice.
+    turn.appendUnaligned('', 0.2)
+    expect(turn.fullText.trim()).toBe(CLIP)
+    expect(turn.fullText).not.toContain('place.Not')
+  })
+})
+
+describe('delivery tags never reach the transcript', () => {
+  // ElevenLabs consumes a tag as prosody but ECHOES IT BACK in the alignment,
+  // so it arrives as part of her line. §04 requires both adapters to emit
+  // identical normalised turns, and the OpenAI arm emits no tags.
+  it('strips a tag the compiler prepended', () => {
+    expect(stripDeliveryTags('[playful] Trying to find a birthday present.'))
+      .toBe('Trying to find a birthday present.')
+  })
+
+  it('strips a tag the model opened with on its own', () => {
+    expect(stripDeliveryTags('[flat] Embarrassing, huh?')).toBe('Embarrassing, huh?')
+  })
+
+  it('strips more than one, and closes the gap they leave', () => {
+    expect(stripDeliveryTags('[dry] Not yet. [polite] It is fine.'))
+      .toBe('Not yet. It is fine.')
+  })
+
+  it('leaves an untagged line exactly alone', () => {
+    expect(stripDeliveryTags('Not yet. It is a bit all over the place.'))
+      .toBe('Not yet. It is a bit all over the place.')
   })
 })

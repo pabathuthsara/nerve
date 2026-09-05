@@ -32,13 +32,6 @@ const STAGES: readonly StageName[] = [
   'totalPerceivedMs',
 ]
 
-/**
- * A turn later than this is a stall or a dropped turn, not a round trip.
- * Same reasoning as `LatencyMeter`: including it corrupts the distribution the
- * comparison is read from.
- */
-const MAX_PLAUSIBLE_MS = 20_000
-
 export interface PipelineModels {
   ttsModel: string
   sttModel: string
@@ -131,6 +124,7 @@ export class PipelineMeter {
   private sttAudioTokens = 0
   private sttTextTokens = 0
   private llmInputTokens = 0
+  private llmCachedInputTokens = 0
   private llmOutputTokens = 0
   private creditsRemaining: number | null = null
   /** The vendor's own used-counter, when the subscription endpoint answers. */
@@ -148,7 +142,9 @@ export class PipelineMeter {
   }
 
   record(stage: StageName, ms: number): void {
-    if (!Number.isFinite(ms) || ms < 0 || ms > MAX_PLAUSIBLE_MS) return
+    // Long stalls are precisely the observations an optimization must retain.
+    // Dropping values above 20 seconds made the slowest failures disappear.
+    if (!Number.isFinite(ms) || ms < 0) return
     this.samples[stage].push(Math.round(ms))
   }
 
@@ -175,8 +171,9 @@ export class PipelineMeter {
     this.sttTextTokens += tokens.text ?? 0
   }
 
-  addLlmTokens(tokens: { input?: number; output?: number }): void {
+  addLlmTokens(tokens: { input?: number; output?: number; cachedInput?: number }): void {
     this.llmInputTokens += tokens.input ?? 0
+    this.llmCachedInputTokens += Math.min(tokens.input ?? 0, tokens.cachedInput ?? 0)
     this.llmOutputTokens += tokens.output ?? 0
   }
 
@@ -204,9 +201,13 @@ export class PipelineMeter {
     })
     const llmCostUsd = priceTokens(this.models.llmModel, {
       textInput: this.llmInputTokens,
+      cachedTextInput: this.llmCachedInputTokens,
       textOutput: this.llmOutputTokens,
     })
-    const totalCostUsd = elevenCostUsd + sttCostUsd + llmCostUsd
+    const openaiCostUsd = sttCostUsd !== null && llmCostUsd !== null
+      ? sttCostUsd + llmCostUsd
+      : null
+    const totalCostUsd = openaiCostUsd === null ? null : elevenCostUsd + openaiCostUsd
 
     return {
       elevenlabs: {
@@ -218,11 +219,13 @@ export class PipelineMeter {
       openai: {
         sttTokens: this.sttAudioTokens + this.sttTextTokens,
         llmTokens: this.llmInputTokens + this.llmOutputTokens,
-        costUsd: round6(sttCostUsd + llmCostUsd),
+        llmCachedInputTokens: this.llmCachedInputTokens,
+        costUsd: openaiCostUsd === null ? null : round6(openaiCostUsd),
       },
-      totalCostUsd: round6(totalCostUsd),
+      totalCostUsd: totalCostUsd === null ? null : round6(totalCostUsd),
       costPerMinuteUsd:
-        sessionSeconds > 0 ? round6(totalCostUsd / (sessionSeconds / 60)) : 0,
+        totalCostUsd === null ? null
+          : sessionSeconds > 0 ? round6(totalCostUsd / (sessionSeconds / 60)) : 0,
     }
   }
 

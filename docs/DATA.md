@@ -24,6 +24,8 @@ eleventh anything.
 | `scores` | graded rep | Six sub-scores plus the deterministic audit trail |
 | `persona_memory` | user × character | The one-line callback on return, filtered before it is stored |
 | `usage_ledger` | charge | Append-only. The source of truth for metering |
+| `voice_sessions` | server-authorized voice rep | Atomic quota, user/persona binding, cached context, deadlines and reserved AI budget. Service role only |
+| `voice_operations` | paid operation | Idempotent reservation and provider receipt, including unknown usage. Service role only |
 | `entitlements` | user | Plan, daily quota and the one-off sign-up rep. **Read policy and nothing else** |
 | `streaks` | user | Days trained in a row. A rep counts; so does a logged ask |
 | `field_challenges` | challenge | Content. Hand-written, reviewed, never generated (§09) |
@@ -96,8 +98,11 @@ so `consumeRep`, `mayOpenSession` and `/api/voice/token` all pass `daily` or
 "should we spend more on them?", so a signed-in user could post transcripts to
 `/api/grade` in a loop and a leaked cookie could do it faster.
 
-Five routes go through `maySpend` (`lib/db/spend.ts`): `/api/grade`,
-`/api/warmth/score`, `/api/voice/llm`, `/api/voice/tts` and `/api/voice/token`.
+Paid routes go through `maySpend` (`lib/db/spend.ts`), including `/api/grade`,
+`/api/warmth/score`, `/api/voice/turn`, `/api/voice/llm`, `/api/voice/tts` and `/api/voice/token`.
+For a server-authorized voice operation, that gate delegates to the atomic
+session reservation described below. Standalone operations use the existing
+account allowance and route bucket.
 `/api/voice/credits` deliberately does not — it reads the vendor's own balance
 and buys nothing.
 
@@ -108,11 +113,10 @@ HTTP response, because a Server Action returns `{ ok, message }` rather than a
 a loop in the cheap unmetered thing cannot eat the allowance the expensive
 metered one needs to keep talking.
 
-**One round trip, not three.** `spend_allowance(user, bucket, limit, window,
-cap)` checks the kill switch, then the daily cap, then the rate limit, and
-returns one verdict. `/api/voice/tts` is on the critical path of every reply she
-speaks, so three sequential checks would be three hops added to
-`ttsFirstByteMs`.
+`spend_allowance(user, bucket, limit, window, cap)` checks the kill switch,
+daily cap and rate limit in one RPC. The legacy application path separately
+looks up the plan to choose that cap. The new bound voice path reads its
+entitlement, session budget and cached persona context in one reservation RPC.
 
 **The order is the design.** Kill switch, then cap, then rate limit — so a
 halted account never has its allowance consumed. Being switched off must not
@@ -122,7 +126,7 @@ also cost you the allowance you need when you are switched back on.
 |---|---|---|
 | Project-wide halt | `NERVE_SPEND_HALT` env var | By hand |
 | Account halt | `entitlements.spend_halted_at` | By hand, service role only |
-| Daily cap | Summed off `usage_ledger` | Midnight in the user's own timezone |
+| Daily cap | `usage_ledger` plus outstanding voice commitments | Midnight in the user's own timezone |
 | Rate limit | `rate_limits` | When the window rolls |
 
 `rate_limits` has **RLS on and no policies whatsoever**. Not readable and not
@@ -132,7 +136,7 @@ themselves against, and one they can write is not a limit. `spend_allowance` is
 user who could call it could burn their own allowance, or read another account's
 spend by passing a different uuid.
 
-**It fails open on an unreachable database, on purpose.** If the allowance
+**The legacy standalone allowance fails open on an unreachable database.** If the allowance
 cannot be read, refusing every paid route turns a database blip into a total
 outage and ends live reps mid-sentence. What is still standing in that case: the
 session check, the rep quota at `/api/voice/token`, and the project-wide switch,
@@ -143,6 +147,57 @@ says nothing may interrupt a live rep, so a limit a real session can reach is a
 limit that will eventually cut somebody off mid-sentence.
 
 `npm run db:spend` proves all of it against the real database.
+
+### Server-owned voice accounting (5 September 2026)
+
+`lib/db/voice-session.ts` owns the new ElevenLabs rep lifecycle. The additive
+`20260905062922_voice_session_budget_and_usage` migration creates private
+`voice_sessions` and `voice_operations` tables with RLS, no client privileges,
+and service-only `SECURITY INVOKER` RPCs with an empty search path. A session
+record cannot be created, repriced or settled by a browser.
+
+Opening a rep atomically consumes the normal plan/sign-up allowance, creates
+the real `sessions` row and reserves an AI budget. Retrying the same active
+persona adopts that record without extending its deadline or charging quota
+again. The default reservation envelope is **$0.20**, including **$0.03 kept
+for grading**; `NERVE_VOICE_BUDGET_USD` can select a bounded different envelope.
+This preserves room for the existing personas while real full-length usage is
+measured. It is not a claim that a rep normally costs twenty cents or that
+direct browser transcription has an enforceable twenty-cent invoice ceiling.
+
+Each paid turn/scoring request reserves its maximum estimated cost and bounded
+resources before calling a provider. Admission fails closed if that reservation
+cannot be written. Unknown or interrupted usage retains the reserved amount
+as an explicit estimate; server-observed usage releases unused resources and
+creates one append-only receipt. `usage_key` deduplicates receipts, while
+`usage_source` and `usage_details` distinguish measurements from reservations
+and retain provider usage, timings and request metadata. Client
+`sessions.pipeline_telemetry` is diagnostic data, never billing authority.
+
+Daily caps include active envelopes and today's unresolved operations. An old
+abandoned operation remains available for reconciliation but does not consume
+every future day's allowance. A late receipt uses the operation's initiation
+time. Deleting a history session detaches its budget and receipts rather than
+erasing committed spending. Normal close preserves in-flight work and a short
+grade window; refunds require server evidence and are idempotent.
+
+`20260905065411_voice_startup_attempt_and_grade_reservation` binds setup cleanup
+to its STT attempt so one failed mint cannot abort another pending or issued
+credential. `20260905110407_voice_grade_commitment_cents` corrects the unit
+conversion when a post-close grade needs more than the protected allocation.
+All three migrations are applied history and must remain immutable.
+
+`npm run db:voice` passes 40 checks through real REST with two temporary,
+authenticated accounts and no paid provider calls. It verifies private table
+and RPC denial, ownership of session/transcript reads and writes, owner-only
+ledger reads, rejection of client-authored charges, and append-only server
+turn/grade receipts. Both test accounts and their fixture rows are removed in
+`finally`; no authored content or storage objects are changed. The isolated SQL suites in
+`supabase/tests/voice_session_budget.sql` and
+`supabase/tests/voice_startup_attempt.sql` cover quota, resource and cost limits,
+concurrent startup interleavings, refunds, private RPCs, late receipts, midnight
+boundaries and fractional-cent grade admission. They require an isolated test
+database; do not run their fixture inserts against customer data.
 
 ## Personas are seeded, not read
 

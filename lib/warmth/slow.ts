@@ -102,6 +102,8 @@ export class HttpSlowScorer implements SlowScorer {
   constructor(
     private readonly endpoint = '/api/warmth/score',
     private readonly fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis),
+    /** Read at call time: the saved session may finish opening after setup. */
+    private readonly context?: () => { sessionId?: string },
   ) {}
 
   async score(request: SlowScoreRequest, signal: AbortSignal): Promise<SlowScore | null> {
@@ -109,7 +111,7 @@ export class HttpSlowScorer implements SlowScorer {
       const response = await this.fetchImpl(this.endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(request),
+        body: JSON.stringify({ ...request, ...this.context?.() }),
         signal,
       })
       if (!response.ok) return null

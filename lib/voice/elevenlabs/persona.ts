@@ -29,6 +29,7 @@ import {
 } from '../types'
 import type { PersonaCompiler } from '../provider'
 import { BANNED_REGISTER, compileInstructions } from '../openai/persona'
+import { paceFor } from '@/lib/warmth/timing'
 import {
   resolvePipelineConfig,
   ttsModelSpec,
@@ -99,6 +100,30 @@ const VOICE_BY_TIMBRE: Record<Persona['voice']['timbre'], string> = {
   neutral: 'ELEVENLABS_VOICE_NEUTRAL',
 }
 
+/**
+ * Delivery tags, removed from anything that becomes a transcript.
+ *
+ * ElevenLabs CONSUMES a tag as prosody but ECHOES IT BACK in the
+ * `/with-timestamps` alignment, character for character. So the tag we prepend
+ * for delivery arrives back as part of her line and lands in the stored
+ * transcript: real reps recorded `"[playful] Trying to find a birthday present
+ * for my sister"`.
+ *
+ * That is not cosmetic. §04 requires both adapters to emit identical
+ * normalised turns because scoring depends on comparability, and the OpenAI arm
+ * emits no tags — so every EL turn carried nine characters and a bracketed word
+ * that the grader, the word-count band check and `lib/metrics` all read as
+ * speech. A provider switch was silently changing the score.
+ *
+ * Applied at the transcript seam rather than in the compiler: the tag must
+ * still reach the vendor, it just must not reach the record. Anything
+ * bracketed goes, not only tags we authored — the model is free to open with
+ * one of its own, and a stranger does not speak in brackets either way.
+ */
+export function stripDeliveryTags(text: string): string {
+  return text.replace(/\[[^\]]*\]/g, '').replace(/\s{2,}/g, ' ').trim()
+}
+
 /** True while nobody has cast this persona. */
 export function isUncastVoice(voiceId: string): boolean {
   return voiceId.startsWith('ELEVENLABS_VOICE_')
@@ -163,6 +188,26 @@ const STABILITY_BY_EXPRESSION: Record<Persona['personality']['expression'], numb
   dry: 0.75,
   earnest: 0.55,
   playful: 0.4,
+}
+
+/** Delivery may lean with interest, but the cast voice and expression never
+ *  change. Stability remains the authored (or explicitly auditioned) baseline.
+ *  Three small pace bands avoid a different voice setting on every meter tick. */
+export function deliveryFor(
+  persona: Persona,
+  compiled: Pick<ElevenLabsPipelineConfig, 'tts' | 'delivery_tags'>,
+  warmth: number,
+): { settings: VoiceSettings; deliveryTags: string[] } {
+  const interest = Number.isFinite(warmth) ? clamp(warmth, 0, 100) : 40
+  const paceBand = interest < 30 ? 15 : interest < 65 ? 40 : 70
+  return {
+    settings: {
+      stability: compiled.tts.stability,
+      similarity_boost: compiled.tts.similarity_boost,
+      speed: clamp(paceFor(compiled.tts.speed, paceBand), 0.7, 1.2),
+    },
+    deliveryTags: compiled.delivery_tags.length > 0 ? compileDeliveryTags(persona, interest) : [],
+  }
 }
 
 export class ElevenLabsPersonaCompiler implements PersonaCompiler<ElevenLabsPipelineConfig> {

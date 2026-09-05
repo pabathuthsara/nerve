@@ -7,6 +7,14 @@ A/B in §04 can be run against the same application code.
 mic -> VAD (ours) -> STT -> LLM -> ElevenLabs TTS -> playback
 ```
 
+The current browser transport is one HTTP turn stream. Microphone audio still
+uses the existing OpenAI transcription socket; no ElevenLabs WebSocket was
+introduced in the September 2026 latency work. After STT finalizes a user turn,
+the browser posts to `/api/voice/turn`. The server streams the persona model's
+first complete thought directly into ElevenLabs and returns audio, alignment,
+usage and timing events as NDJSON. LLM tokens no longer travel back through the
+browser before another synthesis request can start.
+
 **ElevenAPI — raw text-to-speech, billed per character.** Not ElevenAgents. A
 managed agent takes over turn-taking, and turn-taking is a calibrated per-user
 number (§05, problem one). We are buying the voice and nothing else.
@@ -22,17 +30,98 @@ number (§05, problem one). We are buying the voice and nothing else.
 | `lib/voice/elevenlabs/stt.ts` | Realtime transcription, driven by our VAD, not theirs |
 | `lib/voice/elevenlabs/llm.ts` | The character as a streaming text model. Cancellable |
 | `lib/voice/elevenlabs/tts.ts` | Streaming synthesis and character alignment |
+| `lib/voice/elevenlabs/turn-protocol.ts` | Request and event contract for the combined HTTP reply |
+| `lib/voice/elevenlabs/turn.ts` | Browser stream reader, completion marker, cancellation and deadline |
+| `lib/voice/elevenlabs/combined.ts` | Server orchestration: LLM to synthesis without a browser round trip |
+| `lib/voice/elevenlabs/legacy.ts` | Session authorization and streaming usage observation for older clients |
 | `lib/voice/elevenlabs/player.ts` | PCM playback with an exact playhead |
 | `lib/voice/elevenlabs/truncate.ts` | What she actually said. The load-bearing piece |
 | `lib/voice/elevenlabs/telemetry.ts` | Per-stage latency, per-vendor cost, the credit guard |
 | `lib/voice/elevenlabs/mint.ts` | Server side: ephemeral secret, credit check |
 | `lib/voice/elevenlabs/server.ts` | The two proxy handlers |
+| `lib/db/voice-session.ts` | Owned sessions, resource reservations and server usage settlement |
 | `lib/voice/elevenlabs/design.ts` | Voice design briefs and the audition lines |
 | `scripts/voice.ts` | The casting CLI. Standalone |
 
-`app/api/voice/{llm,tts,credits}/route.ts` are one-line re-exports of the
-handlers above and contain no provider vocabulary, which is what keeps §04's
-rule intact.
+The route files authenticate requests and enforce the spending boundary. They
+are not one-line re-exports. Provider requests and stream formats remain in
+`lib/voice/`, preserving §04's adapter boundary.
+
+## Authorization and startup
+
+For normal users, the token route opens an owned rep and reserves its
+transcription allowance. Its response advertises the combined turn capability
+and carries the session ID plus a startup-attempt ID. The client obtains
+microphone permission first, so refusal never consumes a rep. Microphone ingress
+stays muted while transport setup and owned-session activation complete.
+
+Every combined turn has a unique operation ID. One reservation call checks the
+owned session, persona, expiry and cumulative budget before either provider is
+called, and returns the session's cached name/memory context. Each synthesis
+clip in that turn shares this authorization; it does not repeat authentication,
+memory reads or a separate browser-to-server hop. Settlement uses server-observed
+provider usage and retains the conservative reservation when billing is unknown.
+The route registers settlement with `after()` so a disconnect does not abandon it.
+
+`/api/voice/llm` and `/api/voice/tts` remain for older minted clients. They require
+an active session belonging to the authenticated user and requested persona,
+then reserve that operation against the same budget. They preserve the original
+SSE, PCM or NDJSON stream without buffering the complete response. They are not
+an alternative path around the session budget. Internal calibration credentials
+retain their explicit harness path. The credit endpoint is authenticated and
+read-only.
+
+An advertised combined turn never falls back to separate paid requests after an
+error: that could generate and bill the same reply twice. Compatibility is
+selected only from the mint response, before generation begins.
+Budget exhaustion or a closed/expired/missing session ends and saves the rep;
+a temporary busy/duplicate refusal remains a recoverable turn incident.
+
+The advisory subscription check is cached for 15 seconds, shared between
+simultaneous reads, and limited to 750 ms including its JSON body. An unavailable
+counter is unknown rather than zero. The transcription mint is bounded at ten
+seconds. Failed or cancelled setup closes capture, microphone tracks, the audio
+context and transcription transport; the startup ID remains available so only
+that attempt can be settled or refunded.
+
+## Response timing and delivery
+
+VAD keeps the user's existing calibrated silence threshold. The persona model
+starts as soon as committed transcription settles and the user is no longer
+speaking. The 0–700 ms personality beat
+is now a desired onset measured from the actual end of user speech:
+`max(0, desired beat − elapsed VAD/transcription/generation time)`. Only audio
+that arrives early waits for the remainder. This removes the former sleep before
+LLM generation without making every persona answer at the same pace.
+
+Each STT commit snapshots its own speech start, speech stop, and commit time.
+The transcriber's `input_audio_buffer.committed` item ID binds later results
+to that snapshot; out-of-order finals drain in spoken order. A final from an
+earlier clause is saved while newer speech continues, but it cannot start a
+paid reply until that speech and all pending commits have settled. Empty or
+failed clauses advance the queue without creating blank turns. Pending work
+is bounded at 64 commits and 15 seconds per transcription; pause/end discard
+text safely, including late acknowledgements after resume. Usage already
+reported by a canceled transcription still counts while the session is open.
+
+PCM still starts with a 20 ms scheduling lead. Playback completion follows the
+AudioContext's scheduled end, including an optional onset pause, and a barge-in
+releases a pending drain immediately. The client turn stream has a 25-second
+deadline and requires an explicit completion marker; a broken stream cannot be
+silently committed as a complete reply.
+
+The cast voice IDs, persona contracts and stability baselines remain intact.
+`deliveryFor` adds three small warmth-dependent pace bands, at most 2.5% above
+the baseline before model bounds are applied. It retains the persona's
+expression tag and stability. Explicit environment tuning overrides remain
+respected; voice quality still needs listening comparisons before changing those
+overrides or lowering the VAD threshold.
+
+Pause disables microphone tracks and clears unfinished transcription input;
+it does not pause the scene clock or her existing playback. Resume admits new
+speech. Fatal live transport errors stop and persist the rep, and retry retires
+the previous provider before starting another. Ending during connection cannot
+resume that old attempt into the live state.
 
 ## Switching arms
 
@@ -57,9 +146,19 @@ Four is the one that matters. Without it she remembers saying things the user
 never heard, and every later turn answers a conversation that did not happen.
 
 Truncation prefers character alignment from `/with-timestamps`, which is
-sample-exact, and falls back to a proportional cut. Either way it never ends
+mapped onto the actual PCM playhead, and falls back to a proportional cut. Either way it never ends
 inside a word — the round-8 log has `"Depends, a lot's just sad people in"`,
 and that specific failure has a test.
+
+Aligned and unaligned clips retain their arrival order. Audio-only trailing
+chunks add duration without repeating text, and actual PCM duration sets the
+next clip's time offset. Continuation clips receive a transcript separator even
+when the synthesis service trims input whitespace. Delivery tags are removed
+before normalized turns reach scoring. Response identity checks discard late
+audio and exit events from an aborted older turn.
+The adapter seals the turn before notifying transcript or speech-stop listeners,
+so a deadline listener that immediately ends the rep cannot commit it twice or
+start another paid reply after the end.
 
 Onset fires ~90ms after the first loud frame, locally, with no network in the
 path. That is the number to beat two overlaps with.
@@ -102,10 +201,19 @@ The cost block sits **inside** `pipeline` rather than at the top level, because
 the report already has a `usage` key holding realtime token usage and round 8
 has to stay diffable against it. Every pre-existing field is untouched.
 
+The normal finish-session path also stores `pipeline_telemetry`. This client
+summary is diagnostic: it does not replace server settlement or add the old
+elapsed-time fallback charge to a server-metered rep. Cached LLM input is priced
+separately, unknown model rates produce an unpriced state, and long latency
+stalls remain in the samples instead of being discarded above 20 seconds.
+
 `totalPerceivedMs` is the number to put next to gpt-realtime's 1368ms.
-`getTransportStats()` returns nulls on this arm — there is no peer connection to
-read an ICE round trip from, so `ttsFirstByteMs` is the stage that moves when
-the region does.
+`getTransportStats()` returns nulls on this arm. The combined stream's LLM and
+TTS timings are measured on the server; perceived latency is measured from user
+speech stop to first playback in the browser. Neither is an ICE round trip.
+Operation metadata records the function region and the synthesis response's
+region where available. Compare equivalent network conditions when interpreting
+the historical Realtime measurement.
 
 ## Cost
 
@@ -113,13 +221,23 @@ ElevenLabs bills characters. Both TTS models bill **$0.05 per 1,000 characters
 — identically**, so Flash is not the cheap option and v3 is not the expensive
 one; the choice is latency against expressiveness.
 
-Characters *sent* are counted, including the ones a barge-in throws away,
-because that is what the invoice says.
+Submitted characters include delivery tags and audio discarded by a barge-in.
+They are a conservative synthesis estimate, not an assertion that every failed
+or cancelled request was billed. Server records distinguish attempted/accepted
+work and unknown usage; vendor reconciliation remains necessary. Legacy credit
+counter units can differ from billable characters by model and account, so do
+not infer dollar cost or remaining reps from a one-credit-per-character rule.
 
 The free plan is 10,000 credits a month with no overage: synthesis stops
 mid-sentence. So the console screams from 8,000 upward — at mint time in the
 server log, and on every further turn in the browser — and the CLI refuses a run
 it cannot afford.
+
+At completion, recording flush starts before the provider closes its audio
+context. Session persistence then runs before grading and audio upload start
+independently. Slow or failed upload does not block grading, and a browser
+recording failure does not end the conversation. A rep with no user text does
+not buy a grade.
 
 ## Casting a voice
 
@@ -157,32 +275,33 @@ A full audition is about 342 characters across all four combinations.
 
 ## Testing it
 
-Nothing below spends a credit until step 4, and every step isolates one failure.
+Offline tests spend nothing. Every live model call or synthesis audition can
+spend provider usage; use an isolated authenticated test account and inspect
+the resulting server operation records.
 
-**0 — offline.** `npm run typecheck && npm test && npm run build`. The truncation,
+**0 — offline.** `npm run typecheck && npm test && npm run build:check`. The truncation,
 VAD, telemetry and credit-guard suites all run without hardware or a key.
+The adapter suite covers microphone refusal, real mute/resume, setup cleanup,
+cancelled old responses, late transcription, and startup ID preservation. The
+STT and adapter suites also cover overlapping clause timing, out-of-order item
+completion, empty/failed segments, and one reply for the completed history. The
+turn and legacy suites exercise fragmented streams, immediate first chunks,
+deadlines, cached usage and one-time settlement after disconnection. Since the
+default lint excludes voice/API directories, explicitly lint changed files with
+`--no-ignore` as well.
 
 **1 — keys and the mint.** Put a fresh `ELEVENLABS_API_KEY` in `.env.local`, set
-`VOICE_PROVIDER=elevenlabs`, `npm run dev`, then:
+`VOICE_PROVIDER=elevenlabs`, and open a rep from the authenticated app. Anonymous
+requests to the token or paid endpoints return 401. Verify permission refusal
+buys no rep, successful activation adopts the minted session, and failed setup
+settles only its own startup attempt. Avoid printing the returned ephemeral
+secret into logs.
 
-```
-curl -s -X POST localhost:3000/api/voice/token \
-  -H 'content-type: application/json' -d '{"personaId":"nadia"}' | head -c 400
-```
-
-Zero credits. It validates both keys at once, exercises the transcription-session
-mint, and returns the live credit counter. A 500 is our misconfiguration, a 502
-is the vendor refusing.
-
-**2 — the character model.** Still zero ElevenLabs credits:
-
-```
-curl -N -X POST localhost:3000/api/voice/llm -H 'content-type: application/json' \
-  -d '{"personaId":"nadia","history":[{"role":"user","content":"Is that one any good?"}],"steering":null}'
-```
-
-Server-sent events with her reply in the deltas. If she sounds like an assistant
-here, the contract is the problem and no amount of voice will fix it.
+**2 — the character model.** The isolated internal calibration harness can
+still exercise the legacy SSE endpoint; ordinary requests require an owned
+active rep. These calls spend LLM tokens even though they buy no ElevenLabs
+speech. If the response sounds like an assistant here, inspect the compiled
+contract before changing the cast voice.
 
 **3 — cast a voice.** `npm run voice:voices` (free), shortlist two, then
 `npm run voice:audition -- <voice_id>` at ~348 characters each. Put the winner in
@@ -191,22 +310,56 @@ here, the contract is the problem and no amount of voice will fix it.
 Until a voice is set, **the mint refuses with an actionable message** rather than
 letting a rep connect and then 404 on her first word.
 
-**4 — synthesis through the proxy.** Twelve characters:
-
-```
-curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:3000/api/voice/tts \
-  -H 'content-type: application/json' -d '{"personaId":"nadia","text":"Yeah, maybe."}'
-```
+**4 — synthesis through the proxy.** Exercise a short clip inside an owned test
+rep or an explicitly configured internal harness. Verify audio format, alignment
+and usage. A direct authenticated synthesis request without an active owned rep
+must be refused before a vendor call.
 
 **5 — a live rep.** `localhost:3000/rep`. Watch the Pipeline section of the report
 and the console. Deliberately test barge-in: let her start a long answer and talk
 over her, then check `bargeIns`, `truncatedTurns`, and that her stored line in the
 transcript stops where you stopped hearing it.
 
-**Budget.** She says roughly 40 characters a reply and 20–30 replies fit in three
-minutes, so a rep costs ~800–1,200 credits. That is **eight to twelve reps on the
-whole free plan**. Run the OpenAI arm for anything that is not specifically about
-the voice.
+**Budget.** Read the policy in `lib/db/voice-session.ts`, verify cumulative
+reservations and protected grading capacity, and compare provider usage across
+complete three-minute reps. The browser's direct transcription envelope and
+unknown cancelled work are estimates, so a configured budget must not be
+advertised as an invoice-exact maximum. Faster conversation can fit more turns
+and consume more characters; measure again after latency improvements.
 
 **Comparing arms.** Download the JSON on each arm and diff. Every pre-existing
 field is unchanged; `pipeline` is additive and null on the realtime arm.
+
+
+## Steering repair — 5 September 2026
+
+The customer rep and admin audition now use `bindVoiceSteering`. For the
+ElevenLabs HTTP pipeline, a synchronous `setReplyState` reader supplies one
+current warmth directive immediately before every LLM request, after all pending
+speech clauses have been scored. It reads current tuning and any slow score that
+has already arrived without waiting for the scorer. The numeric warmth also
+updates delivery at the same point. Previous directives never accumulate in
+history. Scene, safety and closing reminders follow the current directive and
+remain one-shot. OpenAI Realtime keeps its existing change/heartbeat strategy
+because its conversation retains prior instructions.
+
+This repairs steering parity in the admin preview. Saved persona files remain
+the source for server-compiled identity, talkativeness and voice settings;
+unsaved preview dials that only affect that static prompt still require a local
+save and a fresh rep. This release does not change the points formula, slider
+ranges, persona contracts, voice settings, VAD or payment checkout.
+
+Validation: 1,405 tests pass, including repeated unchanged directions, scored
+multi-clause speech, latest tuning, one-shot priority and Realtime compatibility.
+
+The full TypeScript check, project lint and local production build pass. Explicit
+voice/helper lint passes. The normally ignored legacy admin bench still has its
+pre-existing raw-link lint errors and unused/dependency warnings; those were not
+changed by this steering-only repair.
+
+Released to `www.hellonerve.com` as `dpl_CDxyjKfkDzxuaE9dnEKctQG8fx2h`
+(`nerve-1z6r5ayc2-pabathuthsaras-projects.vercel.app`). The hosted build passed;
+its staged homepage returned 200 and unauthenticated turn endpoint returned 401.
+Refresh an existing browser tab before starting a rep: steering is client code.
+Rollback is the preceding `dpl_Gi8SUKRpz1jmXHmPu9548rKtoZqz` deployment.
+No database migration or provider-setting change is part of this repair.

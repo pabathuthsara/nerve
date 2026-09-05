@@ -22,11 +22,9 @@ import { clamp } from '@/lib/voice/types'
  *
  * A real pause, not a stall: at the cold end it is about the length of a glance
  * up from a phone, and it disappears entirely once she is actually engaged.
- * Added on top of whatever the model takes, so it can only ever make her slower
- * — which is why the ceiling is deliberately modest. Latency is a measured gate
- * (§05) and this spends part of that budget on purpose; a delay that pushed a
- * cold reply past a second of dead air would read as a bug rather than as
- * disinterest.
+ * This is a desired onset after the user stops speaking. On the assembled
+ * pipeline, VAD and provider processing already consume that time: only the
+ * remainder may delay playback. Generation must never wait for this beat.
  */
 export const MAX_REPLY_DELAY_MS = 700
 
@@ -36,6 +34,12 @@ export function replyDelayMs(warmth: number): number {
   if (warmth >= 60) return 0
   const coldness = clamp((60 - warmth) / 60, 0, 1)
   return Math.round(MAX_REPLY_DELAY_MS * coldness)
+}
+
+/** The optional personality beat after accounting for work already elapsed. */
+export function remainingReplyDelayMs(warmth: number, elapsedMs: number): number {
+  const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0
+  return Math.max(0, replyDelayMs(warmth) - elapsed)
 }
 
 /**

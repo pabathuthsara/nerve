@@ -172,7 +172,12 @@ export const tess: Persona = {
   // the second rep is against Nadia twenty seconds later.
   voice: {
     timbre: 'feminine',
-    ids: { openai: 'sage' },
+    ids: {
+      openai: 'sage',
+      // Jessica — playful, bright, warm. Her expression is `playful` and she is
+      // pleased to be spoken to; brightness is the whole rung-1 read.
+      elevenlabs: 'cgSgspJ2msm6clMCkdW9',
+    },
     pace: 1.02,
   },
 

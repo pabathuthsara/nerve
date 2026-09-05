@@ -720,10 +720,11 @@ export interface PipelineUsage {
   openai: {
     sttTokens: number
     llmTokens: number
-    costUsd: number
+    llmCachedInputTokens?: number
+    costUsd: number | null
   }
-  totalCostUsd: number
-  costPerMinuteUsd: number
+  totalCostUsd: number | null
+  costPerMinuteUsd: number | null
 }
 
 export interface PipelineTelemetry {

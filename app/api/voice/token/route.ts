@@ -13,13 +13,15 @@
  * or vocabulary. It resolves a provider and calls `mintSession`.
  */
 
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/db/api-auth'
 import { maySpend } from '@/lib/db/spend'
 import { personaContext } from '@/lib/db/persona-context'
 import { mayOpenSession } from '@/lib/db/progress'
 import { getPersona } from '@/lib/personas'
-import { mintSession } from '@/lib/voice/mint'
+import { mintSession, pipelineSessionModel, pipelineTranscriptionAllowance } from '@/lib/voice/mint'
+import { readScoringBody, ScoringInputError } from '@/lib/voice/scoring-request'
+import { openVoiceSession, abortVoiceStartupAttempt, reserveVoiceOperation, settleVoiceOperation } from '@/lib/db/voice-session'
 import { resolveProviderId } from '@/lib/voice'
 import { DEFAULT_CALIBRATION, VoiceError, clamp, type Calibration } from '@/lib/voice/types'
 
@@ -34,7 +36,12 @@ interface MintRequest {
   model?: unknown
 }
 
-const M0_MODELS = ['gpt-realtime-mini', 'gpt-realtime-2.1-mini', 'gpt-realtime'] as const
+const M0_MODELS = [
+  'gpt-realtime-mini',
+  'gpt-realtime-2.1-mini',
+  'gpt-realtime',
+  'gpt-realtime-2.1',
+] as const
 
 function parseModel(input: unknown): string | undefined {
   if (typeof input !== 'string') return undefined
@@ -45,8 +52,8 @@ function parseCalibration(input: unknown): Calibration {
   if (!input || typeof input !== 'object') return DEFAULT_CALIBRATION
   const raw = input as Record<string, unknown>
   const silenceMs =
-    typeof raw['silenceMs'] === 'number' ? raw['silenceMs'] : DEFAULT_CALIBRATION.silenceMs
-  const patience = typeof raw['patienceOffsetMs'] === 'number' ? raw['patienceOffsetMs'] : 0
+    typeof raw['silenceMs'] === 'number' && Number.isFinite(raw['silenceMs']) ? raw['silenceMs'] : DEFAULT_CALIBRATION.silenceMs
+  const patience = typeof raw['patienceOffsetMs'] === 'number' && Number.isFinite(raw['patienceOffsetMs']) ? raw['patienceOffsetMs'] : 0
   return {
     silenceMs: clamp(silenceMs, 200, 3000),
     patienceOffsetMs: clamp(patience, 0, 1500),
@@ -65,10 +72,21 @@ export async function POST(request: Request): Promise<Response> {
   const allowed = await maySpend(auth.userId, 'token')
   if (!allowed.ok) return allowed.response
 
+  let body: MintRequest
+  try {
+    body = await readScoringBody(request)
+  } catch (error) {
+    return NextResponse.json({ error: 'Malformed request body.' }, { status: error instanceof ScoringInputError ? error.status : 400 })
+  }
+  const provider = resolveProviderId({
+    envDefault: process.env.VOICE_PROVIDER,
+    userId: auth.userId === 'internal' && typeof body.userId === 'string' ? body.userId : auth.userId,
+  })
+
   // The daily quota, at the point where money is actually committed. The rep
   // itself spends the counter when the transport connects; this refuses to
   // hand out a credential to somebody who has none left to spend (§14).
-  if (auth.userId !== 'internal') {
+  if (auth.userId !== 'internal' && provider !== 'elevenlabs') {
     const allowed = await mayOpenSession(auth.userId)
     if (!allowed.ok) {
       // `refusal` travels with the message so the browser can tell a Pro
@@ -80,13 +98,6 @@ export async function POST(request: Request): Promise<Response> {
         { status: 429 },
       )
     }
-  }
-
-  let body: MintRequest
-  try {
-    body = (await request.json()) as MintRequest
-  } catch {
-    return NextResponse.json({ error: 'Malformed request body.' }, { status: 400 })
   }
 
   const personaId = typeof body.personaId === 'string' ? body.personaId : ''
@@ -113,25 +124,80 @@ export async function POST(request: Request): Promise<Response> {
   // The same lookup now also carries what he is called, so §08's `usesYourName`
   // gate has a name to open onto. Both live in `lib/db/persona-context.ts`
   // because three routes need them and two of them used to disagree.
-  const persona = {
+  let persona = {
     ...base,
     ...(await personaContext(auth.userId, base.slug)),
   }
 
   // Resolved here as well as in the page, from the same function, so the two
   // cannot disagree about which adapter a given user is on.
-  const provider = resolveProviderId({
-    envDefault: process.env.VOICE_PROVIDER,
-    userId: typeof body.userId === 'string' ? body.userId : undefined,
-  })
+  let owned: { sessionId: string; resumed: boolean } | null = null
+  let sttOperationId: string | null = null
+  const sttAllowance = pipelineTranscriptionAllowance()
+  if (provider === 'elevenlabs' && auth.userId !== 'internal') {
+    if (!sttAllowance) return NextResponse.json({ error: 'This transcription model has no verified rate.' }, { status: 503 })
+    const opened = await openVoiceSession({
+      userId: auth.userId, personaSlug: base.slug, provider, model: pipelineSessionModel(),
+      context: { userName: persona.userName, memorySummary: persona.memorySummary },
+    })
+    if (!opened.ok) return NextResponse.json({ error: opened.message, refusal: opened.refusal, reason: opened.reason }, { status: opened.status })
+    owned = opened
+    persona = { ...base, ...opened.context }
+    sttOperationId = `stt:${crypto.randomUUID()}`
+    const stt = await reserveVoiceOperation({
+      userId: auth.userId, sessionId: opened.sessionId, personaSlug: base.slug,
+      operationId: sttOperationId, kind: 'stt', model: sttAllowance.model,
+      maxCostUsd: sttAllowance.maxCostUsd, resources: { sttAudioMs: sttAllowance.audioMs },
+    })
+    if (!stt.ok) {
+      if (!owned.resumed) await abortVoiceStartupAttempt({ userId: auth.userId, sessionId: owned.sessionId, operationId: null })
+      return NextResponse.json({ error: stt.message, reason: stt.reason }, { status: stt.status })
+    }
+  }
 
   try {
     const minted = await mintSession(provider, persona, parseCalibration(body.calibration), {
       apiKey: process.env.OPENAI_API_KEY,
       model: parseModel(body.model) ?? process.env.OPENAI_REALTIME_MODEL,
     })
-    return NextResponse.json(minted)
+    if (owned && sttOperationId && sttAllowance) {
+      const sessionId = owned.sessionId
+      const operationId = sttOperationId
+      // The admission is already held. Recording its estimated receipt need
+      // not delay the short-lived credential reaching the browser.
+      after(async () => {
+        try {
+          const saved = await settleVoiceOperation({
+            userId: auth.userId, sessionId, operationId, costUsd: null, status: 'unknown',
+            usage: { estimatedAudioMs: sttAllowance.audioMs },
+            metadata: { source: 'direct-browser-stt-envelope', model: sttAllowance.model },
+          })
+          if (!saved.ok) console.error('[nerve] voice usage persistence failed', { transport: 'token', operationId })
+        } catch {
+          console.error('[nerve] voice usage persistence failed', { transport: 'token', operationId })
+        }
+      })
+    }
+    return NextResponse.json(owned ? {
+      ...minted, sessionId: owned.sessionId, startupAttemptId: sttOperationId,
+      turn: { endpoint: '/api/voice/turn' },
+    } : minted)
   } catch (cause) {
+    if (owned && sttOperationId) {
+      try {
+        const saved = await settleVoiceOperation({
+          userId: auth.userId, sessionId: owned.sessionId, operationId: sttOperationId,
+          costUsd: 0, resources: { sttAudioMs: 0 }, status: 'failed',
+          metadata: { source: 'transcription-credential-not-issued' },
+        })
+        if (!saved.ok) console.error('[nerve] voice usage persistence failed', { transport: 'token', operationId: sttOperationId })
+      } catch {
+        console.error('[nerve] voice usage persistence failed', { transport: 'token', operationId: sttOperationId })
+      }
+    }
+    if (owned && sttOperationId) await abortVoiceStartupAttempt({
+      userId: auth.userId, sessionId: owned.sessionId, operationId: sttOperationId,
+    })
     if (cause instanceof VoiceError) {
       // A missing key is our misconfiguration (500); a stubbed adapter is
       // unimplemented (501); anything else means the provider refused (502).

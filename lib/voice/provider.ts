@@ -1,8 +1,7 @@
 /**
  * The interface every adapter satisfies (§04).
  *
- * Transport is the adapter's business — WebRTC for OpenAI, WebSocket for
- * ElevenLabs. The application layer never learns which.
+ * Transport is the adapter's business. The application layer never learns it.
  */
 
 import type { RoomControls } from '@/lib/audio/types'
@@ -26,8 +25,18 @@ export interface VoiceProvider {
   /** Opens a session. Resolves once media is flowing both ways. */
   connect(persona: Persona, calibration: Calibration): Promise<void>
 
+  /** Server-owned rep opened during mint, when the adapter supports it. */
+  getSessionId?(): string | null
+  /** Identifies only this credential attempt, for safe setup cancellation. */
+  getStartupAttemptId?(): string | null
+  /** Pause microphone ingress without pausing the scene clock or her voice. */
+  setMuted?(muted: boolean): void
+
   /** Subscribe to a domain event. Returns an unsubscribe function. */
   on<E extends VoiceEventName>(event: E, handler: VoiceEventHandler<E>): () => void
+
+  /** Fresh state for stateless replies, read after all pending speech is scored. */
+  setReplyState?(read: () => { steering: string; warmth: number }): void
 
   /**
    * Character re-injection (§05 — countermeasure 3). Session update on OpenAI,

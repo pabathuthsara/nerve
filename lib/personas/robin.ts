@@ -72,7 +72,12 @@ export const robin: Persona = {
   // undermines the one thing eight characters are for.
   voice: {
     timbre: 'feminine',
-    ids: { openai: 'alloy' },
+    ids: {
+      openai: 'alloy',
+      // Sarah — mature, reassuring. `signalClarity` 20 means she stays pleasant
+      // whether or not she wants this to continue, and reassurance is that mask.
+      elevenlabs: 'EXAVITQu4vr4xnSDxMaL',
+    },
     pace: 0.98,
   },
 

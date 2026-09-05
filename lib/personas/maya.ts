@@ -58,15 +58,32 @@ export const maya: Persona = {
   level: 3,
   track: 'dating',
 
-  // `cedar` and `marin` are the two voices that shipped with `gpt-realtime`;
-  // the rest of the roster is on the older set carried over from the previous
-  // model. Maya was on `coral` and was reported as sounding distorted, so she
-  // moves to the newer one. Worth a listen against Priya and Erin, who are
-  // still on legacy voices and would sound the same way if the voice is the
-  // cause rather than the cancelled-audio bug fixed alongside this.
+  // `coral`, back where she started. She was moved to `cedar` because `coral`
+  // was reported as distorted and `cedar` was one of the two voices that
+  // shipped with `gpt-realtime` — but **`cedar` is the male one**. Marin is the
+  // female voice of that pair, Nadia holds it, and there is no second: OpenAI
+  // ships exactly two current-generation voices and only one of them is a
+  // woman. So "newest voice" and "a voice for Maya" were never the same
+  // question, and picking the first silently made her a man for as long as she
+  // has been on rung 3. She is `timbre: 'feminine'` and always was; the id and
+  // the timbre had simply stopped agreeing, and nothing checked.
+  //
+  // The distortion that prompted the move was the cancelled-audio bug fixed in
+  // the same change (docs/AUDIO.md — her voice reaches the sink dry now), so
+  // the reason to leave `coral` no longer holds. Of the voices that read as
+  // female, `coral` is "warm and friendly" and `shimmer` is "bright and
+  // energetic"; Maya is even, unhurried and dry, so brightness is the wrong
+  // one. Alex also names `coral` and is retired, which `PERSONAS` excludes —
+  // if she is ever shipped again the casting test will say so and she gets
+  // recast, because Maya is the one who is actually reachable by a rep.
   voice: {
     timbre: 'feminine',
-    ids: { openai: 'cedar' },
+    ids: {
+      openai: 'coral',
+      // Lily — velvety. She is "even, warm, unhurried" and dry; the bright voices
+      // all fight that, and Matilda reads corporate rather than understated.
+      elevenlabs: 'pFZP5JQG7iQjIQuC4Bku',
+    },
     pace: 1.0,
   },
 

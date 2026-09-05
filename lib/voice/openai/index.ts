@@ -92,6 +92,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
   private pc: RTCPeerConnection | null = null
   private dc: RTCDataChannel | null = null
   private micStream: MediaStream | null = null
+  private muted = false
   private audioEl: HTMLAudioElement | null = null
   /**
    * The element her remote track is attached to.
@@ -225,6 +226,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
 
     const mic = await this.openMicrophone()
     this.micStream = mic
+    for (const track of mic.getAudioTracks()) track.enabled = !this.muted
 
     // The bed arms HERE — with the session, not with her first word. It plays
     // through the WebRTC handshake, through every silence, and through the end
@@ -903,6 +905,13 @@ export class OpenAIVoiceProvider implements VoiceProvider {
 
   getAnalyser(): Analysers {
     return { user: this.userAnalyser, agent: this.agentAnalyser }
+  }
+
+  setMuted(muted: boolean): void {
+    if (this.muted === muted) return
+    this.muted = muted
+    for (const track of this.micStream?.getAudioTracks() ?? []) track.enabled = !muted
+    if (muted) this.send({ type: 'input_audio_buffer.clear' })
   }
 
   getRoom(): RoomControls | null {

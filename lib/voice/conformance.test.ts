@@ -261,6 +261,35 @@ describe('persona compilation', () => {
     expect(seen.size).toBe(Object.keys(PERSONAS).length)
   })
 
+  it('never casts a woman on a voice that reads as a man', () => {
+    // THE REGRESSION. Maya shipped on `cedar` for as long as she has stood at
+    // rung 3, because `cedar` and `marin` are the two current-generation
+    // voices and the note that picked it recorded only that it was new. It is
+    // the MALE one. `marin` is the woman of that pair, Nadia holds it, and
+    // OpenAI ships no second — so "newest voice" and "a voice for this
+    // character" are different questions and the roster answered the wrong one.
+    //
+    // The test above could not catch it: `cedar` was named explicitly and was
+    // unique, so the casting was deliberate and wrong rather than accidental.
+    // Nothing anywhere compared the id against the timbre beside it.
+    //
+    // OpenAI publishes descriptions ("resonant and deep") and not genders, so
+    // this list is by ear and is deliberately only the unambiguous ones —
+    // `alloy` is left out as genuinely androgynous rather than quietly
+    // reclassified to keep Robin green. It is a tripwire, not a spec: a voice
+    // belongs here only when nobody would argue about it.
+    const MASCULINE = new Set(['ash', 'ballad', 'cedar', 'echo', 'verse'])
+
+    for (const persona of Object.values(PERSONAS)) {
+      if (persona.voice.timbre !== 'feminine') continue
+      const voice = resolveVoice(persona)
+      expect(
+        MASCULINE.has(voice),
+        `${persona.slug} is timbre "feminine" but cast on "${voice}", a masculine voice`,
+      ).toBe(false)
+    }
+  })
+
   it('never lets being asked for a number end the scene', () => {
     // THE REGRESSION. Seven personas carried the exit condition "You have
     // offered to swap numbers and said goodbye." A user asked Priya for her

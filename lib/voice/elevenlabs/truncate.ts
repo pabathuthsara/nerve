@@ -39,48 +39,60 @@ export interface AlignmentChunk {
   characterEndTimesSeconds: number[]
 }
 
-/** A character and the moment it finished leaving the speaker. */
-interface TimedChar {
-  ch: string
+interface SpeechSegment {
+  text: string
+  startSeconds: number
   endSeconds: number
+  /** End times on the turn clock, only when the vendor supplied alignment. */
+  characterEnds: number[] | null
+  characters: string[] | null
 }
 
 export class SpokenTurn {
-  /** Characters we have alignment for, in order. */
-  private readonly timed: TimedChar[] = []
-  /** Text we have no alignment for. Kept separately: it can only ever be
-   *  truncated proportionally, and mixing the two would silently downgrade the
-   *  precision of the aligned part. */
-  private unaligned = ''
-  /** Audio seconds scheduled for the unaligned part. */
-  private unalignedSeconds = 0
-  /** Seconds of audio handed to the player, aligned and not. */
+  /** Preserve arrival order even when a vendor mixes aligned and raw chunks. */
+  private readonly segments: SpeechSegment[] = []
   private scheduledSeconds = 0
 
-  /** One `/with-timestamps` frame. */
-  appendAligned(chunk: AlignmentChunk): void {
-    const { characters, characterEndTimesSeconds } = chunk
+  /** One `/with-timestamps` frame. Actual PCM duration, when known, is the
+   *  playback clock: the last spoken character can end before the audio does. */
+  appendAligned(chunk: AlignmentChunk, audioSeconds?: number): void {
     const offset = this.scheduledSeconds
-    for (let i = 0; i < characters.length; i += 1) {
-      const ch = characters[i]
-      const end = characterEndTimesSeconds[i]
-      if (ch === undefined) continue
-      this.timed.push({ ch, endSeconds: (end ?? 0) + offset })
-    }
-    const last = characterEndTimesSeconds[characterEndTimesSeconds.length - 1]
-    if (typeof last === 'number') this.scheduledSeconds = offset + last
+    const last = chunk.characterEndTimesSeconds[chunk.characterEndTimesSeconds.length - 1] ?? 0
+    const duration = Number.isFinite(audioSeconds) ? Math.max(0, audioSeconds!) : Math.max(0, last)
+    this.segments.push({
+      text: chunk.characters.join(''),
+      startSeconds: offset,
+      endSeconds: offset + duration,
+      characters: [...chunk.characters],
+      characterEnds: chunk.characters.map((_, i) => offset + (chunk.characterEndTimesSeconds[i] ?? 0)),
+    })
+    this.scheduledSeconds += duration
   }
 
-  /** Fallback frame: text with no per-character timing. */
+  /** Fallback frame. Audio-only trailing frames add time without duplicating
+   *  text already received through alignment. */
   appendUnaligned(text: string, audioSeconds: number): void {
-    this.unaligned += text
-    this.unalignedSeconds += audioSeconds
-    this.scheduledSeconds += audioSeconds
+    const duration = Number.isFinite(audioSeconds) ? Math.max(0, audioSeconds) : 0
+    const previous = this.segments[this.segments.length - 1]
+    if (text === '' && previous?.characterEnds === null) {
+      // A raw clip's full text arrives with its first chunk. The subsequent
+      // audio extends that same proportional window, not a textless new clip.
+      previous.endSeconds += duration
+      this.scheduledSeconds += duration
+      return
+    }
+    this.segments.push({
+      text,
+      startSeconds: this.scheduledSeconds,
+      endSeconds: this.scheduledSeconds + duration,
+      characters: null,
+      characterEnds: null,
+    })
+    this.scheduledSeconds += duration
   }
 
-  /** Everything synthesised so far, played or not. */
   get fullText(): string {
-    return this.alignedText() + this.unaligned
+    return this.segments.map((segment) => segment.text).join('')
   }
 
   get audioSeconds(): number {
@@ -88,48 +100,37 @@ export class SpokenTurn {
   }
 
   get hasAlignment(): boolean {
-    return this.timed.length > 0
+    return this.segments.some((segment) => segment.characters !== null && segment.characters.length > 0)
   }
 
-  /**
-   * The text that had left the speaker at `playedSeconds`.
-   *
-   * `playedSeconds` is the player's own playhead — audio actually rendered, not
-   * audio scheduled. The two differ by exactly the buffer we throw away on a
-   * barge-in, which is the whole reason this function exists.
-   */
+  /** Keep words on the actual playhead, never words waiting in a later clip. */
   playedText(playedSeconds: number): string {
     if (playedSeconds <= 0) return ''
     if (playedSeconds >= this.scheduledSeconds) return this.fullText.trim()
 
-    const alignedEnd = this.timed.length > 0
-      ? (this.timed[this.timed.length - 1] as TimedChar).endSeconds
-      : 0
-
-    if (playedSeconds <= alignedEnd || this.unaligned === '') {
-      const kept = this.timed.filter((entry) => entry.endSeconds <= playedSeconds)
-      const nextChar = this.timed[kept.length]?.ch ?? this.unaligned[0] ?? ''
-      return snapToWordBoundary(kept.map((entry) => entry.ch).join(''), nextChar)
+    let prefix = ''
+    for (const segment of this.segments) {
+      if (playedSeconds >= segment.endSeconds) {
+        prefix += segment.text
+        continue
+      }
+      if (playedSeconds < segment.startSeconds) break
+      if (segment.characters && segment.characterEnds) {
+        for (let i = 0; i < segment.characters.length; i += 1) {
+          if ((segment.characterEnds[i] ?? 0) > playedSeconds) break
+          prefix += segment.characters[i] ?? ''
+        }
+      } else {
+        const duration = segment.endSeconds - segment.startSeconds
+        prefix += proportionalPrefix(segment.text,
+          duration > 0 ? (playedSeconds - segment.startSeconds) / duration : 1)
+      }
+      break
     }
-
-    // Past the aligned portion: everything aligned played, and some share of
-    // the unaligned tail did.
-    const intoUnaligned = playedSeconds - alignedEnd
-    const share = this.unalignedSeconds > 0 ? intoUnaligned / this.unalignedSeconds : 1
-    const tail = proportionalPrefix(this.unaligned, share)
-    return snapToWordBoundary(
-      this.alignedText() + tail,
-      this.unaligned[tail.length] ?? '',
-    )
+    return snapToWordBoundary(prefix, this.fullText[prefix.length] ?? '')
   }
 
-  /** True when the playhead stopped short of everything synthesised. */
   wasTruncated(playedSeconds: number): boolean {
     return playedSeconds < this.scheduledSeconds && this.fullText.trim().length > 0
   }
-
-  private alignedText(): string {
-    return this.timed.map((entry) => entry.ch).join('')
-  }
 }
-

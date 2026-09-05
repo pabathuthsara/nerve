@@ -33,6 +33,9 @@ const RATES: Record<string, Rate> = {
   'gpt-realtime-mini': { currency: 'USD', perMinute: 0.065 },
   'gpt-realtime-2.1-mini': { currency: 'USD', perMinute: 0.065 },
   'gpt-realtime': { currency: 'USD', perMinute: 0.16 },
+  // Same ceiling as `gpt-realtime`: 2.1 changes exactly one rate, output text,
+  // and output text is a rounding error next to output audio in a voice rep.
+  'gpt-realtime-2.1': { currency: 'USD', perMinute: 0.16 },
   'eleven-agents': { currency: 'USD', perMinute: 0.095 },
   // The assembled pipeline. §04 costs it at ≈$0.033/min: ElevenLabs at
   // $0.05/1K characters ≈ $0.023, plus ≈$0.010 for STT and the text model.
@@ -80,6 +83,17 @@ const TOKEN_RATES: Record<string, TokenRateCard> = {
     outputText: 16,
     outputAudio: 64,
   },
+  // Identical to `gpt-realtime` except output text, 16 -> 24. Everything that
+  // dominates a speech-to-speech rep — input audio at 32, output audio at 64 —
+  // is unchanged, so the whole generation costs about 1% more.
+  'gpt-realtime-2.1': {
+    inputText: 4,
+    cachedInputText: 0.4,
+    inputAudio: 32,
+    cachedInputAudio: 0.4,
+    outputText: 24,
+    outputAudio: 64,
+  },
 }
 
 function tokenRatesFor(model: string): TokenRateCard | null {
@@ -88,6 +102,12 @@ function tokenRatesFor(model: string): TokenRateCard | null {
   }
   if (model === 'gpt-realtime-mini' || model.startsWith('gpt-realtime-mini-')) {
     return TOKEN_RATES['gpt-realtime-mini'] ?? null
+  }
+  // Before the bare `gpt-realtime` arm below: `startsWith` would otherwise
+  // never be reached, but an exact match would, and a dated 2.1 snapshot must
+  // not fall through to the older card.
+  if (model === 'gpt-realtime-2.1' || model.startsWith('gpt-realtime-2.1-')) {
+    return TOKEN_RATES['gpt-realtime-2.1'] ?? null
   }
   if (model === 'gpt-realtime' || model.startsWith('gpt-realtime-2025-')) {
     return TOKEN_RATES['gpt-realtime'] ?? null
@@ -156,6 +176,7 @@ export interface PipelineTokenRates {
   /** Audio tokens in, for the transcriber. */
   audioInput: number
   textInput: number
+  cachedTextInput: number
   textOutput: number
 }
 
@@ -164,28 +185,50 @@ export interface PipelineTokenRates {
  * the same caveat the realtime card above carries.
  */
 const PIPELINE_TOKEN_RATES: Record<string, PipelineTokenRates> = {
-  'gpt-4o-mini-transcribe': { audioInput: 1.25, textInput: 1.25, textOutput: 5 },
-  'gpt-4o-transcribe': { audioInput: 6, textInput: 2.5, textOutput: 10 },
-  'gpt-4.1-mini': { audioInput: 0, textInput: 0.4, textOutput: 1.6 },
-  'gpt-4.1-nano': { audioInput: 0, textInput: 0.1, textOutput: 0.4 },
-  'gpt-4.1': { audioInput: 0, textInput: 2, textOutput: 8 },
+  'gpt-4o-mini-transcribe': { audioInput: 1.25, textInput: 1.25, cachedTextInput: 1.25, textOutput: 5 },
+  'gpt-4o-transcribe': { audioInput: 6, textInput: 2.5, cachedTextInput: 2.5, textOutput: 10 },
+  'gpt-4.1-mini': { audioInput: 0, textInput: 0.4, cachedTextInput: 0.1, textOutput: 1.6 },
+  'gpt-4.1-nano': { audioInput: 0, textInput: 0.1, cachedTextInput: 0.025, textOutput: 0.4 },
+  'gpt-4.1': { audioInput: 0, textInput: 2, cachedTextInput: 0.5, textOutput: 8 },
 }
 
 export function pipelineTokenRates(model: string): PipelineTokenRates | null {
-  return PIPELINE_TOKEN_RATES[model] ?? null
+  const direct = PIPELINE_TOKEN_RATES[model]
+  if (direct) return direct
+  // The completion payload identifies dated snapshots even when the request
+  // used an alias. Only accept an actual date suffix, never a new model whose
+  // name happens to share the prefix of a cheaper one.
+  const alias = model.replace(/-\d{4}-\d{2}-\d{2}$/, '')
+  return PIPELINE_TOKEN_RATES[alias] ?? null
 }
 
-/** Cost of one model call, in USD. Unknown models price at zero rather than
- *  guessing, so an unpriced arm reads as 0 instead of as plausible fiction. */
+/** Unknown prices remain unknown. A missing tariff must never read as free. */
 export function priceTokens(
   model: string,
-  tokens: { audioInput?: number; textInput?: number; textOutput?: number },
-): number {
+  tokens: { audioInput?: number; textInput?: number; cachedTextInput?: number; textOutput?: number },
+): number | null {
   const rates = pipelineTokenRates(model)
-  if (!rates) return 0
+  if (!rates) return null
+  const values = Object.values(tokens)
+  if (values.some((value) => value !== undefined && (!Number.isFinite(value) || value < 0))) return null
+  const input = tokens.textInput ?? 0
+  const cached = Math.min(input, tokens.cachedTextInput ?? 0)
   return (
     (tokens.audioInput ?? 0) * rates.audioInput
-    + (tokens.textInput ?? 0) * rates.textInput
+    + (input - cached) * rates.textInput
+    + cached * rates.cachedTextInput
     + (tokens.textOutput ?? 0) * rates.textOutput
   ) / 1_000_000
+}
+
+/** Chat Completions reports cached tokens inside the total prompt count. */
+export function priceChatUsage(
+  model: string,
+  tokens: { input: number; output: number; cachedInput?: number },
+): number | null {
+  return priceTokens(model, {
+    textInput: tokens.input,
+    textOutput: tokens.output,
+    cachedTextInput: tokens.cachedInput ?? 0,
+  })
 }

@@ -12,9 +12,13 @@
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { ROUTE_AUTH_PATHS } from '@/lib/db/auth-paths'
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
+  // Exact routes only. Their requireUser() performs the same live getUser()
+  // verification and cookie refresh; doing both adds a remote auth round trip.
+  if (ROUTE_AUTH_PATHS.has(request.nextUrl.pathname)) return response
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY

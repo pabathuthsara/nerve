@@ -17,7 +17,8 @@
 import { revalidatePath } from 'next/cache'
 import { supabaseServer, currentUser } from '@/lib/db/server'
 import { supabaseAdmin } from '@/lib/db/admin'
-import type { ProviderId, Rate, SessionUsage, TranscriptTurn } from '@/lib/voice/types'
+import type { PipelineTelemetry, ProviderId, Rate, SessionUsage, TranscriptTurn } from '@/lib/voice/types'
+import { activateVoiceSession, abortVoiceStartupAttempt, closeVoiceSession, refundEmptyVoiceSession, serverVoiceSessionExists } from '@/lib/db/voice-session'
 import type { Scorecard } from '@/lib/grade/types'
 import type { WarmthTelemetry } from '@/lib/warmth/engine'
 import type { RepIncidents } from '@/lib/voice/incidents'
@@ -65,20 +66,29 @@ export interface FinishResult extends SaveResult {
 /**
  * Opened when the transport connects, so a rep that crashes still leaves a row.
  *
- * This is also where the daily quota is spent (§14). It is deliberately not
- * spent when the brief screen is opened — a rep the user backed out of is not
- * a rep — and the refusal is returned rather than thrown so the caller can say
- * what happened.
+ * The ElevenLabs token route has already reserved quota and an owned row;
+ * this action activates that row. The older transport spends quota here.
  */
 export async function startSession(input: {
   personaSlug: string
   provider: ProviderId
   model: string
+  existingSessionId?: string | null
 }): Promise<StartResult> {
   const user = await currentUser()
   if (!user) return { ...FAILED, sessionId: null }
 
   const supabase = await supabaseServer()
+
+  if (input.existingSessionId) {
+    const { data: owned } = await supabase.from('sessions').select('id')
+      .eq('id', input.existingSessionId).eq('user_id', user.id)
+      .eq('persona_slug', input.personaSlug).is('ended_at', null).maybeSingle()
+    if (!owned) return { ok: false, sessionId: null, message: 'This rep is no longer available.' }
+    const activated = await activateVoiceSession({ userId: user.id, sessionId: owned.id })
+    return activated.ok ? { ok: true, message: null, sessionId: owned.id }
+      : { ok: false, sessionId: null, message: 'We could not start the rep. Please try again.' }
+  }
 
   // A reload, a dropped connection, a reconnect: the same rep, coming back.
   // Reusing the open row costs nothing and means a refresh does not cost
@@ -96,7 +106,15 @@ export async function startSession(input: {
     .limit(1)
     .maybeSingle()
 
-  if (open) return { ok: true, message: null, sessionId: open.id }
+  if (open) {
+    try {
+      if (await serverVoiceSessionExists({ userId: user.id, sessionId: open.id })) {
+        const activated = await activateVoiceSession({ userId: user.id, sessionId: open.id })
+        if (!activated.ok) return { ok: false, sessionId: null, message: 'This rep has ended.' }
+      }
+    } catch { return { ok: false, sessionId: null, message: 'We could not verify this rep. Please try again.' } }
+    return { ok: true, message: null, sessionId: open.id }
+  }
 
   const quota = await consumeRep(user.id)
   if (!quota.ok) return { ok: false, message: quota.message, sessionId: null, refusal: quota.refusal ?? 'daily' }
@@ -125,6 +143,14 @@ export async function startSession(input: {
   return { ok: true, message: null, sessionId: data.id }
 }
 
+/** Idempotent cleanup for a microphone/transport setup that never became a rep. */
+export async function abandonSession(input: { sessionId: string; operationId: string }): Promise<SaveResult> {
+  const user = await currentUser()
+  if (!user) return FAILED
+  const result = await abortVoiceStartupAttempt({ userId: user.id, ...input })
+  return { ok: result.ok, message: result.ok ? null : 'The rep could not be closed.' }
+}
+
 /**
  * Closes the rep: duration, how it ended, and the transcript.
  *
@@ -141,6 +167,7 @@ export async function finishSession(input: {
   rate: Rate
   provider: ProviderId
   model: string
+  pipeline?: PipelineTelemetry | null
   /** The meter, as it was read at the end of the rep. */
   warmth?: WarmthTelemetry | null
   /**
@@ -201,6 +228,7 @@ export async function finishSession(input: {
         ?? (warmth ? wonFromRep({ finalWarmth: warmth.end, peakWarmth: warmth.peak }) : null),
       decision_warmth: input.decisionWarmth === undefined ? null : round2(input.decisionWarmth),
       pipeline_incidents: input.incidents ? asJson(input.incidents) : null,
+      pipeline_telemetry: input.pipeline ? asJson(input.pipeline) : null,
     })
     .eq('id', input.sessionId)
 
@@ -232,7 +260,21 @@ export async function finishSession(input: {
     return { ok: false, message: `Transcript not saved — ${transcriptError.message}`, refunded: false }
   }
 
-  await appendUsage({ ...input, userId: user.id, seconds })
+  let serverMetered: boolean
+  try {
+    serverMetered = await serverVoiceSessionExists({ userId: user.id, sessionId: input.sessionId })
+  } catch {
+    // Never substitute a browser estimate when authoritative accounting is
+    // temporarily unavailable. The transcript remains saved and grading can run.
+    return { ok: false, message: 'Transcript saved; usage confirmation is pending.', refunded: false }
+  }
+  if (serverMetered) {
+    // Provider operations already wrote their own usage. Client telemetry is
+    // diagnostic and must not overwrite it or append the old elapsed-time estimate.
+    await closeVoiceSession({ userId: user.id, sessionId: input.sessionId })
+  } else {
+    await appendUsage({ ...input, userId: user.id, seconds })
+  }
 
   // Did this rep hear the user at all?
   //
@@ -252,8 +294,13 @@ export async function finishSession(input: {
   // was not used).
   let refunded = false
   if (!heardUser) {
-    const credit = await refundRep(user.id)
-    refunded = credit.ok
+    if (serverMetered) {
+      const credit = await refundEmptyVoiceSession({ userId: user.id, sessionId: input.sessionId })
+      refunded = credit.ok && credit.refunded === true
+    } else {
+      const credit = await refundRep(user.id)
+      refunded = credit.ok
+    }
   }
 
   revalidateReadPaths()

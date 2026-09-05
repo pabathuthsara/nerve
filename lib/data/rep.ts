@@ -34,6 +34,7 @@ import {
   type TranscriptTurn,
 } from '@/lib/voice/types'
 import { WarmthSession } from '@/lib/warmth/session'
+import { bindVoiceSteering } from '@/lib/warmth/voice-steering'
 import { HttpSlowScorer } from '@/lib/warmth/slow'
 import {
   countIncidents,
@@ -52,7 +53,8 @@ import {
 import { StabilityMeter } from '@/lib/metrics/stability'
 import { RepRecorder } from '@/lib/audio/recorder'
 import { uploadRepAudio } from '@/lib/db/audio'
-import { attachAudio, finishSession, saveScore, startSession } from '@/app/rep/actions'
+import { abandonSession, attachAudio, finishSession, saveScore, startSession } from '@/app/rep/actions'
+import { completeRep } from './rep-completion'
 import type { Scorecard } from '@/lib/grade/types'
 import { uiBand, uiWarmth } from './progression'
 import {
@@ -303,6 +305,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   const pausedRef = useRef(false)
   const frameRef = useRef<number | null>(null)
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const stopPromiseRef = useRef<Promise<void> | null>(null)
   const stopRef = useRef<((reason: SessionSummary['reason']) => Promise<void>) | null>(null)
 
   const clearLoops = useCallback(() => {
@@ -331,6 +334,11 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       setSpeaking('none')
       setLevels({ user: 0, persona: 0 })
 
+      // Flush the recorder before the provider closes its AudioContext. Also
+      // detach the ref now so unmount cleanup cannot discard its final chunk.
+      const recorder = recorderRef.current
+      recorderRef.current = null
+      const recordingReady = recorder ? recorder.stop().catch(() => null) : Promise.resolve(null)
       const summary = await voice.end(reason)
       const telemetry = warmthRef.current?.telemetry(summary.seconds) ?? null
       warmthRef.current?.dispose()
@@ -393,62 +401,76 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       })
       setStatus('ended')
 
-      const id = sessionIdRef.current ?? (await sessionOpenRef.current)
+      const id = sessionIdRef.current ?? voice.getSessionId?.() ?? (await sessionOpenRef.current)
       sessionOpenRef.current = null
-      const recorder = recorderRef.current
-      recorderRef.current = null
-      const recording = recorder ? await recorder.stop().catch(() => null) : null
 
       if (!id) return
 
-      await finishSession({
-        sessionId: id,
-        seconds: summary.seconds,
-        reason: summary.reason,
-        turns: summary.turns,
-        usage: summary.usage,
-        rate: summary.rate,
-        provider: summary.provider,
-        model: summary.model,
-        warmth: telemetry,
-        won,
-        incidents,
-        ...(decisionWarmthRef.current === null ? {} : { decisionWarmth: decisionWarmthRef.current }),
-      }).catch(() => undefined)
-
-      if (recording && config) {
-        const upload = await uploadRepAudio({
-          userId: config.userId,
+      await completeRep({
+        save: () => finishSession({
           sessionId: id,
-          blob: recording.blob,
-          mimeType: recording.mimeType,
-        }).catch(() => ({ path: null, message: null }))
-        if (upload.path) await attachAudio({ sessionId: id, path: upload.path }).catch(() => undefined)
-      }
+          seconds: summary.seconds,
+          reason: summary.reason,
+          turns: summary.turns,
+          usage: summary.usage,
+          rate: summary.rate,
+          provider: summary.provider,
+          model: summary.model,
+          pipeline: summary.pipeline,
+          warmth: telemetry,
+          won,
+          incidents,
+          ...(decisionWarmthRef.current === null ? {} : { decisionWarmth: decisionWarmthRef.current }),
+        }),
 
-      // Graded once, after the rep, on a separate path from the live scorer
-      // (§07). The scorecard screen waits for this row rather than inventing
-      // a number while it is in flight.
-      if (summary.turns.length > 0) {
-        const card = await fetch('/api/grade', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            transcript: summary.turns,
-            sessionSeconds: summary.seconds,
-            personaName: config?.persona.name ?? personaId,
-          }),
-        })
-          .then(async (response) => (response.ok ? ((await response.json()) as Scorecard) : null))
-          .catch(() => null)
+        upload: async () => {
+          const recording = await recordingReady
+          if (recording && config) {
+            const upload = await uploadRepAudio({
+              userId: config.userId,
+              sessionId: id,
+              blob: recording.blob,
+              mimeType: recording.mimeType,
+            }).catch(() => ({ path: null, message: null }))
+            if (upload.path) await attachAudio({ sessionId: id, path: upload.path }).catch(() => undefined)
+          }
+        },
 
-        if (card) await saveScore({ sessionId: id, scorecard: card, provider: summary.provider, ...(config ? { personaLevel: config.persona.level } : {}) }).catch(() => undefined)
-      }
+        grade: async () => {
+          // Graded once, after the rep, on a separate path from the live scorer
+          // (§07). The scorecard screen waits for this row rather than inventing
+          // a number while it is in flight.
+          if (summary.turns.some((turn) => turn.speaker === 'user' && turn.text.trim().length > 0)) {
+            const card = await fetch('/api/grade', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                transcript: summary.turns,
+                sessionSeconds: summary.seconds,
+                personaName: config?.persona.name ?? personaId,
+                ...(voice.getSessionId?.() ? { sessionId: id } : {}),
+              }),
+            })
+              .then(async (response) => (response.ok ? ((await response.json()) as Scorecard) : null))
+              .catch(() => null)
+
+            if (card) await saveScore({ sessionId: id, scorecard: card, provider: summary.provider, ...(config ? { personaLevel: config.persona.level } : {}) }).catch(() => undefined)
+          }
+        },
+      })
     },
     [clearLoops, config, interview, personaId],
   )
 
-  stopRef.current = stop
+  stopRef.current = (reason) => {
+    if (stopPromiseRef.current) return stopPromiseRef.current
+    const finishing = stop(reason)
+    stopPromiseRef.current = finishing
+    void finishing.finally(() => {
+      if (stopPromiseRef.current === finishing) stopPromiseRef.current = null
+    }).catch(() => undefined)
+    return finishing
+  }
 
   /**
    * The meter, after a turn.
@@ -477,12 +499,13 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       // long she sits on a reply, and whether she takes the turn when he talks
       // over her. She is still never told a number (§H6).
       voice.setWarmth(engine.warmth)
+      if (pausedRef.current) voice.setInterruptible(false)
     },
     [interview],
   )
 
   const start = useCallback(() => {
-    if (startedRef.current || !config) return
+    if (startedRef.current || stopPromiseRef.current || !config) return
     startedRef.current = true
     finishedRef.current = false
     armedRef.current = false
@@ -495,6 +518,15 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     agentSpeakingRef.current = false
     numberRef.current = ''
     turnsRef.current = []
+    sessionIdRef.current = null
+    sessionOpenRef.current = null
+    startedAtRef.current = 0
+    pausedRef.current = false
+    setPaused(false)
+    setSessionId('')
+    setOutcome(null)
+    setSpeaking('none')
+    setLevels({ user: 0, persona: 0 })
     setEndReason(null)
     safetyCloseAtRef.current = null
     safetyEndedRef.current = false
@@ -507,19 +539,45 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     setStatus('connecting')
 
     void (async () => {
-      const connectedAt = performance.now()
       warmthRef.current?.dispose()
       warmthRef.current = new WarmthSession({
         persona: config.persona,
         trajectory: config.persona.trajectory,
-        scorer: new HttpSlowScorer(),
-        nowSeconds: () => (performance.now() - connectedAt) / 1000,
+        scorer: new HttpSlowScorer(undefined, undefined, () => {
+          const id = providerRef.current?.getSessionId?.()
+          return id ? { sessionId: id } : {}
+        }),
+        nowSeconds: () => startedAtRef.current > 0 ? (performance.now() - startedAtRef.current) / 1000 : 0,
       })
       setWarmth(uiWarmth(warmthRef.current.engine.warmth))
       setBand(uiBand(warmthRef.current.engine.band))
 
       const voice = createVoiceProvider({ envDefault: config.provider, openai: { model: config.model } })
       providerRef.current = voice
+      bindVoiceSteering(voice, warmthRef.current)
+      // Media can connect before the owned-session activation finishes. Keep
+      // microphone ingress closed until the live screen is ready.
+      voice.setMuted?.(true)
+      let activated = false
+      let setupFailed = false
+      const stillCurrent = () => providerRef.current === voice && !finishedRef.current
+      const abandonAttempt = async () => {
+        await voice.end('error').catch(() => undefined)
+        const id = voice.getSessionId?.()
+        const operationId = voice.getStartupAttemptId?.()
+        if (id && operationId) await abandonSession({ sessionId: id, operationId }).catch(() => undefined)
+      }
+      const disposeAttempt = () => {
+        if (providerRef.current !== voice) return
+        providerRef.current = null
+        startedRef.current = false
+        warmthRef.current?.dispose()
+        warmthRef.current = null
+        safetyRef.current?.stop()
+        safetyRef.current = null
+        incidentsStopRef.current?.()
+        incidentsStopRef.current = null
+      }
 
       /**
        * The five things moderation can ask for, and what each one costs.
@@ -564,14 +622,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
 
       voice.on('user.speech.start', () => {
         setSpeaking('user')
-        // Steering used to go in HERE, on every speech start — including noise
-        // bursts and turns deleted milliseconds later as echo, and always with
-        // the same text. See `directiveIfChanged`. It now rides the committed
-        // turn instead, which is the last moment before the response is created
-        // and the first moment we know the turn was real.
-        const warmthSession = warmthRef.current
-        const line = warmthSession?.directiveIfChanged()
-        if (line) voice.reinforce(line)
+
       })
       voice.on('user.speech.stop', () => setSpeaking('thinking'))
       voice.on('agent.speech.start', () => {
@@ -636,23 +687,65 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       incidentsRef.current = counter.incidents
 
       voice.on('error', ({ error: err }) => {
-        if (!err.fatal) return
+        if (!err.fatal || !stillCurrent()) return
         setError('connection')
-        setStatus('idle')
+        if (activated) {
+          void stopRef.current?.('error')
+        } else {
+          // A socket error during setup must close the provider, even when its
+          // connect promise has not rejected yet. The catch below owns refund.
+          setupFailed = true
+          void voice.end('error').catch(() => undefined)
+          setStatus('idle')
+        }
       })
 
       try {
         await voice.connect(config.persona, config.calibration)
       } catch (cause) {
-        providerRef.current = null
-        startedRef.current = false
-        // A microphone that was refused is a different problem from a
-        // transport that would not open, and the two have different fixes.
+        await abandonAttempt()
+        if (!stillCurrent()) return
+        disposeAttempt()
+        // A refused microphone has a different remedy from a network failure.
         const message = cause instanceof VoiceError ? cause.message : String(cause)
         setError(/microphone|permission|NotAllowed/i.test(message) ? 'mic' : 'connection')
         setStatus('idle')
         return
       }
+      if (!stillCurrent()) { await abandonAttempt(); return }
+      if (setupFailed) {
+        await abandonAttempt()
+        disposeAttempt()
+        setError('connection')
+        setStatus('idle')
+        return
+      }
+
+      const ownedSessionId = voice.getSessionId?.() ?? null
+      if (ownedSessionId) {
+        sessionIdRef.current = ownedSessionId
+        const result = await startSession({
+          personaSlug: config.persona.slug, provider: voice.id, model: voice.model,
+          existingSessionId: ownedSessionId,
+        }).catch(() => null)
+        if (!stillCurrent()) { await abandonAttempt(); return }
+        if (!result?.ok) {
+          await abandonAttempt()
+          disposeAttempt()
+          setError('connection')
+          setStatus('idle')
+          return
+        }
+        if (setupFailed) {
+          // The activation succeeded while the transport failed. Finish that
+          // owned rep so the empty-session refund follows its normal path.
+          await stopRef.current?.('error')
+          return
+        }
+      }
+      activated = true
+      voice.setMuted?.(pausedRef.current)
+      voice.setWarmth(warmthRef.current?.engine.warmth ?? 0)
 
       setStatus('live')
       startedAtRef.current = performance.now()
@@ -662,11 +755,13 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       // still leaves evidence it happened — and this is where the daily quota
       // is spent.
       sessionIdRef.current = null
-      sessionOpenRef.current = startSession({
-        personaSlug: config.persona.slug,
-        provider: voice.id,
-        model: voice.model,
-      })
+      sessionOpenRef.current = (ownedSessionId
+        ? Promise.resolve({ sessionId: ownedSessionId })
+        : startSession({
+          personaSlug: config.persona.slug,
+          provider: voice.id,
+          model: voice.model,
+        }))
         .then((result) => {
           sessionIdRef.current = result.sessionId
           if (result.sessionId) {
@@ -679,9 +774,16 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         })
         .catch(() => null)
 
-      const recorder = RepRecorder.create(voice.getAnalyser())
-      recorderRef.current = recorder
-      recorder?.start()
+      try {
+        const recorder = RepRecorder.create(voice.getAnalyser())
+        recorderRef.current = recorder
+        recorder?.start()
+      } catch {
+        // Archiving is optional. A browser recorder failure must not end the
+        // conversation or leave its microphone disconnected from the model.
+        recorderRef.current?.dispose()
+        recorderRef.current = null
+      }
 
       const room = voice.getRoom()
       if (room) {
@@ -783,7 +885,9 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     // She stops cutting across him while he is away. Restored on resume from
     // the level rule rather than from a remembered flag, because the level is
     // what the answer actually depends on (§05).
+    providerRef.current?.setMuted?.(true)
     providerRef.current?.setInterruptible(false)
+    setSpeaking(agentSpeakingRef.current ? 'persona' : 'none')
   }, [])
 
   const resume = useCallback(() => {
@@ -795,14 +899,20 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     // on how the rep is going — and going back to the raw level rule here would
     // let a bored character cut across him for the one turn before the next
     // `publish` corrected it.
+    providerRef.current?.setMuted?.(false)
     providerRef.current?.setWarmth(warmthRef.current?.engine.warmth ?? 0)
   }, [])
 
   const retry = useCallback(() => {
-    setRetryAttempt((value) => Math.min(3, value + 1))
-    startedRef.current = false
-    setError(null)
-    start()
+    void (async () => {
+      // Retire the preceding provider and writes before opening a new one.
+      // A retry cannot leave the old microphone or paid request running.
+      await (stopPromiseRef.current ?? stopRef.current?.('error'))?.catch(() => undefined)
+      setRetryAttempt((value) => Math.min(3, value + 1))
+      startedRef.current = false
+      setError(null)
+      start()
+    })()
   }, [start])
 
   /**

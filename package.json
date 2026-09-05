@@ -27,6 +27,7 @@
     "db:rep": "vite-node --config vitest.config.ts scripts/verify-rep.ts",
     "db:field": "vite-node --config vitest.config.ts scripts/verify-field.ts",
     "db:spend": "vite-node --config vitest.config.ts scripts/verify-spend.ts",
+    "db:voice": "vite-node --config vitest.config.ts scripts/verify-voice-budget.ts",
     "db:billing": "vite-node --config vitest.config.ts scripts/verify-billing.ts",
     "legal:pdf": "vite-node --config vitest.config.ts scripts/legal-pdf.ts",
     "brand:assets": "vite-node --config vitest.config.ts scripts/brand-assets.ts",

@@ -30,6 +30,7 @@ import 'server-only'
 
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from './admin'
+import { reserveVoiceOperation, type VoiceReservation } from './voice-session'
 
 /**
  * One allowance per route family, never one shared allowance.
@@ -38,7 +39,7 @@ import { supabaseAdmin } from './admin'
  * to keep talking. The failure that shares a bucket is the one where a bug in
  * a screen nobody is looking at silences the character mid-sentence.
  */
-export type SpendBucket = 'token' | 'grade' | 'warmth' | 'llm' | 'tts' | 'text' | 'safety'
+export type SpendBucket = 'token' | 'turn' | 'grade' | 'warmth' | 'llm' | 'tts' | 'text' | 'safety'
 
 interface BucketPolicy {
   /** Requests allowed inside the window. */
@@ -64,6 +65,7 @@ const POLICY: Record<SpendBucket, BucketPolicy> = {
   // spend cap reach the route at all — a halt that does not stop a rep starting
   // is not a halt.
   token: { limit: 10, windowSeconds: 60 },
+  turn: { limit: 60, windowSeconds: 60 },
   grade: { limit: 10, windowSeconds: 60 },
   warmth: { limit: 40, windowSeconds: 60 },
   llm: { limit: 60, windowSeconds: 60 },
@@ -133,6 +135,8 @@ function projectHalted(): boolean {
  * `requireUser` uses, for the same reason.
  */
 export type SpendDecision = { ok: true } | { ok: false; response: Response }
+export type VoiceSpendDecision = { ok: true; reservation: VoiceReservation } | { ok: false; response: Response }
+type VoiceOperation = Omit<Parameters<typeof reserveVoiceOperation>[0], 'userId'>
 
 /**
  * The same verdict, before it is dressed as an HTTP response.
@@ -161,10 +165,18 @@ export type SpendVerdict =
  * check, the rep quota at `/api/voice/token`, and the two kill switches, of
  * which the project-wide one needs no database at all and is checked first.
  */
+export function maySpend(userId: string, bucket: SpendBucket, operation: VoiceOperation): Promise<VoiceSpendDecision>
+export function maySpend(userId: string, bucket: SpendBucket): Promise<SpendDecision>
 export async function maySpend(
   userId: string,
   bucket: SpendBucket,
-): Promise<SpendDecision> {
+  operation?: VoiceOperation,
+): Promise<SpendDecision | VoiceSpendDecision> {
+  if (operation) {
+    const reserved = await reserveVoiceOperation({ ...operation, userId })
+    if (reserved.ok) return reserved
+    return { ok: false, response: NextResponse.json({ error: reserved.message, reason: reserved.reason }, { status: reserved.status }) }
+  }
   const verdict = await spendVerdict(userId, bucket)
   if (verdict.ok) return { ok: true }
   const headers = verdict.status === 429 && verdict.retryAfter

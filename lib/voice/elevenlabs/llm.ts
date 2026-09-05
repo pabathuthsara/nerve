@@ -16,6 +16,7 @@
  */
 
 import { VoiceError, type TranscriptTurn } from '../types'
+import { parseChatTokenUsage } from '../scoring-request'
 
 /** Emitted by the model at the very end of a reply when an exit condition is
  *  genuinely met. Stripped before synthesis, so it can never be spoken — which
@@ -38,7 +39,7 @@ export interface LlmStreamRequest {
 export interface LlmStreamEvents {
   onFirstToken: () => void
   onDelta: (text: string) => void
-  onUsage?: (usage: { input: number; output: number }) => void
+  onUsage?: (usage: { input: number; output: number; cachedInput?: number }) => void
 }
 
 export interface LlmStreamResult {
@@ -93,43 +94,53 @@ export class LlmClient {
     }
 
     const reader = response.body.getReader()
+    const cancel = () => { void reader.cancel(signal.reason).catch(() => undefined) }
+    signal.addEventListener('abort', cancel, { once: true })
+    if (signal.aborted) cancel()
     const decoder = new TextDecoder()
     let buffer = ''
     let text = ''
     let first = true
+
+    const consume = (raw: string) => {
+      if (signal.aborted) return
+      const line = raw.trim()
+      if (!line.startsWith('data:')) return
+      const payload = line.slice(5).trim()
+      if (payload === '[DONE]') return
+      const delta = parseChunk(payload, events.onUsage)
+      if (!delta) return
+      if (first) { first = false; events.onFirstToken() }
+      text += delta
+      events.onDelta(delta)
+    }
 
     try {
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
+        if (buffer.length > 2_000_000) throw new Error('Invalid character model frame.')
 
         let index = buffer.indexOf('\n')
         while (index !== -1) {
-          const line = buffer.slice(0, index).trim()
+          const line = buffer.slice(0, index)
           buffer = buffer.slice(index + 1)
           index = buffer.indexOf('\n')
 
-          if (!line.startsWith('data:')) continue
-          const payload = line.slice(5).trim()
-          if (payload === '[DONE]') continue
-
-          const delta = parseChunk(payload, events.onUsage)
-          if (!delta) continue
-          if (first) {
-            first = false
-            events.onFirstToken()
-          }
-          text += delta
-          events.onDelta(delta)
+          consume(line)
         }
       }
+      // Some proxies finish the last SSE data line at EOF without a newline.
+      // This may be the usage receipt; dropping it loses actual accounting.
+      consume(buffer + decoder.decode())
     } catch (cause) {
       if (signal.aborted) return finish(text, true)
       throw new VoiceError('provider_error', 'elevenlabs', 'The character model stream broke.', {
         cause,
       })
     } finally {
+      signal.removeEventListener('abort', cancel)
       reader.releaseLock()
     }
 
@@ -152,30 +163,30 @@ function parseChunk(
 ): string {
   let parsed: Record<string, unknown>
   try {
-    parsed = JSON.parse(payload) as Record<string, unknown>
+    const value: unknown = JSON.parse(payload)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+    parsed = value as Record<string, unknown>
   } catch {
     return ''
   }
 
-  const usage = parsed['usage'] as Record<string, unknown> | null | undefined
+  const usage = parseChatTokenUsage(parsed['usage'])
   if (usage && onUsage) {
     onUsage({
-      input: numberOf(usage['prompt_tokens']) ?? 0,
-      output: numberOf(usage['completion_tokens']) ?? 0,
+      input: usage.input,
+      output: usage.output,
+      cachedInput: usage.cachedInput,
     })
   }
 
   const choices = parsed['choices']
   if (!Array.isArray(choices) || choices.length === 0) return ''
+  if (!choices[0] || typeof choices[0] !== 'object') return ''
   const delta = (choices[0] as Record<string, unknown>)['delta'] as
     | Record<string, unknown>
     | undefined
   const content = delta?.['content']
   return typeof content === 'string' ? content : ''
-}
-
-function numberOf(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 /**

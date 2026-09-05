@@ -33,6 +33,7 @@ import {
 } from '@/lib/voice/types'
 import { compileReinforcement } from '@/lib/voice/reinforcement'
 import { WarmthSession } from '@/lib/warmth/session'
+import { bindVoiceSteering } from '@/lib/warmth/voice-steering'
 import { HttpSlowScorer } from '@/lib/warmth/slow'
 import dynamic from 'next/dynamic'
 import { DEV_TOOLS, TuningStore, activePreset, type TuningPreset } from '@/lib/tuning/store'
@@ -282,6 +283,7 @@ export function RepClient({
 
     const voice = createVoiceProvider({ envDefault: provider, openai: { model } })
     providerRef.current = voice
+    bindVoiceSteering(voice, warmthRef.current)
 
     voice.on('user.speech.start', ({ at }) => {
       setSpeaking((s) => ({ ...s, user: true }))
@@ -292,12 +294,6 @@ export function RepClient({
       // The character cut across the user; that turn is not a round trip.
       latencyRef.current.discardPending()
 
-      // Steering goes in here, while he is still talking, so the item is
-      // already in the conversation when server VAD auto-creates the response.
-      // Injecting after speech.stop would race the response and sometimes land
-      // a turn late; injecting into the instructions would cost the cache.
-      const warmth = warmthRef.current
-      if (warmth) voice.reinforce(warmth.directive())
       void at
     })
 

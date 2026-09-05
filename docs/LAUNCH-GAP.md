@@ -16,6 +16,8 @@ need a decision rather than a ticket.
 > and seeded. Entries below carry a `DB done` marker where the schema half has
 > landed and only the app half is left; the sizes have been cut to match.
 
+> **Voice pipeline implementation — 5 September 2026.** The non-WebSocket latency/accounting work now has a combined server HTTP stream, owned rep reservations, reliable interruption/startup cleanup and measured full-rep verification. See [the implementation record](VOICE-IMPROVEMENTS-2026-09-05.md) for current release status and limits. This does not close the human voice A/B or twenty hand-scored transcript gates.
+
 ---
 
 ## 1. Where the build actually is
@@ -1540,6 +1542,54 @@ restores §18's break-even arithmetic to the figure it was computed against.
 `PAYMENTS-NEW-INTEGRATION.md` is the plan of record and D2 is closed. **Still owed:** the live ten-rep
 measurement `M0.md` specifies, from the Colombo home connection at 7–9pm. This is
 a projection from measured runs, not a measurement.
+
+#### D2b · Every number above is priced on a model we may not be running
+
+Opened 4 September, and it is the larger half of D2a rather than a footnote.
+
+**All four M0 runs were `gpt-realtime-mini`. `.env.local` sets
+`OPENAI_REALTIME_MODEL=gpt-realtime`** — the full model, at 3.2x the mini's
+token rates. The two facts have sat in this document since 23 August, one in
+D2a and one in the hero-audio note above, and were never multiplied together.
+The margin table is therefore priced on a model that may not have served a
+single real rep.
+
+At the dearest measured rate, scaled by the rate cards in `lib/voice/rates.ts`:
+
+| | mini (measured) | `gpt-realtime` (configured) |
+|---|---|---|
+| $/min | $0.0293 | $0.0938 |
+| 3-minute rep | $0.088 | $0.281 |
+| Pro $19, 270 min/mo | $7.91 → **58%** | $25.32 → **−33%** |
+| Elite $49, 540 min/mo | $15.82 → **68%** | $50.63 → **−3%** |
+| Sign-up rep, per free account | $0.088 | $0.281 |
+
+**A fully-utilised Pro account loses money on the full model** — before the
+merchant of record's ~7 points, which take it to −40%. Elite is roughly break
+even. The whole D2 resolution of 31 August, and §18's break-even conversion
+arithmetic, rest on the mini figures.
+
+Three things this does *not* yet establish, and none should be assumed:
+
+1. **What production runs.** `OPENAI_REALTIME_MODEL` is a Production secret in
+   Vercel and was not read. It may well be mini, in which case this is a local
+   development cost only and D2a stands unchanged. **Read it before acting on
+   anything here** — `vercel env pull --environment=production`.
+2. **Whether anyone burns the cap.** These are full-utilisation figures. Real
+   usage decides the real margin, and nobody has measured it.
+3. **What the full model actually costs.** The 3.2x is derived from the rate
+   cards on a modelled token profile, not from a priced run. The live ten-rep
+   measurement `M0.md` still specifies would settle it, and it should now be
+   run **on the configured model**, which is the reason it never closed the
+   question the first time.
+
+**The 2.1 move is not implicated.** `gpt-realtime` → `gpt-realtime-2.1` changes
+one rate, output text $16 → $24/M; output audio stays at $64/M and dominates, so
+it is +0.9% on a rep. Both cards are now in `lib/voice/rates.ts` — before 4
+September `gpt-realtime-2.1` priced at **$0/min**, and since `spend_today_cents()`
+reads that ledger, both kill switches and the daily cap would have gone blind to
+the most expensive model in the product. The env var is also not checked against
+`M0_MODELS`; only the client-supplied override is.
 
 ---
 

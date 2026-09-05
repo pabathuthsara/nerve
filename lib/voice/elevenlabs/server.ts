@@ -30,6 +30,7 @@ import { EXIT_SENTINEL } from './llm'
 import { DEFAULT_CALIBRATION, clamp, type Calibration } from '../types'
 import { chatApiKey, streamChat, type ChatMessage } from '../chat'
 import { readSubscription } from './mint'
+import { PROVIDER_REQUEST_ID_HEADER, vendorRequestId } from '../request-id'
 
 const TTS_ENDPOINT = 'https://api.elevenlabs.io/v1/text-to-speech'
 
@@ -42,10 +43,10 @@ function env(): PipelineEnv {
   return process.env as unknown as PipelineEnv
 }
 
-function json(body: unknown, status: number): Response {
+function json(body: unknown, status: number, requestId?: string | null): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...(requestId ? { [PROVIDER_REQUEST_ID_HEADER]: requestId } : {}) },
   })
 }
 
@@ -130,12 +131,14 @@ export async function handleLlmRequest(
     signal: request.signal,
   })
 
-  if (!upstream.ok) return json({ error: upstream.error.message }, 502)
+  if (!upstream.ok) return json({ error: upstream.error.message }, 502,
+    upstream.error.kind === 'upstream' ? upstream.error.requestId : undefined)
 
   return new Response(upstream.body, {
     headers: {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-store',
+      ...(upstream.requestId ? { [PROVIDER_REQUEST_ID_HEADER]: upstream.requestId } : {}),
     },
   })
 }
@@ -226,6 +229,9 @@ export async function handleTtsRequest(request: Request): Promise<Response> {
         'Content-Type': 'application/json',
         Accept: wantsTimestamps ? 'application/json' : 'audio/*',
       },
+      // Same reason as the character model in ../chat.ts: a cached fetch is a
+      // buffered fetch, and buffering audio defeats streaming synthesis.
+      cache: 'no-store',
       body: JSON.stringify({
         text,
         model_id: model,
@@ -246,7 +252,7 @@ export async function handleTtsRequest(request: Request): Promise<Response> {
 
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => '')
-    return json({ error: `Synthesis refused (${upstream.status}). ${detail.slice(0, 400)}` }, 502)
+    return json({ error: `Synthesis refused (${upstream.status}). ${detail.slice(0, 400)}` }, 502, vendorRequestId(upstream.headers))
   }
 
   const headers = new Headers({
@@ -258,6 +264,10 @@ export async function handleTtsRequest(request: Request): Promise<Response> {
   const remaining = upstream.headers.get('character-limit-remaining')
     ?? upstream.headers.get('x-character-limit-remaining')
   if (remaining) headers.set(CREDITS_HEADER, remaining)
+  const region = upstream.headers.get('x-region')
+  if (region) headers.set('x-nerve-tts-region', region)
+  const requestId = vendorRequestId(upstream.headers)
+  if (requestId) headers.set(PROVIDER_REQUEST_ID_HEADER, requestId)
 
   return new Response(upstream.body, { headers })
 }

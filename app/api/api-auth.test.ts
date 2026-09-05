@@ -20,6 +20,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ROUTE_AUTH_PATHS } from '@/lib/db/auth-paths'
 
 /** Nobody is signed in. */
 const anonymous = {
@@ -43,6 +44,14 @@ let quota: { ok: boolean; message: string | null } = { ok: true, message: null }
 let allowance: { ok: true } | { ok: false; response: Response } = { ok: true }
 
 vi.mock('server-only', () => ({}))
+vi.mock('next/server', async (importOriginal) => ({
+  ...await importOriginal<typeof import('next/server')>(),
+  after: () => undefined,
+}))
+vi.mock('@/lib/voice/elevenlabs/combined', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/voice/elevenlabs/combined')>(),
+  createCombinedTurn: () => ({ response: new Response(), finished: Promise.resolve() }),
+}))
 vi.mock('@/lib/db/server', () => ({
   supabaseServer: async () => session,
 }))
@@ -50,7 +59,16 @@ vi.mock('@/lib/db/progress', () => ({
   mayOpenSession: async () => quota,
 }))
 vi.mock('@/lib/db/spend', () => ({
-  maySpend: async () => allowance,
+  maySpend: async (_userId: string, _kind: string, operation?: unknown) =>
+    allowance.ok && operation ? { ok: true, reservation: { context: {} } } : allowance,
+}))
+vi.mock('@/lib/db/voice-session', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/db/voice-session')>(),
+  recordStandaloneUsage: async () => ({ ok: true }),
+  findActiveVoiceSession: async () => ({
+    sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    expiresAt: '2099-01-01T00:00:00Z', context: {},
+  }),
 }))
 
 /** Any upstream call at all is a failure when the caller is anonymous. */
@@ -80,10 +98,13 @@ function post(url: string, body: unknown, headers: Record<string, string> = {}) 
   })
 }
 
+type RouteHandler = (request: Request) => Promise<Response>
+type RouteModule = { POST?: RouteHandler; GET?: RouteHandler }
+
 const ROUTES: {
   name: string
-  load: () => Promise<{ POST?: Function; GET?: Function }>
-  call: (mod: { POST?: Function; GET?: Function }, request: Request) => Promise<Response>
+  load: () => Promise<RouteModule>
+  call: (mod: RouteModule, request: Request) => Promise<Response>
   request: () => Request
 }[] = [
   {
@@ -109,16 +130,29 @@ const ROUTES: {
     request: () => post('http://t/api/voice/token', { personaId: 'nadia' }),
   },
   {
+    name: '/api/voice/turn',
+    load: () => import('./voice/turn/route'),
+    call: (m, r) => m.POST!(r),
+    request: () => post('http://t/api/voice/turn', {
+      sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      turnId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      personaId: 'tess', history: [{ role: 'user', content: 'Hello.' }],
+      steering: null, warmth: 20,
+    }),
+  },
+  {
     name: '/api/voice/llm',
     load: () => import('./voice/llm/route'),
     call: (m, r) => m.POST!(r),
-    request: () => post('http://t/api/voice/llm', { messages: [] }),
+    request: () => post('http://t/api/voice/llm', {
+      personaId: 'tess', history: [{ role: 'user', content: 'Hi.' }], steering: null,
+    }),
   },
   {
     name: '/api/voice/tts',
     load: () => import('./voice/tts/route'),
     call: (m, r) => m.POST!(r),
-    request: () => post('http://t/api/voice/tts', { text: 'hello' }),
+    request: () => post('http://t/api/voice/tts', { personaId: 'tess', text: 'hello' }),
   },
   {
     name: '/api/safety',
@@ -133,6 +167,14 @@ const ROUTES: {
     request: () => new Request('http://t/api/voice/credits'),
   },
 ]
+
+it('every exact middleware auth exemption is covered by a real route refusal test', () => {
+  expect([...ROUTE_AUTH_PATHS].sort()).toEqual(ROUTES.map((route) => route.name).sort())
+  // The registry contains exact endpoints, never prefixes that would exempt a
+  // future paid route which has not implemented its own verified auth gate.
+  expect(ROUTE_AUTH_PATHS.has('/api/voice')).toBe(false)
+  expect(ROUTE_AUTH_PATHS.has('/api/voice/turn/unprotected')).toBe(false)
+})
 
 describe.each(ROUTES)('$name', ({ load, call, request }) => {
   it('refuses an anonymous caller with 401', async () => {
