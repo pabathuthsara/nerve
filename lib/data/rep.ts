@@ -50,7 +50,7 @@ import {
   DECLINE_DIRECTIVE,
   type SafetyAction,
 } from '@/lib/safety/escalation'
-import { StabilityMeter } from '@/lib/metrics/stability'
+import { StabilityMeter, warrantsReinforcement } from '@/lib/metrics/stability'
 import { RepRecorder } from '@/lib/audio/recorder'
 import { uploadRepAudio } from '@/lib/db/audio'
 import { abandonSession, attachAudio, finishSession, saveScore, startSession } from '@/app/rep/actions'
@@ -420,6 +420,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
           warmth: telemetry,
           won,
           incidents,
+          characterBreaks: stabilityRef.current.all,
           ...(decisionWarmthRef.current === null ? {} : { decisionWarmth: decisionWarmthRef.current }),
         }),
 
@@ -649,6 +650,14 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         if (!final) return
         turnsRef.current.push(turn)
         safetyRef.current?.observe('user', turn.text)
+        // The meter needs both sides of the dialogue or `double-turn` — "two
+        // agent turns without a user turn" — fires on every reply she gives
+        // after her first. The admin bench has always called this; the customer
+        // rep never has, so in production every turn was recorded as a
+        // character break AND answered with the identity reminder. That is the
+        // feedback loop PERSONA-AUDIT §12 fixed for verbosity, arriving through
+        // a different rule. Found the moment breaks started being stored.
+        stabilityRef.current.observeUser()
         // The first word we actually heard. See `heardUser`.
         if (turn.text.trim().length > 0) setHeardUser(true)
         warmthRef.current?.onUserTurn(turn)
@@ -671,7 +680,12 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         // the rest of the rep. Event-driven rather than timed, because blind
         // periodic session updates damaged prompt-cache reuse.
         const hits = stabilityRef.current.observe(turn.text, turn.t_end)
-        if (hits.some((hit) => hit.severity === 'break')) {
+        // Only an IDENTITY break may answer with the identity reminder. A
+        // verbosity or question-rate break is a band violation, the band owns
+        // both, and the reminder never mentions either — measured, it made her
+        // longer, so the length alarm was firing the thing that lengthened her.
+        // See `warrantsReinforcement`.
+        if (hits.some(warrantsReinforcement)) {
           voice.reinforce(compileReinforcement(config.persona, turnsRef.current))
         }
       })

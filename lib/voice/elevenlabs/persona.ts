@@ -28,7 +28,7 @@ import {
   type Persona,
 } from '../types'
 import type { PersonaCompiler } from '../provider'
-import { BANNED_REGISTER, compileInstructions } from '../openai/persona'
+import { compileInstructions } from '../openai/persona'
 import { paceFor } from '@/lib/warmth/timing'
 import {
   resolvePipelineConfig,
@@ -228,11 +228,20 @@ export class ElevenLabsPersonaCompiler implements PersonaCompiler<ElevenLabsPipe
     // pipeline. The exit rides on a sentinel the model appends instead
     // (EXIT_SENTINEL in ./llm.ts), which is stripped before synthesis — so
     // unlike a tool name it cannot leak into speech at all.
+    // NO SECOND COPY OF `BANNED_REGISTER` HERE, and its absence is the fix.
+    //
+    // `compileInstructions` already closes with those twelve lines under
+    // "# Absolute rules". This compiler appended them again under "# Never", so
+    // the shipping arm's prompt carried the same twelve prohibitions twice —
+    // about 1,100 characters of it — while the realtime arm carried them once.
+    //
+    // That breaks the claim at the top of this file. §04 wants "identical prose
+    // to the OpenAI arm, so a difference in the A/B is a difference in voice,
+    // not in writing", and the two prompts were not identical prose. It is also
+    // the wrong kind of instruction to double: thirty-six prohibitions and no
+    // demonstrations push a writer towards hedging, and hedging is words.
     const systemPrompt = [
       compileInstructions(persona, { canEndScene: false }),
-      '',
-      '# Never',
-      ...BANNED_REGISTER.map((line) => `- ${line}`),
       '',
       '# Output',
       'Reply with spoken words only. No stage directions, no asterisks, no markdown, no emoji.',

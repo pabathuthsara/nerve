@@ -32,6 +32,81 @@ import { proportionalPrefix, snapToWordBoundary } from '../truncate'
 
 export { proportionalPrefix, snapToWordBoundary }
 
+/**
+ * Words, counted the way the transcript and the stability meter count them.
+ *
+ * Bracketed spans go first: a delivery tag is prosody the vendor echoes back,
+ * never speech, and it is already stripped before anything reaches the record
+ * (see `stripDeliveryTags`). Counting it here would spend a word of her budget
+ * on something nobody hears.
+ */
+export function spokenWordCount(text: string): number {
+  return text
+    .replace(/\[[^\]]*\]/g, ' ')
+    .match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)?.length ?? 0
+}
+
+/**
+ * The band's word ceiling, made true rather than merely stated.
+ *
+ * `lib/warmth/bands.ts` argues the case: every cap in that table was authored
+ * against a speech-to-speech model that ran at half of whatever it was allowed,
+ * so the number was a guardrail nobody touched. The writer on this arm hits
+ * whatever number it is given and then keeps climbing, because its own replies
+ * come back as the conversation and become the example of how she talks —
+ * measured within a single rep, three-sentence turns went from 30% to 67% while
+ * the realtime arm stayed at 2%.
+ *
+ * So the ceiling is enforced where the words are actually produced. Two rules,
+ * and both matter:
+ *
+ *  1. **Never mid-sentence.** Generation is already flushed sentence by
+ *     sentence (`shouldFlush`), so the stop lands on a boundary she chose. A
+ *     reply cut mid-clause is worse than a long one — that is the same rule
+ *     this module exists to enforce for barge-in.
+ *  2. **Always at least one sentence.** The first flush is spent before the
+ *     budget can refuse anything, so a low band can never produce silence.
+ *
+ * The consequence is that a single long sentence still goes out whole. That is
+ * deliberate: this is a ceiling on how much she PILES ON, not a shredder.
+ */
+export class ReplyBudget {
+  private spent = 0
+
+  constructor(private readonly cap: number) {}
+
+  /** Record a sentence that has gone to synthesis. True when she has reached
+   *  her ceiling and generation should stop here. */
+  spend(text: string): boolean {
+    this.spent += spokenWordCount(text)
+    return this.spent >= this.cap
+  }
+
+  get words(): number {
+    return this.spent
+  }
+}
+
+/**
+ * The same ceiling applied to a reply that arrived whole.
+ *
+ * The live pipeline stops GENERATION at the flush that reaches the budget, so
+ * it never has a complete reply to trim. Anything holding one — the audition
+ * harness, an offline measurement — has to reach the same answer by the same
+ * rule, or it reports numbers no customer experiences. Sentences are split on
+ * terminal punctuation, which is the boundary `shouldFlush` uses.
+ */
+export function capToBudget(text: string, cap: number): string {
+  const sentences = text.trim().split(/(?<=[.!?]["'’”)]?)\s+/).filter(Boolean)
+  const budget = new ReplyBudget(cap)
+  const kept: string[] = []
+  for (const sentence of sentences) {
+    kept.push(sentence)
+    if (budget.spend(sentence)) break
+  }
+  return kept.join(' ')
+}
+
 export interface AlignmentChunk {
   characters: string[]
   /** Seconds from the start of this clip. */

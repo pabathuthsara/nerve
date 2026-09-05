@@ -611,6 +611,7 @@ export type Database = {
           pipeline_telemetry: Json | null
           audio_expires_at: string | null
           audio_path: string | null
+          character_breaks: Json | null
           created_at: string
           decision_warmth: number | null
           duration_s: number | null
@@ -635,6 +636,7 @@ export type Database = {
           pipeline_telemetry?: Json | null
           audio_expires_at?: string | null
           audio_path?: string | null
+          character_breaks?: Json | null
           created_at?: string
           decision_warmth?: number | null
           duration_s?: number | null
@@ -659,6 +661,7 @@ export type Database = {
           pipeline_telemetry?: Json | null
           audio_expires_at?: string | null
           audio_path?: string | null
+          character_breaks?: Json | null
           created_at?: string
           decision_warmth?: number | null
           duration_s?: number | null

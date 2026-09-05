@@ -599,6 +599,34 @@ are null and stay null.
 counts — a handful of anything across three minutes is a conversation with some
 barge-in in it, not a fault.
 
+## `sessions.character_breaks` — what the drift alarm caught, kept
+
+§05's countermeasure 3 has run inside the live rep since the pipeline shipped
+and thrown its findings away. A break fired the compressed identity reminder
+into the model and was recorded nowhere, so "she drifts into assistant register"
+was only ever arguable by reading transcripts by hand — which is exactly how the
+5 September verbosity finding had to be reached.
+
+`sessions.character_breaks` is a nullable jsonb array of what `StabilityMeter`
+detected during the rep: `rule`, `severity`, `at`, the matched text and the
+excerpt. Capped at sixty entries per rep, because a rep that breaks on every
+turn is a bug report rather than a record. Service-role written like the rest of
+the row and read-only to its owner under the existing policies.
+
+Nullable **and** written on a clean rep, the same rule `pipeline_incidents`
+follows and for the same reason: an empty array and a null mean different
+things, and "she never broke frame" has to stay distinguishable from "nothing
+was measured". Rows written before the column existed are null and stay null.
+
+Deliberately **not** folded into `pipeline_incidents`. That column is what the
+TRANSPORT did to a rep; this is what the CHARACTER did, and the two are read for
+different questions. Rows written before the column existed are null.
+
+Note that a break no longer implies a reminder was sent. `warrantsReinforcement`
+splits identity breaks from band violations: `verbosity` and `question-every-turn`
+are still detected, counted and stored, and no longer answered by re-injecting a
+paragraph about staying in character. See `docs/PERSONA-AUDIT.md` §12.
+
 ## A rule change that invalidated stored rows
 
 `sessions.won` is decided by the meter — armed at `ARM_THRESHOLD`, still willing

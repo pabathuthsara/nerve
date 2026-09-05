@@ -53,11 +53,12 @@ import { MicCapture } from './capture'
 import { VadDetector, frameRms } from './vad'
 import { RealtimeTranscriber, type TranscriptionTiming } from './stt'
 import { composeSteering } from '@/lib/warmth/steering'
+import { UNSTEERED_WORD_CAP, wordCapFor } from '@/lib/warmth/bands'
 import { LlmClient, historyFrom, stripSentinel, type LlmMessage } from './llm'
 import { TtsClient, shouldFlush } from './tts'
 import { TurnClient } from './turn'
 import { PcmPlayer } from './player'
-import { SpokenTurn } from './truncate'
+import { ReplyBudget, SpokenTurn } from './truncate'
 import { PipelineMeter } from './telemetry'
 import { PIPELINE_MODEL_ID, type MintedPipelineSession } from './mint'
 
@@ -114,6 +115,8 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   /** Warmth-band directives waiting for the next reply. */
   private pendingSteering: string[] = []
   private readReplyState: (() => { steering: string; warmth: number }) | null = null
+  /** This turn's reply ceiling. See `TurnRequest.wordCap`. */
+  private replyWordCap = UNSTEERED_WORD_CAP
   private interruptible = false
   /** Reported by the application. Never computed here. See `setWarmth`. */
   private warmth = 0
@@ -429,6 +432,11 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     const state = this.readReplyState?.()
     if (state) this.setWarmth(state.warmth)
     const direction = state?.steering ?? composeSteering({ persona, warmth: this.warmth })
+    // An empty direction is the closing hand-over: the band has stood down for
+    // this turn so that the decision arrives alone, and a turn with no band
+    // rule must not be held to a band ceiling — that would truncate the number
+    // offer, which is naturally two or three sentences. Rule 3.
+    this.replyWordCap = direction.trim() ? wordCapFor(this.warmth) : UNSTEERED_WORD_CAP
     // Scene, safety and closing instructions remain one-shot and take priority.
     const steering = [direction, ...this.pendingSteering].filter(Boolean).join(' ')
     this.pendingSteering = []
@@ -494,6 +502,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       history: this.historyForModel(),
       steering,
       warmth: this.warmth,
+      wordCap: this.replyWordCap,
     }, {
       onClip: (id, text) => {
         if (!this.isCurrentResponse(spoken, abort)) return
@@ -551,6 +560,13 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     const startedMs = this.clock()
     let pending = ''
     let firstTokenSeen = false
+    // The band's ceiling, same rule as the combined turn. Here it stops
+    // SYNTHESIS rather than generation: this path reads `result.aborted` as
+    // "throw the turn away", so cancelling the stream would discard what she
+    // has already said. The remaining tokens are paid for and dropped, which
+    // is acceptable on a compatibility path that no current client mints.
+    const budget = new ReplyBudget(this.replyWordCap)
+    let capped = false
     const result = await this.llmClient.stream(
       { personaId: this.persona!.slug, history: this.historyForModel(), steering },
       {
@@ -565,7 +581,9 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
           const speakable = stripSentinel(pending)
           if (shouldFlush(speakable, false)) {
             pending = ''
+            if (capped) return
             this.enqueueSynthesis(speakable, spoken)
+            capped = budget.spend(speakable)
           }
         },
         onUsage: (usage) => this.meter?.addLlmTokens(usage),
@@ -575,7 +593,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     if (result.aborted || !this.isCurrentResponse(spoken, abort)) return { exit: false, aborted: true }
     if (firstTokenSeen) this.meter?.record('llmCompleteMs', this.clock() - startedMs)
     const tail = stripSentinel(pending)
-    if (tail) this.enqueueSynthesis(tail, spoken)
+    if (tail && !capped) this.enqueueSynthesis(tail, spoken)
     return result
   }
 

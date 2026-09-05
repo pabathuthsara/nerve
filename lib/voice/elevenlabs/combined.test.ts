@@ -234,6 +234,144 @@ describe('combined HTTP voice stream', () => {
   })
 })
 
+describe('the band ceiling, enforced rather than stated', () => {
+  // `lib/warmth/bands.ts` is the argument. Every cap in that table was authored
+  // against a speech-to-speech model that ran at half of what it was allowed;
+  // the text model writes to whatever number it is given and then climbs,
+  // because its own replies come back as the conversation. So the ceiling stops
+  // generation here, at a sentence boundary she chose.
+
+  const spokenBy = async (over: TurnRequest, ...sentences: string[]) => {
+    const spoken: string[] = []
+    const { response, finished } = createCombinedTurn(over, {}, new AbortController().signal, {
+      llm: async () => new Response(sentences.map(delta).join('') + receipt()),
+      tts: async (request) => { spoken.push(((await request.json()) as { text: string }).text); return synthesis() },
+    })
+    const body = await response.text()
+    await finished
+    return { spoken, events: eventsFrom(body) }
+  }
+
+  it('drops the sentences past the ceiling and keeps the one that reached it', async () => {
+    // warmth 30 is GUARDED: ten words at the very most.
+    const { spoken } = await spokenBy(
+      { ...input, warmth: 30 },
+      'Just waiting on this machine. ',
+      'It has been a long morning. ',
+      'What about you, then? ',
+      'I do like this one. ',
+    )
+    expect(spoken).toHaveLength(2)
+    expect(spoken.join(' ')).toContain('Just waiting on this machine.')
+    expect(spoken.join(' ')).toContain('It has been a long morning.')
+    expect(spoken.join(' ')).not.toContain('What about you')
+    expect(spoken.join(' ')).not.toContain('I do like this one')
+  })
+
+  it('never cuts mid-sentence, however far past the ceiling one sentence runs', async () => {
+    const long = 'It has been an unusually long and complicated morning in here for a Tuesday, honestly. '
+    const { spoken } = await spokenBy({ ...input, warmth: 30 }, long, 'And you? ')
+    expect(spoken).toHaveLength(1)
+    // Whole, not clipped. A cut mid-clause is worse than a long reply.
+    expect(spoken[0]).toContain('honestly.')
+    expect(spoken.join(' ')).not.toContain('And you?')
+  })
+
+  it('gives a warmer band more room, off the same table', async () => {
+    const sentences = ['Just waiting on this machine. ', 'It has been a long morning. ', 'What about you, then? ']
+    const guarded = await spokenBy({ ...input, warmth: 30 }, ...sentences)
+    const invested = await spokenBy({ ...input, warmth: 85 }, ...sentences)
+    expect(invested.spoken.length).toBeGreaterThan(guarded.spoken.length)
+  })
+
+  it('still completes the turn, and records what it cost her', async () => {
+    const settled = vi.fn()
+    const { response, finished } = createCombinedTurn({ ...input, warmth: 30 }, {}, new AbortController().signal, {
+      llm: async () => new Response(
+        delta('Just waiting on this machine. ') + delta('It has been a long morning. ') + delta('And you? ') + receipt(),
+      ),
+      tts: async () => synthesis(), onComplete: settled,
+    })
+    const events = eventsFrom(await response.text())
+    await finished
+    // Capping is not an error and not an abort. She said something; the turn
+    // finished; the browser must be able to commit it.
+    expect(events).toContainEqual(expect.objectContaining({ type: 'done' }))
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'completed',
+      metadata: expect.objectContaining({ capped: true, wordCap: 10 }),
+    }))
+  })
+
+  it('does not hold the closing turn to a band it was not given', async () => {
+    // `handOverToClosing` stands the directive down so the number offer arrives
+    // alone, and that offer is naturally two or three sentences. Enforcing the
+    // band's fourteen words on it would drop the goodbye, or the offer. Rule 3.
+    const { spoken } = await spokenBy(
+      { ...input, warmth: 70, steering: null, wordCap: 40 },
+      'Alright, I will make it easy. ',
+      'I will give you mine before I go. ',
+      'You will just have to actually use it. ',
+    )
+    expect(spoken.join(' ')).toContain('give you mine')
+    expect(spoken.join(' ')).toContain('actually use it')
+  })
+
+  it('clamps a supplied ceiling and falls back to the band when none is sent', async () => {
+    expect((await parseTurnRequest(new Request('http://x', {
+      method: 'POST', body: JSON.stringify({ ...input, wordCap: 9_000 }),
+    })))?.wordCap).toBe(40)
+    expect((await parseTurnRequest(new Request('http://x', {
+      method: 'POST', body: JSON.stringify({ ...input, wordCap: -3 }),
+    })))?.wordCap).toBe(1)
+    // Absent stays absent, so the turn can tell it apart from a ceiling of one.
+    const { wordCap, ...withoutCap } = { ...input, wordCap: 1 }
+    void wordCap
+    expect((await parseTurnRequest(new Request('http://x', {
+      method: 'POST', body: JSON.stringify(withoutCap),
+    })))?.wordCap).toBeUndefined()
+  })
+
+  it('settles a capped turn on its real cost, not on its reservation', async () => {
+    // THE REGRESSION THAT ENDED A REP. Cancelling the model stream at the
+    // ceiling loses the usage receipt, which OpenAI sends as the last frame.
+    // An unknown cost keeps the conservative reservation, so three capped turns
+    // were billed at twelve times what they cost, put $0.149 of a $0.20 session
+    // budget on the meter, and ended the rep at 126 seconds of 180 with a
+    // budget refusal. The tail is drained instead.
+    const settled = vi.fn()
+    const { response, finished } = createCombinedTurn({ ...input, warmth: 30 }, {}, new AbortController().signal, {
+      llm: async () => new Response(
+        delta('Just waiting on this machine. ') + delta('It has been a long morning. ')
+        + delta('And you, then? ') + receipt(),
+      ),
+      tts: async () => synthesis(), onComplete: settled,
+    })
+    await response.text()
+    await finished
+    const accounting = settled.mock.calls[0]![0] as { costUsd: number | null; usage: { llm: unknown } }
+    expect(accounting.usage.llm).toEqual({ input: 1_000, output: 20, cachedInput: 800 })
+    expect(accounting.costUsd).not.toBeNull()
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ capped: true }),
+    }))
+  })
+
+  it('leaves an obedient reply alone', async () => {
+    const settled = vi.fn()
+    const { response, finished } = createCombinedTurn({ ...input, warmth: 30 }, {}, new AbortController().signal, {
+      llm: async () => new Response(delta('Waiting on the machine.') + receipt()),
+      tts: async () => synthesis(), onComplete: settled,
+    })
+    await response.text()
+    await finished
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ capped: false }),
+    }))
+  })
+})
+
 describe('turn admission and usage', () => {
   it('refuses oversized request bodies and client system prompts', async () => {
     const request = (body: unknown) => new Request('https://nerve.test', { method: 'POST', body: JSON.stringify(body) })

@@ -20,8 +20,14 @@
  *     route mints — persona, mood roll, derived block, absolute rules
  *   · warmth moves through the real `WarmthSession`, so the fast scorer, the
  *     temperament weighting, the affect axes and the posture are all live
- *   · the bracketed direction is `directiveIfChanged()`, injected only when it
- *     actually changes plus the heartbeat, exactly as the live session does
+ *   · the bracketed direction is `statelessDirective()` — the band on every
+ *     turn, the standing orders only when the direction is genuinely new,
+ *     which is the cadence the shipping ElevenLabs arm actually runs. It drove
+ *     `directiveIfChanged()` until 5 September, so its numbers described the
+ *     retained-instruction path no customer is on (PERSONA-AUDIT §11, "Owed")
+ *   · her reply is trimmed by `capToBudget` at the band's ceiling, the same
+ *     rule the live turn enforces by stopping generation. Without it the
+ *     harness reports over-cap turns a customer would never hear
  *   · scene beats fire off the rep clock through `dueSceneBeat`
  *   · her turns go through `StabilityMeter`, at HER verbosity ceiling
  *
@@ -47,7 +53,8 @@ import { loadEnvLocal } from './env'
 import { getPersonaEverAuthored } from '../lib/personas'
 import { compileInstructions } from '../lib/voice/openai/persona'
 import { WarmthSession } from '../lib/warmth/session'
-import { bandFor } from '../lib/warmth/bands'
+import { bandFor, wordCapFor } from '../lib/warmth/bands'
+import { capToBudget } from '../lib/voice/elevenlabs/truncate'
 import { chatApiKey, completeChat, type ChatMessage } from '../lib/voice/chat'
 import { StabilityMeter, DEFAULT_VERBOSITY_MEDIAN } from '../lib/metrics/stability'
 import { dueSceneBeat, DATING_DURATION_MS, ARM_THRESHOLD } from '../lib/data/rep-rules'
@@ -107,6 +114,8 @@ interface RepResult {
   drifts: number
   breakDetail: string[]
   distinctDirectives: number
+  /** Turns the band ceiling trimmed. See `capToBudget`. */
+  cappedTurns: number
 }
 
 function words(text: string): number {
@@ -172,6 +181,9 @@ async function runRep(
   const breakDetail: string[] = []
   let peak = session.engine.warmth
   let beatsFired = 0
+  /** Turns the band ceiling actually trimmed. High is not a fault; it is the
+   *  gap between what she wants to say and what the band allows. */
+  let capped = 0
 
   for (let turn = 0; turn < MAX_TURNS; turn += 1) {
     // ── his turn ────────────────────────────────────────────────────────
@@ -208,9 +220,9 @@ async function runRep(
     peak = Math.max(peak, warmth)
     bands.push(bandFor(warmth))
 
-    // ── what she is told, if it changed ─────────────────────────────────
+    // ── what she is told, on the shipping cadence ───────────────────────
     const steer: ChatMessage[] = []
-    const directive = session.directiveIfChanged()
+    const directive = session.statelessDirective()
     if (directive) {
       directives.add(directive)
       steer.push({ role: 'system', content: directive })
@@ -228,13 +240,18 @@ async function runRep(
     }
 
     // ── her turn ────────────────────────────────────────────────────────
-    const agentText = await say(
+    const generated = await say(
       CHARACTER_MODEL,
       [{ role: 'system', content: instructions }, ...history, ...steer],
       0.9,
       key,
     )
-    if (!agentText) return null
+    if (!generated) return null
+    // The live turn stops synthesising at the flush that reaches the ceiling.
+    // Applied here so the transcript she is fed back — and every number this
+    // harness prints — is what a customer would actually have heard.
+    const agentText = capToBudget(generated, wordCapFor(warmth))
+    if (agentText !== generated) capped += 1
 
     history.push({ role: 'assistant', content: agentText })
     agentTurns.push(agentText)
@@ -254,7 +271,8 @@ async function runRep(
     process.stdout.write(
       `\n  ${String(turn + 1).padStart(2)}  warmth ${warmth.toFixed(0)} ${bandFor(warmth)}\n`
         + `      HIM  ${userText}\n`
-        + `      HER  ${agentText}   [${words(agentText)}w]\n`,
+        + `      HER  ${agentText}   [${words(agentText)}w`
+        + `${agentText === generated ? '' : `, capped from ${words(generated)}w`}]\n`,
     )
     for (const line of steer) process.stdout.write(`      →    ${line.content}\n`)
   }
@@ -272,6 +290,7 @@ async function runRep(
     drifts: stats.drifts,
     breakDetail,
     distinctDirectives: directives.size,
+    cappedTurns: capped,
   }
 }
 
@@ -319,7 +338,8 @@ async function main(): Promise<void> {
       `  → final ${result.finalWarmth.toFixed(1)} · peak ${result.peakWarmth.toFixed(1)}`
         + ` · ${result.armed ? 'ARMED' : 'not armed'} · median ${result.medianAgentWords} words`
         + ` · ${result.breaks} breaks / ${result.drifts} drifts`
-        + ` · ${result.distinctDirectives} distinct directions\n`,
+        + ` · ${result.distinctDirectives} distinct directions`
+        + ` · ${result.cappedTurns}/${result.agentTurns.length} capped\n`,
     )
     for (const detail of result.breakDetail) console.log(`     ${detail}`)
   }
@@ -340,6 +360,13 @@ async function main(): Promise<void> {
   )
   console.log(
     `  distinct directions  ${median(results.map((r) => r.distinctDirectives))} per rep (median)`,
+  )
+  // How often what she wanted to say ran past what the band allows. Not a
+  // fault: it is the size of the gap the ceiling is closing, and it is the
+  // number to watch after a retune of `bands.ts`.
+  console.log(
+    `  capped by the band   ${results.reduce((sum, r) => sum + r.cappedTurns, 0)}`
+    + `/${results.reduce((sum, r) => sum + r.agentTurns.length, 0)} turns`,
   )
   console.log(`  breaks / 5 min       ${((totalBreaks / minutes) * 5).toFixed(2)}  (gate < 0.5)`)
   console.log(`  drifts               ${results.reduce((sum, r) => sum + r.drifts, 0)}`)

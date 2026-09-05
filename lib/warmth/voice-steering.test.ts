@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { bindVoiceSteering } from './voice-steering'
 import { STEER_HEARTBEAT_TURNS, WarmthSession } from './session'
 import { nadia } from '@/lib/personas/nadia'
+import { EXPRESSION_CLAUSE } from './steering'
 import type { VoiceProvider } from '@/lib/voice/provider'
 
 describe('shared customer and preview steering', () => {
@@ -60,6 +61,47 @@ describe('a directive for a provider that keeps nothing', () => {
     const band = fresh.slice(1, fresh.indexOf('.') + 1)
     expect(band.length).toBeGreaterThan(0)
     expect(repeat).toContain(band)
+    session.dispose()
+  })
+
+  it('rations EVERY standing order, not only the agenda', () => {
+    // PERSONA-AUDIT §11 rationed the want clause and left the invitations
+    // running before every reply. They fail the same way: a permission
+    // restated at maximum recency reads as an order, and one real 5 September
+    // line performed four of them at once — his name, a question about him, a
+    // new topic and the agenda.
+    //
+    // Warm enough that the band carries a permission AND three gates are open.
+    const persona = { ...nadia, trajectory: { ...nadia.trajectory, start: 62, startJitter: 0 } }
+    const session = sessionFor(persona)
+
+    const fresh = session.statelessDirective()
+    expect(fresh).toContain('Ask about him, tease him, swap names.')
+    expect(fresh).toMatch(/You may (?:start a topic|use his name|flirt)/)
+    expect(fresh).toContain('rather be')
+
+    const repeat = session.statelessDirective()
+    expect(repeat).not.toContain('Ask about him, tease him, swap names.')
+    expect(repeat).not.toMatch(/You may /)
+    expect(repeat).not.toContain('rather be')
+
+    // What is left is the half that describes how to respond rather than what
+    // to do: the length rule, the question rule, and her colour.
+    expect(repeat).toContain('at the very most')
+    expect(repeat).toContain(EXPRESSION_CLAUSE[persona.personality.expression])
+    session.dispose()
+  })
+
+  it('brings every standing order back together on the heartbeat', () => {
+    const persona = { ...nadia, trajectory: { ...nadia.trajectory, start: 62, startJitter: 0 } }
+    const session = sessionFor(persona)
+    session.statelessDirective()
+    for (let turn = 1; turn < STEER_HEARTBEAT_TURNS; turn += 1) {
+      expect(session.statelessDirective()).not.toMatch(/You may |Ask about him/)
+    }
+    const beat = session.statelessDirective()
+    expect(beat).toContain('Ask about him')
+    expect(beat).toMatch(/You may /)
     session.dispose()
   })
 

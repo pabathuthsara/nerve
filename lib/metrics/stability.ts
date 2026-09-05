@@ -6,6 +6,8 @@
  * uniform verbosity, repetition, and consecutive agent turns.
  */
 
+import { MAX_BAND_WORDS } from '@/lib/warmth/bands'
+
 export type BreakSeverity = 'break' | 'drift'
 
 export interface CharacterBreak {
@@ -31,26 +33,67 @@ export interface BreakDetectionOptions {
 }
 
 /**
+ * How far past the widest band a six-turn median may sit before the
+ * `verbosity` rule calls it drift.
+ *
+ * Three words, because the ceiling is enforced at a SENTENCE boundary
+ * (`ReplyBudget`) and a reply is therefore allowed to finish the clause that
+ * crosses it. A detector set at the band's own number would fire on that
+ * overshoot alone.
+ */
+export const VERBOSITY_MARGIN_WORDS = 3
+
+/**
  * The median agent reply length, across the last six turns, at which the
  * `verbosity` rule fires.
  *
- * 12 is the roster default and the number every M0 measurement was taken
- * against. It is a PROXY: it was authored when long turns were the symptom of
+ * DERIVED, and that is the fix. It was the literal 12 while the band table's
+ * widest reply was 15, so it fired continuously on a character who was obeying
+ * the direction she had been given — and in production `lib/data/rep.ts`
+ * answered every break by injecting the identity reminder, 309 characters that
+ * never mention brevity and that measurably made her longer. An alarm tuned
+ * below the rules is not an alarm, it is a feedback loop.
+ *
+ * `docs/README.md` has said for some time that the word caps in `bands.ts` and
+ * this rule are one change. Reading it off `MAX_BAND_WORDS` makes them one
+ * change by construction rather than by discipline.
+ *
+ * It stays a PROXY: it was authored when long turns were the symptom of
  * assistant register — structured advice, menus, recaps — and the phrase rules
  * plus `BANNED_REGISTER` now detect that register directly.
  *
- * It has to be per-character because a band table can be (PERSONA-AUDIT §3.7).
- * Tess's warm bands permit two sentences, deliberately, and measuring her
- * against Nadia's ceiling would report the fix as the fault: a warmer, more
- * human character read as a broken one, counted against the < 0.5 breaks per
- * five minutes gate.
+ * It also stays per-character overridable, because a band table can be
+ * (PERSONA-AUDIT §3.7). Tess's warm bands permit two sentences, deliberately,
+ * and measuring her against Nadia's ceiling would report the fix as the fault.
  *
  * The right long-term rule asserts that she OBEYED THE DIRECTION SHE WAS
  * GIVEN rather than that she was short, which needs the band at the detector
  * and is a bigger change than this. Until then, a character with her own band
  * table brings her own ceiling.
  */
-export const DEFAULT_VERBOSITY_MEDIAN = 12
+export const DEFAULT_VERBOSITY_MEDIAN = MAX_BAND_WORDS + VERBOSITY_MARGIN_WORDS
+
+/**
+ * The rules that mean SHE HAS STOPPED BEING THE CHARACTER, as opposed to the
+ * ones that mean she overran the direction she was given.
+ *
+ * Only these may trigger the compressed identity reminder. `verbosity` and
+ * `question-every-turn` are band violations: length is owned by the band and
+ * now enforced in code, and the question quota is counted by `WarmthSession`
+ * and carried on the next directive as `suppressQuestion`. Answering either of
+ * them with a paragraph about staying in character is a category error, and a
+ * measured one — the reminder makes her longer, so a length break was firing
+ * the thing that lengthened her.
+ *
+ * They are still detected, still counted, and still recorded. They just no
+ * longer talk to the model.
+ */
+const BAND_RULES = new Set(['verbosity', 'question-every-turn'])
+
+/** True when this break is about her identity rather than about her band. */
+export function warrantsReinforcement(hit: CharacterBreak): boolean {
+  return hit.severity === 'break' && !BAND_RULES.has(hit.rule)
+}
 
 const PHRASE_RULES: Rule[] = [
   {
@@ -229,7 +272,7 @@ export interface StabilityStats {
 }
 
 export interface StabilityMeterOptions extends BreakDetectionOptions {
-  /** See `DEFAULT_VERBOSITY_MEDIAN`. Omitted keeps the roster default of 12. */
+  /** See `DEFAULT_VERBOSITY_MEDIAN`. Omitted keeps the roster default. */
   verbosityMedian?: number
 }
 

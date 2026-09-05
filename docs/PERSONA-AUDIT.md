@@ -932,3 +932,181 @@ warm now answer at identical speed. Restoring the differential costs up to
 700 ms on cold turns and nothing on warm ones — `replyDelayMs` is already 0 at
 warmth 60 and above. That is a product decision about latency, not a defect to
 tidy, and it is the only one of the four findings that is not free.
+
+---
+
+## 12. She was obeying — the ceiling was the target (5 September, later still)
+
+§11 is right and incomplete. It found one clause arriving before every reply and
+rationed that clause. The same argument applies to three more things, and
+underneath all of them is a measurement §11 did not take.
+
+### What the production rows actually say
+
+Read across every stored rep, agent turns only, the ElevenLabs reps of
+5 September against all 51 realtime reps:
+
+| | realtime | ElevenLabs |
+|---|---:|---:|
+| reps / agent turns | 51 / 883 | 7 / 63 |
+| duration, median | 157 s | 166 s |
+| **agent turns per rep** | **18** | **12** |
+| peak warmth, median | 62.9 | 61.4 |
+| median words | 7 | 14 |
+| p90 words | 11 | 25 |
+| over twelve words | 5% | 62% |
+| three sentences or more | 1% | 48% |
+| turn contains "?" | 14% | 29% |
+| **first agent turn, median** | **4 w** | **12 w** |
+| first half → second half, median | 6 → 7 | 13 → 17.5 |
+| first half → second half, 3+ sentences | 0% → 2% | 30% → 67% |
+
+Two facts do the work.
+
+**She starts at three times the length, before any history exists.** The first
+agent turn has no conversation to dilute anything and no prior reply to imitate.
+Twelve words against a GUARDED cap that read "twelve words at most" is not
+drift; it is the number being met exactly. `npm run ab:llm` already said so and
+was read the other way round: 18 of 18 "clean" means 18 of 18 *at or under the
+cap*, and the cap was twelve.
+
+**Then it climbs, and the realtime arm does not.** Within a single rep, replies
+of three sentences or more go 30% → 67% on this arm and 0% → 2% on the other, at
+the same peak warmth, on the same band table. Her own turns come back as the
+conversation on the next request, so each reply is the next reply's example of
+how Nadia talks, and nothing pulls the other way.
+
+Note also the two numbers that are not about length: **she gets twelve turns
+where the realtime arm got eighteen**, which is a third less practice per rep and
+is latency, not the prompt; and **peak warmth is the same**, so none of this is
+"she is warmer now".
+
+One correction to the record. The p90 of 32 quoted before this section included
+a transcript-assembly bug confined to the 4 September build, which stored some
+turns two or four times over — one line is in the database verbatim four times,
+and one turn is the string `"[playful"`. Excluding self-repeating turns the p90
+is 25. The bug is gone; the inflation was in the argument.
+
+### What was wrong, and what landed
+
+**1. The band table was calibrated against a model that ignored it downward.**
+Every number in `bands.ts` was authored for speech-to-speech, which ran at half
+of whatever it was allowed — p90 11 against caps of 12 to 15. A text model
+writes to the number. So each band now states a **typical first and a ceiling
+second**, and both moved down: 3/6, 4/8, 6/10, 7/12, 8/14, 9/15 for
+HOSTILE→INVESTED. `typicalWords` and `maxWords` are fields, the prose has to
+name both in that order, and a test walks the table asserting it.
+
+**2. Every optional permission was a standing order.** §11 rationed the want
+clause and left the rest running before every reply: the band's own invitation
+("You may volunteer one small thing", "Ask about him, tease him, swap names")
+and the gate clauses ("You may start a topic", "You may use his name"). They
+compose. One real line from that day —
+
+> "Claudia, fiction, huh? What kind? Light stuff or dark? I'm only halfway
+> through this one."
+
+— is his name, a question about him, a new topic and the agenda: four
+permissions performed at once, every one of them obeyed. `permission` is split
+out of `directive`, and `SteeringContext.includeStanding` replaces
+`includeWant`, governing the band permission, the want and the gates together.
+On a turn where the direction is genuinely new she gets all of it; on the turns
+between she gets the length rule, the question rule and her colour, and nothing
+to do.
+
+**3. The ceiling was stated and never enforced.** `ReplyBudget` in
+`lib/voice/elevenlabs/truncate.ts` now stops the turn at the first sentence
+boundary at or past `wordCapFor(warmth)`. Two rules make it safe: never
+mid-sentence (generation is already flushed sentence by sentence, so the stop
+lands on a boundary she chose), and always at least one sentence (the first
+flush is spent before the budget can refuse anything). It runs on its own abort
+controller so reaching the ceiling stops GENERATION without aborting synthesis
+already in flight — a capped turn settles `completed`, not `aborted`, and the
+operation record carries `wordCap`, `spokenWords` and `capped`. This is also the
+thing that starves the ratchet: what she is fed back is the short version.
+
+**4. The drift alarm was tuned below the rules and answered with the wrong
+thing.** `DEFAULT_VERBOSITY_MEDIAN` was the literal 12 while the widest band
+allowed 15, so it fired continuously on a character who was obeying — and
+`lib/data/rep.ts` answered *any* break by injecting `compileReinforcement`, 309
+characters that never mention brevity and that measurably make her longer. A
+length alarm was firing the thing that lengthened her. The ceiling is now
+`MAX_BAND_WORDS + VERBOSITY_MARGIN_WORDS`, read off the band table so the two
+cannot drift apart, and `warrantsReinforcement` splits identity breaks from band
+violations: `verbosity` and `question-every-turn` are detected, counted and
+stored, and no longer talk to the model.
+
+**5. The two arms were not running identical prose.** The ElevenLabs compiler
+appended a second copy of `BANNED_REGISTER` under "# Never" on top of the copy
+`compileInstructions` already emits under "# Absolute rules" — the same twelve
+prohibitions twice, about 1,100 characters, on the shipping arm only. §04 says a
+difference in the A/B must be a difference in voice and not in writing. Deleted;
+a test asserts each banned line appears exactly once and that the realtime
+contract is still a prefix of this one. Nadia's compiled prompt: 9,988 → 8,926
+characters.
+
+**6. Nothing recorded what the alarm caught.** `sessions.character_breaks`, one
+migration, capped at sixty per rep. See `DATA.md`.
+
+### The instrument
+
+`npm run rep:audition` drove `directiveIfChanged()`, so it auditioned the
+retained-instruction path while production ran the stateless one — the item §11
+recorded as owed. It now drives `statelessDirective()` and trims her reply with
+`capToBudget` at the band's ceiling, the same rule the live turn enforces by
+stopping generation, so what it prints is what a customer would have heard. It
+reports `capped by the band` per run: not a fault, but the size of the gap the
+ceiling is closing, and the number to watch after any retune of `bands.ts`.
+
+### Verification
+
+1,429 tests across 85 files, `tsc`, `eslint`, a production build into
+`.next-check`, and `db:verify`, `db:rep`, `db:field`, `db:spend`, `db:billing`
+all pass. The legacy admin bench keeps its three pre-existing raw-link lint
+errors and five warnings, unchanged by this work.
+
+### The first live rep on the new build (5 September, 17:08 UTC)
+
+One rep against Nadia, on localhost, on this code. The behaviour landed:
+
+| | realtime | ElevenLabs, before | this rep |
+|---|---:|---:|---:|
+| first agent turn | 4 w | 12 w | **6 w** |
+| median words | 7 | 14 | **8** |
+| longest turn | p90 11 | p90 25 | **12 w** |
+| three sentences or more | 1% | 48% | **9%** (1 of 11) |
+| turns over the band's cap | 5% | 62% | **9%** (1 of 11) |
+
+The ceiling fired on three turns and every one of them is in the transcript
+whole. Nothing was cut mid-sentence.
+
+**Two faults it also exposed, both now fixed.**
+
+**The rep ended at 126 seconds of 180 with a budget refusal, and that was this
+change's fault.** Cancelling the model stream at the ceiling loses the usage
+receipt, which OpenAI sends as the last frame of the stream. An unknown cost
+keeps the whole conservative reservation, so the three capped turns settled at
+$0.0358 each against an actual cost of about $0.003 — twelve times over. That
+put $0.149 of a $0.20 session budget on the meter, and the next turn's
+reservation was refused before either provider was called. What cancelling saved
+was the tail of a 120-token ceiling, a hundredth of a cent. The remaining tokens
+are now read and thrown away, and `combined.test.ts` pins it.
+
+**`lib/data/rep.ts` never called `StabilityMeter.observeUser`.** The admin bench
+always has; the customer rep never did, so `lastSpeaker` stayed `'agent'` for the
+life of a rep and `double-turn` — "two agent turns without a user turn" — fired
+on every reply she gave after her first. Ten of them in this rep. `double-turn`
+is a genuine identity break, so `warrantsReinforcement` passes it, which means
+the 309-character identity reminder was being injected before every single
+reply: the exact feedback loop this section fixed for verbosity, reached through
+a different rule and predating it by longer. One missing call, invisible until
+breaks started being stored — which is the argument for storing them.
+
+### The honest limit
+
+The before rests on 7 ElevenLabs reps against 51 realtime ones; the after rests
+on one rep. The direction is unambiguous — median 14 → 8, three-sentence turns
+48% → 9%, first line 12 → 6 — but one rep is one rep, it was cut short at 126
+seconds by the billing fault above, and warmth never left GUARDED and OPEN, so
+the ENGAGED and INVESTED bands have still never been exercised by a live
+conversation. Neither `npm run rep:audition` nor a deployment has been run.

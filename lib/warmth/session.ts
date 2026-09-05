@@ -177,15 +177,19 @@ export class WarmthSession {
    * band rule at all, and the band is the only thing that owns reply length.
    * That is round 6 again, reached from the opposite direction.
    *
-   * So the line always ships. What is rationed instead is the one clause that
-   * reads as an instruction to act rather than a description of how to
-   * respond. On a turn where the direction is genuinely new — it changed, or
-   * the heartbeat came due — she is reminded of her own agenda. On the turns
-   * between she keeps the band, the posture and the colour, and is not told
-   * again, immediately before speaking, that she would rather be elsewhere.
+   * So the line always ships. What is rationed instead is every clause that
+   * reads as an instruction to ACT rather than a description of how to
+   * respond — her agenda, the band's own invitation, and the gates she has
+   * earned. On a turn where the direction is genuinely new — it changed, or the
+   * heartbeat came due — she gets all of it. On the turns between she keeps the
+   * band, the posture and the colour, and is not told again, immediately before
+   * speaking, to volunteer something, start a topic, use his name and get back
+   * to her book.
    *
-   * The throttle used to do this for free. On a stateless provider it has to
-   * be done on purpose. See `SteeringContext.includeWant`.
+   * PERSONA-AUDIT §11 rationed the agenda and left the rest running every turn.
+   * They fail the same way and for the same reason, so they now ride the same
+   * cadence. The throttle used to supply it for free; on a stateless provider it
+   * has to be done on purpose. See `SteeringContext.includeStanding`.
    */
   statelessDirective(): string {
     if (this.consumeClosingHandover()) return ''
@@ -197,7 +201,7 @@ export class WarmthSession {
       suppressQuestion: this.questionQuotaSpent(),
       posture: this.engine.posture,
       repairOpen: this.engine.repairOpen,
-      includeWant: false,
+      includeStanding: false,
     })
   }
 

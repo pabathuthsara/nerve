@@ -29,9 +29,44 @@
  * syllables. A cold band now withholds the things coldness actually withholds —
  * curiosity, volunteering, softening, follow-ups — while leaving her enough
  * words to sound like a person who simply is not interested. The caps still
- * climb monotonically across the ladder, and the WARM bands are untouched,
- * because those were tuned against real reps and the round-6 failure lives at
- * that end.
+ * climb monotonically across the ladder.
+ *
+ * ## A CEILING IS NOT A TARGET, AND THIS TABLE USED TO ASSUME IT WAS
+ *
+ * Every number here was authored against a speech-to-speech model, which ran
+ * at roughly half of whatever it was allowed: measured across 51 realtime reps,
+ * median agent turn 7 words, p90 11, 5% over twelve, 1% of turns three
+ * sentences or more. The cap was a guardrail nobody touched, and her brevity
+ * came from the medium.
+ *
+ * The writer on the shipping arm is a text model, and a text model reads
+ * "twelve words at most" as a specification and delivers eleven. Measured
+ * across the ElevenLabs reps of 5 September: median 14, p90 25, 62% over
+ * twelve, 48% three sentences or more — and her FIRST line, before any
+ * conversation exists to dilute anything, went from 4 words to 12. That is not
+ * drift. That is the number being met exactly.
+ *
+ * So each band now states a TYPICAL first and a ceiling second. The typical is
+ * what she is being asked to write; the ceiling is what `maxWords` enforces in
+ * code (see `wordCapFor`), because a stated maximum that is only ever hoped for
+ * is not a maximum. Both numbers moved down, and the ceiling is the smaller
+ * change of the two — the target is what she actually obeys.
+ *
+ * ## PERMISSION IS NOT LENGTH, AND IT IS RATIONED SEPARATELY
+ *
+ * The warm bands used to carry their invitations inside the directive itself —
+ * "You may volunteer one small thing", "Ask about him, tease him, swap names".
+ * On a provider that retains instructions those arrive a handful of times in a
+ * rep. On a stateless one they are re-issued immediately before every single
+ * reply, at maximum recency, and a permission restated that often stops reading
+ * as "you may" and starts reading as "do this now" — the same failure
+ * PERSONA-AUDIT §11 found in the want clause and fixed for that clause alone.
+ * One real line carried four of them at once.
+ *
+ * `permission` is therefore split out of `directive`. The directive — length
+ * and the question rule — ships on every turn, because nothing else owns reply
+ * length. The permission is a standing order and rides the same cadence as the
+ * agenda and the gates. See `SteeringContext.includeStanding`.
  */
 
 export type WarmthBand =
@@ -54,7 +89,34 @@ export interface BandSpec {
    * see `bandFor`.
    */
   max: number
+  /**
+   * Length and the question rule. Ships on EVERY turn, on every arm, because
+   * nothing else owns reply length and a stateless request carries no memory
+   * of the last one.
+   */
   directive: string
+  /**
+   * What she is invited to do at this band, if anything.
+   *
+   * A standing order rather than a description of how to respond, so it is
+   * rationed with the agenda and the gates rather than restated before every
+   * reply. Absent in the cold bands, which invite nothing by definition.
+   */
+  permission?: string
+  /**
+   * What she is being asked to write, in words. The number the prose leads
+   * with, because that is the one a text model actually aims at.
+   */
+  typicalWords: number
+  /**
+   * The ceiling, in words, machine-readable.
+   *
+   * Stated in the prose AND enforced in code (`wordCapFor`), because the whole
+   * argument in this file's header is that a ceiling nobody enforces is a
+   * ceiling that becomes a target. `bands.test.ts` asserts the prose and this
+   * number cannot drift apart.
+   */
+  maxWords: number
 }
 
 /** The lowest warmth can go. Below zero she actively wants out. */
@@ -72,45 +134,75 @@ export const BANDS: readonly BandSpec[] = [
     band: 'HOSTILE',
     min: -20,
     max: -1,
+    typicalWords: 3,
+    maxWords: 6,
     directive:
-      'Under six words. You want this over. Do not ask anything, and do not soften it.',
+      'Three or four words. Six at the very most. You want this over. Do not ask anything, and do not soften it.',
   },
   {
     band: 'CLOSED',
     min: 0,
     max: 19,
+    typicalWords: 4,
+    maxWords: 8,
     directive:
-      'Four to ten words. Answer, then stop. Do not ask him anything, do not volunteer anything, and do not warm it up.',
+      'Four or five words. Eight at the very most. Answer, then stop. Do not ask him anything, do not volunteer anything, and do not warm it up.',
   },
   {
     band: 'GUARDED',
     min: 20,
     max: 39,
+    typicalWords: 6,
+    maxWords: 10,
     directive:
-      'One sentence, twelve words at most. Answer only what he asked. Do not ask him anything back.',
+      'One sentence, six or seven words. Ten at the very most. Answer only what he asked. Do not ask him anything back.',
   },
   {
     band: 'OPEN',
     min: 40,
     max: 59,
+    typicalWords: 7,
+    maxWords: 12,
     directive:
-      'One sentence, fourteen words at most. You may volunteer one small thing. Do not ask a question this turn unless he asked you one first.',
+      'One sentence, seven or eight words. Twelve at the very most. Do not ask a question this turn unless he asked you one first.',
+    permission: 'You may volunteer one small thing.',
   },
   {
     band: 'ENGAGED',
     min: 60,
     max: 79,
+    typicalWords: 8,
+    maxWords: 14,
     directive:
-      'Under fifteen words. Ask about him, tease him, swap names. No filler, no reassurance, never "take your time" or "no rush".',
+      'One sentence, eight or nine words. Fourteen at the very most. No filler, no reassurance, never "take your time" or "no rush".',
+    permission: 'Ask about him, tease him, swap names.',
   },
   {
     band: 'INVESTED',
     min: 80,
     max: 100,
+    typicalWords: 9,
+    maxWords: 15,
     directive:
-      'Under fifteen words. Start a topic or bring back something he said. Open to a concrete plan. No filler, never "take your time".',
+      'Nine or ten words. Fifteen at the very most. No filler, never "take your time".',
+    permission: 'Start a topic or bring back something he said. Open to a concrete plan.',
   },
 ]
+
+/**
+ * The widest reply any band permits.
+ *
+ * Read by `lib/metrics/stability.ts` so the drift detector cannot be set below
+ * the rules the character is actually being given — it was 12 against a table
+ * whose widest band was 15, so it fired continuously on a character who was
+ * behaving, and what it fired injected an identity reminder that measurably
+ * made her longer. The two are one setting and this is the seam that makes
+ * them one.
+ */
+export const MAX_BAND_WORDS: number = BANDS.reduce(
+  (widest, spec) => Math.max(widest, spec.maxWords),
+  0,
+)
 
 export const BAND_NAMES: readonly WarmthBand[] = BANDS.map((spec) => spec.band)
 
@@ -165,6 +257,13 @@ export interface DirectiveContext {
    * reached a question on 83% of turns.
    */
   suppressQuestion?: boolean
+  /**
+   * Whether the standing orders ride along this turn. Default true.
+   *
+   * The band's own `permission` is one of them. See the header, and
+   * `SteeringContext.includeStanding`, which is the switch the caller sets.
+   */
+  includeStanding?: boolean
 }
 
 /**
@@ -211,8 +310,52 @@ export function bandDirectiveParts(
   return parts
 }
 
+/**
+ * The band's invitation, when it has one and the caller is sending standing
+ * orders this turn. Separate from `bandDirectiveParts` because the two ride
+ * different cadences — see the header.
+ */
+export function bandPermissionParts(
+  warmth: number,
+  context: DirectiveContext = {},
+): string[] {
+  if (context.includeStanding === false) return []
+  const permission = specFor(bandFor(warmth)).permission
+  return permission ? [permission] : []
+}
+
+/**
+ * The ceiling this warmth allows, in words.
+ *
+ * Exported for the one place that enforces it rather than states it: the turn
+ * pipeline stops synthesising at the first sentence boundary past this number
+ * (`lib/voice/elevenlabs/combined.ts`). A cap that is only ever written down is
+ * the cap this file's header is an argument about.
+ */
+export function wordCapFor(warmth: number): number {
+  return specFor(bandFor(warmth)).maxWords
+}
+
+/**
+ * The ceiling for a turn the band is not steering.
+ *
+ * `WarmthSession.handOverToClosing` stands the whole directive down for exactly
+ * one turn, so that thirty seconds from the end she is told exactly one thing:
+ * wind down and leave, or wind down and offer him her number. Enforcing a band
+ * ceiling on that turn would enforce a rule she was not given, on the one
+ * moment the product is built around — and the number offer is naturally two or
+ * three sentences, so a fourteen-word cap could drop the goodbye or the offer
+ * itself. Rule 3.
+ *
+ * Generous rather than absent: a runaway still has to stop somewhere, and
+ * nothing she says in a closing line comes near forty words.
+ */
+export const UNSTEERED_WORD_CAP = 40
+
+/** The whole band, invitation included. The steering line composes the two
+ *  halves separately; this is for the engine's own read-out and for tests. */
 export function bandDirective(warmth: number, context: DirectiveContext = {}): string {
-  return `[${bandDirectiveParts(warmth, context).join(' ')}]`
+  return `[${[...bandDirectiveParts(warmth, context), ...bandPermissionParts(warmth, context)].join(' ')}]`
 }
 
 /** Bands whose directive does not already forbid questions. */

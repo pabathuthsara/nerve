@@ -7,6 +7,8 @@ import { ElevenLabsPersonaCompiler, deliveryFor } from './persona'
 import { EXIT_SENTINEL, LlmClient } from './llm'
 import { handleLlmRequest, handleTtsRequest, type PersonaOverlay } from './server'
 import { parseAlignment, shouldFlush } from './tts'
+import { ReplyBudget } from './truncate'
+import { UNSTEERED_WORD_CAP, wordCapFor } from '@/lib/warmth/bands'
 import { MAX_TURN_TTS_CHARACTERS, type TurnEvent, type TurnRequest } from './turn-protocol'
 import { proxiedRequestId } from '../request-id'
 
@@ -74,6 +76,12 @@ export async function parseTurnRequest(request: Request): Promise<TurnRequest | 
       sessionId: body.sessionId, turnId: body.turnId, personaId: body.personaId, history, steering,
       warmth: typeof body.warmth === 'number' && Number.isFinite(body.warmth)
         ? Math.max(0, Math.min(100, body.warmth)) : 0,
+      // Clamped into the range the warmth layer can actually ask for. Absent
+      // stays absent, so `createCombinedTurn` can tell "no ceiling supplied"
+      // from "a ceiling of one" and fall back to the warmth-derived number.
+      ...(typeof body.wordCap === 'number' && Number.isFinite(body.wordCap)
+        ? { wordCap: Math.round(Math.max(1, Math.min(UNSTEERED_WORD_CAP, body.wordCap))) }
+        : {}),
     }
   } catch { return null } finally { reader.releaseLock() }
 }
@@ -144,6 +152,11 @@ export function createCombinedTurn(
       const ttsRequestIds: string[] = []
       let status: TurnAccounting['status'] = 'completed'
       let failure: unknown = null
+      // The caller's ceiling when it sent one — only it knows whether the
+      // band is steering this turn. See `TurnRequest.wordCap`.
+      const wordCap = input.wordCap ?? wordCapFor(input.warmth)
+      const budget = new ReplyBudget(wordCap)
+      let capped = false
       const enqueue = (plainText: string) => {
         if (!plainText.trim()) return
         const clipId = String(clips++)
@@ -229,13 +242,34 @@ export function createCombinedTurn(
             if (shouldFlush(safe, false)) {
               // Preserve a trailing partial sentinel until a later delta finishes it.
               pending = pending.slice(safe.length)
+              // PAST THE CEILING: DRAIN, DO NOT CANCEL.
+              //
+              // The first cut of this cancelled the model stream here, which is
+              // the obvious thing and is wrong. OpenAI sends the usage receipt
+              // as the LAST frame of the stream, so a cancelled turn settles
+              // with an unknown cost — and an unknown cost keeps the whole
+              // conservative reservation. Measured on the first real rep: three
+              // capped turns billed at $0.0358 each against an actual $0.003,
+              // which put $0.149 of a $0.20 session budget on the meter and
+              // ended the rep at 126 seconds of 180 with a budget refusal.
+              //
+              // What cancelling actually saves is the tail of a 120-token
+              // ceiling — a hundredth of a cent. What it costs is twelve times
+              // the turn. So the remaining tokens are read and thrown away.
+              if (capped) return
               enqueue(safe)
+              // Spent AFTER the sentence goes out, so the first one is always
+              // free and no band can produce silence. See `ReplyBudget`.
+              capped = budget.spend(safe)
             }
           },
           onUsage: (usage) => { llmUsage = { input: usage.input, output: usage.output, cachedInput: usage.cachedInput ?? 0 } },
         }, abort.signal)
         emit({ type: 'timing', stage: 'llmCompleteMs', ms: now() - started })
-        if (!abort.signal.aborted) enqueue(safePending(pending))
+        // A capped turn's unflushed tail is the part she is not saying. It must
+        // not be synthesised and it must not reach the transcript, because the
+        // transcript is what comes back as history on the next turn.
+        if (!abort.signal.aborted && !capped) enqueue(safePending(pending))
         await chain
         if (failure) throw failure
         status = abort.signal.aborted ? 'aborted' : 'completed'
@@ -268,6 +302,7 @@ export function createCombinedTurn(
               deploymentUrl: process.env.VERCEL_URL ?? 'local',
               ttsModel: compiled.tts.model, llmModel: compiled.llm.model,
               llmRequestId, ttsRequestIds,
+              wordCap, spokenWords: budget.words, capped,
               ...timings,
             },
           }).catch(() => undefined) // A failed settlement leaves the server reservation held.

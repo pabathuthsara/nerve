@@ -22,7 +22,7 @@ describe('composition across the four layers', () => {
   it('always carries the band directive', () => {
     // Layer 1 reaches the character as a band and never as a number. She is
     // never told her difficulty, her trajectory, or that a meter exists.
-    expect(at(nadia, 10)).toContain('Four to ten words')
+    expect(at(nadia, 10)).toContain('Four or five words')
     expect(at(nadia, 45)).toContain('One sentence')
     expect(at(nadia, 70)).toContain('Ask about him')
   })
@@ -168,7 +168,7 @@ describe('composition across the four layers', () => {
     })
     expect(crowded.startsWith('[')).toBe(true)
     expect(crowded.endsWith(']')).toBe(true)
-    expect(crowded).toContain('Under fifteen words')
+    expect(crowded).toContain('Fourteen at the very most')
     // Every clause that survived is a whole sentence.
     const body = crowded.slice(1, -1)
     expect(body.trim().endsWith('.')).toBe(true)

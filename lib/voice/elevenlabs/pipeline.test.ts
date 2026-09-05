@@ -15,9 +15,11 @@ import { describe, expect, it } from 'vitest'
 import { stripDeliveryTags } from './persona'
 
 import { nadia } from '../../personas/nadia'
+import { BANNED_REGISTER, compileInstructions } from '../openai/persona'
+import { MAX_BAND_WORDS, UNSTEERED_WORD_CAP, specFor, wordCapFor } from '@/lib/warmth/bands'
 import { DEFAULT_CALIBRATION, resolveSilenceMs } from '../types'
 import { ElevenLabsPersonaCompiler, compileDeliveryTags, EXPRESSION_TAG } from './persona'
-import { SpokenTurn, proportionalPrefix, snapToWordBoundary } from './truncate'
+import { ReplyBudget, SpokenTurn, capToBudget, proportionalPrefix, snapToWordBoundary, spokenWordCount } from './truncate'
 import { VadDetector, frameRms } from './vad'
 import { PipelineMeter, CreditGuard } from './telemetry'
 import { shouldFlush, parseAlignment } from './tts'
@@ -604,5 +606,77 @@ describe('delivery tags never reach the transcript', () => {
   it('leaves an untagged line exactly alone', () => {
     expect(stripDeliveryTags('Not yet. It is a bit all over the place.'))
       .toBe('Not yet. It is a bit all over the place.')
+  })
+})
+
+describe('the compiled contract', () => {
+  it('states the banned register exactly once, the same as the realtime arm', () => {
+    // §04 wants "identical prose to the OpenAI arm, so a difference in the A/B
+    // is a difference in voice, not in writing". This compiler appended a
+    // second copy of BANNED_REGISTER under "# Never" on top of the copy
+    // `compileInstructions` already emits under "# Absolute rules" — about
+    // 1,100 characters of the same twelve prohibitions, on the shipping arm
+    // only. Thirty-six prohibitions and no demonstrations is also the wrong
+    // thing to double: it pushes a writer towards hedging, and hedging is
+    // words.
+    const compiled = new ElevenLabsPersonaCompiler({}).compile(nadia, DEFAULT_CALIBRATION)
+    for (const line of BANNED_REGISTER) {
+      expect(compiled.llm.systemPrompt.split(line).length - 1, line).toBe(1)
+    }
+    expect(compiled.llm.systemPrompt).not.toContain('# Never')
+    // And the realtime arm's contract is still a prefix of it, unchanged.
+    expect(compiled.llm.systemPrompt.startsWith(
+      compileInstructions(nadia, { canEndScene: false }),
+    )).toBe(true)
+  })
+})
+
+describe('the reply budget', () => {
+  it('spends the first sentence before it can refuse anything', () => {
+    // A band of four words must never produce silence: the flush that crosses
+    // the ceiling is the one that goes out.
+    const budget = new ReplyBudget(4)
+    expect(budget.spend('It has been a very long morning in here.')).toBe(true)
+    expect(budget.words).toBe(9)
+  })
+
+  it('stops on the sentence that reaches the ceiling, not before it', () => {
+    const budget = new ReplyBudget(10)
+    expect(budget.spend('Just waiting on this machine.')).toBe(false)
+    expect(budget.spend('It has been a long morning.')).toBe(true)
+  })
+
+  it('does not spend her budget on a delivery tag nobody hears', () => {
+    // The tag is prosody the vendor echoes back, and it is stripped before
+    // anything reaches the record. Counting it would shorten her by a word.
+    expect(spokenWordCount('[playful] Just waiting on this machine.')).toBe(5)
+    expect(spokenWordCount("Don't, isn't, o'clock")).toBe(3)
+  })
+
+  it('reaches the same answer on a reply that arrived whole', () => {
+    // The audition harness holds a finished reply; the pipeline never does.
+    // Both have to cut in the same place or the instrument measures a path
+    // nobody is on.
+    const reply = 'Just waiting on this machine. It has been a long morning. What about you, then?'
+    expect(capToBudget(reply, 10)).toBe('Just waiting on this machine. It has been a long morning.')
+    expect(capToBudget(reply, 30)).toBe(reply)
+    // One long sentence survives whole, exactly as the streaming path leaves it.
+    const long = 'It has been an unusually long and complicated morning in here for a Tuesday, honestly.'
+    expect(capToBudget(`${long} And you?`, 6)).toBe(long)
+  })
+
+  it('reads the same ceiling the band states', () => {
+    expect(wordCapFor(30)).toBe(specFor('GUARDED').maxWords)
+    expect(wordCapFor(85)).toBe(specFor('INVESTED').maxWords)
+    expect(wordCapFor(85)).toBeGreaterThan(wordCapFor(30))
+  })
+
+  it('leaves room for a turn the band is not steering', () => {
+    // The closing decision arrives with the directive stood down. A band
+    // number would truncate it; no number at all would leave a runaway
+    // unbounded. See `UNSTEERED_WORD_CAP`.
+    expect(UNSTEERED_WORD_CAP).toBeGreaterThan(MAX_BAND_WORDS * 2)
+    expect(capToBudget('I will give you mine before I go. You will just have to use it.',
+      UNSTEERED_WORD_CAP)).toContain('use it')
   })
 })

@@ -76,6 +76,7 @@ import {
   STABILITY_GATE_PER_5MIN,
   StabilityMeter,
   stabilityVerdict,
+  warrantsReinforcement,
   type CharacterBreak,
   type StabilityStats,
 } from '@/lib/metrics/stability'
@@ -368,9 +369,13 @@ export function RepClient({
       const hits = stabilityRef.current.observe(turn.text, turn.t_end)
       if (hits.length > 0) {
         setBreaks((prev) => [...prev, ...hits])
-        if (hits.some((h) => h.severity === 'break')) {
+        // Identity breaks only — see `warrantsReinforcement`. A band violation
+        // is still detected, counted and shown in the gate; it just does not
+        // answer with a paragraph that makes her longer.
+        const identity = hits.filter(warrantsReinforcement)
+        if (identity.length > 0) {
           voice.reinforce(compileReinforcement(persona, turnsRef.current))
-          note(`re-injected after break: ${hits.map((h) => h.rule).join(', ')}`)
+          note(`re-injected after break: ${identity.map((h) => h.rule).join(', ')}`)
         }
       }
     })

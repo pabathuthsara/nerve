@@ -414,3 +414,72 @@ commit. The four deployments before it went out from a dirty working tree
 carrying the SHA `9d7297f`, which contains none of the pipeline; `9e9a155`
 committed that tree unchanged and the git-linked build `dpl_3F8Ur99nDGC4iQdmm`
 replaced it on `www.hellonerve.com`.
+
+## The band ceiling, made true — 5 September, later still
+
+The steering repair above fixed the cadence of one clause. It did not touch the
+number, and the number was the larger half.
+
+Every word cap in `lib/warmth/bands.ts` was authored against a speech-to-speech
+model that ran at half of whatever it was allowed — measured across 51 realtime
+reps, median agent turn 7 words, p90 11, against caps of 12 to 15. On this arm
+the writer is `gpt-4.1-mini`, and a text model reads "twelve words at most" as a
+specification. Her first line, before any history exists to dilute anything,
+went from 4 words to 12. Then it climbs: within one rep, replies of three
+sentences or more go from 30% to 67% here and from 0% to 2% on the realtime arm,
+because her own turns come back as the conversation and become the example.
+
+Four changes, and the full argument with the measurements is
+`PERSONA-AUDIT.md` §12.
+
+| | Before | Now |
+| --- | --- | --- |
+| Band directive | a ceiling only | a typical first, the ceiling second, both lower |
+| Band invitation, gates | every turn | with the agenda, only when the direction is new |
+| The ceiling | stated | enforced — generation stops at the first sentence boundary at or past it |
+| Verbosity alarm | literal 12, fired the identity reminder | derived from the band table, no longer talks to the model |
+
+Three things about the enforcement matter operationally.
+
+**It stops generation, not the turn.** `ReplyBudget` runs on its own abort
+controller chained from the turn's, so reaching the ceiling cancels the LLM
+stream while synthesis already in flight completes. A capped turn emits `done`,
+never `error`, and settles `completed`, never `aborted` — the browser commits it
+like any other reply.
+
+**It never cuts mid-sentence and never returns nothing.** Generation is already
+flushed sentence by sentence (`shouldFlush`), so the stop lands on a boundary
+she chose, and the first flush is spent before the budget can refuse anything.
+A single long sentence still goes out whole: this is a ceiling on how much she
+piles on, not a shredder.
+
+**It is visible.** Each turn's operation record carries `wordCap`, `spokenWords`
+and `capped`. A cap firing on most turns means the band's typical is still above
+what the writer wants to produce, which is a `bands.ts` question and not a bug in
+this file. The legacy client path enforces the same ceiling by dropping the
+remaining clips rather than cancelling, because that path reads an aborted
+stream as "throw the turn away".
+
+`sessions.character_breaks` is new (one migration, `DATA.md`): the stability
+meter has run inside the live rep since this pipeline shipped and discarded
+everything it found.
+
+`npm run rep:audition` now drives `statelessDirective()` and trims with
+`capToBudget`, so it finally auditions the arm customers are on — the item §11
+recorded as owed. It spends money and is still run by hand.
+
+**One live rep on this code, and it found two faults.** The behaviour landed —
+median reply 14 → 8 words, three-sentence turns 48% → 9%, first line 12 → 6 —
+but the rep ended at 126 seconds of 180 with a budget refusal. Cancelling the
+model stream at the ceiling loses OpenAI's usage receipt, which is the last
+frame of the stream, and an unknown cost keeps the whole conservative
+reservation: three capped turns billed at $0.0358 against an actual $0.003, and
+$0.149 of a $0.20 session budget gone. **The ceiling now drains the remaining
+tokens instead of cancelling** — the tail of a 120-token ceiling is worth a
+hundredth of a cent and the receipt is worth twelve times the turn. Separately,
+`lib/data/rep.ts` had never called `StabilityMeter.observeUser`, so `double-turn`
+fired on every reply and the identity reminder was injected before every one of
+them. Both fixed; see `PERSONA-AUDIT.md` §12.
+
+Still not deployed, and one rep is one rep: warmth never left GUARDED and OPEN,
+so the two warmest bands remain untested against a live conversation.

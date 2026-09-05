@@ -29,7 +29,7 @@ import {
   type GateName,
   type Persona,
 } from '@/lib/voice/types'
-import { bandDirectiveParts, type DirectiveContext } from './bands'
+import { bandDirectiveParts, bandPermissionParts, type DirectiveContext } from './bands'
 import { postureClause, type Posture } from './affect'
 
 export interface SteeringContext extends DirectiveContext {
@@ -46,23 +46,33 @@ export interface SteeringContext extends DirectiveContext {
    */
   posture?: Posture
   /**
-   * Whether she is reminded of her own agenda on this turn. Default true.
+   * Whether the STANDING ORDERS ride along this turn. Default true.
    *
-   * A provider that retains conversation state gets this line a handful of
-   * times per rep, because the caller only sends it when it changes. A
-   * stateless provider has no such throttle: the directive is the LAST system
-   * message of every request, so an unconditional want clause is a fresh order
-   * to act on her agenda immediately before every single reply.
+   * A standing order is a clause that tells her to DO something — her agenda,
+   * the band's own invitation, and the gated behaviours she has earned. A
+   * provider that retains conversation state gets those a handful of times per
+   * rep, because the caller only sends the line when it changes. A stateless
+   * provider has no such throttle: the directive is the LAST system message of
+   * every request, so an unconditional standing order is a fresh instruction to
+   * act on it immediately before every single reply.
    *
-   * That is not the clause behaving differently, it is the clause arriving
-   * differently, and it shows: on the ElevenLabs HTTP pipeline Nadia's retreat
+   * That is not the clauses behaving differently, it is the clauses arriving
+   * differently, and it shows. On the ElevenLabs HTTP pipeline Nadia's retreat
    * to the shelf went from 17.4% of her turns to 45.8%, against a contract
-   * whose rule 4 says never to retreat to what she is focused on. The band
-   * directive still ships on every turn — nothing else owns reply length — and
-   * only the agenda is rationed back to the cadence it had when the throttle
-   * was doing it for free. See `WarmthSession.statelessDirective`.
+   * whose rule 4 says never to retreat to what she is focused on — that was the
+   * agenda, and PERSONA-AUDIT §11 rationed the agenda alone. The invitations
+   * were left running every turn, and they compose the same way: one real line
+   * from 5 September is "Claudia, fiction, huh? What kind? Light stuff or dark?
+   * I'm only halfway through this one." — his name, a question about him, a new
+   * topic and the agenda, four permissions performed at once, all of them
+   * obeyed.
+   *
+   * The band DIRECTIVE still ships on every turn — nothing else owns reply
+   * length and a stateless request carries no memory of the last one. Only the
+   * orders are rationed, back to the cadence the throttle used to supply for
+   * free. See `WarmthSession.statelessDirective`.
    */
-  includeWant?: boolean
+  includeStanding?: boolean
 }
 
 /**
@@ -96,25 +106,28 @@ export function composeSteering(context: SteeringContext): string {
   //   posture      what shape that takes. Only present when the axes disagree,
   //                so when it IS present it is the most informative line here.
   //   repair       rare, and expires in two turns. If it is dropped it is gone.
+  //   permission   the band's own invitation. A STANDING ORDER, so it is
+  //                rationed — see `includeStanding`. Placed here because it
+  //                qualifies the band it came off.
   //   want         the reason she is a person rather than a response. Above
   //                personality because a character with an agenda and no
   //                adjectives still reads as someone; a character with
-  //                adjectives and no agenda reads as a chatbot. Present on
-  //                every composed line unless the caller rations it — see
-  //                `includeWant`, which exists because "every composed line"
-  //                and "every reply" were the same thing only while delivery
-  //                was throttled.
-  //   personality  colour.
-  //   gates        permissions she will still have next turn.
+  //                adjectives and no agenda reads as a chatbot. A standing
+  //                order too, and rationed with the rest.
+  //   personality  colour. Never rationed: it describes how she sounds rather
+  //                than telling her to do anything, so repeating it is free.
+  //   gates        what she has earned. Standing orders, rationed.
+  const standing = context.includeStanding !== false
   return assemble([
     // Her own band table when she has one, the shared one otherwise. The band
     // still owns reply length either way — see `BandDirectives`.
     bandDirectiveParts(context.warmth, context, context.persona.bandDirectives),
     postureClauses(context),
     repairClauses(context),
-    context.includeWant === false ? [] : wantClauses(context.persona, context.warmth),
+    bandPermissionParts(context.warmth, context),
+    standing ? wantClauses(context.persona, context.warmth) : [],
     personalityClauses(context.persona, context.warmth),
-    gateClauses(context.persona, context.warmth),
+    standing ? gateClauses(context.persona, context.warmth) : [],
   ])
 }
 

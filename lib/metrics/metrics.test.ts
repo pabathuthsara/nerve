@@ -13,12 +13,16 @@ import {
 import { analyseCacheHealth } from './cache'
 import type { SessionUsage, UsageSample } from '@/lib/voice/types'
 import {
+  DEFAULT_VERBOSITY_MEDIAN,
   STABILITY_GATE_PER_5MIN,
   StabilityMeter,
+  VERBOSITY_MARGIN_WORDS,
   cosineSimilarity,
   detectBreaks,
   stabilityVerdict,
+  warrantsReinforcement,
 } from './stability'
+import { MAX_BAND_WORDS } from '@/lib/warmth/bands'
 import { analyseRttDrift } from './transport'
 import { BANNED_REGISTER } from '../voice/openai/persona'
 
@@ -313,9 +317,9 @@ describe('StabilityMeter', () => {
     expect(meter.stats(20).longestQuestionStreak).toBe(2)
   })
 
-  it('flags a six-turn median above the twelve-word conversational ceiling', () => {
+  it('flags a six-turn median above the conversational ceiling', () => {
     const meter = new StabilityMeter()
-    const line = 'This sentence has exactly enough ordinary spoken words to sound noticeably too polished today.'
+    const line = 'This particular sentence has exactly enough ordinary spoken words in it to sound noticeably far too polished for a shop today.'
     for (let index = 0; index < 6; index += 1) {
       if (index > 0) meter.observeUser()
       meter.observe(`${line} ${index}`, index * 10)
@@ -323,6 +327,44 @@ describe('StabilityMeter', () => {
     expect(meter.all).toEqual(expect.arrayContaining([
       expect.objectContaining({ rule: 'verbosity' }),
     ]))
+  })
+
+  it('sets that ceiling from the band table rather than from a literal', () => {
+    // The bug this fixes: the ceiling was 12 while the widest band allowed 15,
+    // so it fired on a character who was obeying — and in the live rep every
+    // break injected an identity reminder that measurably made her longer. An
+    // alarm tuned below the rules is a feedback loop.
+    expect(DEFAULT_VERBOSITY_MEDIAN).toBe(MAX_BAND_WORDS + VERBOSITY_MARGIN_WORDS)
+    expect(DEFAULT_VERBOSITY_MEDIAN).toBeGreaterThan(MAX_BAND_WORDS)
+
+    // A character sitting exactly on the widest band she can reach, for six
+    // turns running, is not drifting.
+    const meter = new StabilityMeter()
+    const atCeiling = Array.from({ length: MAX_BAND_WORDS }, (_, i) => `word${i}`).join(' ')
+    for (let index = 0; index < 6; index += 1) {
+      if (index > 0) meter.observeUser()
+      meter.observe(atCeiling, index * 10)
+    }
+    expect(meter.all.some((hit) => hit.rule === 'verbosity')).toBe(false)
+  })
+
+  it('answers a band violation with silence, not with an identity reminder', () => {
+    // `verbosity` and `question-every-turn` are the band's business: length is
+    // owned by the band and enforced in code, and the question quota is counted
+    // by WarmthSession and carried as `suppressQuestion`. Firing the identity
+    // reminder at either was a category error and a measured one.
+    const meter = new StabilityMeter()
+    meter.observe('Quiet in here, isn’t it?', 10)
+    meter.observeUser()
+    const hits = meter.observe('Old books smell good, don’t they?', 20)
+    expect(hits.some((hit) => hit.rule === 'question-every-turn')).toBe(true)
+    expect(hits.some(warrantsReinforcement)).toBe(false)
+
+    // An identity break still speaks up.
+    const drifted = new StabilityMeter()
+    drifted.observeUser()
+    expect(drifted.observe('Let me know if I can help with anything else.', 5)
+      .some(warrantsReinforcement)).toBe(true)
   })
 
   it('detects all four structural rule families', () => {

@@ -59,7 +59,7 @@ future sessions read those markers to decide what to do.
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint
-npm test              # vitest, 1176 assertions
+npm test              # vitest, 1429 assertions
 npm run build:check   # production build into .next-check, never .next
 npm run db:verify     # RLS from a second real account, 51 checks
 npm run db:rep        # the whole rep lifecycle, without a microphone
@@ -102,15 +102,31 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    part of that file too**: `resultReading` owns `close`, `lateSurge` and
    `nearMiss`, so "she was never interested" and "you missed by four" are one
    decision with tests rather than two arithmetic expressions in a component.
-4. **No spinners.** Skeletons that match the shape of the arriving content. (§02)
-5. **Never announce a downward difficulty adjustment.** Silent. (§08, §12)
-6. **No coaching during a live rep.** Timer, waveform, mission. Nothing else. (§05)
-7. **Anything published is checked in code, not in a style note.** Share cards
+4. **A word cap is a runtime ceiling, and it is what she writes to.** The band
+   table in `lib/warmth/bands.ts` states a **typical first and a maximum
+   second**, and `maxWords` is handed to the turn pipeline, which stops
+   generating at the first sentence boundary past it. Both halves matter: a
+   text model asked for "twelve at most" delivers twelve, and every number in
+   that table was originally authored against a speech model that ran at half
+   of whatever it was allowed. Moving a cap changes what customers hear.
+   `DEFAULT_VERBOSITY_MEDIAN` is derived from the same table, so the drift
+   alarm can no longer be set below the rules. (`PERSONA-AUDIT.md` §12)
+5. **On a stateless arm, a permission repeated is an order.** The directive is
+   the last system message before every generation. The band's length and
+   question rules ship every turn, because nothing else owns reply length.
+   Everything that tells her to *do* something — her agenda, the band's
+   invitation, the gates she has earned — rides `includeStanding` and is sent
+   only when the direction is genuinely new. Restated every turn they compose,
+   and she performs all of them at once. (§11, §12)
+6. **No spinners.** Skeletons that match the shape of the arriving content. (§02)
+7. **Never announce a downward difficulty adjustment.** Silent. (§08, §12)
+8. **No coaching during a live rep.** Timer, waveform, mission. Nothing else. (§05)
+9. **Anything published is checked in code, not in a style note.** Share cards
    run through `assertPublishable` (`lib/share/cards.ts`) and a character's
    memory line runs through `lib/grade/memory.ts`. Both refuse rather than
    sanitise, because the failure mode is a public artefact or a companion-app
    framing, and §14 says either one is a payment account waiting to be closed.
-8. **Content is authored in the repo and seeded, never generated at runtime.**
+10. **Content is authored in the repo and seeded, never generated at runtime.**
    Personas, field challenges and library cards live in `lib/`, are reviewed in
    a pull request, and reach the database through `npm run db:seed` and
    `npm run db:content`. For field challenges this is a safety rule, not a
@@ -120,7 +136,7 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    and must never be hand-written**, because what she says is the product and a
    written version of it would be advertising our own prose. `npm run hero:audio`
    records both. It spends money, so it is run by hand and never from a build.
-9. **Anything a user could pay to change has no user write path.** Plan, quota,
+11. **Anything a user could pay to change has no user write path.** Plan, quota,
    the one-off sign-up rep, streak, unlocks, difficulty offsets and
    subscriptions are read-only to their owner and written by the service role.
    **`entitlements.reps_per_day = 0` on free is the voice paywall itself** —
@@ -135,7 +151,7 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    the service role. `lib/email/` sends the one message that goes out before a
    card is charged — the third of the three trial mitigations §14 asks for, and
    the only one the app itself owns.
-10. **No clinical claims anywhere.** "Confidence training", never "treatment". (§16)
+12. **No clinical claims anywhere.** "Confidence training", never "treatment". (§16)
     This binds the payment provider's own record of us too: the Whop account is
     `software / personal_development / public_speaking_coaching`, and it was
     `mental_health_app` for days, which contradicted terms clause 08 in the one
@@ -159,7 +175,7 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     fields for a human instead of setting them. `npm run whop:verify` now
     asserts the classification, so the preflight fails rather than the
     compliance review.
-11. **PG-13, enforced by moderation on both streams.** Payment-processor survival. (§16)
+13. **PG-13, enforced by moderation on both streams.** Payment-processor survival. (§16)
     Built, in `lib/safety/`. The verdict mapping, the escalation sequence and the
     age arithmetic are pure functions with tests — change them there, not in the
     hook or the route. First breach is an in-frame decline and the rep continues;
@@ -171,7 +187,7 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     **A change to what the product refuses is a change to what the legal pages
     claim** — `components/site/legal-pages.tsx` is part of the same edit.
 
-12. **A vendor's specification is not a vendor's payload, and a fixture nobody
+14. **A vendor's specification is not a vendor's payload, and a fixture nobody
     received proves nothing.** Whop's OpenAPI spec documents `membership.*` with
     nested `plan`/`user` objects; it actually sends flat `plan_id`, `user_id`
     and `current_period_end`. Built from the spec alone, the first real purchase
@@ -181,7 +197,7 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     Whop actually sent. When integrating anything external, read one real
     payload before trusting the schema, and keep it as the test.
 
-13. **Anything a machine calls must be the host that answers 200 without a hop.**
+15. **Anything a machine calls must be the host that answers 200 without a hop.**
     `hellonerve.com` 308-redirects to **`www.hellonerve.com`**, which is
     canonical. A browser follows that; a webhook sender often treats 3xx as a
     failed delivery, and an OG scraper renders a blank card. The webhook URL,

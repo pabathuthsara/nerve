@@ -22,6 +22,7 @@ import { activateVoiceSession, abortVoiceStartupAttempt, closeVoiceSession, refu
 import type { Scorecard } from '@/lib/grade/types'
 import type { WarmthTelemetry } from '@/lib/warmth/engine'
 import type { RepIncidents } from '@/lib/voice/incidents'
+import type { CharacterBreak } from '@/lib/metrics/stability'
 import { AUDIO_RETENTION_DAYS } from '@/lib/db/retention'
 import { asJson } from '@/lib/db/json'
 import { consumeRep, recordTrainingDay, refundRep, syncLevel } from '@/lib/db/progress'
@@ -198,6 +199,17 @@ export async function finishSession(input: {
    * after the fact. See lib/voice/incidents.ts.
    */
   incidents?: RepIncidents | null
+  /**
+   * What the stability meter caught, kept rather than discarded.
+   *
+   * §05's countermeasure 3 has run in the live rep since the pipeline shipped
+   * and thrown its findings away: a break fired a reminder into the model and
+   * was never written down, so "she drifts" has only ever been arguable by
+   * reading transcripts by hand. Diagnostic, never shown to the user, and
+   * deliberately not `pipeline_incidents` — that column is what the TRANSPORT
+   * did to a rep and this is what the CHARACTER did.
+   */
+  characterBreaks?: readonly CharacterBreak[] | null
 }): Promise<FinishResult> {
   const user = await currentUser()
   if (!user) return { ...FAILED, refunded: false }
@@ -229,6 +241,18 @@ export async function finishSession(input: {
       decision_warmth: input.decisionWarmth === undefined ? null : round2(input.decisionWarmth),
       pipeline_incidents: input.incidents ? asJson(input.incidents) : null,
       pipeline_telemetry: input.pipeline ? asJson(input.pipeline) : null,
+      // Nullable AND written on a clean rep, for the same reason
+      // `pipeline_incidents` is: an empty array and a null mean different
+      // things, and "she never broke frame" has to stay distinguishable from
+      // "nothing was measured". The first rep after the meter was wired
+      // produced no breaks at all and stored a null, which reads identically to
+      // every row written before the column existed.
+      //
+      // Capped at sixty: a rep that breaks on every turn is a bug report, not a
+      // record, and the row must not become the biggest thing in the table.
+      character_breaks: input.characterBreaks
+        ? asJson(input.characterBreaks.slice(0, 60))
+        : null,
     })
     .eq('id', input.sessionId)
 

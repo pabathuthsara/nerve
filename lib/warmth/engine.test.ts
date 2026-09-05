@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { fastAuthority, FAST_AUTHORITY_FLOOR, FAST_AUTHORITY_SPAN, WarmthEngine } from './engine'
-import { bandFor, bandDirective, BANDS, WARMTH_MIN, WARMTH_MAX } from './bands'
+import { bandFor, bandDirective, BANDS, MAX_BAND_WORDS, wordCapFor, WARMTH_MIN, WARMTH_MAX } from './bands'
 import { levelTrajectory } from './levels'
 import { ARM_THRESHOLD, KEEP_THRESHOLD } from '@/lib/data/rep-rules'
 import { nadia } from '@/lib/personas/nadia'
@@ -47,6 +47,12 @@ function agentSaid(text: string): TranscriptTurn {
   return { speaker: 'agent', text, t_start: 0, t_end: 2 }
 }
 
+/** Spelled forms, for asserting the prose and the machine number agree. */
+const SPELLED: Record<number, string> = {
+  3: 'three', 4: 'four', 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine',
+  10: 'ten', 12: 'twelve', 14: 'fourteen', 15: 'fifteen',
+}
+
 /** A turn that earns everything the fast scorer can give: +3 +2 +2 = +7. */
 const GOOD_TURN = 'What made you pick that particular bookshop on a Saturday afternoon'
 
@@ -71,7 +77,53 @@ describe('bands', () => {
     // Bracketed so it reads as stage direction, not as dialogue.
     expect(directive.startsWith('[')).toBe(true)
     expect(directive.endsWith(']')).toBe(true)
-    expect(directive.toLowerCase()).toContain('twelve words at most')
+    expect(directive.toLowerCase()).toContain('six or seven words')
+    expect(directive.toLowerCase()).toContain('ten at the very most')
+  })
+
+  it('states a typical before it states a ceiling', () => {
+    // THE RETUNE. Every number in this table was authored against a
+    // speech-to-speech model that ran at half of whatever it was allowed, so a
+    // stated maximum was a guardrail nobody touched. The text model on the
+    // shipping arm writes to whatever number it is given — her first line went
+    // from 4 words to 12 against a cap of 12 — so the typical has to come
+    // first, and it has to be the smaller number.
+    for (const spec of BANDS) {
+      expect(spec.typicalWords, spec.band).toBeLessThan(spec.maxWords)
+      const prose = spec.directive.toLowerCase()
+      // Word-bounded: "ten" lives inside "sentence".
+      const wordAt = (word: string) => prose.search(new RegExp(`\\b${word}\\b`))
+      const typicalAt = wordAt(SPELLED[spec.typicalWords] ?? 'zzz')
+      const maxAt = wordAt(SPELLED[spec.maxWords] ?? 'zzz')
+      expect(typicalAt, `${spec.band} names its typical`).toBeGreaterThanOrEqual(0)
+      expect(maxAt, `${spec.band} names its ceiling`).toBeGreaterThan(typicalAt)
+    }
+  })
+
+  it('climbs monotonically, and `wordCapFor` reads the same number', () => {
+    for (let i = 1; i < BANDS.length; i += 1) {
+      expect(BANDS[i]!.typicalWords, BANDS[i]!.band).toBeGreaterThanOrEqual(BANDS[i - 1]!.typicalWords)
+      expect(BANDS[i]!.maxWords, BANDS[i]!.band).toBeGreaterThanOrEqual(BANDS[i - 1]!.maxWords)
+    }
+    // The enforced ceiling and the stated one are the same number, or the
+    // pipeline is cutting her off somewhere she was never told about.
+    for (const spec of BANDS) {
+      expect(wordCapFor(spec.min), spec.band).toBe(spec.maxWords)
+    }
+    expect(MAX_BAND_WORDS).toBe(Math.max(...BANDS.map((spec) => spec.maxWords)))
+  })
+
+  it('keeps the invitation out of the always-sent half', () => {
+    // A permission restated immediately before every reply reads as an order.
+    // The directive ships every turn; the permission rides the rationed
+    // cadence, so it must not be hiding inside the directive.
+    for (const spec of BANDS) {
+      expect(spec.directive, spec.band).not.toMatch(/you may|ask about him|start a topic|bring back/i)
+    }
+    // And the cold bands invite nothing at all, by definition.
+    for (const spec of BANDS.filter((b) => b.min < 40)) {
+      expect(spec.permission, spec.band).toBeUndefined()
+    }
   })
 
   it('forbids questions outright at low warmth rather than rationing them', () => {
@@ -93,10 +145,15 @@ describe('bands', () => {
 
   it('keeps the directive short — it is re-charged as context every turn', () => {
     for (const spec of BANDS) {
-      expect(bandDirective(spec.min).length, spec.band).toBeLessThan(150)
+      // The ALWAYS-SENT half is the one that is charged on every turn, so it is
+      // the one held to the tighter number. The invitation is rationed.
+      const always = bandDirective(spec.min, { includeStanding: false })
+      expect(always.length, spec.band).toBeLessThan(150)
       // Even with the question-suppression clause appended.
-      expect(bandDirective(spec.min, { suppressQuestion: true }).length, spec.band)
+      expect(bandDirective(spec.min, { suppressQuestion: true, includeStanding: false }).length, spec.band)
         .toBeLessThan(190)
+      // And the whole band, invitation included, on the turns that carry it.
+      expect(bandDirective(spec.min).length, spec.band).toBeLessThan(200)
     }
   })
 
@@ -105,7 +162,7 @@ describe('bands', () => {
     // assistant default the moment warmth rose.
     for (const warmth of [65, 85]) {
       const directive = bandDirective(warmth).toLowerCase()
-      expect(directive).toContain('under fifteen words')
+      expect(directive).toContain('at the very most')
       expect(directive).toContain('take your time')
       expect(directive).toContain('no filler')
     }
@@ -883,7 +940,7 @@ describe('bandFor', () => {
     // discriminator is the PERMISSION the OPEN directive grants — "You may
     // volunteer one small thing". CLOSED now names volunteering too, in order
     // to forbid it, so the bare word no longer separates the two bands.
-    expect(bandDirective(19.5)).toContain('Four to ten words')
+    expect(bandDirective(19.5)).toContain('Four or five words')
     expect(bandDirective(19.5)).not.toContain('You may volunteer')
     expect(bandDirective(19.5)).toContain('do not volunteer anything')
   })
