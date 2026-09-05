@@ -481,5 +481,26 @@ hundredth of a cent and the receipt is worth twelve times the turn. Separately,
 fired on every reply and the identity reminder was injected before every one of
 them. Both fixed; see `PERSONA-AUDIT.md` §12.
 
-Still not deployed, and one rep is one rep: warmth never left GUARDED and OPEN,
-so the two warmest bands remain untested against a live conversation.
+### Released
+
+`552702d`, git-linked, as `dpl_95r7XyAXokfAWZAEBrNC8xjyjgUL`
+(`nerve-q0rh277xr-pabathuthsaras-projects.vercel.app`) on `www.hellonerve.com`.
+The second honest deployment label since 5 September: Vercel's own record carries
+the real SHA with no `gitDirty`, unlike the four that went out from a working
+tree carrying `9d7297f`.
+
+Verified after the build: `www.hellonerve.com` 200, the apex still 308s to it,
+`/api/voice/turn` and `/api/voice/llm` both 401 unauthenticated, the five public
+pages and `sitemap.xml`/`robots.txt` 200, and `npm run whop:verify` clean apart
+from its standing local-shell `RESEND_API_KEY` warning, which is
+`LAUNCH-GAP.md`'s open secret and not this release. The migration was applied
+before the build, so no deployed code reads a column that is not there.
+
+**Rollback is `dpl_7g1cUFZ4FJKZfjtpyo7ZnmaEH192`**, the preceding production
+deployment, and this is one commit — reverting the behaviour reverts all of it.
+Refresh an existing browser tab before starting a rep: the band table, the
+steering cadence and the reply budget are all client code.
+
+One rep is one rep. Warmth has never passed 59 on this code, so ENGAGED and
+INVESTED — the two bands retuned most — are now live and still unexercised by a
+real conversation. That is the thing to watch in the next few reps.
