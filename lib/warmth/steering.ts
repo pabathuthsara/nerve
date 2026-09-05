@@ -45,6 +45,24 @@ export interface SteeringContext extends DirectiveContext {
    * and keeps the line short.
    */
   posture?: Posture
+  /**
+   * Whether she is reminded of her own agenda on this turn. Default true.
+   *
+   * A provider that retains conversation state gets this line a handful of
+   * times per rep, because the caller only sends it when it changes. A
+   * stateless provider has no such throttle: the directive is the LAST system
+   * message of every request, so an unconditional want clause is a fresh order
+   * to act on her agenda immediately before every single reply.
+   *
+   * That is not the clause behaving differently, it is the clause arriving
+   * differently, and it shows: on the ElevenLabs HTTP pipeline Nadia's retreat
+   * to the shelf went from 17.4% of her turns to 45.8%, against a contract
+   * whose rule 4 says never to retreat to what she is focused on. The band
+   * directive still ships on every turn — nothing else owns reply length — and
+   * only the agenda is rationed back to the cadence it had when the throttle
+   * was doing it for free. See `WarmthSession.statelessDirective`.
+   */
+  includeWant?: boolean
 }
 
 /**
@@ -78,10 +96,14 @@ export function composeSteering(context: SteeringContext): string {
   //   posture      what shape that takes. Only present when the axes disagree,
   //                so when it IS present it is the most informative line here.
   //   repair       rare, and expires in two turns. If it is dropped it is gone.
-  //   want         every turn, and the reason she is a person rather than a
-  //                response. Above personality because a character with an
-  //                agenda and no adjectives still reads as someone; a character
-  //                with adjectives and no agenda reads as a chatbot.
+  //   want         the reason she is a person rather than a response. Above
+  //                personality because a character with an agenda and no
+  //                adjectives still reads as someone; a character with
+  //                adjectives and no agenda reads as a chatbot. Present on
+  //                every composed line unless the caller rations it — see
+  //                `includeWant`, which exists because "every composed line"
+  //                and "every reply" were the same thing only while delivery
+  //                was throttled.
   //   personality  colour.
   //   gates        permissions she will still have next turn.
   return assemble([
@@ -90,7 +112,7 @@ export function composeSteering(context: SteeringContext): string {
     bandDirectiveParts(context.warmth, context, context.persona.bandDirectives),
     postureClauses(context),
     repairClauses(context),
-    wantClauses(context.persona, context.warmth),
+    context.includeWant === false ? [] : wantClauses(context.persona, context.warmth),
     personalityClauses(context.persona, context.warmth),
     gateClauses(context.persona, context.warmth),
   ])

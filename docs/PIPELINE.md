@@ -363,3 +363,54 @@ its staged homepage returned 200 and unauthenticated turn endpoint returned 401.
 Refresh an existing browser tab before starting a rep: steering is client code.
 Rollback is the preceding `dpl_Gi8SUKRpz1jmXHmPu9548rKtoZqz` deployment.
 No database migration or provider-setting change is part of this repair.
+
+## Steering cadence — what the repair above cost (5 September, later)
+
+The repair above is right about the mechanism and wrong about one consequence,
+so it is left standing and corrected here rather than edited.
+
+"One current warmth directive immediately before every LLM request" is forced:
+the turn is stateless, the request is `[contract, exit rule, history, steering]`
+and nothing carries, so an unchanged turn that sent no directive would leave her
+with no band rule and nothing owning reply length. That much has to stay.
+
+What came with it was not intended. The composed line also carries the **want
+clause** — her own agenda — which was authored for a provider that retains
+instructions, where the caller's change detection meant a rep saw a handful of
+directives in total. Sent before every reply it becomes a standing order acted
+on immediately, and it is the last thing the model reads before generating.
+Nadia's retreat-to-the-scene rate went from 17.4% of her turns to 45.8%,
+against a contract that says never; Tess went 12.7% to 21.7%. The closing
+decision, appended *after* that line, produced three conditional number offers
+in a row on a path that had been giving it cleanly the day before.
+
+So the cadence is now explicit instead of incidental:
+
+| | Sent |
+| --- | --- |
+| Band, posture, colour, gates | Every turn, both arms. Nothing else owns reply length |
+| Want clause | Only when the direction is new — it changed, or the heartbeat came due |
+| Closing decision | Alone. `handOverToClosing()` stands the directive down for exactly one turn |
+
+`WarmthSession.statelessDirective()` is the reader for a provider that keeps
+nothing; `directiveIfChanged()` remains the reader for one that does not, and
+both honour the closing hand-over. `SteeringContext.includeWant` is the switch.
+Six regressions in `lib/warmth/voice-steering.test.ts` pin all of it.
+
+Unrelated, in the same change: the transcription session now pins
+`language: 'en'`. Without it the model guessed per commit and a hum came back
+as `อืม`, which reached the warmth engine as an unreadable turn and the
+character as Thai. It is an option on `TranscriberOptions`, defaulted rather
+than hard-coded.
+
+The full argument, with the measurements and the transcripts, is
+`PERSONA-AUDIT.md` §11. Two things there are owed rather than done:
+`npm run rep:audition` drives `directiveIfChanged()` and so cannot audition the
+arm that actually ships, and the warmth-dependent reply beat is still zero on
+every reply and was left alone deliberately.
+
+This release is also the first since 5 September that Vercel can identify by
+commit. The four deployments before it went out from a dirty working tree
+carrying the SHA `9d7297f`, which contains none of the pipeline; `9e9a155`
+committed that tree unchanged and the git-linked build `dpl_3F8Ur99nDGC4iQdmm`
+replaced it on `www.hellonerve.com`.

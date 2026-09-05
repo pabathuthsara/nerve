@@ -842,3 +842,93 @@ volunteering and softening while never withholding personhood. That is the
 principle the cold-band rewrite already reached for and stopped halfway
 through. Finishing it is a product decision, not a tuning one, and it belongs
 to whoever owns §06.
+
+## 11. The stateless directive — her agenda stopped being occasional (5 September)
+
+Everything above assumes the direction reaches her **when it changes**. That
+was true of every pipeline this audit measured, and it stopped being true when
+the ElevenLabs HTTP pipeline shipped.
+
+That pipeline is stateless. Each reply is one request —
+`[contract, exit rule, history, steering]` — and the request is thrown away, so
+nothing carries. `bindVoiceSteering` therefore composed a fresh directive and
+sent it before every reply, which it had to: returning nothing on an unchanged
+turn would leave her with no band rule at all, and the band is the only thing
+that owns reply length (§3.7, and round 6 in `steering.ts`).
+
+The band being sent every turn is correct. The **want clause** being sent every
+turn is not, and nobody noticed the difference because until now the two were
+the same decision.
+
+`wantClauses` says the clause is "one clause, because it is charged on every
+turn after this one" — written for a provider that retains conversation state,
+where a handful of directives per rep accumulate. On the stateless arm it is
+instead the last system message before every single generation, at maximum
+recency, restating her agenda immediately before she speaks. It is not the
+clause behaving differently. It is the clause arriving differently.
+
+### Measured, from the five reps of 5 September
+
+| | agent turns | retreats to the scene | rate |
+|---|---:|---:|---:|
+| Nadia, before | 132 | 23 | **17.4%** |
+| Nadia, after | 24 | 11 | **45.8%** |
+| Tess, before | 102 | 13 | **12.7%** |
+| Tess, after | 23 | 5 | **21.7%** |
+
+Nadia's contract, rule 4: *"Never retreat to books, browsing, or what you are
+'focused on'."* In one 26-turn rep she did it six times — "not exactly a rush
+outside", "flipping pages mostly", "this one looks promising", "been at this
+shelf for a while", "you're interrupting my deep dive here", "I'm only halfway
+through this one". A contract does not win an argument with a directive that
+arrives after it and nearer the generation point.
+
+**And it broke the close.** The closing decision is a one-shot appended *after*
+the standing directive, so on the decision turn she received the number offer
+behind a line still telling her she would rather be left alone. All three wins
+that day split the difference:
+
+> "…**maybe I'll share my number** before I vanish. Bye."
+> "**If you want**, I can share my number—**but only if you promise**… **Anyway,
+> I'm off back to my book now.**"
+> "**If you ever want to**… **I could give you my number. But now I'd better
+> grab my stuff**…"
+
+Against the same character eighteen hours earlier, on the retained-instruction
+path: *"Alright, I'll make it easy — I'll give you mine. You'll just have to use
+it."* Rule 3 of CLAUDE.md exists to make the number and the offer one moment
+rather than two instructions racing; appending is not priority.
+
+### What landed
+
+- **`SteeringContext.includeWant`.** The band, posture, colour and gates ship
+  every turn as before. The agenda is rationed.
+- **`WarmthSession.statelessDirective()`.** Full line — agenda included — on a
+  turn where the direction is genuinely new, meaning it changed or the
+  heartbeat came due. The same line minus the agenda on the turns between. The
+  cadence the throttle used to supply for free, supplied on purpose.
+- **`WarmthSession.handOverToClosing()`.** The standing directive stands down
+  for exactly one turn, so the closing decision arrives alone. Called from
+  `lib/data/rep.ts` beside the `shouldWrapUp` branch that already took care
+  that a scene beat could never land on the same tick.
+- Six regressions in `lib/warmth/voice-steering.test.ts` cover the cadence, the
+  heartbeat, the hand-over and its one-turn expiry, on both delivery paths.
+
+### Owed
+
+**`npm run rep:audition` has not been re-run, and re-running it as it stands
+would not answer the question.** The harness drives `directiveIfChanged()` —
+the retained-instruction cadence — so it auditions the OpenAI arm while
+production runs the ElevenLabs one. Its numbers would describe a path no
+customer is on. Pointing it at `statelessDirective()` is the prerequisite, and
+that is a change to the instrument, which should be made deliberately rather
+than folded into a behaviour fix.
+
+**The reply-delay beat is still dead and was left that way on purpose.**
+`remainingReplyDelayMs` subtracts elapsed pipeline time from the
+warmth-dependent hesitation; the pipeline spends ~1,950 ms before TTS is called
+and the ceiling is 700 ms, so the remainder is zero on every reply and cold and
+warm now answer at identical speed. Restoring the differential costs up to
+700 ms on cold turns and nothing on warm ones — `replyDelayMs` is already 0 at
+warmth 60 and above. That is a product decision about latency, not a defect to
+tidy, and it is the only one of the four findings that is not free.

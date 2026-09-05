@@ -58,6 +58,17 @@ export interface TranscriberOptions extends TranscriberEvents {
   clientSecret: string
   model: string
   sampleRate: number
+  /**
+   * ISO-639-1 hint for the transcriber. Defaults to English.
+   *
+   * Without it the model guesses per commit, and the guess is worst on exactly
+   * the sounds a nervous person makes: a real rep recorded a hum as `อืม`,
+   * which then reached the warmth engine as an unreadable turn and the
+   * character as Thai. Every persona contract, every band directive and the
+   * grader are English, so leaving the language open buys nothing and costs
+   * the shortest turns — which are the ones a beginner speaks most.
+   */
+  language?: string
   /** Injected in tests. */
   socketFactory?: (url: string, protocols: string[]) => WebSocket
   url?: string
@@ -145,7 +156,10 @@ export class RealtimeTranscriber {
         audio: {
           input: {
             format: { type: 'audio/pcm', rate: this.options.sampleRate },
-            transcription: { model: this.options.model },
+            transcription: {
+              model: this.options.model,
+              language: this.options.language ?? 'en',
+            },
             // Ours, not theirs. See the header.
             turn_detection: null,
             noise_reduction: { type: 'near_field' },

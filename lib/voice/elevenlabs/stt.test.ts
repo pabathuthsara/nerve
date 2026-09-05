@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RealtimeTranscriber, type TranscriptionTiming } from './stt'
+import { RealtimeTranscriber, type TranscriberOptions, type TranscriptionTiming } from './stt'
 
 const first: TranscriptionTiming = { startedAtMs: 1000, stoppedAtMs: 2000, committedAtMs: 2600 }
 const second: TranscriptionTiming = { startedAtMs: 2700, stoppedAtMs: 3700, committedAtMs: 4300 }
 
-async function harness() {
+async function harness(extra: Partial<TranscriberOptions> = {}) {
   const sent: Record<string, unknown>[] = []
   const socket = {
     readyState: 1, binaryType: '',
@@ -19,6 +19,7 @@ async function harness() {
     clientSecret: 'ephemeral', model: 'gpt-4o-mini-transcribe', sampleRate: 24_000,
     socketFactory: () => socket as unknown as WebSocket,
     clock: () => now, onDelta, onFinal, onError, onUsage, onSettled,
+    ...extra,
   })
   const connecting = stt.connect()
   socket.onopen!()
@@ -156,5 +157,28 @@ describe('committed speech identity', () => {
     expect(h.onError.mock.calls[0]![0]).toMatchObject({ fatal: true })
     h.stt.close()
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('transcription session', () => {
+  const transcription = (sent: Record<string, unknown>[]) => {
+    const update = sent.find((message) => message.type === 'session.update')
+    const session = update?.session as Record<string, unknown> | undefined
+    const audio = session?.audio as Record<string, unknown> | undefined
+    return (audio?.input as Record<string, unknown> | undefined)?.transcription
+  }
+
+  it('pins the language, so a hum is not guessed into another script', async () => {
+    const h = await harness()
+    // A real rep transcribed a hum as "อืม", which reached the warmth engine as
+    // an unreadable turn and the character as Thai. Every contract, directive
+    // and rubric in this product is English; leaving the guess open buys
+    // nothing and costs the shortest turns, which beginners speak most.
+    expect(transcription(h.sent)).toEqual({ model: 'gpt-4o-mini-transcribe', language: 'en' })
+  })
+
+  it('still takes an explicit language', async () => {
+    const h = await harness({ language: 'es' })
+    expect(transcription(h.sent)).toEqual({ model: 'gpt-4o-mini-transcribe', language: 'es' })
   })
 })

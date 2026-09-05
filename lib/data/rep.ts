@@ -838,6 +838,10 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
           decisionWarmthRef.current = engine?.warmth ?? 0
           closingDecisionRef.current = offering ? 'number' : 'leave'
           if (offering) numberRef.current = inventNumber()
+          // One thing, once. The standing directive stands down for this turn
+          // so the decision arrives on its own rather than behind a line that
+          // still says she would rather be somewhere else.
+          warmthRef.current?.handOverToClosing()
           providerRef.current?.reinforce(offering ? NUMBER_DIRECTIVE : WRAP_UP_DIRECTIVE)
         }
 

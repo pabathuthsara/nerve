@@ -86,6 +86,8 @@ export class WarmthSession {
   /** The last line she was actually given, for change detection. */
   private lastDirective: string | null = null
   private turnsSinceSteer = 0
+  /** The closing decision owns the next direction on its own. */
+  private closingHandover = false
 
   constructor(options: WarmthSessionOptions) {
     this.options = options
@@ -148,6 +150,7 @@ export class WarmthSession {
    * the last.
    */
   directiveIfChanged(): string | null {
+    if (this.consumeClosingHandover()) return null
     const next = composeSteering({
       persona: this.persona,
       warmth: this.engine.warmth,
@@ -163,6 +166,64 @@ export class WarmthSession {
       return null
     }
     return this.directive()
+  }
+
+  /**
+   * The direction for a provider that keeps nothing between turns.
+   *
+   * The ElevenLabs pipeline sends `[contract, exit rule, history, steering]`
+   * and then throws the request away, so `directiveIfChanged` cannot be used
+   * as it stands: returning null on an unchanged turn would leave her with no
+   * band rule at all, and the band is the only thing that owns reply length.
+   * That is round 6 again, reached from the opposite direction.
+   *
+   * So the line always ships. What is rationed instead is the one clause that
+   * reads as an instruction to act rather than a description of how to
+   * respond. On a turn where the direction is genuinely new — it changed, or
+   * the heartbeat came due — she is reminded of her own agenda. On the turns
+   * between she keeps the band, the posture and the colour, and is not told
+   * again, immediately before speaking, that she would rather be elsewhere.
+   *
+   * The throttle used to do this for free. On a stateless provider it has to
+   * be done on purpose. See `SteeringContext.includeWant`.
+   */
+  statelessDirective(): string {
+    if (this.consumeClosingHandover()) return ''
+    const fresh = this.directiveIfChanged()
+    if (fresh !== null) return fresh
+    return composeSteering({
+      persona: this.persona,
+      warmth: this.engine.warmth,
+      suppressQuestion: this.questionQuotaSpent(),
+      posture: this.engine.posture,
+      repairOpen: this.engine.repairOpen,
+      includeWant: false,
+    })
+  }
+
+  /**
+   * The closing decision has been taken. Stand down for one turn.
+   *
+   * Thirty seconds out she is told exactly one thing — wind down and leave, or
+   * wind down and offer him her number (`rep-rules.shouldWrapUp`). "Exactly
+   * one thing" is about what reaches the model, not about how many calls the
+   * caller makes. Appending that decision after a standing directive still
+   * saying she would rather be left alone with her book gives her two orders
+   * and she splits the difference: every win on 5 September offered the number
+   * conditionally and then retreated into the scene in the same breath.
+   *
+   * One turn only, and consumed by whoever reads the direction next. If she
+   * takes another turn before the rep ends she gets her band back rather than
+   * nothing.
+   */
+  handOverToClosing(): void {
+    this.closingHandover = true
+  }
+
+  private consumeClosingHandover(): boolean {
+    if (!this.closingHandover) return false
+    this.closingHandover = false
+    return true
   }
 
   /** The persona as it stands right now, not as it stood at connect. */
