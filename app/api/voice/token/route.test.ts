@@ -73,31 +73,23 @@ describe('owned transcription credential admission', () => {
     expect(mocks.quota).not.toHaveBeenCalled()
   })
 
-  it('does not wait for the estimated receipt write before returning the credential', async () => {
+  it('leaves the envelope reserved rather than charging it at the door', async () => {
+    // IT USED TO SETTLE HERE, before the rep had run and therefore with nothing
+    // to settle against — which meant `costUsd: null`, which
+    // `voice_operation_settle` reads as "charge the whole reservation". Every
+    // rep bought four minutes of transcription on mint whether it lasted three
+    // minutes or thirty seconds.
+    //
+    // The hold is not loosened by waiting: `voice_spend_committed_cents` counts
+    // an outstanding reservation against the daily cap exactly as it counted
+    // the settled charge. `finishRep` prices it against the seconds the rep
+    // actually ran — see `settleTranscriptionEnvelope`.
     const response = await POST(request())
     expect(response.status).toBe(200)
-    expect(mocks.after).toHaveBeenCalledOnce()
     expect(mocks.settle).not.toHaveBeenCalled()
-    await mocks.after.mock.calls[0]?.[0]()
-    expect(mocks.settle).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'authenticated-user', sessionId, costUsd: null, status: 'unknown',
-      usage: { estimatedAudioMs: 240_000 },
-      metadata: expect.objectContaining({ model: 'gpt-4o-mini-transcribe' }),
+    expect(mocks.reserve).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'stt', maxCostUsd: 0.012, resources: { sttAudioMs: 240_000 },
     }))
-  })
-
-  it('logs an asynchronous receipt failure without exposing credentials or failing the mint', async () => {
-    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    mocks.settle.mockResolvedValue({ ok: false })
-    expect((await POST(request())).status).toBe(200)
-    await mocks.after.mock.calls[0]?.[0]()
-    expect(log).toHaveBeenCalledOnce()
-    expect(log).toHaveBeenCalledWith('[nerve] voice usage persistence failed', {
-      transport: 'token', operationId: expect.any(String),
-    })
-    const written = JSON.stringify(log.mock.calls)
-    expect(written).not.toContain('ephemeral-fixture')
-    expect(written).not.toContain('server-only-fixture')
   })
 
   it('prices the configured transcriber rather than always reserving for Mini', async () => {

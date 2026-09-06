@@ -36,6 +36,15 @@ adding the interview track is characters and a setup flow, not a second engine.
   be a strange trade.
 - **She never speaks digits.** The number on the card is ours, so what is said
   and what is shown cannot contradict each other.
+- **Tess is guided, and nobody else is.** Rung 1 carries a script on screen —
+  an aim, and for five of the six scored dimensions an example line — read in
+  full on the brief and then shown one step at a time during the rep, advancing
+  on the user's own spoken turns and jumping to the close at the wind-down.
+  Every other character runs §05's rep: timer, waveform, mission, nothing else.
+  The argument, the script and the guard are `lib/data/guided.ts`; the drift
+  from §05 and §01 is recorded as `LAUNCH-GAP.md` D13. **`composure` ships with
+  no line on purpose** — its skill is not filling a pause, and a sentence to
+  say would teach the opposite.
 - **The result screen shows the reading the decision was made on**, which is not
   where the meter finished. Warmth can keep climbing through the last thirty
   seconds of a rep she has already been told to leave — that is the commitment

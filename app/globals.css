@@ -1081,6 +1081,40 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
    screen. Static, quiet, and never a live region — see components/mission.tsx. */
 .mission-live { min-height: 18px; color: var(--text-mute); letter-spacing: .07em; }
 
+/* THE GUIDED REP (`lib/data/guided.ts`). Tess only, and it stands where the
+   mission line stands rather than beside it — two objectives on one live screen
+   is the round-6 failure wearing an interface.
+
+   No volt. The live screen already spends its one accent on the orb and the
+   time arc, and a rail that glows would pull the eye off the person you are
+   supposed to be listening to. The line is Ink and the aim is Ink-3, which is
+   the reverse of their importance on purpose: the aim is what transfers, the
+   line is what gets you through the next ten seconds. */
+.guided-live { display: grid; gap: 4px; justify-items: center; min-height: 40px; text-align: center; padding: 0 18px; }
+.guided-live__aim { color: var(--text-mute); letter-spacing: .07em; }
+.guided-live__say { max-width: 30ch; color: var(--text); font-size: 15px; line-height: 1.35; }
+.guided-live__say::before, .guided-live__say::after { content: '\201C'; color: var(--text-mute); }
+.guided-live__say::after { content: '\201D'; }
+/* A step change is a change of text in place and nothing more. §02 and the
+   reason this is a rail and never a pop-up. */
+@media (prefers-reduced-motion: no-preference) {
+  .guided-live__say, .guided-live__aim { transition: opacity 140ms ease; }
+}
+
+.guided-brief { display: grid; gap: 12px; width: 100%; border: 1px solid var(--line); border-left: 2px solid var(--volt); border-radius: 2px; padding: 14px 16px; background: var(--surface); text-align: left; }
+.guided-brief__head .label { color: var(--text-mute); }
+.guided-brief__steps { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; counter-reset: none; }
+.guided-brief__steps > li { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); gap: 10px; align-items: start; }
+.guided-brief__n { color: var(--text-mute); font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.guided-brief__body { display: grid; gap: 3px; min-width: 0; }
+.guided-brief__aim { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--text); font-size: 14.5px; line-height: 1.4; }
+.guided-brief__aim > svg { flex: 0 0 auto; color: var(--text-dim); }
+.guided-brief__say { margin: 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.45; font-style: italic; }
+.guided-brief__say::before { content: '\201C'; }
+.guided-brief__say::after { content: '\201D'; }
+.guided-brief__why { margin: 0; color: var(--text-mute); font-size: 12.5px; line-height: 1.45; }
+.guided-brief__foot { margin: 0; padding-top: 2px; border-top: 1px solid var(--line); color: var(--text-mute); font-size: 12.5px; line-height: 1.5; }
+
 /* The exit beat. The whole screen dims and settles rather than the orb alone
    doing the work, so an ending reads as an ending. */
 .rep-live--over { animation: rep-over 620ms ease-out both; }

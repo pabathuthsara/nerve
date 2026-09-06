@@ -57,8 +57,33 @@ describe('countIncidents', () => {
 
     expect(h.incidents.unheard).toBe(1)
     expect(h.incidents.unheardTurns).toEqual([
-      { at: 5.05, peak: 0.00257, samples: 48, packetDelta: 0, recovered: true },
+      { at: 5.05, peak: 0.00257, samples: 48, packetDelta: 0, audioMs: null, recovered: true },
     ])
+  })
+
+  it('records a pipeline turn whose synthesis delivered nothing', () => {
+    // THE CASE THAT WAS INVISIBLE, and the reason `audioMs` counts as evidence
+    // on its own. The assembled pipeline has no peer connection to read RTP
+    // packets from, and a reply that produced no audio at all has no analyser
+    // reading either — there was nothing to measure. Requiring a peak filed the
+    // single most explanatory incident in the rep as a bare number.
+    const h = counted()
+    h.emitter.emit('agent.unheard', { at: 9.5, audioMs: 0, packetDelta: null, recovered: false })
+
+    expect(h.incidents.unheard).toBe(1)
+    expect(h.incidents.unheardTurns).toEqual([
+      { at: 9.5, peak: 0, samples: 0, packetDelta: null, audioMs: 0, recovered: false },
+    ])
+  })
+
+  it('still records nothing when the provider event stream already explained it', () => {
+    // The realtime arm's case 1: the buffer never opened, the provider said so,
+    // and there is no local measurement to add. A count, and no evidence row.
+    const h = counted()
+    h.emitter.emit('agent.unheard', { at: 2 })
+
+    expect(h.incidents.unheard).toBe(1)
+    expect(h.incidents.unheardTurns).toEqual([])
   })
 
   it('keeps a zero packet delta rather than losing it to a falsy check', () => {
@@ -124,8 +149,8 @@ describe('incidentsAreAlarming', () => {
     const incidents = emptyIncidents()
     incidents.unheard = 2
     incidents.unheardTurns = [
-      { at: 1, peak: 0, samples: 10, packetDelta: 0, recovered: true },
-      { at: 2, peak: 0, samples: 10, packetDelta: 0, recovered: true },
+      { at: 1, peak: 0, samples: 10, packetDelta: 0, audioMs: null, recovered: true },
+      { at: 2, peak: 0, samples: 10, packetDelta: 0, audioMs: null, recovered: true },
     ]
     expect(incidentsAreAlarming(incidents, 20)).toBe(false)
 

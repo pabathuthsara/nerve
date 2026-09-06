@@ -446,3 +446,150 @@ describe('ElevenLabs combined adapter', () => {
     await provider.end()
   })
 })
+
+/**
+ * THE 6 SEPTEMBER REP, IN FOUR TESTS.
+ *
+ * Two of her seven replies never reached the user. The first was aborted with
+ * zero characters synthesised; the second began playing and was cut on the
+ * millisecond. Both were generated, both were billed, neither appeared in the
+ * transcript, and `pipeline_incidents` recorded `{unheard: 0}` throughout —
+ * because the only thing that could have said otherwise was a barge-in counter
+ * that treats "she is thinking" and "she is talking" as the same state.
+ */
+describe('she is only interruptible once he has heard words', () => {
+  /** A reply held open: generation has started, nothing has been synthesised. */
+  function generating(clock: () => number) {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const provider = new ElevenLabsVoiceProvider({
+      clock,
+      fetchImpl: vi.fn(async (url: string | URL | Request) => {
+        if (String(url).includes('/token')) return Response.json(token())
+        return new Response(new ReadableStream({ start(value) { controller = value } }))
+      }),
+    })
+    return { provider, speak: (events: TurnEvent[]) => controller.enqueue(encoded(events)),
+      ready: () => vi.waitFor(() => expect(controller).toBeDefined()) }
+  }
+
+  /** A real VAD onset: loud frames either side of the 90ms onset window. */
+  function interrupt(at: (ms: number) => void, from: number) {
+    at(from)
+    hardware.capture!.onFrame(new Float32Array(480).fill(0.2))
+    at(from + 150)
+    hardware.capture!.onFrame(new Float32Array(480).fill(0.2))
+  }
+
+  it('does not count a barge-in against a reply the user cannot have heard', async () => {
+    // `responding` is true from the instant generation starts, and cutting on
+    // it is what destroyed her first line: he waited seven seconds, was told by
+    // the guided rail to ask a follow-up, spoke — and that onset aborted a turn
+    // whose synthesis had not delivered a byte.
+    let now = 1000
+    const { provider, ready } = generating(() => now)
+    const unheard = vi.fn()
+    const truncated = vi.fn()
+    const speechStops = vi.fn()
+    provider.on('agent.unheard', unheard)
+    provider.on('agent.truncated', truncated)
+    provider.on('agent.speech.stop', speechStops)
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    final('Sunday afternoon in a launderette.')
+    await ready()
+    expect(hardware.players).toHaveLength(0)
+
+    interrupt((ms) => { now = ms }, 5000)
+
+    // Reported, because a generated reply that reaches nobody is not nothing —
+    // and reported as unheard rather than as an interruption, because there was
+    // nothing to interrupt.
+    expect(unheard).toHaveBeenCalledOnce()
+    expect(unheard.mock.calls[0]![0]).toMatchObject({ audioMs: 0 })
+    expect(truncated).not.toHaveBeenCalled()
+    // She never started, so she never stopped.
+    expect(speechStops).not.toHaveBeenCalled()
+    const summary = await provider.end('cap')
+    expect(summary.turns.filter((turn) => turn.speaker === 'agent')).toEqual([])
+    expect(summary.pipeline?.bargeIns ?? 0).toBe(0)
+  })
+
+  it('drops a reply cut on the millisecond it began, rather than filing a syllable', async () => {
+    // Her second lost line. Server-side request-to-first-audio was 2,160ms and
+    // he spoke at 2,3xx — so playback had started and `playedText(0)` returned
+    // the empty string, which fell straight through `commitAgentTurn`'s
+    // `if (text)` and left no transcript row, no incident and no counter.
+    let now = 1000
+    const { provider, speak, ready } = generating(() => now)
+    const unheard = vi.fn()
+    const truncated = vi.fn()
+    provider.on('agent.unheard', unheard)
+    provider.on('agent.truncated', truncated)
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    final('What is that like?')
+    await ready()
+    speak([
+      { type: 'clip', id: 'c', text: 'Quiet and slow.' },
+      { type: 'audio', clipId: 'c', audio_base64: 'AAA=', alignment: null },
+    ])
+    await vi.waitFor(() => expect(hardware.players).toHaveLength(1))
+    // Audible, but only just: the playhead has rendered nothing.
+    hardware.players[0]!.playedSeconds = 0
+
+    interrupt((ms) => { now = ms }, 5000)
+
+    expect(unheard).toHaveBeenCalledOnce()
+    // And it is not filed as him talking over her. `bargeIns` is the measure
+    // of how often he does that, and a reply he never heard inflates it into
+    // something else — the number that read 2 on a rep where he interrupted
+    // nobody. Nor was anything "cut off mid-line": there was no line yet.
+    expect(truncated).not.toHaveBeenCalled()
+    const summary = await provider.end('cap')
+    expect(summary.turns.filter((turn) => turn.speaker === 'agent')).toEqual([])
+    expect(summary.pipeline?.bargeIns ?? 0).toBe(0)
+  })
+
+  it('still truncates honestly once words have actually reached the ear', async () => {
+    // The rule is a floor on "did he hear it", not an amnesty. A reply the user
+    // has been listening to is still cut back to the words that reached the
+    // ear, still counted as an interruption, and still remembered as what she
+    // actually said.
+    let now = 1000
+    const { provider, speak, ready } = generating(() => now)
+    const unheard = vi.fn()
+    provider.on('agent.unheard', unheard)
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    final('Tell me about it.')
+    await ready()
+    speak([
+      { type: 'clip', id: 'c', text: 'Quiet and slow, mostly.' },
+      { type: 'audio', clipId: 'c', audio_base64: 'AAA=', alignment: null },
+    ])
+    await vi.waitFor(() => expect(hardware.players).toHaveLength(1))
+    hardware.players[0]!.playedSeconds = hardware.players[0]!.scheduledSeconds
+
+    interrupt((ms) => { now = ms }, 5000)
+
+    expect(unheard).not.toHaveBeenCalled()
+    const summary = await provider.end('cap')
+    expect(summary.turns.filter((turn) => turn.speaker === 'agent').map((turn) => turn.text))
+      .toEqual(['Quiet and slow, mostly.'])
+    expect(summary.pipeline?.bargeIns).toBe(1)
+  })
+
+  it('reports a completed turn that synthesised no audio at all', async () => {
+    // Turn 647: the LLM answered, TTS was submitted, and the stream ended with
+    // `characters: 0` and no request id. Nothing about that reached the user,
+    // and until now nothing about it reached the incident counters either.
+    const provider = new ElevenLabsVoiceProvider({ fetchImpl: vi.fn(async (url: string | URL | Request) =>
+      String(url).includes('/token')
+        ? Response.json(token())
+        : new Response(encoded([{ type: 'done', exit: false }]))) })
+    const unheard = vi.fn()
+    provider.on('agent.unheard', unheard)
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    final('Say something.')
+    await vi.waitFor(() => expect(unheard).toHaveBeenCalledOnce())
+    expect(unheard.mock.calls[0]![0]).toMatchObject({ audioMs: 0 })
+    expect((await provider.end('cap')).turns.filter((turn) => turn.speaker === 'agent')).toEqual([])
+  })
+})

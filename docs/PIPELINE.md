@@ -163,6 +163,56 @@ start another paid reply after the end.
 Onset fires ~90ms after the first loud frame, locally, with no network in the
 path. That is the number to beat two overlaps with.
 
+### A barge-in is an interruption. Not everything that ends a turn early is one.
+
+`onUserSpeechStart` used to cut whenever `player.isPlaying || responding`, and
+`responding` is true from the instant generation begins — so a user speaking
+while she was still *thinking* took the full barge-in path. That cost two of her
+seven replies on 6 September (`LAUNCH-GAP.md` B11), and the second-order damage
+was worse than the lost audio: a barge-in counted, a truncation counted, and a
+turn sealed at zero played seconds that `commitAgentTurn` then found no text in
+and dropped without a word anywhere.
+
+`displaceCurrentReply` now decides between two dispositions, and it decides by
+asking `playedText` — the same function that would do the truncating:
+
+| | reached the ear | disposition |
+|---|---|---|
+| **barge-in** | words | truncate to them, commit, count `bargeIns`, count `truncated` |
+| **supersede** | nothing | abandon the turn, count neither, report `agent.unheard` |
+
+Asking `playedText` rather than a wall-clock grace is deliberate twice over. It
+means the decision to truncate and the truncation itself cannot disagree — that
+disagreement *was* the bug. And time is the wrong measure: an underrun advances
+the clock while no audio plays, so a line "playing" for a second through a
+stalled network has still not been heard. `PcmPlayer.playedSeconds` is derived
+from the audio schedule precisely so that it knows the difference.
+
+Both dispositions are shared with the overlap gate in `respond`, so a second
+transcription final racing an in-progress reply disposes of it identically.
+
+### Was that line audible?
+
+`lib/voice/audibility.ts` is provider-neutral and, until 6 September, was
+imported by exactly one adapter — the realtime one, which stopped shipping on
+5 September. So the arm serving every customer reported `{unheard: 0}` through a
+rep that lost two replies.
+
+The watch now starts on `onFirstAudio` (a sample actually leaving the speaker,
+not a buffer opening) and settles at commit. There is no `inbound-rtp` counter
+to read here, so `UnheardTurn.packetDelta` stays null on this arm and `audioMs`
+carries the equivalent evidence — how much audio the player was handed. It
+separates the same two causes: **zero** means synthesis produced nothing and the
+fault is upstream of the browser; a healthy number with a silent analyser means
+the audio graph swallowed it.
+
+Three things now report `agent.unheard` where all three were previously silent:
+a superseded reply, a committed turn the analyser heard nothing during, and a
+generation that produced no audio at all. The watch fails open — an analyser
+that cannot be read yields no samples, and `TurnAudibility` already treats too
+few samples as "withhold the verdict" rather than as silence, because
+diagnostics may never end a live rep (§05).
+
 **One behavioural difference from the OpenAI arm, stated plainly.** Here a
 barge-in *always* cuts her off, whatever `persona.interrupts` says, because the
 user must never be talked over. `interrupts` instead sets how hard the user has
@@ -227,6 +277,47 @@ or cancelled request was billed. Server records distinguish attempted/accepted
 work and unknown usage; vendor reconciliation remains necessary. Legacy credit
 counter units can differ from billable characters by model and account, so do
 not infer dollar cost or remaining reps from a one-credit-per-character rule.
+
+### An uncertain cost is bounded, never unknown — 6 September
+
+`voice_operation_settle` reads a null `p_cost_usd` as `coalesce(p_cost_usd,
+max_cost_usd)`: **an unpriced operation is charged its whole reservation.** Two
+paths were handing it nulls on every rep.
+
+`uncertainSynthesis` is set before a TTS request goes out and cleared when the
+response comes back, so a turn interrupted in flight settled unpriced — and it
+took the LLM half, which was never uncertain, down with it. Her first reply on
+6 September synthesised **zero** characters against a known $0.0009 of
+generation and was charged **$0.0357**: 38x, and 43% of that rep's entire
+ledger. Five barge-ins in one rep reaches the $0.20 session budget and refuses a
+turn at two minutes — the same failure the "drain, do not cancel" comment in
+`combined.ts` already records for capped turns. The characters actually
+*submitted* bound what the vendor could have charged, so that is the charge now.
+`costUsd` stays null only when the model never sent a usage receipt at all,
+which is the one case with no bound available.
+
+The transcription envelope was the other. The browser holds that credential and
+talks to OpenAI directly, so no route sees a receipt; `/api/voice/token`
+reserves a flat four minutes as an admission bound, then settled it immediately
+with a null. Every rep bought four minutes of transcription at the door
+regardless of length — $0.024 against a measured $0.0018 on a 74-second rep,
+27% of its ledger. It is no longer settled at mint. The reservation is simply
+held, which is what a reservation is for and which
+`voice_spend_committed_cents` counts against the daily cap identically, and
+`finishRep` prorates it against the seconds the rep actually ran.
+
+**The proration deliberately does not read the browser's measured token count**,
+even though `pipeline_telemetry` carries it. This module settles from provider
+responses, never from client-reported spend (rule 11), and a client that
+under-reports would be buying free work. The user cannot have spoken for longer
+than his rep ran; that bound is the server's own and is what gets billed. It is
+still an over-estimate — he was silent while she talked — but an honest and
+proportional one, and the measured figure stays in telemetry as the diagnostic
+that will tighten the model once an invoice reconciles it.
+
+Together these took the 6 September rep's ledger from **$0.0823 to $0.0253**,
+which is what it actually cost: 3.3x, and the whole of the gap was those two
+rows.
 
 The free plan is 10,000 credits a month with no overage: synthesis stops
 mid-sentence. So the console screams from 8,000 upward — at mint time in the

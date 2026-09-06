@@ -158,6 +158,13 @@ React personally and briefly. Never police their tone, request respect, explain 
 export const tess: Persona = {
   slug: 'tess',
   name: 'Tess',
+
+  // THE ONE GUIDED CHARACTER. She is rung 1 and she is who a new account meets,
+  // so her rep carries an on-screen script — an aim, and for five of the six
+  // scored dimensions an example line. `lib/data/guided.ts` holds the script,
+  // the argument and the guard; `LAUNCH-GAP.md` §4 records the drift from §05.
+  // Nobody else on the roster sets this, and `roster.test.ts` asserts it.
+  guided: true,
   // "the machine", not "her machine". This string is handed to the model as
   // well as shown to the user, and the compiler prints it under a second-person
   // heading — a third-person pronoun about herself sat in her own instructions.
@@ -212,14 +219,20 @@ export const tess: Persona = {
   // `patience` and `distraction` are what "easier" means in layer 2: what a
   // misstep costs, and what an unspecific good turn earns. `roster.test.ts`
   // pins both against Nadia's, so they cannot be copied even if the rest is.
-  // Everything else here is hers to the number — sharpness 20, the low-warmth
-  // boost 15, humour 69, talkativeness 56, playful, signalClarity 90 — because
-  // those are how a character sounds and this character sounds like Nadia.
+  // Everything else here is hers, because those dials are how a character
+  // sounds and this character sounds like Nadia.
+  //
+  // THE NUMBERS ARE NOT REPEATED IN THIS COMMENT ANY MORE. They were — "sharpness
+  // 20 … humour 69" — and then 37e2961 retuned Nadia to 25 and 50 without
+  // bringing Tess with her. The comment went stale in the same instant the
+  // invariant broke, so the one artefact a reader would check to find out was
+  // asserting the old answer. `tess.test.ts` pins each dial against Nadia's
+  // live value; that is the record, and it cannot rot.
   personality: {
-    sharpness: 20,
+    sharpness: 25,
     sharpnessLowWarmthBoost: 15,
-    humour: 69,
-    talkativeness: 56,
+    humour: 50,
+    talkativeness: 50,
     // Nadia gives 80. Rung 1 forgives more.
     patience: 85,
     expression: 'playful',

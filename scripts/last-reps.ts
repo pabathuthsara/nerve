@@ -46,20 +46,32 @@ for (const session of sessions ?? []) {
       `${session.final_band} · won=${session.won}`,
   )
   const incidents = (session.pipeline_incidents ?? {}) as {
-    unheardTurns?: { at: number; peak: number; samples: number; packetDelta: number | null; recovered: boolean }[]
+    unheardTurns?: {
+      at: number; peak: number; samples: number
+      packetDelta: number | null; audioMs?: number | null; recovered: boolean
+    }[]
   } & Record<string, unknown>
   const { unheardTurns, ...counts } = incidents
   console.log(`  incidents  ${JSON.stringify(counts)}`)
 
-  // B11's open question, printed rather than buried in a JSON blob. A zero
-  // packet delta means her audio never left the model; a healthy count means it
+  // B11's open question, printed rather than buried in a JSON blob. Zero
+  // delivery means her audio never left the provider; a healthy count means it
   // arrived and the browser did not render it. See LAUNCH-GAP.md B11.
+  //
+  // The two arms answer that question with different evidence — RTP packets on
+  // realtime, milliseconds handed to the player on the pipeline, which has no
+  // peer connection to count packets on — so whichever one is present is what
+  // gets printed.
   for (const turn of unheardTurns ?? []) {
-    const packets =
-      turn.packetDelta === null ? 'packets unreadable' : `packets +${turn.packetDelta}`
+    const delivery = turn.packetDelta !== null && turn.packetDelta !== undefined
+      ? `packets +${turn.packetDelta}`
+      : typeof turn.audioMs === 'number' ? `${turn.audioMs}ms of audio reached the player`
+      : 'delivery unreadable'
+    const measured = turn.samples > 0
+      ? `peak ${turn.peak.toFixed(5)} over ${turn.samples} samples`
+      : 'nothing to measure'
     console.log(
-      `  UNHEARD    ${turn.at.toFixed(1)}s · peak ${turn.peak.toFixed(5)} over ` +
-        `${turn.samples} samples · ${packets}` +
+      `  UNHEARD    ${turn.at.toFixed(1)}s · ${measured} · ${delivery}` +
         `${turn.recovered ? ' · asked her to say it again' : ''}`,
     )
   }

@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { supabaseAdmin } from './admin'
+import { pipelineTranscriptionAllowance } from '@/lib/voice/mint'
 import type { Json } from './types'
 import type { PersonaContext } from './persona-context'
 
@@ -223,6 +224,99 @@ export async function settleVoiceOperation(input: {
     return { ok: true, duplicate: row.duplicate === true,
       ...(typeof row.cost_usd === 'number' ? { costUsd: row.cost_usd } : {}) }
   } catch { return { ok: false, message: 'Usage remains reserved until reconciliation.' } }
+}
+
+/**
+ * Settle the browser's transcription envelope against the rep that actually ran.
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────
+ *
+ * The pipeline's transcriber is connected directly from the browser, so no
+ * server route ever sees a usage receipt for it. `/api/voice/token` therefore
+ * reserves a flat four minutes of continuous speech as an admission bound —
+ * correct, because a reservation has to be an upper bound — and then used to
+ * settle it immediately with `costUsd: null`, which
+ * `voice_operation_settle` turns into the FULL reservation:
+ * `coalesce(p_cost_usd, max_cost_usd)`.
+ *
+ * Every rep was therefore billed $0.024 for transcription the moment it was
+ * minted. The rep of 6 September ran for 74 seconds and spent $0.0018 of real
+ * transcription; the flat envelope was thirteen times that, and on its own it
+ * was 27% of the rep's whole ledger.
+ *
+ * ── AND WHY IT DOES NOT ASK THE BROWSER ──────────────────────────────────
+ *
+ * The measured token count reaches us in `pipeline_telemetry`, and it is the
+ * obvious number to bill. It is also a number the client supplies, and this
+ * module's whole contract is "settle from the provider response, never a
+ * browser's reported spend" — a client that under-reports would be buying free
+ * work, which is exactly what rule 11 exists to prevent.
+ *
+ * So the prorating uses the one bound the server owns outright: the user cannot
+ * have spoken for longer than his rep ran. It is still an over-estimate — he
+ * was silent while she talked — but it is an honest one, it is proportional,
+ * and a rep that ends at thirty seconds is no longer charged for four minutes.
+ * The measured figure stays in `pipeline_telemetry` as the diagnostic that will
+ * tighten this model once a billing period reconciles it.
+ *
+ * Never raises the charge: the envelope's own bound still caps it.
+ */
+export async function settleTranscriptionEnvelope(input: {
+  userId: string
+  sessionId: string
+  /** Wall-clock seconds the rep ran. The ceiling on how long he can have spoken. */
+  seconds: number
+}): Promise<UsageWriteResult> {
+  const allowance = pipelineTranscriptionAllowance()
+  if (!allowance) return { ok: false, message: 'This transcription model has no verified rate.' }
+
+  let operationIds: string[]
+  try {
+    const { data, error } = await supabaseAdmin()
+      .from('voice_operations')
+      .select('operation_id')
+      .eq('session_id', input.sessionId)
+      .eq('kind', 'stt')
+      .eq('state', 'reserved')
+    // Nothing outstanding is the ordinary case for a realtime rep, and for a
+    // pipeline rep whose startup already settled its envelope as failed.
+    if (error) return { ok: false, message: 'Usage remains reserved until reconciliation.' }
+    operationIds = (data ?? []).map((row) => row.operation_id)
+    if (operationIds.length === 0) return { ok: true }
+  } catch {
+    return { ok: false, message: 'Usage remains reserved until reconciliation.' }
+  }
+
+  const seconds = Number.isFinite(input.seconds) ? Math.max(0, input.seconds) : 0
+  const audioMs = Math.min(Math.round(seconds * 1000), allowance.audioMs)
+  const costUsd = Math.min(allowance.usdPerMinute * (audioMs / 60_000), allowance.maxCostUsd)
+
+  // Normally exactly one. A retried startup resumes the same rep and mints a
+  // second credential, and there is no way to tell afterwards which of them the
+  // browser actually transcribed through — so both are charged the same bound
+  // rather than one of them being forgiven. Over-charging a retry is the safe
+  // error here for the reason the rate card records: a ceiling that trips early
+  // costs a rep, one that trips late costs a bill.
+  let result: UsageWriteResult = { ok: true }
+  for (const operationId of operationIds) {
+    const settled = await settleVoiceOperation({
+      userId: input.userId,
+      sessionId: input.sessionId,
+      operationId,
+      costUsd,
+      status: 'completed',
+      resources: { sttAudioMs: audioMs },
+      usage: { estimatedAudioMs: audioMs },
+      metadata: {
+        source: 'direct-browser-stt-envelope',
+        model: allowance.model,
+        measurement: 'session-elapsed-bound',
+        repSeconds: Math.round(seconds),
+      },
+    })
+    if (!settled.ok) result = settled
+  }
+  return result
 }
 
 /** Closing does not release in-flight reservations or the protected grade. */

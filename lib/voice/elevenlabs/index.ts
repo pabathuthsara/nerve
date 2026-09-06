@@ -22,6 +22,15 @@
  *
  * Four is the one that matters. Without it she remembers saying things the user
  * never heard, and every later turn answers a conversation that did not happen.
+ *
+ * AND BARGE-IN IS NOT THE ONLY WAY A TURN CAN END EARLY. The user speaking
+ * while she is still GENERATING is not an interruption — he cannot interrupt
+ * something he has not heard — and running it through the same path cost two
+ * of her seven replies in the rep of 6 September. `supersedeResponse` is that
+ * second case, `displaceCurrentReply` is the line between them, and neither
+ * of them may end without a number: every reply that reaches nobody now
+ * reports `agent.unheard`, which is the instrumentation this arm shipped
+ * without.
  */
 
 import { VoiceEmitter } from '../emitter'
@@ -66,9 +75,11 @@ import { TurnClient } from './turn'
 import { PcmPlayer } from './player'
 import { SpokenTurn, capToBudget } from './truncate'
 import { PipelineMeter } from './telemetry'
+import { SAMPLE_INTERVAL_MS, TurnAudibility, analyserRms } from '../audibility'
 import { PIPELINE_MODEL_ID, type MintedPipelineSession } from './mint'
 
 const PROVIDER: ProviderId = 'elevenlabs'
+
 
 export interface ElevenLabsAdapterOptions {
   tokenEndpoint?: string
@@ -112,6 +123,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   private player: PcmPlayer | null = null
   private spoken: SpokenTurn | null = null
   private agentStartedAt: number | null = null
+  /** Did that line actually come out of the speakers? See ../audibility.ts. */
+  private readonly audibility = new TurnAudibility()
+  private audibilityTimer: ReturnType<typeof setInterval> | null = null
+  private readonly audibilityBuffer = new Float32Array(2048)
   private llmAbort: AbortController | null = null
   private ttsAbort: AbortController | null = null
   private connectAbort: AbortController | null = null
@@ -357,9 +372,50 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     this.userSpeaking = true
     const at = this.secondsAt(atMs)
     this.emitter.emit('user.speech.start', { at })
-    // Beat the round-8 overlap count by cutting on onset rather than on a
-    // committed transcript. Nothing downstream is waited for.
-    if (this.player?.isPlaying || this.responding) this.bargeIn(at)
+    // SHE IS ONLY INTERRUPTIBLE ONCE SHE IS AUDIBLE, AND THIS USED TO CUT ON
+    // `responding` — WHICH IS TRUE FROM THE INSTANT GENERATION STARTS.
+    //
+    // A user cannot interrupt a line he has not heard. On the rep of
+    // 6 September the pipeline took 5.3s to produce her first reply; he waited,
+    // read the next guided step, spoke — and that onset aborted a turn whose
+    // synthesis had not delivered a byte. He then said "Hello", which landed
+    // on the exact millisecond her second line began and threw that one away
+    // too. Two replies generated, two paid for, neither heard, and the
+    // transcript recorded him talking to himself for twenty seconds.
+    //
+    // The distinction below is the whole fix. A barge-in is an interruption of
+    // something that reached the ear; anything earlier is her being SUPERSEDED
+    // by a user who is still taking his own turn, and the two must not share a
+    // code path — one truncates a real line and counts against her, the other
+    // throws away work nobody experienced.
+    this.displaceCurrentReply(at)
+  }
+
+  /**
+   * End whatever reply is in flight, by whichever rule actually applies.
+   *
+   * THE TEST IS "DID HE HEAR WORDS", AND IT IS PUT TO THE SAME FUNCTION THAT
+   * WOULD DO THE TRUNCATING. `playedText` returns the empty string for a
+   * playhead at zero and the whole line for one at the end; whatever it returns
+   * is by definition what reached the ear. Asking it here means the decision to
+   * truncate and the truncation itself cannot disagree — and that disagreement
+   * WAS the bug: `bargeIn` sealed a turn at zero played seconds,
+   * `commitAgentTurn` found no text to commit, and the reply evaporated with a
+   * barge-in counted and nothing else written down anywhere.
+   *
+   * A wall-clock grace is the obvious alternative and is wrong twice over: an
+   * underrun advances time while no audio plays, and a line that has been
+   * "playing" for a second through a stalled network has still not been heard.
+   * The playhead is derived from the audio schedule precisely so that it knows
+   * the difference — see `PcmPlayer.playedSeconds`.
+   *
+   * Shared with the overlap gate in `respond`, so a second final racing an
+   * in-progress reply disposes of it exactly as a microphone onset does.
+   */
+  private displaceCurrentReply(at: number): void {
+    const heard = this.spoken?.playedText(this.player?.playedSeconds ?? 0) ?? ''
+    if (heard.trim()) this.bargeIn(at)
+    else if (this.responding || this.player) this.supersedeResponse(at)
   }
 
   private onUserSpeechStop(atMs: number, silenceMs: number): void {
@@ -420,9 +476,11 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
 
     if (this.responding) {
       // A second reply cannot be allowed to start on top of the first. Same
-      // guard as the OpenAI response gate, same reason.
+      // guard as the OpenAI response gate, same reason. The overlap is the
+      // incident; how the displaced reply is disposed of is the same question
+      // a microphone onset asks, and is answered in one place.
       this.emitter.emit('agent.overlap', { at: this.now() })
-      this.bargeIn(this.now())
+      this.displaceCurrentReply(this.now())
       // A speech-stop listener can end the rep at its deadline during the
       // interruption. Do not start new paid work after that synchronous end.
       if (this.ended) return
@@ -747,6 +805,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       onFirstAudio: () => {
         const at = this.now()
         this.agentStartedAt = at
+        // `onFirstAudio` fires when a sample actually leaves the speaker,
+        // which is the only event in this pipeline that means the user could
+        // have heard anything, so it is where the watch belongs.
+        this.startWatchingHerVoice()
         this.emitter.emit('agent.speech.start', { at })
         if (this.userStoppedAtMs !== null) {
           this.meter?.record('totalPerceivedMs', this.clock() - this.userStoppedAtMs)
@@ -781,8 +843,90 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       this.player = null
       this.spoken = null
       this.agentStartedAt = null
+      this.stopWatchingHerVoice()
     }
     if (wasSpeaking) this.emitter.emit('agent.speech.stop', { at })
+  }
+
+  /**
+   * She was still preparing, so there was nothing for him to interrupt.
+   *
+   * Everything a barge-in does to the transport happens here too — playback
+   * stops, both streams are cancelled, the turn is abandoned — and none of
+   * what a barge-in does to the RECORD does:
+   *
+   *   · no `agent.truncated`. She was not cut off mid-line; she never started.
+   *   · no barge-in on the meter. `bargeIns` is a measure of how often the user
+   *     talks over her, and counting a reply he never heard inflates it into
+   *     something else.
+   *   · no transcript turn, not even an empty one. Sealing a line at zero
+   *     played seconds used to fall through `commitAgentTurn`'s `if (text)`
+   *     and vanish without a number anywhere — the exact hole B11 exists to
+   *     close, on the arm that never had the detector.
+   *
+   * What it does report is `agent.unheard`, because that is precisely what
+   * happened: a reply was generated, was paid for, and reached nobody.
+   */
+  private supersedeResponse(at: number): void {
+    const wasSpeaking = this.agentStartedAt !== null
+    const audioMs = Math.round((this.player?.scheduledSeconds ?? 0) * 1000)
+    const verdict = this.audibility.verdict()
+
+    this.player?.stopNow()
+    this.stopWatchingHerVoice()
+    this.cancelResponse()
+
+    this.responding = false
+    this.player = null
+    this.spoken = null
+    this.agentStartedAt = null
+
+    this.emitter.emit('agent.unheard', {
+      at,
+      audioMs,
+      packetDelta: null,
+      recovered: false,
+      ...(verdict.samples > 0 ? { peak: verdict.peak, samples: verdict.samples } : {}),
+    })
+    if (wasSpeaking) this.emitter.emit('agent.speech.stop', { at })
+  }
+
+  /* -------------------------------------------------------------- *
+   * Was that line audible?
+   * -------------------------------------------------------------- */
+
+  /**
+   * Watch her analyser for the turn that has just become audible.
+   *
+   * The OpenAI arm has had this since B11 landed on 24 August and this one
+   * never did — `TurnAudibility` was imported by exactly one adapter, and it
+   * was the adapter that stopped shipping on 5 September. So the arm serving
+   * every real customer reported `{unheard: 0}` through a rep that lost two of
+   * her seven replies.
+   *
+   * There is no `inbound-rtp` counter to read here: the pipeline is HTTP and
+   * WebAudio, not a peer connection. The equivalent evidence is how much audio
+   * the player was actually handed, which separates the same two causes —
+   * nothing scheduled means the failure is upstream of the browser, and audio
+   * scheduled with silence on the analyser means the graph ate it.
+   */
+  private startWatchingHerVoice(): void {
+    this.stopWatchingHerVoice()
+    this.audibility.reset()
+    // Diagnostics must never be able to break a live rep — the same reasoning
+    // `lib/safety/assess.ts` records for failing open. An analyser that cannot
+    // be read yields no samples, and `TurnAudibility` already treats too few
+    // samples as "withhold the verdict" rather than as silence.
+    if (typeof this.agentAnalyser?.getFloatTimeDomainData !== 'function') return
+    this.audibilityTimer = setInterval(() => {
+      this.audibility.observe(analyserRms(this.agentAnalyser, this.audibilityBuffer))
+    }, SAMPLE_INTERVAL_MS)
+  }
+
+  private stopWatchingHerVoice(): void {
+    if (this.audibilityTimer === null) return
+    clearInterval(this.audibilityTimer)
+    this.audibilityTimer = null
   }
 
   private cancelResponse(): void {
@@ -807,6 +951,13 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     )
     const startedAt = this.agentStartedAt ?? this.now()
     const stopped = this.player !== null && !truncated
+    const audioMs = Math.round((this.player?.scheduledSeconds ?? 0) * 1000)
+
+    // Read before the player is dropped, and only meaningful once she has been
+    // audible long enough to judge. See ../audibility.ts for why peak and not
+    // mean, and for why a handful of samples is not evidence.
+    this.stopWatchingHerVoice()
+    const verdict = this.audibility.verdict()
 
     if (truncated && spoken.wasTruncated(playedSeconds)) this.meter?.truncated()
 
@@ -824,6 +975,30 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       const turn = makeTurn('agent', text, startedAt, startedAt + playedSeconds)
       this.turns.push(turn)
       this.emitter.emit('agent.transcript', { turn, final: true })
+      // She said it, and the analyser says the room stayed silent. Reported,
+      // never dropped: this is a local measurement and a browser with an odd
+      // WebAudio graph must not be able to delete her side of a rep. The same
+      // rule the OpenAI arm settles on in `settleHerVoice`.
+      if (verdict.silent) {
+        this.emitter.emit('agent.unheard', {
+          at: this.now(), peak: verdict.peak, samples: verdict.samples,
+          audioMs, packetDelta: null, recovered: false,
+        })
+      }
+    } else {
+      // A GENERATED REPLY WITH NO AUDIBLE WORDS IS NOT NOTHING.
+      //
+      // It used to be exactly nothing: `if (text)` was the whole guard, so a
+      // turn whose synthesis failed, or which was sealed at zero played
+      // seconds, left no transcript row, no incident and no counter — while
+      // still costing a full turn's LLM and whatever TTS had been submitted.
+      // That silence is what made the 6 September rep unreadable after the
+      // fact. There is still no transcript turn, because she genuinely said
+      // nothing the user heard, but there is now a number.
+      this.emitter.emit('agent.unheard', {
+        at: this.now(), audioMs, packetDelta: null, recovered: false,
+        ...(verdict.samples > 0 ? { peak: verdict.peak, samples: verdict.samples } : {}),
+      })
     }
     if (stopped) this.emitter.emit('agent.speech.stop', { at: this.now() })
   }
@@ -991,6 +1166,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   private async releaseResources(): Promise<void> {
     // One failed cleanup must not keep the microphone or a provider alive.
     for (const stop of [
+      () => this.stopWatchingHerVoice(),
       () => this.capture?.stop(),
       () => this.stt?.close(),
       () => this.room?.stop(),

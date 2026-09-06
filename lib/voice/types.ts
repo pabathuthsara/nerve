@@ -321,6 +321,20 @@ export interface Persona {
   postureMode?: PostureMode
 
   /**
+   * She walks the user through the rep, out loud, on screen.
+   *
+   * TRUE FOR EXACTLY ONE CHARACTER, and it is a deliberate exception to §05's
+   * "no coaching during the rep" and §01's "we never write your lines" — see
+   * `lib/data/guided.ts` for the argument and `LAUNCH-GAP.md` §4 for the
+   * recorded drift. Tess is rung 1, she is who a new account meets, and a user
+   * who freezes on the one free rep never finds out that rung 2 is better.
+   *
+   * Absent means a normal rep: timer, waveform, and the mission, which is a
+   * direction and never a line.
+   */
+  guided?: boolean
+
+  /**
    * How often an unchanged direction is re-sent to her, in turns.
    *
    * Absent means `STEER_HEARTBEAT_TURNS` (4), which is what the roster runs.
@@ -576,6 +590,17 @@ export interface VoiceEventMap {
      * to fix. Case 2 only.
      */
     packetDelta?: number | null
+    /**
+     * Milliseconds of her audio that reached the player, or null when unknown.
+     *
+     * The assembled pipeline's answer to the same question `packetDelta` asks
+     * on the realtime arm, and it needs its own field because the two are not
+     * the same measurement: there is no peer connection here and therefore no
+     * RTP counter. Zero means synthesis produced nothing and the fault is
+     * upstream of the browser; a healthy number with a silent analyser means
+     * the audio graph swallowed it. Pipeline arm only.
+     */
+    audioMs?: number | null
     /** True when the adapter asked her to say the line again. */
     recovered?: boolean
   }

@@ -23,13 +23,33 @@ export function pipelineSessionModel(): string {
   return resolvePipelineConfig(process.env as PipelineEnv).tts.model
 }
 
-/** A conservative duration estimate for the directly connected transcriber.
- * It is an admission allowance, not a provider usage receipt. */
-export function pipelineTranscriptionAllowance(): { model: string; maxCostUsd: number; audioMs: number } | null {
+export interface TranscriptionAllowance {
+  model: string
+  /** What four minutes of continuous speech would cost. The admission bound. */
+  maxCostUsd: number
+  audioMs: number
+  /** The published rate the bound is built from, so a settlement can prorate it. */
+  usdPerMinute: number
+}
+
+/**
+ * A conservative duration estimate for the directly connected transcriber.
+ * It is an admission allowance, not a provider usage receipt.
+ *
+ * The browser holds the transcription credential and talks to OpenAI itself, so
+ * there is no server-side receipt to settle against — which is why this is an
+ * envelope rather than a measurement, and why `usdPerMinute` is exported.
+ * Charging the whole envelope on every rep put $0.024 in the ledger against a
+ * real $0.0018; `settleTranscriptionEnvelope` prorates it against the seconds
+ * the rep actually ran, which is a bound the server owns outright.
+ */
+export function pipelineTranscriptionAllowance(): TranscriptionAllowance | null {
   const { model } = resolvePipelineConfig(process.env as PipelineEnv).stt
   const perMinute = model === 'gpt-4o-mini-transcribe' ? 0.003
     : model === 'gpt-4o-transcribe' ? 0.006 : null
-  return perMinute === null ? null : { model, maxCostUsd: perMinute * 4, audioMs: 240_000 }
+  return perMinute === null
+    ? null
+    : { model, maxCostUsd: perMinute * 4, audioMs: 240_000, usdPerMinute: perMinute }
 }
 
 export interface MintEnvironment {

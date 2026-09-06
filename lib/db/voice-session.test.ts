@@ -6,7 +6,7 @@ vi.mock('./admin', () => ({ supabaseAdmin: () => db }))
 import {
   activateVoiceSession, abortVoiceSession, abortVoiceStartupAttempt, closeVoiceSession, findActiveVoiceSession,
   openVoiceSession, recordStandaloneUsage, refundEmptyVoiceSession, reserveVoiceOperation,
-  serverVoiceSessionExists, settleVoiceOperation, voiceBudgetPolicy,
+  serverVoiceSessionExists, settleTranscriptionEnvelope, settleVoiceOperation, voiceBudgetPolicy,
 } from './voice-session'
 
 const open = {
@@ -148,5 +148,72 @@ describe('lifecycle and fallback protection', () => {
     db.rpc.mockResolvedValue({ error: null, data: { ok: true, refunded: false } })
     expect(await refundEmptyVoiceSession({ userId: 'user-a', sessionId: 'session-a' })).toEqual({ ok: true, refunded: false })
     expect(db.rpc).toHaveBeenCalledWith('voice_session_refund_empty', { p_user_id: 'user-a', p_session_id: 'session-a' })
+  })
+})
+
+describe('the transcription envelope', () => {
+  /** The reserved `stt` rows a session is holding, as the query returns them. */
+  function reserved(rows: { operation_id: string }[]) {
+    return {
+      select: () => ({
+        eq: () => ({ eq: () => ({ eq: () => Promise.resolve({ data: rows, error: null }) }) }),
+      }),
+    }
+  }
+
+  beforeEach(() => {
+    vi.stubEnv('PIPELINE_STT_MODEL', 'gpt-4o-transcribe')
+    db.rpc.mockResolvedValue({ error: null, data: { ok: true, duplicate: false, cost_usd: 0 } })
+  })
+
+  it('prices the rep that ran rather than the four minutes it was admitted for', async () => {
+    // 74 seconds against a $0.006/min transcriber. The flat envelope charged
+    // $0.024 on every rep whatever its length — thirteen times the $0.0018 of
+    // transcription this one actually used, and 27% of its whole ledger.
+    db.from.mockReturnValue(reserved([{ operation_id: 'stt:one' }]))
+    expect(await settleTranscriptionEnvelope({ userId: 'user-a', sessionId: 'session-a', seconds: 74 }))
+      .toMatchObject({ ok: true })
+    expect(db.rpc).toHaveBeenCalledWith('voice_operation_settle', expect.objectContaining({
+      p_operation_id: 'stt:one', p_status: 'completed',
+      p_cost_usd: expect.closeTo(0.006 * 74 / 60, 9),
+      p_resources: { sttAudioMs: 74_000 },
+    }))
+  })
+
+  it('never charges beyond the bound it was admitted under', async () => {
+    // A rep cannot outrun its own reservation, but the arithmetic must not be
+    // able to either — a session row with a nonsense duration is a bug, not a
+    // licence to bill for it.
+    db.from.mockReturnValue(reserved([{ operation_id: 'stt:one' }]))
+    await settleTranscriptionEnvelope({ userId: 'user-a', sessionId: 'session-a', seconds: 99_999 })
+    expect(db.rpc).toHaveBeenCalledWith('voice_operation_settle', expect.objectContaining({
+      p_cost_usd: 0.024, p_resources: { sttAudioMs: 240_000 },
+    }))
+  })
+
+  it('settles an abandoned mint at nothing rather than leaving it held all day', async () => {
+    db.from.mockReturnValue(reserved([{ operation_id: 'stt:one' }]))
+    await settleTranscriptionEnvelope({ userId: 'user-a', sessionId: 'session-a', seconds: 0 })
+    expect(db.rpc).toHaveBeenCalledWith('voice_operation_settle', expect.objectContaining({
+      p_cost_usd: 0, p_resources: { sttAudioMs: 0 },
+    }))
+  })
+
+  it('charges every outstanding envelope when a startup was retried', async () => {
+    // A retry resumes the same rep and mints a second credential, and there is
+    // no way to tell afterwards which one the browser transcribed through.
+    // Over-charging a retry is the safe error; forgiving one is not.
+    db.from.mockReturnValue(reserved([{ operation_id: 'stt:one' }, { operation_id: 'stt:two' }]))
+    await settleTranscriptionEnvelope({ userId: 'user-a', sessionId: 'session-a', seconds: 60 })
+    expect(db.rpc).toHaveBeenCalledTimes(2)
+    expect(db.rpc.mock.calls.map((call) => call[1].p_operation_id)).toEqual(['stt:one', 'stt:two'])
+  })
+
+  it('does nothing for a rep that never reserved one', async () => {
+    // Every realtime rep, and any pipeline rep whose startup already settled.
+    db.from.mockReturnValue(reserved([]))
+    expect(await settleTranscriptionEnvelope({ userId: 'user-a', sessionId: 'session-a', seconds: 74 }))
+      .toEqual({ ok: true })
+    expect(db.rpc).not.toHaveBeenCalled()
   })
 })

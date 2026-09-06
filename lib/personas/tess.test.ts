@@ -155,17 +155,23 @@ describe('Tess — she sounds like Nadia because the dials say so', () => {
   })
 
   it('compiles to the same derived behaviour block except the disposition', () => {
-    // The disposition line is banded off `trajectory.start`, which IS the rung,
-    // so it is the one line that must differ. Every other derived sentence —
-    // effort, clarity, patience, delivery — should read identically, because
-    // they are read off dials she now shares.
+    // The disposition line is banded off `trajectory.start`, and the composure
+    // line off `patience` — both of which ARE the rung, so both must differ.
+    // Every other derived sentence — effort, clarity, delivery — should read
+    // identically, because they are read off dials she shares.
+    //
+    // The humour sentence below is the one that caught the drift: 37e2961
+    // retuned Nadia from 69 to 50 without bringing Tess with her, and this
+    // assertion started failing on its own CONTROL. Read the expected strings
+    // off the compiler when a dial moves; do not adjust them to whatever makes
+    // the test green.
     const hers = compileInstructions(tess, { canEndScene: true })
     const nadias = compileInstructions(nadia, { canEndScene: true })
     for (const line of [
       'You meet them halfway. You answer what you are asked and occasionally add something, but you do not drive.',
       'Your level of interest is obvious and unmistakable from how you respond.',
       'You are light and quick, and you enjoy winding people up a little.',
-      'You are funny more often than not, and dry about it.',
+      'You are amused by things occasionally and do not make a performance of it.',
     ]) {
       expect(nadias, `control: ${line}`).toContain(line)
       expect(hers, `tess: ${line}`).toContain(line)

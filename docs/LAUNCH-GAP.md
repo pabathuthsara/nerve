@@ -773,9 +773,65 @@ line, never a chain: a repeat that is itself inaudible is committed normally.
 Covered by `lib/voice/incidents.test.ts` and the `holding an unheard turn` block
 in `response-gate.test.ts`.
 
-**Still owed.** The next rep with a short opener reads out the packet delta and
-settles which half this is. Until then the recovery is a mitigation, not a fix —
-it makes the hole audible again without explaining it.
+**Still owed on the realtime arm.** The next rep with a short opener reads out
+the packet delta and settles which half this is. Until then the recovery is a
+mitigation, not a fix — it makes the hole audible again without explaining it.
+
+**It happened again on 6 September, on the other arm, and for a different
+reason.** Same user report, almost word for word: "the first one or two
+sentences she spoke were not audible." Rep `0fa8a1e3`, Tess, 74 seconds.
+`pipeline_incidents` read `{unheard: 0, unheardTurns: []}` throughout.
+
+Two of her seven replies never reached the user, and the ledger proves both:
+
+| | what the receipt says | what happened |
+|---|---|---|
+| reply 1 | `status: aborted`, `attemptedCharacters: 63`, `characters: 0`, `ttsRequestIds: []`, `firstAudio: false` | synthesis killed in flight; she never made a sound |
+| reply 2 | `characters: 52`, `firstAudio: true`, `requestToFirstAudioMs: 2160` | audio began; he spoke over its first millisecond |
+
+**The cause of the first is the cause of the second.** `onUserSpeechStart` cut
+on `player.isPlaying || responding`, and `responding` is true from the instant
+generation starts — so a user speaking while she was still *thinking* aborted
+her turn. Her first reply needed 5.3 seconds (`llmFirstTokenMs: 2781` on a cold
+cache, then 2.5s in TTS). He waited seven, was told by the guided rail to ask a
+follow-up, and spoke. That utterance killed the reply. He then said "Hello",
+which landed on the exact millisecond her second line began and killed that one
+too — and `commitAgentTurn`'s `if (text)` found nothing in a turn sealed at zero
+played seconds and dropped it in silence.
+
+So the transcript records him talking to himself for twenty seconds, and the
+warmth engine scored "Hello" as a dead end (−1.36) and capped her next reply to
+two words. The pipeline failure was charged to the user.
+
+**Why nothing noticed: this arm never had the detector.** `TurnAudibility` and
+`analyserRms` were imported by `lib/voice/openai/index.ts` and by nothing else.
+Everything above landed on 24–25 August for the arm that stopped shipping on
+5 September.
+
+**Landed 6 September.**
+
+- `displaceCurrentReply` splits **barge-in** from **supersede**, and decides by
+  asking `playedText` — the same function that would do the truncating, so the
+  decision to truncate and the truncation can no longer disagree. Words reached
+  the ear: truncate, commit, count. Nothing did: abandon it, count neither,
+  report it. A wall-clock grace was rejected because an underrun advances time
+  while no audio plays.
+- The audibility watch is wired into the pipeline arm, starting on `onFirstAudio`
+  and settling at commit. `UnheardTurn` gains `audioMs` — how much audio the
+  player was handed — because there is no peer connection here to read
+  `packetDelta` from. It answers the same question: **zero** is a fault upstream
+  of the browser, a healthy number with a silent analyser is the audio graph.
+- `commitAgentTurn` no longer drops a generated reply in silence. Three cases now
+  report `agent.unheard` where all three were previously invisible: a superseded
+  reply, a committed turn nothing was heard during, and a generation that
+  produced no audio at all.
+- The guided rail advances on completed **exchanges** rather than on his turns
+  (D13), so it can no longer tell a user to follow an answer that never arrived.
+  That is what put his voice on top of her first reply.
+
+**Read it with `scripts/last-reps.ts`, which prints whichever delivery figure
+the arm actually has.** The realtime half of this blocker is unchanged and still
+owed its packet delta.
 
 ### B12 · The Sunday letter has no scheduler  ·  ~0 days on Pro, ~0.5 days on Actions  ·  `deferred 24 Aug`
 
@@ -1385,6 +1441,7 @@ somebody has to say which is right.
 | D9 | "Volt is the ONLY accent"; Cool, Amber and Red are data or semantic, never branding (Arena) | Persona avatars carry a per-character hue on a constrained material ramp | **Decided 24 Aug — resolved in favour of the build, with a rule.** Characters have to be told apart at a glance on the roster, and shape alone was not enough — the argument was made when there were eight and holds with three, since the hue IS the warmth meter rather than decoration. The concession is bounded and enforced in code rather than in a style note: hues avoid the 60–115° band where Volt lives, no avatar colour comes within an RGB distance of 60 of Volt, Cool, Amber or Red, and chroma is floored at 0.34 and ceilinged at 0.86 so an avatar can never reach an accent's saturation. `lib/personas/visual.test.ts` holds all three. The Arena section of `CLAUDE.md` now records the carve-out |
 | ~~D11~~ | One rep a day on free, and voice as the only way to train (§01, §14) | Free has **no** voice reps; one sign-up rep, once per account; text mode runs the same character unmetered, on any day | **Superseded 31 Aug.** The day-one grant of three reps was decided on 25 Aug and was right about the arc — fail, adjust, succeed cannot happen inside one attempt — and wrong about who pays for it: free was also one rep a day forever, so day one's three was the loud half of a recurring cost for users who never paid. That arc is now the argument *for* Pro rather than something given away in front of it. What replaces it is a single sign-up rep on `entitlements.onboarding_rep_used_at`, which has no user write path, so abandoning and resuming onboarding cannot mint a second one; `lib/data/allowance.ts` holds the rule and `npm run db:rep` drives it. Text mode is unchanged and is now the larger half of what free is: no voice minutes, no meter, no score, capped below `ARM_THRESHOLD` so it can never produce the number a voice rep exists to earn. §14's rule still holds and matters more than before — running out must never break the habit, so a field challenge still keeps the day |
 | D12 | Free is "Level 1 personas", paid is "every persona" (the in-app plan comparison, and §14's tier table) | Nothing has ever gated a character by plan | **Resolved 27 Aug in favour of the build, by making the copy true.** **Second half closed 31 Aug:** the scorecard carried the mirror-image defect — four metric rows, the judgement row, both moments and the transcript link were drawn under a `LockOverlay` for a free account, while `/pricing` listed the full scorecard under what a plan never changes, and `/session/[id]/transcript` had no plan check on it at all. A claim rather than a gate, removed for the same reason. The paywall a free account meets is the microphone, and it is enough. `unlockedLevels` counts reps scoring 70+ and has never read a plan; `entitlements.plan` touches exactly two things, `reps_per_day` and the daily spend cap. The comparison was advertising a gate that did not exist, which is a promise to build one. Both the public and in-app plan lists now say volume and nothing else — and that is the better argument anyway, since a free tier that withholds the mechanism is a demo with a price attached |
+| D13 | "No coaching during the rep. Nothing on screen but a timer, a live waveform and the mission" (§05); "not a reply generator — we never write your messages for you… our entire differentiation is the opposite promise" (§01) | **Tess only** carries an on-screen script during her rep: an aim, and for five of the six scored dimensions an example line to say | **Decided 6 September in favour of the build, bounded to one character.** Tess is rung 1 and is who a new account meets on the one free rep, and first-session drop-off is where products in this category die — a user who freezes there never finds out that rung 2 is better. `site-audit-openai.md` reached the same conclusion from outside ("a performance dashboard without a coach") and put "a guided first win" on its borrow list. **What keeps it bounded is code, not this note:** `lib/data/guided.ts` holds one script for one slug; `assertGuidedStep` is stricter than anything else in the build and refuses appearance, pickup, contact-detail and ask-her-out vocabulary outright; `assertNoScript` and every mission on the other nine surfaces are untouched; and `guided.test.ts` walks the real roster to assert that exactly one persona carries the flag. The live rail is a rail and never a pop-up — text changing in place, `aria-hidden`, no animation — because §05's objection is to *interruption*, and the whole script is read on the brief first, where coaching has always been allowed. **The public claim moved with it**: `components/site/landing.tsx` now says "Your first character walks you through it. After that the words are yours", because §14 has a merchant-of-record reviewer reading that page and a promise the build no longer keeps is the kind of thing that gets checked. **Two defects found on the first real guided rep, 6 September, both fixed the same day.** The rail advanced on his turn count alone, so when her first two replies never reached him (B11) step two told him to *"follow one answer twice"* against a silence containing no answer — he read the line out, and that utterance is what aborted the reply she was still synthesising. It advances on completed **exchanges** now (`min(userTurns, agentTurns)`), so it cannot point at an answer that has not arrived, and a failing pipeline holds the script still instead of marching somebody through a monologue. Separately the close sat at six user turns, which the pipeline arm reaches in about a minute: the rail told him to leave at 0:63 of a 3:00 rep, he read the line, and the one free rep a new account gets ended at 74 seconds in a phone number. **The close is now reachable only through `wrapping`** — the format already owns that moment at `WRAP_UP_MS`, and telling him to leave before she has been told to wind down is the product arguing with itself, the same argument `dueSceneBeat` settles with `LAST_BEAT_FRACTION`. **Owed:** the composure step ships with no line on purpose (its skill is not filling a pause), and whether guided reps should be comparable to unguided ones on the personal-best composite is an open question — Tess is rung 1 and already the easiest, so it introduces no new comparability problem the ladder did not already have |
 | D10 | Eight characters, one per level, and level 8 unwinnable by construction (§06) | **Four** characters on rungs 1–4; the other five retired; no unwinnable rung | **Decided 24 Aug — deliberate, and the one entry here that gives something up.** See D10a. **Narrowed 31 Aug:** Tess was authored for the sign-up rep and took rung 1, Nadia moved to 2 and Maya back to 3, so the ladder is contiguous for the first time and no rung falls back to a neighbour's curve. Robin stays at 4, which is where §12 takes the warmth digits off the screen — that rule finally lands on the character it was written for. Four rungs is four UI tiers, so `Level` widened and the rank rail stayed anchored to the characters it was written about: Nadia earns Regular, Maya Contender, Robin Closer, and the on-ramp mints nothing |
 
 ### D10a · Four characters instead of eight  ·  **decided 24 Aug, narrowed 31 Aug**

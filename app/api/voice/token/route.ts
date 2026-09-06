@@ -13,7 +13,7 @@
  * or vocabulary. It resolves a provider and calls `mintSession`.
  */
 
-import { after, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { requireUser } from '@/lib/db/api-auth'
 import { maySpend } from '@/lib/db/spend'
 import { personaContext } from '@/lib/db/persona-context'
@@ -160,24 +160,19 @@ export async function POST(request: Request): Promise<Response> {
       apiKey: process.env.OPENAI_API_KEY,
       model: parseModel(body.model) ?? process.env.OPENAI_REALTIME_MODEL,
     })
-    if (owned && sttOperationId && sttAllowance) {
-      const sessionId = owned.sessionId
-      const operationId = sttOperationId
-      // The admission is already held. Recording its estimated receipt need
-      // not delay the short-lived credential reaching the browser.
-      after(async () => {
-        try {
-          const saved = await settleVoiceOperation({
-            userId: auth.userId, sessionId, operationId, costUsd: null, status: 'unknown',
-            usage: { estimatedAudioMs: sttAllowance.audioMs },
-            metadata: { source: 'direct-browser-stt-envelope', model: sttAllowance.model },
-          })
-          if (!saved.ok) console.error('[nerve] voice usage persistence failed', { transport: 'token', operationId })
-        } catch {
-          console.error('[nerve] voice usage persistence failed', { transport: 'token', operationId })
-        }
-      })
-    }
+    // THE ENVELOPE IS NOT SETTLED HERE, AND IT USED TO BE.
+    //
+    // Settling at mint meant settling before the rep had run, with nothing to
+    // settle against — so it went in as `costUsd: null`, which the RPC reads as
+    // "charge the whole reservation". Every rep bought four minutes of
+    // transcription at the door whether it lasted three minutes or thirty
+    // seconds.
+    //
+    // The reservation stays HELD instead, which is what a reservation is for:
+    // `voice_spend_committed_cents` counts an outstanding one against the daily
+    // cap exactly as it counted the settled charge, so nothing is loosened
+    // while the rep is live. `finishRep` settles it against the seconds the rep
+    // actually ran. See `settleTranscriptionEnvelope`.
     return NextResponse.json(owned ? {
       ...minted, sessionId: owned.sessionId, startupAttemptId: sttOperationId,
       turn: { endpoint: '/api/voice/turn' },

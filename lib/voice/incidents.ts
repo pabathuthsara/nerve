@@ -42,6 +42,11 @@ export interface UnheardTurn {
   samples: number
   /** `inbound-rtp.packetsReceived` across the turn. Null if unreadable. */
   packetDelta: number | null
+  /**
+   * Milliseconds of audio the player was handed. Null on the realtime arm,
+   * which answers the same question with `packetDelta`. See `VoiceEvents`.
+   */
+  audioMs: number | null
   /** True when the adapter asked her to say the line again. */
   recovered: boolean
 }
@@ -138,20 +143,26 @@ export function countIncidents(
   const offs = [
     voice.on('agent.overlap', bump('overlaps')),
     voice.on('agent.double-turn', bump('doubleTurns')),
-    voice.on('agent.unheard', ({ at, peak, samples, packetDelta, recovered }) => {
+    voice.on('agent.unheard', ({ at, peak, samples, packetDelta, audioMs, recovered }) => {
       incidents.unheard += 1
       // Absent diagnostics mean the provider's own event stream already
       // explained this one; there is nothing to record beyond the count.
-      if (peak !== undefined && samples !== undefined) {
-        if (incidents.unheardTurns.length < MAX_UNHEARD_RECORDS) {
-          incidents.unheardTurns.push({
-            at,
-            peak,
-            samples,
-            packetDelta: packetDelta ?? null,
-            recovered: recovered ?? false,
-          })
-        }
+      //
+      // `audioMs` counts as diagnostics too. On the pipeline arm the loudest
+      // case — synthesis that delivered nothing — has no analyser reading to
+      // report precisely BECAUSE there was no audio to read, and requiring a
+      // peak would have filed the most explanatory incident of all as a bare
+      // number with no evidence attached.
+      const measured = (peak !== undefined && samples !== undefined) || audioMs !== undefined
+      if (measured && incidents.unheardTurns.length < MAX_UNHEARD_RECORDS) {
+        incidents.unheardTurns.push({
+          at,
+          peak: peak ?? 0,
+          samples: samples ?? 0,
+          packetDelta: packetDelta ?? null,
+          audioMs: audioMs ?? null,
+          recovered: recovered ?? false,
+        })
       }
       onChange(incidents)
     }),

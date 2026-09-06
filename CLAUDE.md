@@ -64,7 +64,7 @@ future sessions read those markers to decide what to do.
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint
-npm test              # vitest, 1488 assertions
+npm test              # vitest, 1531 assertions
 npm run build:check   # production build into .next-check, never .next
 npm run db:verify     # RLS from a second real account, 51 checks
 npm run db:rep        # the whole rep lifecycle, without a microphone
@@ -97,6 +97,12 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    `lib/voice/provider.ts`. Both adapters emit identical normalised transcript turns
    `{ speaker, text, t_start, t_end }` — scoring depends on this and a provider switch
    must not break score comparability. (§04)
+   **A cross-cutting fix belongs to both arms, and B11 is the cautionary tale.**
+   `lib/voice/audibility.ts` was written provider-neutral, wired into the
+   realtime adapter alone, and four days later that adapter stopped shipping —
+   so the arm serving every customer reported zero incidents through a rep that
+   lost two of her seven replies. When something is detected in one adapter, ask
+   what the other one's equivalent evidence is before calling it done.
 2. **Outcome is never scored.** A clean rep that ends in rejection can score 92.
    Score process, never result. (§07)
 3. **The rep format is product law.** Three minutes. Warmth 65 *arms* the rep
@@ -129,6 +135,27 @@ Never run `next build` into `.next` while a dev server is up — see the note in
 6. **No spinners.** Skeletons that match the shape of the arriving content. (§02)
 7. **Never announce a downward difficulty adjustment.** Silent. (§08, §12)
 8. **No coaching during a live rep.** Timer, waveform, mission. Nothing else. (§05)
+   **The one exception is Tess, and it is one character wide.** She is rung 1
+   and is who a new account meets on its one free rep, so her rep carries an
+   on-screen script — an aim, and for five of the six scored dimensions an
+   example line. `lib/data/guided.ts` is the whole thing: one script for one
+   slug, `assertGuidedStep` refusing appearance, pickup, contact-detail and
+   ask-her-out vocabulary outright, and `guided.test.ts` walking the real roster
+   so a second guided character cannot appear by accident. **`assertNoScript`
+   and every mission on every other surface are untouched** — relaxing one
+   screen must never relax the other nine. It is a rail and never a pop-up:
+   text changing in place, `aria-hidden`, no animation, and the whole script is
+   read on the brief first, because §05's objection is to interruption.
+   **It advances on completed exchanges, and the close belongs to the
+   wind-down.** Both are load-bearing and both were learned the hard way on
+   6 September: advancing on his turns alone told him to "follow one answer
+   twice" against a silence with no answer in it, and a close sitting at six
+   user turns ended the one free rep at 74 seconds of 180 in a phone number. A
+   step needs his turn *and* her reply; `wrapping` is the only route to the last
+   step, so the rail and `WRAP_UP_MS` now fire together. The
+   drift is recorded as `LAUNCH-GAP.md` D13, and **the landing page's claim
+   moved with it** — "we never write your lines" was exact and is now "your
+   first character walks you through it; after that the words are yours".
 9. **Anything published is checked in code, not in a style note.** Share cards
    run through `assertPublishable` (`lib/share/cards.ts`) and a character's
    memory line runs through `lib/grade/memory.ts`. Both refuse rather than
@@ -232,6 +259,25 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     A dead end costs more than a good question earns, or she never visibly
     withdraws. Reprice in `fast.ts`, never through `gain`/`decay` — those are the
     difficulty ladder. (`HUMANNESS.md` §7.1)
+
+17. **A reply the user never heard is not an interruption, and it is never
+    nothing.** `displaceCurrentReply` splits barge-in from supersede by asking
+    `playedText` whether words actually reached the ear — the same function that
+    would do the truncating, so the two cannot disagree. Cutting on `responding`
+    instead destroyed two of her seven replies on 6 September, because that flag
+    is true from the instant generation starts and a user cannot interrupt a line
+    he has not heard. **Every reply that reaches nobody reports `agent.unheard`**,
+    whatever killed it, and a turn with no audible words is never dropped in
+    silence. (`PIPELINE.md` § Barge-in, `LAUNCH-GAP.md` B11)
+
+18. **An uncertain cost is bounded, never unknown.** `voice_operation_settle`
+    reads a null cost as the operation's whole reservation, so "we are not sure"
+    and "charge the ceiling" are the same statement. A turn that synthesised zero
+    characters was billed $0.0357 against a real $0.0009 that way, and the flat
+    transcription envelope charged four minutes on every rep whatever its length.
+    Price what is known, bound what is not — and bound it from something the
+    server owns, never from a figure the browser reports (rule 11).
+    (`PIPELINE.md` § Cost)
 
 ## Design system — Arena
 

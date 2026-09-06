@@ -299,7 +299,30 @@ export function createCombinedTurn(
       } finally {
         clearTimeout(deadline)
         requestSignal.removeEventListener('abort', abortFromRequest)
-        const ttsCost = characters / 1000 * ttsModelSpec(compiled.tts.model).usdPer1kChars
+        const usdPerChar = ttsModelSpec(compiled.tts.model).usdPer1kChars / 1000
+        const ttsCost = characters * usdPerChar
+        // AN UNCERTAIN CLIP IS BOUNDED, NOT UNKNOWN — AND IT USED TO POISON
+        // THE WHOLE RECEIPT.
+        //
+        // `uncertainSynthesis` means a synthesis request was in flight when the
+        // turn ended, so it may or may not have been generated and billed
+        // upstream. That single boolean used to send `costUsd` to null, and a
+        // null settles at the operation's full conservative reservation
+        // (`voice_operation_settle`: `coalesce(p_cost_usd, max_cost_usd)`).
+        //
+        // Measured on the rep of 6 September: her first reply was aborted with
+        // ZERO characters synthesised and a known LLM cost of $0.0009, and it
+        // was charged $0.0357 — 38x, and 43% of the whole rep's ledger. Five
+        // barge-ins in one rep would reach the $0.20 session budget and refuse
+        // a turn at two minutes, which is the same failure the ceiling comment
+        // above this block already records for capped turns.
+        //
+        // The characters actually SUBMITTED are the most the vendor could
+        // possibly have charged for, so that is the number. Still conservative,
+        // still never under-charges, and it is arithmetic rather than a
+        // fallback. The LLM half is not uncertain at all and is priced as
+        // measured — losing it was pure collateral damage.
+        const ttsCharged = uncertainSynthesis ? attemptedCharacters * usdPerChar : ttsCost
         const llmCost = llmUsage ? priceChatUsage(compiled.llm.model, llmUsage) : null
         // The final audio and done event have already been emitted. The route
         // keeps `finished` alive with after(), so persisting the receipt need
@@ -307,7 +330,10 @@ export function createCombinedTurn(
         if (!controllerClosed) { controllerClosed = true; controller.close() }
         try {
           await dependencies.onComplete?.({
-            status, costUsd: llmCost === null || uncertainSynthesis ? null : llmCost + ttsCost,
+            // Null only when the LLM never reported usage at all — a stream
+            // cancelled before its final frame, which is the one case with no
+            // bound available. Everything else is priced.
+            status, costUsd: llmCost === null ? null : llmCost + ttsCharged,
             usage: { llm: llmUsage, tts: { attemptedCharacters, characters, costUsd: ttsCost } },
             metadata: {
               durationMs: Math.round(now() - started), clips, firstAudio, firstAudioMs, ttsRegion,

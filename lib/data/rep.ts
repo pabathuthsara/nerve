@@ -152,6 +152,28 @@ export interface RepSessionState {
    */
   heardUser: boolean
   /**
+   * How many turns the user has actually spoken, with words in them.
+   *
+   * The guided rep reads this and never the total: a character who replies
+   * twice to one thing must not move somebody's step for them. Same rule and
+   * same reason as `lib/text/cues.ts`. Counted off the same test `heardUser`
+   * uses, so an empty transcript from a dead microphone cannot walk the script
+   * forward with nobody speaking. Paired with `agentTurns`, because on its own
+   * it cannot tell whether she ever answered.
+   */
+  userTurns: number
+  /**
+   * How many replies of hers actually landed.
+   *
+   * The guided rail advances on exchanges rather than on his turns alone, and
+   * an exchange needs both halves — see `guidedStepFor`. Counted off committed
+   * transcript turns, which is the only definition that excludes a reply that
+   * was generated and never heard: those emit `agent.unheard` and never reach
+   * `agent.transcript`, so a rep where the pipeline is failing holds the
+   * script still instead of marching a user through a monologue.
+   */
+  agentTurns: number
+  /**
    * Why this rep ended, once it has. Null while it is still running.
    *
    * The adapter has always reported this and `finishSession` has always
@@ -225,6 +247,8 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   const [band, setBand] = useState<Band>('CLOSED')
   const [speaking, setSpeaking] = useState<SpeakingState>('none')
   const [heardUser, setHeardUser] = useState(false)
+  const [userTurns, setUserTurns] = useState(0)
+  const [agentTurns, setAgentTurns] = useState(0)
   const [endReason, setEndReason] = useState<SessionSummary['reason'] | null>(null)
   const [levels, setLevels] = useState({ user: 0, persona: 0 })
   const [msRemaining, setMsRemaining] = useState(durationMs)
@@ -532,6 +556,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     setOutcome(null)
     setSpeaking('none')
     setLevels({ user: 0, persona: 0 })
+    setAgentTurns(0)
     setEndReason(null)
     safetyCloseAtRef.current = null
     safetyEndedRef.current = false
@@ -663,7 +688,10 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         // a different rule. Found the moment breaks started being stored.
         stabilityRef.current.observeUser()
         // The first word we actually heard. See `heardUser`.
-        if (turn.text.trim().length > 0) setHeardUser(true)
+        if (turn.text.trim().length > 0) {
+          setHeardUser(true)
+          setUserTurns((count) => count + 1)
+        }
         warmthRef.current?.onUserTurn(turn)
         publish(voice)
       })
@@ -671,6 +699,10 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       voice.on('agent.transcript', ({ turn, final }) => {
         if (!final) return
         turnsRef.current.push(turn)
+        // One half of an exchange. Only committed turns get here, so a reply
+        // that was generated and never reached the ear does not advance the
+        // guided script. See `agentTurns`.
+        setAgentTurns((count) => count + 1)
         // Her stream too (§16.3). A character who wanders is the failure a
         // merchant-of-record reviewer is actually asking about: nobody is
         // reassured that the *user* was well behaved.
@@ -973,6 +1005,8 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     paused,
     retryAttempt,
     heardUser,
+    userTurns,
+    agentTurns,
     endReason,
     error,
     safety,

@@ -18,7 +18,7 @@ import { revalidatePath } from 'next/cache'
 import { supabaseServer, currentUser } from '@/lib/db/server'
 import { supabaseAdmin } from '@/lib/db/admin'
 import type { PipelineTelemetry, ProviderId, Rate, SessionUsage, TranscriptTurn } from '@/lib/voice/types'
-import { activateVoiceSession, abortVoiceStartupAttempt, closeVoiceSession, refundEmptyVoiceSession, serverVoiceSessionExists } from '@/lib/db/voice-session'
+import { activateVoiceSession, abortVoiceStartupAttempt, closeVoiceSession, refundEmptyVoiceSession, serverVoiceSessionExists, settleTranscriptionEnvelope } from '@/lib/db/voice-session'
 import type { Scorecard } from '@/lib/grade/types'
 import type { WarmthTelemetry } from '@/lib/warmth/engine'
 import type { RepIncidents } from '@/lib/voice/incidents'
@@ -148,6 +148,11 @@ export async function startSession(input: {
 export async function abandonSession(input: { sessionId: string; operationId: string }): Promise<SaveResult> {
   const user = await currentUser()
   if (!user) return FAILED
+  // The rep never ran, so the transcription envelope is settled at zero seconds
+  // rather than left holding its four-minute admission bound against the user's
+  // daily cap until midnight. Before the abort, which does not release
+  // reservations. See `settleTranscriptionEnvelope`.
+  await settleTranscriptionEnvelope({ userId: user.id, sessionId: input.sessionId, seconds: 0 })
   const result = await abortVoiceStartupAttempt({ userId: user.id, ...input })
   return { ok: result.ok, message: result.ok ? null : 'The rep could not be closed.' }
 }
@@ -293,6 +298,13 @@ export async function finishSession(input: {
     return { ok: false, message: 'Transcript saved; usage confirmation is pending.', refunded: false }
   }
   if (serverMetered) {
+    // The one operation with no server-side receipt, priced against the rep
+    // that actually ran rather than against the four-minute admission bound it
+    // was reserved under. Before closing: closing does not release in-flight
+    // reservations, so an unsettled envelope would hold its full estimate
+    // against the daily cap for the rest of the day and never reach the
+    // ledger. See `settleTranscriptionEnvelope`.
+    await settleTranscriptionEnvelope({ userId: user.id, sessionId: input.sessionId, seconds })
     // Provider operations already wrote their own usage. Client telemetry is
     // diagnostic and must not overwrite it or append the old elapsed-time estimate.
     await closeVoiceSession({ userId: user.id, sessionId: input.sessionId })

@@ -164,12 +164,18 @@ describe('combined HTTP voice stream', () => {
     }))
   })
 
-  it('retains unknown spend when the turn\'s synthesis fails after generation', async () => {
-    // Synthesis is now one request per turn rather than one per sentence, so
-    // there is no "later clip" to fail — but the accounting rule is unchanged
-    // and is the reason this test exists: an interrupted request can still
-    // have been generated and billed upstream, so the cost settles as unknown
-    // and the conservative reservation is held rather than released.
+  it('bounds an uncertain synthesis instead of charging the whole reservation', async () => {
+    // Synthesis is one request per turn rather than one per sentence, so there
+    // is no "later clip" to fail — but a request interrupted after it was sent
+    // can still have been generated and billed upstream, and that uncertainty
+    // used to send the entire receipt to null. A null settles at the
+    // operation's full conservative reservation, so a turn that synthesised
+    // NOTHING was charged as if it had run to the ceiling: measured at $0.0357
+    // against a real $0.0009 on the rep of 6 September, 43% of that rep's whole
+    // ledger and a straight path to a budget refusal at two minutes.
+    //
+    // The characters actually submitted bound what the vendor could have
+    // charged, and the LLM half was never uncertain at all.
     const settled = vi.fn()
     const { response, finished } = createCombinedTurn(input, {}, new AbortController().signal, {
       llm: async () => new Response(delta('That is a lovely question.') + receipt()),
@@ -185,10 +191,37 @@ describe('combined HTTP voice stream', () => {
     expect(events.filter((event) => event.type === 'audio')).toHaveLength(0)
     expect(events.some((event) => event.type === 'error')).toBe(true)
     expect(events.some((event) => event.type === 'done')).toBe(false)
+    // 200 uncached + 800 cached input and 20 output on gpt-4.1-mini, plus the
+    // 36 characters submitted to v3 Conversational at $0.05/1k — none of which
+    // was synthesised, hence `characters: 0`.
+    const llmUsd = (200 * 0.4 + 800 * 0.1 + 20 * 1.6) / 1_000_000
+    const ttsCeilingUsd = 36 * 0.05 / 1_000
     expect(settled).toHaveBeenCalledWith(expect.objectContaining({
-      status: 'failed', costUsd: null,
+      status: 'failed',
+      costUsd: expect.closeTo(llmUsd + ttsCeilingUsd, 9),
+      usage: expect.objectContaining({
+        tts: expect.objectContaining({ attemptedCharacters: 36, characters: 0, costUsd: 0 }),
+      }),
       metadata: expect.objectContaining({ ttsRequestIds: ['tts-clip-1'] }),
     }))
+    // The whole point: nowhere near the reservation it used to settle at.
+    const charged = settled.mock.calls[0]?.[0].costUsd as number
+    expect(charged).toBeLessThan((turnReservation(input).maxCostUsd ?? 0) / 10)
+  })
+
+  it('still reports unknown spend when the model never sent a usage receipt', async () => {
+    // The one case with no bound available: a generation cancelled before its
+    // final frame reports no tokens at all, and an unpriced turn must not read
+    // as a free one. This is what `costUsd: null` is still for.
+    const settled = vi.fn()
+    const { response, finished } = createCombinedTurn(input, {}, new AbortController().signal, {
+      llm: async () => new Response(delta('Half a sen')),
+      tts: async () => synthesis(),
+      onComplete: settled,
+    })
+    await response.text()
+    await finished
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ costUsd: null }))
   })
 
   it('cancels generation when the response reader closes, and settles once', async () => {

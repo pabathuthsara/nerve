@@ -77,7 +77,15 @@ const DIMENSIONS = [
  * `/legal/safety`, which is linked directly beneath.
  */
 const NOT = [
-  { mark: 'bound-script' as const, title: 'Not a reply generator', copy: 'We never write your lines. Doing the frightening part on your behalf builds nothing.' },
+  // THE ONE CLAIM THE GUIDED REP CHANGED, and it had to change rather than
+  // quietly stop being true. "We never write your lines" was exact, and Tess —
+  // rung 1, the character a new account meets — now carries an on-screen script
+  // (`lib/data/guided.ts`). §14 has a merchant-of-record reviewer reading this
+  // page, and `LAUNCH-GAP.md` §4 is where the drift is recorded; a promise here
+  // that the build no longer keeps is the kind of thing that gets checked.
+  // The differentiation survives intact, because it was never about the first
+  // three minutes: nobody writes what you say to a real person, ever.
+  { mark: 'bound-script' as const, title: 'Not a reply generator', copy: 'Your first character walks you through it. After that the words are yours — doing the frightening part on your behalf builds nothing.' },
   { mark: 'bound-companion' as const, title: 'Not a companion app', copy: 'Characters are equipment. They do not miss you, and every session has a hard time limit.' },
   { mark: 'bound-clinical' as const, title: 'Not therapy', copy: 'No clinical claims anywhere in the product. Practice alongside a clinician, never instead of one.' },
   { mark: 'bound-adult' as const, title: 'Not adult content', copy: 'Bounded at PG-13. Characters decline rather than play along, and the bound is not ours to waive.' },
