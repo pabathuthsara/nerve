@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   BASELINE_EVERY_N_TURNS,
+  hasHostilityMarker,
   hasPersonalMarker,
   shouldSlowScore,
   slowScoreTriggers,
@@ -79,5 +80,60 @@ describe('slow-score triggers', () => {
     // cheap call; missing "get down my number" costs the mechanic entirely.
     expect(hasPersonalMarker('there are a number of books here')).toBe(true)
     expect(hasPersonalMarker('what is the release date on that')).toBe(true)
+  })
+})
+
+describe('contempt, caught without consulting the fast score', () => {
+  // The measured failure: two minutes of open contempt and warmth ROSE 47→52,
+  // because the only layer that can recognise hostility sits behind the one
+  // that cannot. `negative-turn` needs fastRaw <= -3, and a hostile turn that
+  // happens to be a question scores +3.
+
+  it('fires on the turn that started this, at a positive fast score', () => {
+    const reasons = slowScoreTriggers({ ...base, fastRaw: 3, text: 'What the fuck?' })
+    expect(reasons).toContain('hostility')
+    expect(reasons).not.toContain('negative-turn')
+  })
+
+  it('reads directed profanity, imperatives to leave, insults and dismissals', () => {
+    const hostile = [
+      'What the fuck?', 'what the hell are you on about', 'fuck you', 'fuck off',
+      'piss off', 'go away', 'get lost',
+      'leave me alone', 'shut up', 'oh shut the hell up',
+      'you are so boring', "you're being really rude", 'you sound like a robot',
+      'you absolute muppet', 'you idiot', 'who cares', 'nobody cares',
+      'get over yourself', 'grow up', 'this is a waste of time',
+    ]
+    for (const text of hostile) {
+      expect(hasHostilityMarker(text), text).toBe(true)
+    }
+  })
+
+  it('does not charge an enthusiastic user for swearing', () => {
+    // This filter has a second consumer that costs the user points, so unlike
+    // the personal-marker filter it cannot be loose in both directions. Bare
+    // profanity about a subject is not contempt aimed at her.
+    const innocent = [
+      'this is fucking great',
+      'that book is bloody good',
+      "I don't care for horror much",
+      'whatever you fancy, honestly',
+      'the shit they put on the shelves these days',
+      'what the hell is that one about',
+      'I was so nervous I nearly walked out',
+    ]
+    for (const text of innocent) {
+      expect(hasHostilityMarker(text), text).toBe(false)
+    }
+  })
+
+  it('routes to the slow scorer alongside whatever else fired', () => {
+    const reasons = slowScoreTriggers({
+      turnIndex: 3, fastRaw: 5, wordCount: 16,
+      text: 'you are so boring, are you single or just this dull all the time',
+    })
+    expect(new Set(reasons)).toEqual(
+      new Set(['personal-marker', 'hostility', 'long-turn', 'baseline']),
+    )
   })
 })

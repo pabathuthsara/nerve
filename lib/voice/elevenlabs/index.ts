@@ -27,7 +27,7 @@
 import { VoiceEmitter } from '../emitter'
 import { makeTurn, sortTurns } from '../transcript'
 import { deliveryFor, stripDeliveryTags } from './persona'
-import type { VoiceProvider } from '../provider'
+import type { ReplyState, VoiceProvider } from '../provider'
 import {
   SESSION_CAP_SECONDS,
   VoiceError,
@@ -43,7 +43,13 @@ import {
   type VoiceEventName,
 } from '../types'
 import { compileReinforcement } from '../reinforcement'
-import { interruptsAt, remainingReplyDelayMs } from '../../warmth/timing'
+import {
+  DEFAULT_REPLY_SHAPE,
+  interruptsAt,
+  remainingResponseDelayMs,
+  responseDelayFor,
+  type ReplyShape,
+} from '../../warmth/timing'
 import { Room } from '@/lib/audio/engine'
 import { sceneForRoom } from '@/lib/audio/scenes'
 import { applyRoomConfig, type RoomControls } from '@/lib/audio/types'
@@ -54,11 +60,11 @@ import { VadDetector, frameRms } from './vad'
 import { RealtimeTranscriber, type TranscriptionTiming } from './stt'
 import { composeSteering } from '@/lib/warmth/steering'
 import { UNSTEERED_WORD_CAP, wordCapFor } from '@/lib/warmth/bands'
-import { LlmClient, historyFrom, stripSentinel, type LlmMessage } from './llm'
-import { TtsClient, shouldFlush } from './tts'
+import { LlmClient, historyFrom, type LlmMessage } from './llm'
+import { TtsClient } from './tts'
 import { TurnClient } from './turn'
 import { PcmPlayer } from './player'
-import { ReplyBudget, SpokenTurn } from './truncate'
+import { SpokenTurn, capToBudget } from './truncate'
 import { PipelineMeter } from './telemetry'
 import { PIPELINE_MODEL_ID, type MintedPipelineSession } from './mint'
 
@@ -114,12 +120,16 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
 
   /** Warmth-band directives waiting for the next reply. */
   private pendingSteering: string[] = []
-  private readReplyState: (() => { steering: string; warmth: number }) | null = null
+  private readReplyState: (() => ReplyState) | null = null
   /** This turn's reply ceiling. See `TurnRequest.wordCap`. */
   private replyWordCap = UNSTEERED_WORD_CAP
   private interruptible = false
   /** Reported by the application. Never computed here. See `setWarmth`. */
   private warmth = 0
+  /** Reported alongside it. Timing reads both. See `lib/warmth/timing.ts`. */
+  private replyShape: ReplyShape = DEFAULT_REPLY_SHAPE
+  /** This turn's drawn onset, in ms. Null until the turn asks for one. */
+  private onsetForTurn: number | null = null
 
   private t0: number | null = null
   private userStartedAtMs: number | null = null
@@ -418,7 +428,30 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       if (this.ended) return
     }
 
+    // Each HTTP request needs one current direction. Read only now, after all
+    // pending clauses have been scored; never accumulate previous band rules.
+    const state = this.readReplyState?.()
+    if (state) this.setWarmth(state.warmth, state.shape ?? DEFAULT_REPLY_SHAPE)
+
+    // SHE HAS NOTHING TO SAY, AND SAYING NOTHING IS A REPLY.
+    //
+    // Read before anything is allocated, so there is no turn to unwind. This is
+    // enforced by making no request at all rather than by asking the model for
+    // an empty line — a model told to say nothing says something short instead,
+    // which is the same rule the word cap is enforced under.
+    //
+    // Nothing is emitted: no transcript (she said nothing), no speech events
+    // (she never started), no cost. The pending one-shot reminders are kept for
+    // the turn she does take. `mayStaySilentFor` refuses two in a row, so her
+    // exit condition can still fire on the next one.
+    if (state?.silent) {
+      this.responding = false
+      return
+    }
+
     this.responding = true
+    // One draw per turn. See `replyOnsetMs`.
+    this.onsetForTurn = null
     const llmAbort = new AbortController()
     this.llmAbort = llmAbort
     this.ttsChain = Promise.resolve()
@@ -427,16 +460,18 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     this.spoken = spoken
     this.agentStartedAt = null
 
-    // Each HTTP request needs one current direction. Read only now, after all
-    // pending clauses have been scored; never accumulate previous band rules.
-    const state = this.readReplyState?.()
-    if (state) this.setWarmth(state.warmth)
     const direction = state?.steering ?? composeSteering({ persona, warmth: this.warmth })
     // An empty direction is the closing hand-over: the band has stood down for
     // this turn so that the decision arrives alone, and a turn with no band
     // rule must not be held to a band ceiling — that would truncate the number
     // offer, which is naturally two or three sentences. Rule 3.
-    this.replyWordCap = direction.trim() ? wordCapFor(this.warmth) : UNSTEERED_WORD_CAP
+    //
+    // Otherwise the caller's ceiling, which is the band's already lowered to
+    // mirror his last turn (`mirrorCapFor`). Only the caller knows what he
+    // just did, so only the caller can compute it.
+    this.replyWordCap = direction.trim()
+      ? state?.wordCap ?? wordCapFor(this.warmth)
+      : UNSTEERED_WORD_CAP
     // Scene, safety and closing instructions remain one-shot and take priority.
     const steering = [direction, ...this.pendingSteering].filter(Boolean).join(' ')
     this.pendingSteering = []
@@ -558,15 +593,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     steering: string | null,
   ): Promise<{ exit: boolean; aborted: boolean }> {
     const startedMs = this.clock()
-    let pending = ''
     let firstTokenSeen = false
-    // The band's ceiling, same rule as the combined turn. Here it stops
-    // SYNTHESIS rather than generation: this path reads `result.aborted` as
-    // "throw the turn away", so cancelling the stream would discard what she
-    // has already said. The remaining tokens are paid for and dropped, which
-    // is acceptable on a compatibility path that no current client mints.
-    const budget = new ReplyBudget(this.replyWordCap)
-    let capped = false
     const result = await this.llmClient.stream(
       { personaId: this.persona!.slug, history: this.historyForModel(), steering },
       {
@@ -575,25 +602,19 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
           firstTokenSeen = true
           this.meter?.record('llmFirstTokenMs', this.clock() - startedMs)
         },
-        onDelta: (delta) => {
-          if (!this.isCurrentResponse(spoken, abort)) return
-          pending += delta
-          const speakable = stripSentinel(pending)
-          if (shouldFlush(speakable, false)) {
-            pending = ''
-            if (capped) return
-            this.enqueueSynthesis(speakable, spoken)
-            capped = budget.spend(speakable)
-          }
-        },
         onUsage: (usage) => this.meter?.addLlmTokens(usage),
       },
       abort.signal,
     )
     if (result.aborted || !this.isCurrentResponse(spoken, abort)) return { exit: false, aborted: true }
     if (firstTokenSeen) this.meter?.record('llmCompleteMs', this.clock() - startedMs)
-    const tail = stripSentinel(pending)
-    if (tail && !capped) this.enqueueSynthesis(tail, spoken)
+    // One turn, one prosodic unit, same as the combined path — and the band's
+    // ceiling applied to the reply that arrived whole rather than a sentence
+    // at a time. The tokens past it are paid for and dropped: this path reads
+    // `result.aborted` as "throw the turn away", so cancelling the stream would
+    // discard what she has already said.
+    const spokenText = capToBudget(result.text.trim(), this.replyWordCap)
+    if (spokenText) this.enqueueSynthesis(spokenText, spoken)
     return result
   }
 
@@ -717,7 +738,11 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       destination: this.agentBus ?? context.destination,
       // The VAD, transcription and generation have already spent some (usually
       // all) of the personality pause. Only genuinely early audio waits.
-      notBefore: context.currentTime + remainingReplyDelayMs(this.warmth,
+      //
+      // The target is drawn once per turn, not per player: re-rolling it here
+      // would make the beat depend on how many times a player happened to be
+      // built, and a distribution sampled twice is not the distribution.
+      notBefore: context.currentTime + remainingResponseDelayMs(this.replyOnsetMs(),
         this.userStoppedAtMs === null ? 0 : this.clock() - this.userStoppedAtMs) / 1000,
       onFirstAudio: () => {
         const at = this.now()
@@ -820,7 +845,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
    * arm's conversation item, and the same reason — the character contract is
    * the cached prefix and must stay byte-identical.
    */
-  setReplyState(read: () => { steering: string; warmth: number }): void {
+  setReplyState(read: () => ReplyState): void {
     this.readReplyState = read
   }
 
@@ -855,10 +880,24 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
    * Interruption still obeys §05 as a ceiling: the
    * level decides whether she MAY, and warmth decides whether she DOES.
    */
-  setWarmth(warmth: number): void {
+  setWarmth(warmth: number, shape: ReplyShape = DEFAULT_REPLY_SHAPE): void {
     this.warmth = warmth
+    this.replyShape = shape
     const allowed = this.minted?.pipeline.turn.interrupts ?? false
     this.setInterruptible(interruptsAt(warmth, allowed))
+  }
+
+  /**
+   * The onset she is aiming for on this turn, drawn once.
+   *
+   * Timing is the fifth layer (`lib/warmth/timing.ts`): band, posture and what
+   * kind of turn she is answering, sampled rather than fixed. Cached per turn
+   * because the sample IS the behaviour — a constant is a metronome, and a
+   * value redrawn twice inside one turn is neither.
+   */
+  private replyOnsetMs(): number {
+    if (this.onsetForTurn === null) this.onsetForTurn = responseDelayFor(this.warmth, this.replyShape)
+    return this.onsetForTurn
   }
 
   getSessionId(): string | null {

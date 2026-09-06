@@ -7,6 +7,8 @@ import { getPersona } from '@/lib/personas'
 import { DEFAULT_CALIBRATION } from '../types'
 import type { TurnEvent, TurnRequest } from './turn-protocol'
 import { PROVIDER_REQUEST_ID_HEADER } from '../request-id'
+import { spokenWordCount } from './truncate'
+import { seededRandom } from '../seed'
 
 const input: TurnRequest = {
   sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -49,30 +51,39 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
 
 describe('combined HTTP voice stream', () => {
-  it('delivers audio while the character model is still generating', async () => {
+  it('speaks the whole turn as one clip, once the character model has finished', async () => {
+    // HUMANNESS-PLAN §2. This used to assert the opposite — audio arriving
+    // while generation continued — and that WAS the reported bug: each
+    // sentence reached v3 as its own generation, knowing nothing about its
+    // neighbours, at a fifth of the vendor's documented stability floor. One
+    // turn is one prosodic unit now, so no audio can precede `llmCompleteMs`.
     const source = controlledSse()
     const finished = vi.fn()
+    const clips: string[] = []
     const { response, finished: settled } = createCombinedTurn(input, {}, new AbortController().signal, {
       llm: async () => source.response,
-      tts: async () => synthesis(), onComplete: finished,
+      tts: async (request) => { clips.push(((await request.json()) as { text: string }).text); return synthesis() },
+      onComplete: finished,
     })
     const reader = response.body!.getReader()
-    source.push(delta('That is a lovely question.'))
-    let buffer = ''
-    while (!buffer.includes('"type":"audio"')) {
-      const chunk = await reader.read()
-      expect(chunk.done).toBe(false)
-      buffer += new TextDecoder().decode(chunk.value)
-    }
-    expect(buffer).not.toContain('llmCompleteMs')
-    expect(finished).not.toHaveBeenCalled()
+    source.push(delta('That is a lovely question. '))
+    source.push(delta('It has been a long morning in here.'))
     source.push(receipt(false))
     source.close()
+    let buffer = ''
     for (;;) { const chunk = await reader.read(); if (chunk.done) break; buffer += new TextDecoder().decode(chunk.value) }
     await settled
+    // One request, carrying both sentences — and the vendor sees a longer
+    // input than any single sentence of hers could ever be.
+    expect(clips).toHaveLength(1)
+    expect(clips[0]).toContain('That is a lovely question.')
+    expect(clips[0]).toContain('It has been a long morning in here.')
+    expect(buffer.indexOf('llmCompleteMs')).toBeLessThan(buffer.indexOf('"type":"audio"'))
     expect(eventsFrom(buffer)).toContainEqual(expect.objectContaining({ type: 'done', exit: false }))
     expect(finished).toHaveBeenCalledWith(expect.objectContaining({
-      status: 'completed', usage: expect.objectContaining({ llm: { input: 1_000, output: 20, cachedInput: 800 } }),
+      status: 'completed',
+      usage: expect.objectContaining({ llm: { input: 1_000, output: 20, cachedInput: 800 } }),
+      metadata: expect.objectContaining({ clips: 1 }),
     }))
   })
 
@@ -91,7 +102,8 @@ describe('combined HTTP voice stream', () => {
     const body = JSON.parse(request?.[1]?.body as string)
     const compiled = new ElevenLabsPersonaCompiler(resolvePipelineConfig({
       PIPELINE_LLM_MODEL: 'gpt-4.1-mini', ELEVENLABS_TTS_MODEL: 'eleven_v3_conversational',
-    })).compile(getPersona('tess')!, DEFAULT_CALIBRATION)
+      // Same seed the turn used, so both sides roll the same afternoon.
+    })).compile(getPersona('tess')!, DEFAULT_CALIBRATION, { rng: seededRandom(input.sessionId) })
     expect(body.messages[0]).toEqual({ role: 'system', content: compiled.llm.systemPrompt })
     expect(body.messages).toContainEqual(input.history[0])
     expect(body.messages.at(-1)).toEqual({ role: 'system', content: input.steering })
@@ -152,30 +164,30 @@ describe('combined HTTP voice stream', () => {
     }))
   })
 
-  it('aborts the unfinished LLM and retains unknown spend when a later synthesis fails', async () => {
-    const source = controlledSse()
-    let clips = 0
+  it('retains unknown spend when the turn\'s synthesis fails after generation', async () => {
+    // Synthesis is now one request per turn rather than one per sentence, so
+    // there is no "later clip" to fail — but the accounting rule is unchanged
+    // and is the reason this test exists: an interrupted request can still
+    // have been generated and billed upstream, so the cost settles as unknown
+    // and the conservative reservation is held rather than released.
     const settled = vi.fn()
     const { response, finished } = createCombinedTurn(input, {}, new AbortController().signal, {
-      llm: async () => source.response,
+      llm: async () => new Response(delta('That is a lovely question.') + receipt()),
       tts: async () => {
-        const response = ++clips === 1 ? synthesis() : new Response('', { status: 502 })
-        response.headers.set(PROVIDER_REQUEST_ID_HEADER, `tts-clip-${clips}`)
+        const response = new Response('', { status: 502 })
+        response.headers.set(PROVIDER_REQUEST_ID_HEADER, 'tts-clip-1')
         return response
       },
       onComplete: settled,
     })
-    source.push(delta('That is a lovely question.'))
-    source.push(delta('There is a little more to it.'))
     const events = eventsFrom(await response.text())
     await finished
-    expect(source.cancelled).toHaveBeenCalled()
-    expect(events.filter((event) => event.type === 'audio')).toHaveLength(1)
+    expect(events.filter((event) => event.type === 'audio')).toHaveLength(0)
     expect(events.some((event) => event.type === 'error')).toBe(true)
     expect(events.some((event) => event.type === 'done')).toBe(false)
     expect(settled).toHaveBeenCalledWith(expect.objectContaining({
       status: 'failed', costUsd: null,
-      metadata: expect.objectContaining({ ttsRequestIds: ['tts-clip-1', 'tts-clip-2'] }),
+      metadata: expect.objectContaining({ ttsRequestIds: ['tts-clip-1'] }),
     }))
   })
 
@@ -238,8 +250,10 @@ describe('the band ceiling, enforced rather than stated', () => {
   // `lib/warmth/bands.ts` is the argument. Every cap in that table was authored
   // against a speech-to-speech model that ran at half of what it was allowed;
   // the text model writes to whatever number it is given and then climbs,
-  // because its own replies come back as the conversation. So the ceiling stops
-  // generation here, at a sentence boundary she chose.
+  // because its own replies come back as the conversation. So the ceiling is
+  // applied here, to the buffered reply, at a sentence boundary she chose —
+  // the remaining tokens are read and thrown away rather than cancelled, for
+  // the accounting reason recorded in `combined.ts`.
 
   const spokenBy = async (over: TurnRequest, ...sentences: string[]) => {
     const spoken: string[] = []
@@ -261,11 +275,13 @@ describe('the band ceiling, enforced rather than stated', () => {
       'What about you, then? ',
       'I do like this one. ',
     )
-    expect(spoken).toHaveLength(2)
-    expect(spoken.join(' ')).toContain('Just waiting on this machine.')
-    expect(spoken.join(' ')).toContain('It has been a long morning.')
-    expect(spoken.join(' ')).not.toContain('What about you')
-    expect(spoken.join(' ')).not.toContain('I do like this one')
+    // One clip, because one turn is one prosodic unit — and the ceiling has
+    // decided what is inside it before a character reaches the vendor.
+    expect(spoken).toHaveLength(1)
+    expect(spoken[0]).toContain('Just waiting on this machine.')
+    expect(spoken[0]).toContain('It has been a long morning.')
+    expect(spoken[0]).not.toContain('What about you')
+    expect(spoken[0]).not.toContain('I do like this one')
   })
 
   it('never cuts mid-sentence, however far past the ceiling one sentence runs', async () => {
@@ -281,7 +297,9 @@ describe('the band ceiling, enforced rather than stated', () => {
     const sentences = ['Just waiting on this machine. ', 'It has been a long morning. ', 'What about you, then? ']
     const guarded = await spokenBy({ ...input, warmth: 30 }, ...sentences)
     const invested = await spokenBy({ ...input, warmth: 85 }, ...sentences)
-    expect(invested.spoken.length).toBeGreaterThan(guarded.spoken.length)
+    expect(spokenWordCount(invested.spoken.join(' ')))
+      .toBeGreaterThan(spokenWordCount(guarded.spoken.join(' ')))
+    expect(invested.spoken.join(' ')).toContain('What about you')
   })
 
   it('still completes the turn, and records what it cost her', async () => {

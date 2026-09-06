@@ -75,6 +75,16 @@ describe('a directive for a provider that keeps nothing', () => {
     const persona = { ...nadia, trajectory: { ...nadia.trajectory, start: 62, startJitter: 0 } }
     const session = sessionFor(persona)
 
+    // A real turn from him first. Standing orders are permissions to DRIVE, and
+    // since the reciprocity gates landed they are withheld until he has given
+    // her something to drive with — see `./reciprocity.ts`. Before that this
+    // test was asserting that a stranger who has heard nothing may ask about
+    // him, which is the behaviour the gates exist to stop.
+    session.onUserTurn({
+      speaker: 'user', text: 'I came in looking for something for my brother, he only reads crime.',
+      t_start: 1, t_end: 5,
+    })
+
     const fresh = session.statelessDirective()
     expect(fresh).toContain('Ask about him, tease him, swap names.')
     expect(fresh).toMatch(/You may (?:start a topic|use his name|flirt)/)
@@ -95,10 +105,18 @@ describe('a directive for a provider that keeps nothing', () => {
   it('brings every standing order back together on the heartbeat', () => {
     const persona = { ...nadia, trajectory: { ...nadia.trajectory, start: 62, startJitter: 0 } }
     const session = sessionFor(persona)
+    const real = {
+      speaker: 'user' as const,
+      text: 'I came in looking for something for my brother, he only reads crime.',
+      t_start: 1, t_end: 5,
+    }
+    session.onUserTurn(real)
     session.statelessDirective()
     for (let turn = 1; turn < STEER_HEARTBEAT_TURNS; turn += 1) {
+      session.onUserTurn({ ...real, t_start: turn + 1, t_end: turn + 5 })
       expect(session.statelessDirective()).not.toMatch(/You may |Ask about him/)
     }
+    session.onUserTurn({ ...real, t_start: 20, t_end: 24 })
     const beat = session.statelessDirective()
     expect(beat).toContain('Ask about him')
     expect(beat).toMatch(/You may /)

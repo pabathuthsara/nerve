@@ -436,29 +436,41 @@ Four changes, and the full argument with the measurements is
 | --- | --- | --- |
 | Band directive | a ceiling only | a typical first, the ceiling second, both lower |
 | Band invitation, gates | every turn | with the agenda, only when the direction is new |
-| The ceiling | stated | enforced — generation stops at the first sentence boundary at or past it |
+| The ceiling | stated | enforced — the buffered reply is kept up to the first sentence boundary at or past it |
 | Verbosity alarm | literal 12, fired the identity reminder | derived from the band table, no longer talks to the model |
 
 Three things about the enforcement matter operationally.
 
-**It stops generation, not the turn.** `ReplyBudget` runs on its own abort
-controller chained from the turn's, so reaching the ceiling cancels the LLM
-stream while synthesis already in flight completes. A capped turn emits `done`,
-never `error`, and settles `completed`, never `aborted` — the browser commits it
-like any other reply.
+**It trims the reply, it does not stop the turn.** Generation runs to its own
+end and the tokens past the ceiling are read and thrown away rather than
+cancelled — the accounting reason is in `combined.ts`, and it is that the usage
+receipt is the last frame of the stream, so a cancelled turn settles with an
+unknown cost and holds the whole conservative reservation. Measured on the first
+real rep: three capped turns billed at $0.0358 each against an actual $0.003. A
+capped turn emits `done`, never `error`, and settles `completed`, never
+`aborted` — the browser commits it like any other reply.
 
-**It never cuts mid-sentence and never returns nothing.** Generation is already
-flushed sentence by sentence (`shouldFlush`), so the stop lands on a boundary
-she chose, and the first flush is spent before the budget can refuse anything.
-A single long sentence still goes out whole: this is a ceiling on how much she
-piles on, not a shredder.
+**It never cuts mid-sentence and never returns nothing.** `capToBudget` splits
+the buffered reply on terminal punctuation and keeps whole sentences, and the
+first is spent before the budget can refuse anything. A single long sentence
+still goes out whole: this is a ceiling on how much she piles on, not a
+shredder.
+
+> **Changed 6 September 2026.** This used to read "generation stops at the first
+> sentence boundary at or past it", because the pipeline flushed her line to
+> synthesis sentence by sentence and the budget rode on the flush. It no longer
+> does: **one turn is one prosodic unit** (`HUMANNESS-PLAN.md` §2), the whole
+> generation is buffered and spoken in a single request, and the ceiling is
+> applied to the reply that arrived whole. Same rule, same boundary, one
+> implementation instead of two — `capToBudget` was the offline version and is
+> now the live one, so the audition harness and the customer go through the same
+> function.
 
 **It is visible.** Each turn's operation record carries `wordCap`, `spokenWords`
 and `capped`. A cap firing on most turns means the band's typical is still above
 what the writer wants to produce, which is a `bands.ts` question and not a bug in
-this file. The legacy client path enforces the same ceiling by dropping the
-remaining clips rather than cancelling, because that path reads an aborted
-stream as "throw the turn away".
+this file. The legacy client path buffers and trims identically, and still never
+cancels, because that path reads an aborted stream as "throw the turn away".
 
 `sessions.character_breaks` is new (one migration, `DATA.md`): the stability
 meter has run inside the live rep since this pipeline shipped and discarded

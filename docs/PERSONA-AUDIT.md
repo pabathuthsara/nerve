@@ -115,6 +115,9 @@ public place is not hostile, she is unavailable. Correct, and well argued in
 
 > *"Comfortable, not interested. Easy and unhurried, and ask him nothing."*
 
+> **Fixed 6 September.** `relative` is the default now, and the clause no
+> longer speaks about asking. What follows is the diagnosis as it was written.
+
 `comfort − warmth = 45 − 0.6 × start`, which exceeds 15 for **every start below
 50** — that is the whole shipped roster:
 
@@ -307,6 +310,28 @@ which already has `settingShort: 'Launderette'`). For the scorer, parameterise
 the one scene sentence and leave the anchors and few-shots alone; changing
 those is a recalibration, not a fix.
 
+> **This was fixed for Tess and left running for the rest of the roster.**
+> Found on 6 September while authoring room tone (`HUMANNESS-PLAN.md` §7.2):
+> `room.place` closed it for the one character it was written for, and every
+> other character kept falling through `bed ?? reverbIr` to an impulse response
+> chosen for its acoustics. **Maya and Robin — both live rungs — were being told
+> in their Absolute rules to react "the way a stranger in a bookshop would",
+> from a coffee shop and a hotel lobby.** Erin was on a train platform hearing a
+> bar, and Priya lifted weights in one.
+>
+> The root cause was not the field. It was that nine characters shared two
+> authored scenes, so seven of them had no room to point at. Seven were authored
+> (`lib/audio/scenes.ts`); every character's `bed`, `reverbIr` and `place` now
+> name her own; and `room-tone.test.ts` asserts across the whole roster that the
+> Absolute rules say the room she is standing in, so this cannot come back for
+> character ten.
+>
+> **The scorer half moved with it**, which is worth flagging as a live scoring
+> change rather than a fix: `scorerPlaceFor` reads `room.place`, so Maya and
+> Robin are now judged as "a coffee shop" and "a hotel lobby" instead of the
+> default bookshop. The intimacy anchors and the few-shots are untouched, per
+> the original fix — changing those is still a recalibration.
+
 ---
 
 ### 3.7 — Warmth is expressed almost entirely as a word cap, and questions are locked behind the win
@@ -432,6 +457,23 @@ and she is telling anyone who will listen. Content authored in the repo and
 seeded, never generated at runtime, so rule 8 holds. Zero effect on any
 difficulty dial.
 
+> **✅ Shipped roster-wide, 6 September 2026** (`HUMANNESS-PLAN.md` §7.1). Three
+> afternoons for every character, live roster and retired five — twenty-seven in
+> all. It was shipped for Tess in §5, then deleted in §7 as collateral of the
+> wholesale port, which was a mistake worth naming: every other field on that
+> deletion list changes what she **gives**, and a mood cannot. That distinction
+> is now a test rather than a paragraph — `tess.test.ts` asserts
+> `composeSteering` is byte-identical across all three moods at every warmth,
+> for every character, and the roster's escape-hatch assertion no longer lists
+> `moods` among the fields nobody may use.
+>
+> **The roll is seeded, which the original fix did not need to be.** Minting is
+> the once-per-rep moment on the Realtime arm, and the shipping arm has no such
+> moment: it recompiles the contract every turn. So `moodFor` is driven by
+> `seededRandom(sessionId)` (`lib/voice/seed.ts`) — stable for the life of a
+> rep, different in the next one, and the cached prompt prefix stays
+> byte-identical either way.
+
 ---
 
 ## 4. Is the scoring system the problem?
@@ -538,7 +580,7 @@ happened.
 
 | | Change | |
 |---|---|---|
-| 3.1 | posture measured against the opening spread, so `at-ease` stops firing on every rep at turn one | ⚠️ **built, Tess only.** `postureOf(state, { mode, opening })` and `PostureMode`. The engine reads `absolute` unless the persona opts in. Tess reads `relative`; the other three still open `at-ease`, and `tess.test.ts` asserts that they do — the test records the debt rather than hiding it |
+| 3.1 | posture measured against the opening spread, so `at-ease` stops firing on every rep at turn one | ✅ **shipped roster-wide, 6 September.** `relative` is now the DEFAULT in both places that had one (`WarmthEngine` and `WarmthSession`), and `absolute` is kept only to replay a calibration measured under it. It was opt-in for a day, nobody opted in, no persona ever set the field, and so every rep on the roster kept opening with "Comfortable, not interested" — a default that is known to be wrong is not a safe default, it is the shipping behaviour. **The clauses were also rewritten**: `wary` and `at-ease` used to end "Ask, do not offer anything of your own" and "…and ask him nothing", which made `affect.ts` the third and fourth voice on the question rule behind the band directive and `suppressQuestion`. A posture now says what she FEELS and never what she may do, asserted in `affect.test.ts`. **Owed:** `npm run rep:audition` against Nadia, Tess and Maya, the three tuned under `absolute` |
 | 3.5 | gates ranked by when they were crossed in this rep, not by threshold | ⚠️ **solved for Tess without touching the code.** The ranking is already recency-of-crossing; the fault was that with a fixed unlock ORDER the top two above the highest threshold are always the same two. Her thresholds were re-ordered so the cheap gates (`usesYourName` 28, `initiatesTopics` 30) unlock first and the expressive ones (`flirtiness` 32, `personalDisclosure` 34) last. Above 34 the two clauses she carries are now hers. The general fix — reserving a slot, or rotating — is still owed for anyone else who needs it |
 | 3.8 | one-turn breakthrough clause in `composeSteering` | ❌ **still owed.** Cannot be scoped to one character without another flag, and it is genuinely roster-wide. The best moment in a rep is still invisible to the character having it |
 
@@ -756,12 +798,25 @@ M0's gate.
 list, the two extra scene beats, `humour: 69` restored from 74, `talkativeness`
 back to Nadia's 56.
 
+> **`moods` was wrong to delete, and came back roster-wide on 6 September.** The
+> argument for the port is that the deleted fields were the thing making her read
+> as an AI. That holds for every field on this list except one: the others all
+> change what she **gives**, and the ladder is what owns that. A mood changes
+> what she has to talk about. It went out with them because it was in the same
+> commit, not because it was the same kind of thing — see §3.9.
+
 **The optional fields stay on the schema and nobody uses one.** They are the
 right shape for a character who genuinely needs one, they all default to the
 prior behaviour, and `tess.test.ts` now asserts that *every* persona leaves
 *every* one of them undefined. That assertion is the point: it turns "we tried
 this and it made her worse" into something a future session trips over rather
 than rediscovers.
+
+> **Amended 6 September:** `moods` left that assertion when it came back. The
+> other five are still asserted undefined for the whole roster. The test that
+> replaced it is stronger than the one it left, because it checks the property
+> that actually mattered rather than the absence of the field: same warmth, same
+> steering, whatever the afternoon.
 
 ### The one thing to watch
 
@@ -805,7 +860,9 @@ Additions worth having, all cheap:
   went unnoticed is that nobody reads the assembled string. Snapshot it.
 - **A `want` composition test.** Render all three warmth variants for every
   persona and assert the phrase fits the frame (§3.4).
-- **A posture test asserting no character opens in a posture** (§3.1).
+- ~~**A posture test asserting no character opens in a posture** (§3.1).~~
+  Superseded by making `relative` the default; `affect.test.ts` now asserts the
+  stronger property, that no posture clause mentions asking, offering or length.
 - **A gate-coverage test** asserting `flirtiness` and `personalDisclosure`
   reach the line at some warmth the character actually occupies (§3.5).
 
@@ -1015,14 +1072,20 @@ between she gets the length rule, the question rule and her colour, and nothing
 to do.
 
 **3. The ceiling was stated and never enforced.** `ReplyBudget` in
-`lib/voice/elevenlabs/truncate.ts` now stops the turn at the first sentence
+`lib/voice/elevenlabs/truncate.ts` now trims the turn at the first sentence
 boundary at or past `wordCapFor(warmth)`. Two rules make it safe: never
-mid-sentence (generation is already flushed sentence by sentence, so the stop
-lands on a boundary she chose), and always at least one sentence (the first
-flush is spent before the budget can refuse anything). It runs on its own abort
-controller so reaching the ceiling stops GENERATION without aborting synthesis
-already in flight — a capped turn settles `completed`, not `aborted`, and the
-operation record carries `wordCap`, `spokenWords` and `capped`. This is also the
+mid-sentence (the reply is split on terminal punctuation and kept whole
+sentences), and always at least one sentence (the first is spent before the
+budget can refuse anything). A capped turn settles `completed`, not `aborted`,
+and the operation record carries `wordCap`, `spokenWords` and `capped`.
+
+> **Amended 6 September:** this originally rode the sentence-by-sentence flush
+> and cancelled generation at the boundary. Both halves changed. The turn is now
+> buffered whole before synthesis (`HUMANNESS-PLAN.md` §2) so the ceiling is
+> applied by `capToBudget` to the complete reply, and the tokens past it are
+> read and discarded rather than cancelled — the usage receipt is the last frame
+> of the stream, and losing it holds the whole conservative reservation. Same
+> rule, same boundary, one implementation instead of two. This is also the
 thing that starves the ratchet: what she is fed back is the short version.
 
 **4. The drift alarm was tuned below the rules and answered with the wrong

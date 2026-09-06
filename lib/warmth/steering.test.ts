@@ -14,7 +14,8 @@ import { nadia } from '@/lib/personas/nadia'
 import { alex } from '@/lib/personas/alex'
 import { erin } from '@/lib/personas/erin'
 import { PERSONAS } from '@/lib/personas'
-import { effectiveSharpness, unlockedGates, type Persona } from '@/lib/voice/types'
+import { effectiveSharpness, unlockedGates, GATE_NAMES, type Persona } from '@/lib/voice/types'
+import { WARMTH_MAX } from './bands'
 
 const at = (persona: Persona, warmth: number) => composeSteering({ persona, warmth })
 
@@ -61,9 +62,14 @@ describe('composition across the four layers', () => {
 
   it('sharpens a cold character, and stops above the curve', () => {
     // effectiveSharpness = sharpness + boost * max(0, (30 - warmth) / 30).
-    // Nadia's base 20 is mild, but at warmth 0 the boost takes her to 35 — a
-    // stranger who is already cold is sharper than a neutral one.
-    expect(effectiveSharpness(nadia.personality, 0)).toBeCloseTo(35, 5)
+    // At warmth 0 the whole boost is applied — a stranger who is already cold
+    // is sharper than a neutral one. Read off her dials rather than written
+    // out, so retuning `sharpness` cannot leave this test asserting a number
+    // she no longer has.
+    expect(effectiveSharpness(nadia.personality, 0)).toBeCloseTo(
+      nadia.personality.sharpness + nadia.personality.sharpnessLowWarmthBoost,
+      5,
+    )
     expect(effectiveSharpness(nadia.personality, 30)).toBe(nadia.personality.sharpness)
     expect(effectiveSharpness(nadia.personality, 90)).toBe(nadia.personality.sharpness)
 
@@ -82,12 +88,30 @@ describe('composition across the four layers', () => {
     // Layer 3 is threshold-and-ceiling. Below the threshold the behaviour is not
     // mentioned at all — telling a model what it may not do invites it to think
     // about doing it, and every word is charged on every later turn.
-    expect(at(nadia, 20)).not.toMatch(/flirt|his name|start a topic/i)
+    // Below every threshold she has, nothing is named. Asserted for the whole
+    // roster rather than for one warmth, because "unlocked" is per persona.
+    for (const persona of Object.values(PERSONAS)) {
+      const lowest = Math.min(...GATE_NAMES.map((name) => persona.gated[name].unlocksAt))
+      expect(gateClauses(persona, lowest - 1), persona.slug).toEqual([])
+    }
 
-    // personalDisclosure unlocks at 40, usesYourName at 45.
-    expect(at(nadia, 50)).toMatch(/his name|something real about your life/i)
-    // flirtiness unlocks at 55, initiatesTopics at 60.
-    expect(at(nadia, 65)).toMatch(/flirt|start a topic/i)
+    // AND AT THE THRESHOLD ITS AUTHOR WROTE, SOMETHING IS. That is the whole
+    // point of a per-persona `unlocksAt`, and it was true of nobody for a day:
+    // the composer vetoed every gate below ENGAGED, so Nadia's four — all open
+    // by 45 — were dropped unread until 60, and Tess's, all open below 35,
+    // could never fire at all. See `lib/warmth/reciprocity.ts`.
+    for (const persona of Object.values(PERSONAS)) {
+      for (const name of GATE_NAMES) {
+        const gate = persona.gated[name]
+        // 999 is how a persona locks a behaviour out of the rep entirely.
+        if (gate.unlocksAt > WARMTH_MAX) continue
+        if ('ceiling' in gate && gate.ceiling <= 0) continue
+        expect(
+          gateClauses(persona, gate.unlocksAt).length,
+          `${persona.slug}: ${name} @${gate.unlocksAt}`,
+        ).toBeGreaterThan(0)
+      }
+    }
   })
 
   it('keeps a gate shut that is unlocked in name only', () => {

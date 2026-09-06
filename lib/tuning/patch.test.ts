@@ -68,9 +68,9 @@ describe('applyDialEdits', () => {
       { path: 'room.bedDb', value: -35 },
       { path: 'personality.humour', value: 12 },
     ])
-    expect(source).toContain('// Off. The synthesised bed and its one-shots were audible to the')
+    expect(source).toContain('// The bed is back and it is hers.')
     expect(source).toContain('// LAYER 2 — who she is. None of this moves with warmth.')
-    expect(source).toContain('bed: null,')
+    expect(source).toContain("bed: 'bookshop',")
     expect(source).toContain('bedDb: -35,')
   })
 

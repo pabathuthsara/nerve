@@ -165,7 +165,12 @@ async function mintTranscriptionSecret(
             audio: {
               input: {
                 format: { type: 'audio/pcm', rate: stt.sampleRate },
-                transcription: { model: stt.model },
+                // Pinned here as well as in the client's `session.update`.
+                // The update is what actually governs a live rep, but the
+                // session exists from the moment this returns, and a language
+                // the transcriber has to guess is the failure this pin is for
+                // — see `TranscriberOptions.language`.
+                transcription: { model: stt.model, language: 'en' },
                 // Turn-taking is ours. See ./vad.ts.
                 turn_detection: null,
               },

@@ -96,7 +96,35 @@ the graph and asserts every looping ambient source reaches the destination
 **without** passing through her input bus. That was a wiring fault, and wiring
 is exactly what a pure maths test cannot see.
 
-## The bed is currently off
+> **Every character has her own room — 6 September 2026.** Nine authored
+> personas and **two** authored scenes. `sceneId(room)` returns `bed ??
+> reverbIr`, so seven characters fell through to an impulse response chosen for
+> its acoustics and were handed somebody else's bed: Erin heard glasses being
+> set down on a train platform, Priya lifted weights in a bar. Because
+> `roomName` reads the same value it also reached the **contract** — Maya and
+> Robin were told in their Absolute rules to react "the way a stranger in a
+> bookshop would" from a coffee shop and a hotel lobby (`PERSONA-AUDIT.md`
+> §3.6).
+>
+> Seven scenes were authored as config rows, the way §1c intended: launderette,
+> coffee shop, hotel lobby, gallery, house-party kitchen, train platform, gym.
+> Three new layer kinds (`machine-tumble`, `hall-air`, `muffled-music`) and
+> eight new one-shots came with them, and both synths — `room-tone.ts` and the
+> convolver path in `engine.ts` — carry a voice for each, enforced by the
+> exhaustive `Record` rather than by remembering.
+>
+> Nothing got louder except the three characters who were on the near-silent
+> bookshop bed and should not have been. The loudest room is still the bar at
+> -24 dBFS, which already shipped. `room-tone.test.ts` asserts every bed stays
+> below -20 dBFS, that no two characters in different places share a room, and
+> that a scene's one-shot interval and the persona's own trim agree.
+
+## The bed is currently off — SUPERSEDED
+
+> **Stale as of 1 September 2026** and kept as the record of why the bed was
+> switched off, which is still the reason it is synthesised and not recorded.
+> The bed plays today, for every character; see the two notes at the top of this
+> file. `bed: null` is no longer used by anybody on the roster.
 
 `persona.room.bed` is `null` on Nadia, and null means **no ambient bed and no
 one-shots** — no sources, no timer, nothing scheduled. Recorded beds land here

@@ -88,14 +88,22 @@ export const sam: Persona = {
   },
 
   room: {
-    bed: null,
+    bed: 'house-party',
     bedDb: -26,
-    reverbIr: 'bar',
+    reverbIr: 'house-party',
     reverbWet: 0.19,
     oneShotIntervalMs: [7_000, 16_000],
+    place: 'kitchen at a house party',
   },
 
   contract: contract(CHARACTER),
+
+  /** Three evenings, one rolled per rep. Content only; never a dial. */
+  moods: [
+    'The person who brought you here went upstairs forty minutes ago and has not come back.',
+    'You are at work at seven tomorrow and you have been counting backwards from it all evening.',
+    "Your coat is under a pile on somebody's bed and you have already been up to check twice.",
+  ],
 
   want: 'out of this kitchen and on your way home without making a thing of it',
 

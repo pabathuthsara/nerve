@@ -101,15 +101,26 @@ provider SDK.
                                      ▼
         gpt-4.1-mini writes her line as text, streaming
                                      │
-              flushed sentence by sentence as it arrives
+            buffered WHOLE — one turn is one prosodic unit
                                      ▼
-        ElevenLabs eleven_v3_conversational speaks each sentence
+        ElevenLabs eleven_v3_conversational speaks it in one request
                                      │
                                      ▼
         NDJSON back to the browser: audio + character alignment + usage
                                      ▼
-                              PCM playback
+              PCM playback, no earlier than the drawn onset
 ```
+
+**The buffer is deliberate and it is new (6 September).** This used to flush
+sentence by sentence as tokens arrived, each sentence a separate generation
+knowing nothing about its neighbours — which is what "the tone doesn't feel
+consistent line by line" was. ElevenLabs documents v3 as unstable under ~250
+characters and every warmth band sits far below that already (INVESTED is about
+55), so splitting a 40-character turn further put the product permanently in the
+vendor's worst operating regime. It also bought nothing: her turns are three to
+fifteen words, so nine times out of ten the whole turn was one sentence anyway.
+Buffering costs roughly 150–250ms, which §4's timing layer is spending on
+purpose in every band but the two warmest.
 
 ### What the model is actually sent, every turn
 
@@ -137,20 +148,74 @@ performs every instruction she has at once.
 
 ---
 
-## 4. The character, in four layers
+## 4. The character, in five layers
 
-A persona (`lib/personas/*.ts`, schema in `PERSONA.md`) is four layers, and each
-one is read by a different part of the machine.
+A persona (`lib/personas/*.ts`, schema in `PERSONA.md`) is four authored layers,
+and each one is read by a different part of the machine. The fifth is derived
+rather than authored, and it reads the same warmth the other four read.
 
 | Layer | Field | What it decides | Read by |
 |---|---|---|---|
 | 1 — **Trajectory** | `start`, `startJitter`, `gain`, `decay`, `decayPerTurn`, `maxGainPerTurn`, `sessionCeiling`, `hardCeiling` | How warmth *moves*. This is what a difficulty level **is**. | the warmth engine |
 | 2 — **Personality** | `sharpness`, `sharpnessLowWarmthBoost`, `humour`, `talkativeness`, `patience`, `expression`, `distraction`, `signalClarity` | Who she is. None of it moves with warmth. | the prompt compiler, the scorer's temperament weighting, the steering line, the voice settings |
 | 3 — **Gated** | `flirtiness`, `personalDisclosure`, `initiatesTopics`, `usesYourName` — each a threshold and a ceiling | What she earns the right to do, and at what warmth. | the steering line |
-| 4 — **Room** | `bed`, `bedDb`, `reverbIr`, `reverbWet`, `oneShotIntervalMs` | The place. | the audio graph |
+| 4 — **Room** | `bed`, `bedDb`, `reverbIr`, `reverbWet`, `oneShotIntervalMs`, `place` | The place. | the audio graph, and `roomName` in the absolute rules |
+| 5 — **Timing** | derived: warmth band × posture × turn kind | **How long she takes before answering.** | the adapter, before playback |
 
 Plus the authored prose: `contract`, `scene`, `want`, `sceneBeats`,
 `exitConditions`, `disposition`, `moods`.
+
+### Layer 5 — silence, which is a channel and was a constant
+
+`lib/warmth/timing.ts`. Added 6 September; before it, every one of her lines
+arrived at the same machine-determined latency.
+
+Stivers et al. (2009, PNAS) measured turn-taking across ten languages and found
+a **universal modal gap of about 200ms**, every language inside 250ms of that
+mean. The part that matters for a product built on *earned* interest is the
+tail: **gaps past roughly 700ms are decoded, cross-culturally, as a dispreferred
+response.** Silence before an answer is not neutral — it means *I don't want
+to*, and listeners read it without being taught to. The scorecard already grades
+the **user** on mean response latency, so the product understood that latency
+carries meaning and had simply never applied it to her.
+
+`responseDelayFor(warmth, shape)` returns a target **onset**, measured from the
+user finishing:
+
+| Band | Target | What it says |
+|---|---|---|
+| HOSTILE | 900–1400ms | I am not going to make this easy |
+| CLOSED | 700–1100ms | dispreferred, audibly |
+| GUARDED | 500–900ms | polite reluctance |
+| OPEN | 350–650ms | ordinary |
+| ENGAGED | 200–400ms | engaged, ready |
+| INVESTED | 120–280ms | I was already going to say something |
+
+Three properties carry the realism:
+
+- **Posture overrides band, as a floor.** `wary` — interested but not at ease —
+  is timed as GUARDED at warmth 70. A character who is warm and fast is easy; a
+  character who is warm and hesitant is a person. Only `taken` may run early,
+  and only by 80ms.
+- **The turn kind moves it whatever the band says.** An intimate question adds
+  300–600ms and a dispreferred one 200–450ms. Hesitation before a personal
+  answer is the most legible social signal in the product and it did not exist.
+  Both are read off the pre-filter that has already run on his turn
+  (`WarmthSession.replyShape`), so it costs nothing and sees no model.
+- **It is sampled, never fixed.** A constant delay at a plausible mean is still
+  a metronome. Each turn draws once, from a normal centred on the band with its
+  half-width as one standard deviation.
+
+**It is a target, not a wait.** `remainingResponseDelayMs` subtracts the time
+the VAD, transcription and generation have already spent, and only the remainder
+delays playback. So the cold bands usually need no engineering at all — the
+existing latency stops being treated as a defect — and only the warm bands need
+the floor pushing down. Generation never waits for this beat.
+
+This is also the only change in the humanness work that makes the product better
+as *training*: a user who practises against a character whose silences mean
+something learns to read silence, and the 200/700ms structure is not a Nerve
+convention but a human universal.
 
 **Everything derived is derived once.** `compileInstructions` turns layers 1 and
 2 into a behaviour block — disposition, effort, distraction, clarity, patience —
@@ -216,11 +281,13 @@ Two properties of this table are enforced rather than remembered:
   text model writes to whatever number it is given; a stated maximum becomes a
   target. A test walks the table asserting the prose names both, in that order.
 - **The ceiling is enforced in code, not hoped for.** `wordCapFor(warmth)` is
-  handed to the turn pipeline, which stops generating at the first sentence
-  boundary at or past it. It never cuts mid-sentence — generation is already
-  flushed sentence by sentence — and the first sentence is always free, so no
-  band can produce silence. A single long sentence still goes out whole: this is
-  a ceiling on how much she *piles on*.
+  handed to the turn pipeline, which buffers her whole line and then keeps
+  sentences up to the first boundary at or past it (`capToBudget`). It never
+  cuts mid-sentence, and the first sentence is always free, so no band can
+  produce silence. A single long sentence still goes out whole: this is a
+  ceiling on how much she *piles on*. The tokens past it are generated, read and
+  thrown away rather than cancelled — cancelling loses the usage receipt, which
+  costs twelve times what the tail saves.
 
 The closing turn is exempt (`UNSTEERED_WORD_CAP`, 40 words), because the band
 stands down for that turn and a rule she was not given must not truncate the
@@ -338,11 +405,42 @@ property of the transcript; it never needs to understand what was said.
 - `liking` / `comfort` — multipliers on the two secondary axes, from `humour`
   and `patience`.
 
+> **Repriced 6 September.** A dead end was −3 against `open-question` at +3,
+> which made the applied ratio **2.6:1 in favour of reward** on Nadia (+3.30
+> against −1.25) — so the meter effectively only ratcheted up and she never
+> visibly withdrew, which is what makes signal-reading unlearnable. A dead end
+> is now −6 and the streak penalty −8, and the streak starts on the **second**
+> consecutive one rather than the third, because three in a row is already her
+> exit condition and a penalty that waited for it arrived on the turn she was
+> leaving anyway. Measured after: 1.43:1, and four dead ends cost 17.6 points
+> instead of 7.8.
+>
+> Repriced at SOURCE rather than through `gain`/`decay`, because those two ARE
+> the difficulty ladder — Tess is 1.8/0.3 because rung 1 must be nearly
+> impossible to fail, Alex is 0.4/2.0 — and inverting them roster-wide would
+> flatten the ladder into one curve. A forgiving character still forgives a dead
+> end faster than a sharp one, which is the ladder working. `LOSS_CAP_MULTIPLE`
+> (4× `maxGainPerTurn`) is the one piece of the asymmetry that applies to
+> everybody: it stops a single turn emptying the meter, which −6 through a 2.0
+> decay otherwise did.
+>
+> A rep with no dead ends is bit-identical to before, so none of this can move
+> arming for a user who is participating.
+
 > **Current state, stated plainly:** the four penalties above are the *complete*
-> list of ways a user can lower warmth through the fast layer. **Contempt is not
-> among them, and is not representable.** A hostile turn containing a question
-> mark is scored as an open question and *earns* points. This is a known defect
-> and the evidence is in `PERSONA-AUDIT.md`.
+> list of ways a user can lower warmth through the fast layer. **Contempt is
+> still not representable here, and deliberately so** — judging what a turn
+> meant is §6.2's job and the split is the whole design.
+>
+> What changed on 6 September is that contempt can no longer be *farmed*. A turn
+> matching `hasHostilityMarker` (`lib/warmth/triggers.ts`) cannot earn
+> `open-question` or `engaged-length`, which were the only two reasons in this
+> layer payable on shape alone. So "What the fuck?" now scores its dead-end
+> penalty and nothing else, instead of +3 for asking a question. The filter is
+> tuned for precision as well as recall because it costs the user points:
+> directed profanity, second-person insults, imperatives to leave and explicit
+> dismissals match; "this is fucking great" does not. The same filter routes the
+> turn to the judgement layer (§6.3) so the reading still happens.
 
 ### 6.2 The slow scorer — judgement, asynchronous, one model call
 
@@ -394,16 +492,20 @@ floor underneath rather than instead:
 | `personal-marker` | the turn matches a loose personal-topic regex (number, phone, date, drink, coffee, boyfriend, single, tonight, beautiful, hot, alone…) |
 | `negative-turn` | the **fast** score is ≤ −3 |
 | `long-turn` | more than 15 words |
-| `baseline` | every third user turn |
+| `baseline` | every third user turn, **never on a dead end** |
 
 The pre-filter is deliberately loose: a false positive costs one cheap model
 call off the hot path, a false negative costs the boundary rule the only turn it
 existed for.
 
-> **Current state:** `negative-turn` keys off the *fast* score. Since the fast
-> layer cannot see contempt, a hostile turn is not routed here unless it happens
-> to trip one of the other three triggers. The one layer that can recognise
-> hostility is gated behind the one layer that cannot.
+| `hostility` | directed contempt, read off the text alone |
+
+> **Fixed, 6 September.** `negative-turn` keys off the *fast* score, so while
+> contempt was invisible to the fast layer a hostile turn reached the judgement
+> layer only by accident — the one layer that can recognise hostility was gated
+> behind the one that cannot. `hostility` fires on the text and nothing else,
+> before `negative-turn` and independently of it, so a contemptuous turn that
+> scores positively on the mechanics is now judged rather than paid.
 
 Only one slow score may be in flight. If a new one is due before the last has
 landed, the old one is aborted and counted as skipped — a score that has not
@@ -538,10 +640,13 @@ to make her feel like a person rather than a chatbot.
 ### Things that work by *withholding*
 
 1. **She starts cold.** Trajectory starts run from 5 (Alex) to 48 (Tess), with
-   most of the roster in the twenties and thirties. ENGAGED — the first band
-   that lets her ask about him — begins at 60, so **nobody on the roster opens
-   pleased to see you**, and the easiest character still opens twelve points
-   below it.
+   most of the roster in the twenties and thirties. OPEN — the first band that
+   lets her volunteer anything or ask him a question back — begins at 40, so
+   **nobody on the roster but Tess opens able to do either**, and ENGAGED, the
+   band that invites her to drive, begins at 60. Measured: a competently played
+   three-minute rep against Nadia peaks in the mid-fifties, so ENGAGED is rare
+   and INVESTED is unreached. That is the trajectory ladder, and it is the open
+   question §7.2 records.
 2. **The band withholds behaviour, not syllables.** An earlier version expressed
    coldness purely as a word cap and produced a stranger who could not form a
    sentence. A cold band now withholds what coldness actually withholds —
@@ -575,45 +680,175 @@ to make her feel like a person rather than a chatbot.
     stability value per expression — rather than as prose the model may ignore.
 11. **Memory.** `persona_memory` carries one filtered line between reps, so a
     second conversation is not a first conversation.
+12. **Timing.** How long she takes before answering, drawn per turn off band,
+    posture and what kind of question she was asked (§4, layer 5). This was a
+    constant until 6 September, and a constant latency is a tell however
+    plausible its mean.
+13. **Moods.** Three authored afternoons per character, rolled once per rep and
+    stable across every turn of it. `composeSteering` is deterministic in warmth
+    and the directive only re-sent when it changes, so a rep that stays in one
+    band carried *one* instruction start to finish — and the next rep against
+    that character was the same instruction and the same afternoon. A mood
+    changes what she has to talk about and, by construction, never what she
+    gives: `tess.test.ts` asserts the steering is byte-identical across all
+    three at every warmth.
+14. **A room of her own.** Nine authored characters shared two authored scenes,
+    so `sceneId` fell through to `reverbIr` and seven of them stood in somebody
+    else's room — Erin on a train platform listening to glasses being set down,
+    and Maya and Robin told in their *absolute rules* to react "the way a
+    stranger in a bookshop would" from a coffee shop and a hotel lobby. Every
+    room is now authored (`lib/audio/scenes.ts`).
 
 ### Things that work by *reacting*
 
-12. **The repair window.** A misstep followed by a decent recovery is worth 1.6×
+15. **The repair window.** A misstep followed by a decent recovery is worth 1.6×
     an ordinary turn, and she is told she may acknowledge it — a repair the other
     person does not visibly register is not a repair.
-13. **Breakthroughs.** Twice a rep, a judgement at the top of the model's range
+16. **Breakthroughs.** Twice a rep, a judgement at the top of the model's range
     escapes the per-turn cap, so liking can arrive as an instant rather than a
     curve.
-14. **Overreach.** Intimacy measured against what has been earned, priced at −6
+17. **Overreach.** Intimacy measured against what has been earned, priced at −6
     or −15. This is the mechanism that makes a character able to be *pushed too
     fast*.
-15. **In-frame decline.** The first safety strike is her saying no, in her own
+18. **In-frame decline.** The first safety strike is her saying no, in her own
     words, not the app interrupting.
-16. **Exit conditions.** Each character carries her own, in prose: three dead-end
+19. **Exit conditions.** Each character carries her own, in prose: three dead-end
     replies in a row, he says goodbye, he crosses a real boundary.
 
-### Where this currently falls short
+### 7.1 Reciprocity — who is doing the work
 
-Two of the above are load-bearing and **do not fire today**, and a reader
+Added 6 September 2026, and it is the largest single behavioural change in this
+document's history. `lib/warmth/reciprocity.ts`.
+
+**The warmth engine models how much she LIKES him. Nothing modelled how much he
+is GIVING.** Those are different quantities and they come apart. Measured, from
+the last minute of a real rep at warmth 41:
+
+| him | her |
+|---|---|
+| "Mhm." (1 word) | "I like airports too, even if it's silly." (8) |
+| "음." (1) | "You ever read a thriller that takes place in airports?" (10) |
+| "Mm-mm-mm." (1) | "Airports just feel like a good place for stories." (9) |
+
+Three consecutive non-responses, answered with self-disclosure, a question and
+more self-disclosure. Talk ratio 0.27 — she produced nearly three times his
+words in a rep where he had stopped participating. She was at warmth 41 and
+behaving like someone at 75.
+
+**That is the assistant instinct leaking through the character.** When a user
+gives a language model nothing, the model works harder, because that is what the
+base model is for. The contract never told her that giving up was allowed, so
+she rescued him every time he failed. It is a policy failure, not a delivery
+one, and no amount of prosody, timing or disfluency touches it.
+
+Four rules, all pure functions:
+
+- **The mirror cap.** `cap = min(bandCap, ceil(hisWords × 1.3))`. He says "Mhm",
+  he gets two words. It can only ever LOWER the band, never raise it — warmth
+  still owns how much she gives, and this decides whether the turn has earned
+  it. Two exemptions, both learned the hard way (see below): **a question is
+  never mirrored**, because a question is short by construction and is a request
+  for an answer; and a real turn is floored at her band's *typical* rather than
+  at two, because "I am hungry" and "Mhm." are not the same event.
+- **The question gate.** She may ask only at OPEN or above, only when his last
+  turn carried a question or a real turn (eight words, the same threshold
+  `engaged-length` uses), and never straight after a dead end. Never on turn
+  one: a stranger at warmth 28 who opens with "Hey. What's up?" is soliciting.
+  It rides the session's existing `suppressQuestion`, so one system still owns
+  the question rule — and above OPEN the *shape* is still the band's: OPEN
+  allows a question back and nothing more, ENGAGED invites one.
+- **The volunteer gate.** Unprompted disclosure waits for OPEN, which is the
+  same warmth the OPEN band's own permission — "You may volunteer one small
+  thing" — is written against. Below that the band directives already say
+  "answer only what he asked" in their own words, so this gate adds a floor and
+  never a second sentence. It closes again on a dead end, and the band's
+  invitation and her earned gates close with it: a line that says both "match
+  him, do not fill the gap" and "you may start a topic" is the third answer
+  nobody asked for.
+- **Silence.** The consequence of the other three: if he asked nothing and she
+  may neither ask nor volunteer, she has nothing to say. Enforced by making no
+  request at all rather than by asking a model for an empty line — she is never
+  *told* she has nothing to say, because on a silent turn there is nothing to
+  tell. Only at GUARDED and below, because a silence from OPEN reads as sulking.
+  Never twice running — her exit conditions are signalled by finishing a line,
+  so a permanently silent character could never leave — never on the closing
+  turn, which must always be spoken, and **never on his opening line**.
+
+Replayed against the rep that produced them, that last minute becomes two
+silences and a two-word ceiling, and the meter ends at 27.4 instead of 44.5.
+**She withdraws**, which is the thing signal-reading needs in order to be
+learnable.
+
+#### The correction of 6 September: every one of those floors was ENGAGED
+
+Read back against a real rep the next day, the four rules above turned out to be
+**a second warmth system sitting on top of the band table, set twenty points
+higher than it**, and it silently won every argument. A seventeen-turn rep
+against Nadia — start 32, the second-easiest character on the roster, played
+competently — peaked at 56, so for the entire three minutes:
+
+| What was gated at 60 | What that meant for a rep that peaked at 56 |
+|---|---|
+| `mayAskFor` | She asked **nothing, in seventeen turns** |
+| `mayVolunteerFor` | She added nothing to any answer, ever |
+| the band's OPEN permission | Composed on the line, then vetoed on the same line |
+| every gate her author opened at 40 and 45 | Dropped unread. Tess, whose four open below 35, could never fire one at all |
+
+What came out was seventeen minimal answers, and with nothing permitted to fill
+the words she filled them by restating his own sentence back at him — "true
+crime, mostly" → "Yeah, something like true crime, mostly." Three separate
+clauses were also telling her not to ask anything on the same turn: the band
+directive, `suppressQuestion`, and the `at-ease` posture.
+
+So **reciprocity is no longer allowed to have an opinion about warmth**. Warmth
+is the band's; a gate's `unlocksAt` is its author's; what is left here is the
+question these functions were written to answer, which is *what did he just
+do?* Two clauses went with it:
+
+- **"Answer what he asked and stop"** is deleted. At every warmth where the
+  volunteer gate is shut the band directive already says it, and the second copy
+  was the one nobody had tuned.
+- **"You have nothing to say back"** is deleted. It could only ever land on a
+  turn she was about to speak on.
+
+### 7.2 Where this currently falls short
+
+One of the above is load-bearing and **does not fire today**, and a reader
 diagnosing a rep that felt inhuman should know it:
 
-- **Nothing detects ordinary hostility.** §6.1 lists the complete set of
-  penalties and contempt is not among them; §6.2's judgement layer can recognise
-  it but is routed to on the strength of the fast score. Measured on a
-  production rep: a user was openly contemptuous for two minutes and warmth rose
-  from 47 to 52, because "What the fuck?" was scored as an open question.
 - **The "crosses a real boundary" exit has no trigger.** Every character carries
   it in prose; nothing in the system ever tells her one was crossed. That exit
-  has never fired.
+  has never fired. `classifyOverreach` already returns `boundary-violation` at
+  gap > 30; the verdict is simply not wired to the exit condition
+  (`HUMANNESS-PLAN.md` §6.2, item 9 of its order).
+
+**Hostility was the second one and it fired on 6 September.** §6.1 and §6.3
+carry what landed: the fast layer stopped paying for the shape of a hostile
+turn, and the judgement layer stopped being reachable only through it.
 
 Related, and smaller: no character on the roster can currently be told to be
-cutting (the steering clause needs effective sharpness ≥ 60, and Nadia's maxes
-at 35); no character has any authored `moods`, so `moodFor` is dead code and
-every rep against a given character is the same afternoon; and eight of nine
-rooms are silent.
+cutting — the steering clause needs effective sharpness ≥ 60 and Nadia's maxes
+at her base plus her low-warmth boost.
+
+**The open one is the ladder, not the gates.** With the ENGAGED floors removed
+the warm half of the machine is reachable, but a competently played
+three-minute rep against Nadia — start 32, `gain` 1.1, the second-easiest rung
+— still peaks in the mid-fifties. So OPEN is where a good rep lives, ENGAGED is
+rare, INVESTED is unreached, and `ARM_THRESHOLD` at 65 is a real climb even
+when nothing goes wrong. That may be correct: arming is meant to be earned, and
+`gain`/`decay` **are** the difficulty ladder — repricing them roster-wide
+flattens it into one curve, which is why nothing here touched them. But whether
+three minutes is long enough to traverse two bands is a product question that
+has never been answered with a number, and it wants `npm run rep:audition`
+across the roster rather than a commit.
+
+**Two other items on that list are also closed.** Every character now carries
+three authored `moods`, rolled once per rep and stable across every turn of it
+(§7, item 13); and every character now stands in her own authored room rather
+than in whichever bed `reverbIr` happened to name.
 
 The argument, the measurements and the transcripts behind all of these are in
-`PERSONA-AUDIT.md`.
+`PERSONA-AUDIT.md`; the plan they were worked from is `HUMANNESS-PLAN.md`.
 
 ---
 
@@ -628,6 +863,9 @@ The argument, the measurements and the transcripts behind all of these are in
 | Is this turn overreaching? | `classifyOverreach` in `lib/warmth/slow.ts` | with each slow score | no |
 | Where does the meter move to? | `lib/warmth/engine.ts` | per turn | no |
 | What is she told this turn? | `lib/warmth/steering.ts` + `session.ts` | per turn | no |
+| Has he earned a reply at all? | `lib/warmth/reciprocity.ts` | per turn | no |
+| How long does she take before answering? | `lib/warmth/timing.ts` → the adapter | per turn, drawn | no |
+| Which afternoon is she having? | `moodFor` + `lib/voice/seed.ts` | once per rep, seeded | no |
 | How long may she speak? | `lib/warmth/bands.ts` → `combined.ts` | per turn, enforced | no |
 | Has she stopped being the character? | `lib/metrics/stability.ts` | per agent turn | no |
 | Is either stream unsafe? | `lib/safety/` + `/api/safety` | both streams | yes (moderation) |

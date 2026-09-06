@@ -315,7 +315,8 @@ export interface Persona {
   /**
    * How her posture is read off the three affect axes. See `PostureMode`.
    *
-   * Absent means `absolute`, which is what the roster was tuned under.
+   * Absent means `relative`, which is the correct reading and what the roster
+   * now runs. Set `absolute` only to replay a calibration measured under it.
    */
   postureMode?: PostureMode
 

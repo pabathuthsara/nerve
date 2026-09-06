@@ -69,10 +69,10 @@ const LIKING_DIVERGENCE = 12
 /**
  * How posture is read off the three axes.
  *
- *   `absolute`  the gaps are measured against zero. Today's behaviour, and the
- *               default, because every stored calibration and every tuned
- *               character was measured under it.
+ *   `absolute`  the gaps are measured against zero. What every stored
+ *               calibration was measured under, and kept for replaying one.
  *   `relative`  the gaps are measured against the gaps she OPENED with.
+ *               THE DEFAULT.
  *
  * ── WHY THERE IS A SECOND MODE (PERSONA-AUDIT §3.1) ──────────────────────
  *
@@ -90,9 +90,14 @@ const LIKING_DIVERGENCE = 12
  * composing into a third instruction nobody wrote — the round-6 failure, one
  * layer further out.
  *
- * `relative` is the correct reading and is intended to become the only one.
- * It is opt-in for now because flipping it for the roster is a retune of three
- * tuned characters and wants the stability harness, not a commit.
+ * `relative` IS NOW THE DEFAULT, and `absolute` is kept only so a stored
+ * calibration can be replayed under the mode it was measured in. It was left
+ * opt-in for a day on the grounds that flipping it is a retune of three tuned
+ * characters — but nobody opted in, no persona set the field, and so every rep
+ * on the roster kept opening with "Comfortable, not interested" before the user
+ * had said a word. A default that is known to be wrong is not a safe default;
+ * it is the shipping behaviour. Re-run `npm run rep:audition` against Nadia,
+ * Tess and Maya, which are the three tuned against `absolute`.
  */
 export type PostureMode = 'absolute' | 'relative'
 
@@ -134,10 +139,19 @@ export function postureOf(
  */
 export function postureClause(posture: Posture): string | null {
   switch (posture) {
+    // A POSTURE SAYS WHAT SHE FEELS, NEVER WHAT SHE MAY DO.
+    //
+    // These two used to end "Ask, do not offer anything of your own" and "Easy
+    // and unhurried, and ask him nothing" — which made this file the third and
+    // fourth voice on the question rule, behind the band directive and
+    // `suppressQuestion`. A real rep carried all of them at once: the band said
+    // "do not ask unless he asked you first", the quota added "do not ask him
+    // anything this turn", and the posture added "ask him nothing", on every
+    // turn for three minutes. One owner per rule; the band is it.
     case 'wary':
-      return 'Curious about him, not at ease. Ask, do not offer anything of your own.'
+      return 'Curious about him, and not yet at ease with him.'
     case 'at-ease':
-      return 'Comfortable, not interested. Easy and unhurried, and ask him nothing.'
+      return 'Comfortable here, and he is not the reason for it.'
     case 'taken':
       return 'You like him more than the conversation. Let it show in how you say it.'
     case 'polite':

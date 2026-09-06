@@ -121,14 +121,25 @@ export const maya: Persona = {
   },
 
   room: {
-    bed: null,
+    // She was in the bookshop's bed AND her Absolute rules told her to react
+    // "the way a stranger in a bookshop would", from a table in a coffee shop.
+    // §3.6, live on a shipped rung.
+    bed: 'coffee-shop',
     bedDb: -34,
-    reverbIr: 'bookshop',
+    reverbIr: 'coffee-shop',
     reverbWet: 0.14,
     oneShotIntervalMs: [12_000, 26_000],
+    place: 'coffee shop',
   },
 
   contract: contract(CHARACTER),
+
+  /** Three mornings, one rolled per rep. Content only; never a dial. */
+  moods: [
+    'The thing you are writing came out right this morning for the first time in weeks, and you would rather not lose it.',
+    'You are on your second flat white and you can feel it. Everything is running a bit fast.',
+    'You came out because the flat was too quiet, and this place is too loud, which is not what you wanted either.',
+  ],
 
   want: 'back inside the notebook you were happy in before he arrived',
 

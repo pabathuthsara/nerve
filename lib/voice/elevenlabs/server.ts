@@ -12,8 +12,13 @@
  * provider vocabulary. Repointing at another vendor touches this directory and
  * nothing else.
  *
- * Both stream. Buffering either one would put the whole generation on the
- * critical path and there is nothing in a three-word reply to hide it behind.
+ * Both stream, and what the CALLER does with the stream is its own decision.
+ * This file used to add that buffering either one would put the whole
+ * generation on the critical path with nothing in a three-word reply to hide it
+ * behind — which was true of the synthesis half and wrong about the character
+ * half. `combined.ts` now buffers the text deliberately, because a turn split
+ * across generations is the tone discontinuity (HUMANNESS-PLAN §2), and pays
+ * the 150-250ms out of the beat the timing layer is spending anyway.
  */
 
 import { getPersona } from '@/lib/personas'
@@ -31,6 +36,7 @@ import { DEFAULT_CALIBRATION, clamp, type Calibration } from '../types'
 import { chatApiKey, streamChat, type ChatMessage } from '../chat'
 import { readSubscription } from './mint'
 import { PROVIDER_REQUEST_ID_HEADER, vendorRequestId } from '../request-id'
+import { seededRandom } from '../seed'
 
 const TTS_ENDPOINT = 'https://api.elevenlabs.io/v1/text-to-speech'
 
@@ -76,6 +82,19 @@ interface LlmBody {
 export interface PersonaOverlay {
   memorySummary?: string
   userName?: string
+  /**
+   * The rep's own id, used to roll her authored `moods` deterministically.
+   *
+   * This route recompiles the contract on EVERY turn — the arm is stateless by
+   * construction — so an unseeded roll would give her a different afternoon
+   * every time she spoke, and would change the cached prompt prefix with it.
+   * Resolved by the caller from the server-owned session, never read off the
+   * request body, for the same reason the persona id is.
+   *
+   * Absent on the compatibility `/api/voice/llm` route, which has no session to
+   * name. That path gets one consistent mood rather than a fresh one per turn.
+   */
+  moodSeed?: string
 }
 
 export async function handleLlmRequest(
@@ -95,12 +114,14 @@ export async function handleLlmRequest(
   const base = getPersona(typeof body.personaId === 'string' ? body.personaId : '')
   if (!base) return json({ error: 'No such persona.' }, 404)
 
-  const persona = { ...base, ...overlay }
+  const { moodSeed, ...personaOverlay } = overlay
+  const persona = { ...base, ...personaOverlay }
 
   const config = resolvePipelineConfig(env())
   const compiled = new ElevenLabsPersonaCompiler(config).compile(
     persona,
     parseCalibration(body.calibration),
+    { rng: seededRandom(moodSeed ?? '') },
   )
 
   // The contract is compiled here, from an id. It is never accepted from the

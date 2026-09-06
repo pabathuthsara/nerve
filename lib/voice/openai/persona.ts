@@ -90,6 +90,7 @@ export const BANNED_REGISTER: string[] = [
   'listing options, giving structured advice, or coaching them',
   'complimenting their conversational effort, or acknowledging this is practice',
   'coaching their social performance or saying they are "finding their way"',
+  'using their name more than once in a conversation, or using it to open a sentence',
 ]
 
 function band(value: number, low: string, mid: string, high: string): string {
@@ -296,11 +297,15 @@ export class OpenAIPersonaCompiler implements PersonaCompiler<OpenAISessionConfi
     private readonly rng: () => number = Math.random,
   ) {}
 
-  compile(persona: Persona, calibration: Calibration): OpenAISessionConfig {
+  compile(
+    persona: Persona,
+    calibration: Calibration,
+    options: { rng?: () => number } = {},
+  ): OpenAISessionConfig {
     return {
       type: 'realtime',
       model: this.model,
-      instructions: compileInstructions(persona, { canEndScene: true, rng: this.rng }),
+      instructions: compileInstructions(persona, { canEndScene: true, rng: options.rng ?? this.rng }),
       tools: [
         {
           type: 'function',

@@ -5,6 +5,7 @@
  */
 
 import type { RoomControls } from '@/lib/audio/types'
+import type { ReplyShape } from '@/lib/warmth/timing'
 import type {
   Analysers,
   Calibration,
@@ -16,6 +17,37 @@ import type {
   VoiceEventHandler,
   VoiceEventName,
 } from './types'
+
+/**
+ * Everything a stateless turn needs, read once, immediately before it is bought.
+ *
+ * Named rather than written inline because three files hold it — the interface,
+ * the binder that produces it and the adapter that consumes it — and an inline
+ * literal in three places is three things that can drift apart.
+ */
+export interface ReplyState {
+  steering: string
+  warmth: number
+  /** Posture and turn kind, for the timing layer. `lib/warmth/timing.ts`. */
+  shape?: ReplyShape
+  /**
+   * Her ceiling this turn, already mirrored against his last turn.
+   *
+   * Sent rather than derived because only the caller knows what HE just did —
+   * see `mirrorCapFor` in `lib/warmth/reciprocity.ts`. Absent falls back to the
+   * band alone.
+   */
+  wordCap?: number
+  /**
+   * She says nothing this turn.
+   *
+   * Enforced by making no request at all, rather than by asking a model to
+   * produce nothing — a model told to say nothing says something short instead,
+   * the same reason the word cap is enforced rather than stated. See
+   * `mayStaySilentFor`.
+   */
+  silent?: boolean
+}
 
 export interface VoiceProvider {
   readonly id: ProviderId
@@ -36,7 +68,7 @@ export interface VoiceProvider {
   on<E extends VoiceEventName>(event: E, handler: VoiceEventHandler<E>): () => void
 
   /** Fresh state for stateless replies, read after all pending speech is scored. */
-  setReplyState?(read: () => { steering: string; warmth: number }): void
+  setReplyState?(read: () => ReplyState): void
 
   /**
    * Character re-injection (§05 — countermeasure 3). Session update on OpenAI,
@@ -58,9 +90,14 @@ export interface VoiceProvider {
    * turn when he talks over her, are decided below the application — and both
    * of them are how a listener actually tells interest from politeness.
    *
+   * `shape` is the rest of what timing reads: the posture the three axes are
+   * in, and what kind of turn she is answering (`lib/warmth/timing.ts`). It is
+   * optional so a caller with no warmth session — the audition bench, a test —
+   * still gets the band's own beat. Absent means level and ordinary.
+   *
    * Idempotent. Safe to call on every turn.
    */
-  setWarmth(warmth: number): void
+  setWarmth(warmth: number, shape?: ReplyShape): void
 
   /** AnalyserNodes for both streams, so the visualiser never knows the provider. */
   getAnalyser(): Analysers
@@ -83,5 +120,11 @@ export interface VoiceProvider {
 
 /** A persona compiler turns the provider-neutral schema into provider config. */
 export interface PersonaCompiler<TConfig> {
-  compile(persona: Persona, calibration: Calibration): TConfig
+  /**
+   * `rng` decides the one authored thing that varies between reps: which of
+   * her `moods` she is having today (`moodFor`). Injected rather than read off
+   * `Math.random` because a stateless arm recompiles this every turn and must
+   * reach the same answer each time — see `lib/voice/seed.ts`.
+   */
+  compile(persona: Persona, calibration: Calibration, options?: { rng?: () => number }): TConfig
 }

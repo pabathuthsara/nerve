@@ -22,7 +22,8 @@ import { ElevenLabsPersonaCompiler, compileDeliveryTags, EXPRESSION_TAG } from '
 import { ReplyBudget, SpokenTurn, capToBudget, proportionalPrefix, snapToWordBoundary, spokenWordCount } from './truncate'
 import { VadDetector, frameRms } from './vad'
 import { PipelineMeter, CreditGuard } from './telemetry'
-import { shouldFlush, parseAlignment } from './tts'
+import { parseAlignment } from './tts'
+import { seededRandom } from '../seed'
 import { stripSentinel, EXIT_SENTINEL, historyFrom } from './llm'
 import {
   AUDITION_LINES,
@@ -376,25 +377,28 @@ describe('the credit guard', () => {
  * The pieces around the edges
  * ------------------------------------------------------------------ */
 
-describe('synthesis chunking', () => {
-  it('sends a short reply the moment its sentence closes', () => {
-    // The common case. For a three-word answer the first flush and the last are
-    // usually the same moment, which is the reason not to over-engineer this.
-    expect(shouldFlush('Yeah, maybe.', false)).toBe(true)
-    expect(shouldFlush('Really, I am sure.', false)).toBe(true)
+describe('one turn is one prosodic unit', () => {
+  // `shouldFlush` used to live here and decided when to hand accumulated
+  // tokens to synthesis at a sentence boundary. It is gone (HUMANNESS-PLAN
+  // §2): every band sits far below v3's documented stability floor of ~250
+  // characters, splitting a 40-character turn further is the reported tone
+  // discontinuity, and on a three-to-fifteen-word reply the chunking bought no
+  // latency at all. The ceiling that used to ride on the flush is now
+  // `capToBudget`, and the whole-turn behaviour is asserted in
+  // `combined.test.ts` against the real stream.
+
+  it('keeps whole sentences, and always at least the first one', () => {
+    expect(capToBudget('Yeah, maybe. It has been a long morning. And you?', 2))
+      .toBe('Yeah, maybe.')
+    // A single sentence past the ceiling still goes out whole: this is a
+    // ceiling on how much she piles on, not a shredder.
+    expect(capToBudget('It has been an unusually long and complicated morning in here.', 2))
+      .toBe('It has been an unusually long and complicated morning in here.')
   })
 
-  it('holds a fragment that is not a sentence yet', () => {
-    expect(shouldFlush('Yeah, sometimes it feels like', false)).toBe(false)
-    // A two-character "sentence" is an abbreviation or a false positive, and
-    // one request per fragment costs a whole round trip for nothing.
-    expect(shouldFlush('Hey.', false)).toBe(false)
-    expect(shouldFlush('Hey.', true)).toBe(true)
-  })
-
-  it('never flushes nothing', () => {
-    expect(shouldFlush('   ', true)).toBe(false)
-    expect(shouldFlush('', false)).toBe(false)
+  it('does not invent speech out of nothing', () => {
+    expect(capToBudget('   ', 10)).toBe('')
+    expect(capToBudget('', 10)).toBe('')
   })
 })
 
@@ -619,14 +623,18 @@ describe('the compiled contract', () => {
     // only. Thirty-six prohibitions and no demonstrations is also the wrong
     // thing to double: it pushes a writer towards hedging, and hedging is
     // words.
-    const compiled = new ElevenLabsPersonaCompiler({}).compile(nadia, DEFAULT_CALIBRATION)
+    // One rng for both, because her authored mood is rolled inside the
+    // contract and the two sides must be comparing the same afternoon.
+    const rng = seededRandom('a-rep')
+    const compiled = new ElevenLabsPersonaCompiler({})
+      .compile(nadia, DEFAULT_CALIBRATION, { rng: seededRandom('a-rep') })
     for (const line of BANNED_REGISTER) {
       expect(compiled.llm.systemPrompt.split(line).length - 1, line).toBe(1)
     }
     expect(compiled.llm.systemPrompt).not.toContain('# Never')
     // And the realtime arm's contract is still a prefix of it, unchanged.
     expect(compiled.llm.systemPrompt.startsWith(
-      compileInstructions(nadia, { canEndScene: false }),
+      compileInstructions(nadia, { canEndScene: false, rng }),
     )).toBe(true)
   })
 })

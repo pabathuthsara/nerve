@@ -92,7 +92,7 @@ export const jules: Persona = {
   },
 
   room: {
-    bed: null,
+    bed: 'bar',
     bedDb: -24,
     reverbIr: 'bar',
     reverbWet: 0.2,
@@ -100,6 +100,13 @@ export const jules: Persona = {
   },
 
   contract: contract(CHARACTER),
+
+  /** Three evenings, one rolled per rep. Content only; never a dial. */
+  moods: [
+    'Your friend is mid-story and has been for a while, and you would quite like the end of it.',
+    'The music went up two songs ago and you have been half-shouting ever since.',
+    "It is somebody's leaving do and you barely know them.",
+  ],
 
   want: 'back in the conversation you were having with your friend',
 

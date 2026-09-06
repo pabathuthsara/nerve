@@ -1,16 +1,39 @@
-/** LLM → HTTP synthesis, in one server request. The browser only receives audio. */
+/**
+ * LLM → HTTP synthesis, in one server request. The browser only receives audio.
+ *
+ * ── ONE TURN IS ONE PROSODIC UNIT (HUMANNESS-PLAN §2) ───────────────────
+ *
+ * This used to flush her line to synthesis SENTENCE BY SENTENCE as it arrived,
+ * each sentence a separate generation with no knowledge of its neighbours.
+ * That is the reported "the tone doesn't feel consistent line by line", and
+ * three facts made it worse than it looked.
+ *
+ * ElevenLabs' own v3 prompting guide states that very short prompts cause
+ * inconsistent output and recommends inputs over 250 characters. Every band in
+ * `lib/warmth/bands.ts` sits far below that — INVESTED is about 55 characters,
+ * a fifth of the floor — and the pipeline then split THAT further. Request
+ * stitching, which exists for exactly this problem, is not available on
+ * eleven_v3. And the splitting bought nothing: her turns are three to fifteen
+ * words, so nine times out of ten the whole turn is one sentence and the
+ * chunking paid its full prosodic cost for zero latency benefit.
+ *
+ * So the reply is buffered whole and spoken once. On a nine-word turn that
+ * costs roughly 150-250ms over first-sentence flush — which §3's latency layer
+ * is deliberately spending anyway, in every band but the two warmest.
+ */
 import { getPersona } from '@/lib/personas'
 import { DEFAULT_CALIBRATION, type Calibration } from '../types'
 import { priceChatUsage } from '../rates'
 import { resolvePipelineConfig, ttsModelSpec, type PipelineEnv } from './config'
 import { ElevenLabsPersonaCompiler, deliveryFor } from './persona'
-import { EXIT_SENTINEL, LlmClient } from './llm'
+import { LlmClient } from './llm'
 import { handleLlmRequest, handleTtsRequest, type PersonaOverlay } from './server'
-import { parseAlignment, shouldFlush } from './tts'
-import { ReplyBudget } from './truncate'
+import { parseAlignment } from './tts'
+import { capToBudget, spokenWordCount } from './truncate'
 import { UNSTEERED_WORD_CAP, wordCapFor } from '@/lib/warmth/bands'
 import { MAX_TURN_TTS_CHARACTERS, type TurnEvent, type TurnRequest } from './turn-protocol'
 import { proxiedRequestId } from '../request-id'
+import { seededRandom } from '../seed'
 
 const MAX_BODY_BYTES = 32_768
 const MAX_HISTORY_CHARS = 16_000
@@ -90,7 +113,10 @@ export async function parseTurnRequest(request: Request): Promise<TurnRequest | 
 export function turnReservation(input: TurnRequest) {
   const persona = getPersona(input.personaId)!
   const config = resolvePipelineConfig(process.env as PipelineEnv)
-  const compiled = new ElevenLabsPersonaCompiler(config).compile(persona, DEFAULT_CALIBRATION)
+  // Same seed the turn itself will use, so the estimate is measured against
+  // the prompt that is actually sent rather than a differently-rolled one.
+  const compiled = new ElevenLabsPersonaCompiler(config)
+    .compile(persona, DEFAULT_CALIBRATION, { rng: seededRandom(input.sessionId) })
   // Overlay names/memory, endpoint sentinel instructions and message framing have a separate allowance.
   const inputTokens = new TextEncoder().encode(compiled.llm.systemPrompt
     + input.history.map((m) => m.content).join('\n') + (input.steering ?? '')).length + 4096
@@ -100,13 +126,6 @@ export function turnReservation(input: TurnRequest) {
     maxCostUsd: cost === null ? null : cost + MAX_TURN_TTS_CHARACTERS / 1000 * ttsModelSpec(compiled.tts.model).usdPer1kChars,
     resources: { llmInputTokens: inputTokens, llmOutputTokens: compiled.llm.maxTokens, ttsCharacters: MAX_TURN_TTS_CHARACTERS },
   }
-}
-
-/** Hold a partial exit marker across deltas; it must never be spoken. */
-function safePending(text: string): string {
-  const start = text.indexOf('[[')
-  if (start >= 0) return text.slice(0, start)
-  return text.endsWith('[') ? text.slice(0, -1) : text
 }
 
 export function createCombinedTurn(
@@ -124,7 +143,7 @@ export function createCombinedTurn(
   const deadline = setTimeout(() => abort.abort(new Error('Turn deadline exceeded.')), TURN_TIMEOUT_MS)
   const persona = { ...getPersona(input.personaId)!, ...context }
   const compiled = new ElevenLabsPersonaCompiler(resolvePipelineConfig(process.env as PipelineEnv))
-    .compile(persona, context.calibration ?? DEFAULT_CALIBRATION)
+    .compile(persona, context.calibration ?? DEFAULT_CALIBRATION, { rng: seededRandom(input.sessionId) })
   const delivery = deliveryFor(persona, compiled, input.warmth)
   const encoder = new TextEncoder()
   let complete!: () => void
@@ -144,7 +163,6 @@ export function createCombinedTurn(
       let uncertainSynthesis = false
       let clips = 0
       let chain = Promise.resolve()
-      let pending = ''
       let firstAudio = false
       let firstAudioMs: number | null = null
       let ttsRegion: string | null = null
@@ -155,7 +173,8 @@ export function createCombinedTurn(
       // The caller's ceiling when it sent one — only it knows whether the
       // band is steering this turn. See `TurnRequest.wordCap`.
       const wordCap = input.wordCap ?? wordCapFor(input.warmth)
-      const budget = new ReplyBudget(wordCap)
+      /** What she actually said, after the ceiling. Zero until generation ends. */
+      let spokenWords = 0
       let capped = false
       const enqueue = (plainText: string) => {
         if (!plainText.trim()) return
@@ -229,53 +248,48 @@ export function createCombinedTurn(
           fetchImpl: async (_url, options) => {
             const response = await (dependencies.llm ?? handleLlmRequest)(new Request('http://nerve.internal/llm', {
               ...options, body: JSON.stringify({ ...input, calibration: context.calibration }), signal: abort.signal,
-            }), context)
+            }), { ...context, moodSeed: input.sessionId })
             llmRequestId = proxiedRequestId(response.headers)
             return response
           },
         })
         const result = await client.stream(input, {
           onFirstToken: () => emit({ type: 'timing', stage: 'llmFirstTokenMs', ms: now() - started }),
-          onDelta: (delta) => {
-            pending += delta
-            const safe = safePending(pending)
-            if (shouldFlush(safe, false)) {
-              // Preserve a trailing partial sentinel until a later delta finishes it.
-              pending = pending.slice(safe.length)
-              // PAST THE CEILING: DRAIN, DO NOT CANCEL.
-              //
-              // The first cut of this cancelled the model stream here, which is
-              // the obvious thing and is wrong. OpenAI sends the usage receipt
-              // as the LAST frame of the stream, so a cancelled turn settles
-              // with an unknown cost — and an unknown cost keeps the whole
-              // conservative reservation. Measured on the first real rep: three
-              // capped turns billed at $0.0358 each against an actual $0.003,
-              // which put $0.149 of a $0.20 session budget on the meter and
-              // ended the rep at 126 seconds of 180 with a budget refusal.
-              //
-              // What cancelling actually saves is the tail of a 120-token
-              // ceiling — a hundredth of a cent. What it costs is twelve times
-              // the turn. So the remaining tokens are read and thrown away.
-              if (capped) return
-              enqueue(safe)
-              // Spent AFTER the sentence goes out, so the first one is always
-              // free and no band can produce silence. See `ReplyBudget`.
-              capped = budget.spend(safe)
-            }
-          },
+          // NOTHING IS SPOKEN UNTIL THE WHOLE LINE HAS ARRIVED.
+          //
+          // The deltas are collected and nothing else. See the header: a turn
+          // is one prosodic unit, and a sentence handed to v3 on its own is a
+          // generation that knows nothing about its neighbours.
+          //
+          // PAST THE CEILING: DRAIN, DO NOT CANCEL — and this is why the
+          // ceiling is applied here rather than by stopping the stream. OpenAI
+          // sends the usage receipt as the LAST frame, so a cancelled turn
+          // settles with an unknown cost, and an unknown cost keeps the whole
+          // conservative reservation. Measured on the first real rep: three
+          // capped turns billed at $0.0358 each against an actual $0.003, which
+          // put $0.149 of a $0.20 session budget on the meter and ended the rep
+          // at 126 seconds of 180 with a budget refusal. What cancelling saves
+          // is the tail of a 120-token ceiling — a hundredth of a cent.
           onUsage: (usage) => { llmUsage = { input: usage.input, output: usage.output, cachedInput: usage.cachedInput ?? 0 } },
         }, abort.signal)
         emit({ type: 'timing', stage: 'llmCompleteMs', ms: now() - started })
-        // A capped turn's unflushed tail is the part she is not saying. It must
-        // not be synthesised and it must not reach the transcript, because the
-        // transcript is what comes back as history on the next turn.
-        if (!abort.signal.aborted && !capped) enqueue(safePending(pending))
+        // The ceiling, applied to the reply that arrived whole. `capToBudget`
+        // is the same rule the flush used to enforce a sentence at a time — it
+        // keeps whole sentences, always keeps the first one, and never cuts
+        // mid-clause. The part past the ceiling is the part she is not saying,
+        // so it must reach neither synthesis nor the transcript: the transcript
+        // is what comes back as history on the next turn.
+        const generated = result.text.trim()
+        const spoken = capToBudget(generated, wordCap)
+        spokenWords = spokenWordCount(spoken)
+        capped = spokenWords < spokenWordCount(generated)
+        if (!abort.signal.aborted) enqueue(spoken)
         await chain
         if (failure) throw failure
         status = abort.signal.aborted ? 'aborted' : 'completed'
         if (status === 'completed') {
           if (llmUsage) emit({ type: 'usage', llm: llmUsage, tts: { characters, costUsd: characters / 1000 * ttsModelSpec(compiled.tts.model).usdPer1kChars } })
-          emit({ type: 'done', exit: result.exit || pending.includes(EXIT_SENTINEL) })
+          emit({ type: 'done', exit: result.exit })
         } else if (!requestSignal.aborted) emit({ type: 'error', message: 'The reply timed out. Please try again.' })
       } catch {
         status = requestSignal.aborted ? 'aborted' : 'failed'
@@ -302,7 +316,7 @@ export function createCombinedTurn(
               deploymentUrl: process.env.VERCEL_URL ?? 'local',
               ttsModel: compiled.tts.model, llmModel: compiled.llm.model,
               llmRequestId, ttsRequestIds,
-              wordCap, spokenWords: budget.words, capped,
+              wordCap, spokenWords, capped,
               ...timings,
             },
           }).catch(() => undefined) // A failed settlement leaves the server reservation held.

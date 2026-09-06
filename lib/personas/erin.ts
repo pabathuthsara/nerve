@@ -87,17 +87,28 @@ export const erin: Persona = {
   },
 
   room: {
-    bed: null,
+    // She stood on a train platform listening to glasses being set down.
+    bed: 'train-platform',
     bedDb: -26,
-    reverbIr: 'bar',
+    reverbIr: 'train-platform',
     reverbWet: 0.18,
     oneShotIntervalMs: [8_000, 18_000],
+    // "in a train platform" is not English. The acoustics are the platform's;
+    // the word for where she is standing is the station.
+    place: 'train station',
   },
 
   contract: contract(CHARACTER),
 
   // Ungated. She wants this at warmth 5 and at warmth 80; only whether she
   // pursues it away from him or lets him into it changes.
+  /** Three evenings, one rolled per rep. Content only; never a dial. */
+  moods: [
+    'The board has just moved your train from four minutes to eleven.',
+    'You are carrying more than you meant to and one of the bags has a strap going.',
+    'It is colder than the forecast said and you dressed for the forecast.',
+  ],
+
   want: 'back in the text argument with your brother about the car',
 
   sceneBeats: [

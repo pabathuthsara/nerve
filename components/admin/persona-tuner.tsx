@@ -42,6 +42,8 @@ import {
   type TrackId,
   type VoiceSelection,
 } from '@/lib/voice/types'
+import { bandFor, specFor } from '@/lib/warmth/bands'
+import { mayAskFor, mayVolunteerFor, type UserTurnShape } from '@/lib/warmth/reciprocity'
 import { changedDials, dialsToSource, type PersonaDials } from '@/lib/tuning/export'
 import { editsBetween } from '@/lib/tuning/patch'
 import { saveDials } from '@/app/admin/actions'
@@ -64,6 +66,28 @@ const EXPRESSIONS: Expression[] = ['playful', 'dry', 'earnest', 'flat']
 
 /** The warmths the readout samples. 55 is where most gates sit. */
 const SAMPLE_WARMTHS = [5, 20, 40, 55, 70, 85]
+
+/**
+ * The turn the readout below assumes he just took: a real one, twelve words,
+ * no question.
+ *
+ * A gate is not a function of warmth alone. `lib/warmth/reciprocity.ts` also
+ * reads what HE just gave, and this table cannot know that — so it states one
+ * shape and says which, rather than printing a number that is true for no turn
+ * in particular. A dead end closes everything in the "she may" column, and the
+ * note under the table says so.
+ *
+ * This column exists because the table used to show `unlockedGates` alone,
+ * which said all four of Nadia's gates were open at 55 while the composer
+ * silently dropped every one of them below 60. A bench that disagrees with the
+ * runtime is worse than no bench: it is where the dials were tuned.
+ */
+const ORDINARY_TURN: UserTurnShape = {
+  words: 12,
+  askedQuestion: false,
+  disclosed: true,
+  deadEnd: false,
+}
 
 export function PersonaTuner({ personas, models, signedInAs }: { personas: TunerPersona[]; models: string[]; signedInAs: string }) {
   const [slug, setSlug] = useState(personas[0]?.slug ?? '')
@@ -277,19 +301,33 @@ export function PersonaTuner({ personas, models, signedInAs }: { personas: Tuner
           <Section title="What the dials imply" sub="Computed from the values above, not measured from a rep.">
             <div className="admin-readout">
               <div className="admin-readout__row admin-readout__row--head">
-                <span>warmth</span><span>eff. sharpness</span><span>gates open</span>
+                <span>warmth</span><span>band</span><span>words</span><span>eff. sharp</span><span>she may</span><span>gates open</span>
               </div>
               {SAMPLE_WARMTHS.map((warmth) => {
                 const open = unlockedGates(dials.gated, warmth)
+                const spec = specFor(bandFor(warmth))
+                const may = [
+                  mayVolunteerFor(warmth, ORDINARY_TURN) ? 'volunteer' : null,
+                  mayAskFor(warmth, ORDINARY_TURN) ? 'ask' : null,
+                ].filter((name): name is string => name !== null)
                 return (
                   <div key={warmth} className="admin-readout__row">
                     <span className="data">{warmth}</span>
+                    <span className="data">{spec.band.toLowerCase()}</span>
+                    <span className="data">{spec.typicalWords}&thinsp;/&thinsp;{spec.maxWords}</span>
                     <span className="data">{effectiveSharpness(dials.personality, warmth).toFixed(1)}</span>
+                    <span className="admin-gates">{may.length ? may.map((name) => <i key={name}>{name}</i>) : <em>answer only</em>}</span>
                     <span className="admin-gates">{open.length ? open.map((name) => <i key={name}>{name}</i>) : <em>none</em>}</span>
                   </div>
                 )
               })}
             </div>
+            <p className="admin-fine">
+              <strong>words</strong> is the band&rsquo;s typical and its ceiling, which the turn pipeline enforces.
+              The last two columns assume he just gave a real twelve-word turn: if he dead-ends instead, she may
+              neither volunteer nor ask, no gate is named to her, and her ceiling drops to mirror what he gave.
+              Below <code>OPEN</code> the band answers only, whatever a gate says.
+            </p>
           </Section>
         </div>
       </div>

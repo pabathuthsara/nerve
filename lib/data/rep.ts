@@ -499,7 +499,11 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       // The two consequences of interest that live below the application: how
       // long she sits on a reply, and whether she takes the turn when he talks
       // over her. She is still never told a number (§H6).
-      voice.setWarmth(engine.warmth)
+      //
+      // The shape travels with it — the posture the three axes are in, and
+      // what kind of turn she is answering. Timing is the fifth layer and it
+      // reads all three (`lib/warmth/timing.ts`).
+      voice.setWarmth(engine.warmth, warmthRef.current?.replyShape)
       if (pausedRef.current) voice.setInterruptible(false)
     },
     [interview],
@@ -759,7 +763,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       }
       activated = true
       voice.setMuted?.(pausedRef.current)
-      voice.setWarmth(warmthRef.current?.engine.warmth ?? 0)
+      voice.setWarmth(warmthRef.current?.engine.warmth ?? 0, warmthRef.current?.replyShape)
 
       setStatus('live')
       startedAtRef.current = performance.now()
@@ -918,7 +922,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     // let a bored character cut across him for the one turn before the next
     // `publish` corrected it.
     providerRef.current?.setMuted?.(false)
-    providerRef.current?.setWarmth(warmthRef.current?.engine.warmth ?? 0)
+    providerRef.current?.setWarmth(warmthRef.current?.engine.warmth ?? 0, warmthRef.current?.replyShape)
   }, [])
 
   const retry = useCallback(() => {

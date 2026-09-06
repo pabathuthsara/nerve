@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { bedFor } from './room-tone'
-import { roomAcousticsEnabled } from './scenes'
+import { SCENES, roomAcousticsEnabled } from './scenes'
+import { PERSONAS, RETIRED_PERSONAS } from '@/lib/personas'
+import { roomName, sceneId } from '@/lib/voice/types'
+import { compileInstructions } from '@/lib/voice/openai/persona'
 
 describe('room tone is independent of the convolver', () => {
   it('answers with a bed while procedural acoustics are switched off', () => {
@@ -35,8 +38,61 @@ describe('room tone is independent of the convolver', () => {
   it('keeps every bed well below a speaking voice', () => {
     // A bed that competes with her is the intelligibility bug wearing a
     // different hat. -20 dBFS is already generous as a ceiling for a room.
-    for (const id of ['bookshop', 'bar']) {
+    for (const id of Object.keys(SCENES)) {
       expect(bedFor(id)!.masterDb, id).toBeLessThan(-20)
+    }
+  })
+})
+
+describe('every character stands in her own room', () => {
+  // Nine authored personas and two authored scenes: `sceneId` returns
+  // `bed ?? reverbIr`, so seven of them fell through to somebody else's room.
+  // Erin stood on a train platform listening to glasses being set down, and —
+  // worse, because it reaches the contract rather than the speakers — Maya and
+  // Robin were told in their Absolute rules to react "the way a stranger in a
+  // bookshop would" from a coffee shop and a hotel lobby. That is
+  // PERSONA-AUDIT §3.6, fixed for Tess alone and left running on two live rungs.
+
+  const EVERYONE = [...Object.values(PERSONAS), ...Object.values(RETIRED_PERSONAS)]
+
+  it('authors a bed for every room on the roster', () => {
+    for (const persona of EVERYONE) {
+      expect(bedFor(sceneId(persona.room)), persona.slug).not.toBeNull()
+    }
+  })
+
+  it('gives no two characters in different places the same room', () => {
+    // The test that would have caught this. A shared scene is legitimate —
+    // two characters can stand in one bar — but only when they are authored
+    // into the same place.
+    const byScene = new Map<string, string[]>()
+    for (const persona of EVERYONE) {
+      const id = sceneId(persona.room)
+      byScene.set(id, [...(byScene.get(id) ?? []), persona.scene])
+    }
+    for (const [id, scenes] of byScene) {
+      const rooms = new Set(scenes.map((scene) => scene.split(/[,.]/)[0]?.trim()))
+      expect(rooms.size, `${id}: ${[...rooms].join(' / ')}`).toBe(1)
+    }
+  })
+
+  it('says the room she is standing in, in the rules that say what is inviolable', () => {
+    for (const persona of EVERYONE) {
+      const room = roomName(persona.room)
+      expect(compileInstructions(persona)).toContain(`a stranger in a ${room} would react`)
+      // And it reads as English. "in a train platform" does not.
+      expect(room, persona.slug).not.toMatch(/-/)
+    }
+  })
+
+  it('never lets the persona trim and the scene disagree about the same room', () => {
+    // `applyRoomConfig` hands the persona's interval to the convolver path;
+    // `RoomTone` reads the scene's. Two numbers for one rhythm is how one of
+    // them goes quietly unused.
+    for (const persona of EVERYONE) {
+      const bed = bedFor(sceneId(persona.room))!
+      expect(bed.oneShotIntervalSeconds.map((s) => s * 1000), persona.slug)
+        .toEqual(persona.room.oneShotIntervalMs)
     }
   })
 })

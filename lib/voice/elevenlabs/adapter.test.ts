@@ -16,7 +16,7 @@ const hardware = vi.hoisted(() => ({
   capture: null as MicCaptureOptions | null,
   commits: [] as TranscriptionTiming[],
   track: { enabled: true, stop: vi.fn() },
-  players: [] as { playedSeconds: number; scheduledSeconds: number; stopped: boolean }[],
+  players: [] as { playedSeconds: number; scheduledSeconds: number; stopped: boolean; notBefore: number }[],
 }))
 
 vi.mock('./stt', () => ({
@@ -43,7 +43,12 @@ vi.mock('./player', () => ({
     playedSeconds = 0
     scheduledSeconds = 0
     stopped = false
-    constructor(private options: PcmPlayerOptions) { hardware.players.push(this) }
+    /** The personality beat, as scheduled. See `lib/warmth/timing.ts`. */
+    notBefore: number
+    constructor(private options: PcmPlayerOptions) {
+      this.notBefore = options.notBefore ?? 0
+      hardware.players.push(this)
+    }
     get isPlaying() { return !this.stopped && this.scheduledSeconds > 0 }
     enqueue(samples: Float32Array) {
       if (this.stopped) return
@@ -307,6 +312,77 @@ describe('ElevenLabs combined adapter', () => {
     await vi.waitFor(() => expect(summary).not.toBeNull())
     expect(transcripts).toHaveBeenCalledOnce()
     expect(summary!.turns.filter((turn) => turn.speaker === 'agent').map((turn) => turn.text)).toEqual(['Only heard words.'])
+  })
+
+  it('spends the drawn beat before her first audio, and spends it once', async () => {
+    // TIMING IS THE FIFTH LAYER (HUMANNESS-PLAN §3). The adapter owns no warmth
+    // engine; it is told where the meter stands and what shape the reply is,
+    // and the pause it schedules is the only place that reaches the ear.
+    const onset = async (warmth: number, posture: 'level' | 'wary') => {
+      hardware.players.length = 0
+      const provider = new ElevenLabsVoiceProvider({
+        fetchImpl: vi.fn(async (url: string | URL | Request) => String(url).includes('/token')
+          ? Response.json(token()) : fullReply('A short answer.')),
+        // Held still, so nothing of the beat has been spent by the pipeline and
+        // the whole target is still owed at playback.
+        clock: () => 1000,
+      })
+      provider.setReplyState(() => ({ steering: '[Even.]', warmth, shape: { posture, turnKind: 'ordinary' } }))
+      await provider.connect(tess, DEFAULT_CALIBRATION)
+      final('Say something.')
+      await vi.waitFor(() => expect(hardware.players).toHaveLength(1))
+      const scheduled = hardware.players[0]!.notBefore
+      await provider.end()
+      return scheduled
+    }
+
+    // Sampled, so a single draw cannot decide this: the distribution IS the
+    // behaviour and a constant delay is a metronome.
+    const mean = async (warmth: number, posture: 'level' | 'wary') => {
+      let total = 0
+      for (let i = 0; i < 6; i += 1) total += await onset(warmth, posture)
+      return total / 6
+    }
+
+    const cold = await mean(10, 'level')
+    const warm = await mean(90, 'level')
+    const warmButWary = await mean(90, 'wary')
+    // A cold stranger lets a beat go by. An engaged one does not.
+    expect(cold).toBeGreaterThan(warm)
+    // And posture overrides the band: warm and hesitant is a person.
+    expect(warmButWary).toBeGreaterThan(warm)
+  })
+
+  it('records nothing when the user takes the turn before she has said a word', async () => {
+    // A NEW WINDOW, OPENED BY BUFFERING THE TURN (HUMANNESS-PLAN §2).
+    //
+    // While the pipeline flushed sentence by sentence there was almost always
+    // audio in flight by the time a barge-in landed, so the interesting case
+    // was "keep the words that reached the ear". Now that a turn is one
+    // prosodic unit, generation runs with NOTHING playing — so a barge-in in
+    // that window must commit no transcript at all. A turn recorded here would
+    // be a line she never said, coming back as history on the next turn, which
+    // is the exact failure `truncate.ts` exists to prevent.
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const provider = new ElevenLabsVoiceProvider({ fetchImpl: vi.fn(async (url: string | URL | Request) => {
+      if (String(url).includes('/token')) return Response.json(token())
+      return new Response(new ReadableStream({ start(value) { controller = value } }))
+    }) })
+    const transcripts = vi.fn()
+    const speechStops = vi.fn()
+    provider.on('agent.transcript', transcripts)
+    provider.on('agent.speech.stop', speechStops)
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    final('Say something.')
+    await vi.waitFor(() => expect(controller).toBeDefined())
+    // The reply is still being generated. No clip, no audio, no player.
+    expect(hardware.players).toHaveLength(0)
+    final('Actually, never mind.')
+    const summary = await provider.end('cap')
+    expect(transcripts).not.toHaveBeenCalled()
+    // And she never "stopped speaking", because she never started.
+    expect(speechStops).not.toHaveBeenCalled()
+    expect(summary.turns.filter((turn) => turn.speaker === 'agent')).toEqual([])
   })
 
   it('keeps each clause’s speech timing and buys one reply after overlapping transcription settles', async () => {

@@ -93,14 +93,22 @@ export const priya: Persona = {
   // Rooms are two presets today; a gym floor is closer to the reflective one
   // than to a carpeted shop. Beds stay off for the reason recorded on Nadia.
   room: {
-    bed: null,
+    bed: 'gym',
     bedDb: -30,
-    reverbIr: 'bar',
+    reverbIr: 'gym',
     reverbWet: 0.16,
     oneShotIntervalMs: [10_000, 22_000],
+    place: 'gym',
   },
 
   contract: contract(CHARACTER),
+
+  /** Three evenings, one rolled per rep. Content only; never a dial. */
+  moods: [
+    'This is the last set of a session you very nearly did not come to.',
+    'Somebody has been on the rack you want for twenty-five minutes.',
+    'You are one session away from a number you have been chasing for a month.',
+  ],
 
   want: 'back under the bar for your next set before you cool down',
 

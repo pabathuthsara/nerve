@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 
 import { openingAffect, postureClause, postureOf } from './affect'
 import { NEUTRAL_TEMPERAMENT, temperamentOf } from './temperament'
-import { interruptsAt, paceFor, replyDelayMs, MAX_REPLY_DELAY_MS } from './timing'
+import { interruptsAt, paceFor } from './timing'
 import { nadia } from '@/lib/personas/nadia'
 import { erin } from '@/lib/personas/erin'
 import { alex } from '@/lib/personas/alex'
@@ -26,13 +26,13 @@ describe('postureOf', () => {
     // The intense stranger: leaning in and holding back at once. Unreachable
     // with one number, and instantly recognisable as a person.
     expect(postureOf({ warmth: 70, comfort: 40, liking: 65 })).toBe('wary')
-    expect(postureClause('wary')).toContain('not at ease')
+    expect(postureClause('wary')).toContain('not yet at ease')
   })
 
   it('reads ease without interest as at-ease', () => {
     // The nice person you have nothing to say to.
     expect(postureOf({ warmth: 30, comfort: 70, liking: 30 })).toBe('at-ease')
-    expect(postureClause('at-ease')).toContain('not interested')
+    expect(postureClause('at-ease')).toContain('not the reason')
   })
 
   it('reads liking ahead of the conversation as taken', () => {
@@ -41,6 +41,18 @@ describe('postureOf', () => {
 
   it('reads the subject holding her more than he does as polite', () => {
     expect(postureOf({ warmth: 60, comfort: 60, liking: 30 })).toBe('polite')
+  })
+
+  it('never says whether she may ask or offer — that is the band\u2019s, and only the band\u2019s', () => {
+    // These two clauses used to end "Ask, do not offer anything of your own"
+    // and "Easy and unhurried, and ask him nothing", which made this file the
+    // third and fourth voice on the question rule behind the band directive and
+    // `suppressQuestion`. A real rep carried all of them at once, for three
+    // minutes. A posture says what she FEELS; the band says what she may do.
+    for (const posture of ['wary', 'at-ease', 'taken', 'polite', 'level'] as const) {
+      const clause = postureClause(posture) ?? ''
+      expect(clause, posture).not.toMatch(/\bask\b|\bquestion\b|volunteer|offer\b|words?\b/i)
+    }
   })
 
   it('lets discomfort outrank everything', () => {
@@ -104,31 +116,6 @@ describe('temperamentOf', () => {
       expect(t.penalty).toBeLessThanOrEqual(1.3)
       expect(t.genericGain).toBeGreaterThanOrEqual(0.75)
       expect(t.genericGain).toBeLessThanOrEqual(1.2)
-    }
-  })
-})
-
-describe('replyDelayMs', () => {
-  it('makes a cold character take a beat before answering', () => {
-    // People read interest from timing before they read it from words.
-    expect(replyDelayMs(0)).toBe(MAX_REPLY_DELAY_MS)
-    expect(replyDelayMs(-20)).toBe(MAX_REPLY_DELAY_MS)
-  })
-
-  it('disappears once she is actually engaged', () => {
-    expect(replyDelayMs(60)).toBe(0)
-    expect(replyDelayMs(90)).toBe(0)
-  })
-
-  it('tapers, so warming up is audible before she says anything different', () => {
-    expect(replyDelayMs(30)).toBeGreaterThan(replyDelayMs(45))
-    expect(replyDelayMs(45)).toBeGreaterThan(0)
-  })
-
-  it('never spends more of the latency budget than a real pause', () => {
-    for (let warmth = -20; warmth <= 100; warmth += 1) {
-      expect(replyDelayMs(warmth)).toBeLessThanOrEqual(MAX_REPLY_DELAY_MS)
-      expect(replyDelayMs(warmth)).toBeGreaterThanOrEqual(0)
     }
   })
 })

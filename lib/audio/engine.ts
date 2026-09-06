@@ -419,4 +419,17 @@ const ONE_SHOT_SHAPES: Record<OneShot['kind'], ShotShape> = {
   'glass-clink': { filter: 'bandpass', frequencyHz: 5200, q: 8, attack: 0.002, decay: 0.25 },
   'chair-scrape': { filter: 'bandpass', frequencyHz: 1400, q: 2, attack: 0.02, decay: 0.4 },
   'distant-announcement': { filter: 'bandpass', frequencyHz: 900, q: 1.5, attack: 0.05, decay: 0.8 },
+  // A coin down a slot: bright, metallic, two or three bounces' worth of decay.
+  'coin-drop': { filter: 'bandpass', frequencyHz: 4200, q: 7, attack: 0.002, decay: 0.22 },
+  // The end-of-cycle buzzer, heard across a room. Nasal and flat.
+  'machine-buzzer': { filter: 'bandpass', frequencyHz: 1100, q: 9, attack: 0.01, decay: 0.5 },
+  'cup-on-saucer': { filter: 'bandpass', frequencyHz: 3600, q: 6, attack: 0.002, decay: 0.16 },
+  // A steam wand: almost pure noise, no pitch to speak of, and long.
+  'steam-hiss': { filter: 'highpass', frequencyHz: 2600, q: 0.7, attack: 0.03, decay: 0.9 },
+  'heel-on-stone': { filter: 'bandpass', frequencyHz: 1800, q: 4, attack: 0.002, decay: 0.18 },
+  'lift-chime': { filter: 'bandpass', frequencyHz: 2100, q: 12, attack: 0.004, decay: 0.7 },
+  // Plate on plate. Low, hard and with the room behind it.
+  'weight-clank': { filter: 'bandpass', frequencyHz: 480, q: 5, attack: 0.002, decay: 0.45 },
+  // Steel on steel, a long way off.
+  'rail-squeal': { filter: 'bandpass', frequencyHz: 2400, q: 10, attack: 0.06, decay: 1.1 },
 }

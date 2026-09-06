@@ -253,11 +253,17 @@ export const tess: Persona = {
   // back to the IR when there is no bed, and her Absolute rules consequently
   // told her to react "the way a stranger in a bookshop would".
   room: {
-    bed: null,
+    // Her own room, at last. The bookshop IR was borrowed because it was the
+    // closer of the two authored dead rooms; there is now a launderette, small
+    // and tiled and never quiet, which is what she is actually standing in.
+    bed: 'launderette',
     bedDb: -36,
-    reverbIr: 'bookshop',
+    reverbIr: 'launderette',
     reverbWet: 0.12,
     oneShotIntervalMs: [16_000, 34_000],
+    // Kept although the scene id now says the same word. The name and the
+    // acoustics are separate fields on purpose (PERSONA-AUDIT §3.6) and the
+    // next character to borrow an IR will need that separation again.
     place: 'launderette',
   },
 
@@ -272,6 +278,13 @@ export const tess: Persona = {
   // nineteen minutes to go faster than they are going" on every turn of every
   // rep, on the one clause `steering.ts` calls the reason she is a person
   // rather than a response.
+  /** Three afternoons, one rolled per rep. Content only; never a dial. */
+  moods: [
+    'You put the wash on at the wrong setting and you will find out in eleven minutes whether that mattered.',
+    'This is your third Sunday in a row in here, because the machine at home is still broken and the landlord is still not answering.',
+    'Somebody left the good chair by the window free for once, and you got it.',
+  ],
+
   want: 'left alone with the book you are halfway through',
 
   // Two, ambient, like Nadia's. Beats are `reinforce`d on their own with no

@@ -31,7 +31,12 @@ import {
 } from '../types'
 import type { OpenAISessionConfig } from './persona'
 import { compileReinforcement } from '../reinforcement'
-import { interruptsAt, replyDelayMs } from '../../warmth/timing'
+import {
+  DEFAULT_REPLY_SHAPE,
+  interruptsAt,
+  responseDelayFor,
+  type ReplyShape,
+} from '../../warmth/timing'
 import { OpenAIEventTranslator } from './translate'
 import {
   analyserRms,
@@ -149,6 +154,8 @@ export class OpenAIVoiceProvider implements VoiceProvider {
    * before she answers, and whether she may take the turn.
    */
   private warmth = 0
+  /** Reported alongside it. Timing reads both. See `lib/warmth/timing.ts`. */
+  private replyShape: ReplyShape = DEFAULT_REPLY_SHAPE
 
   constructor(options: OpenAIAdapterOptions = {}) {
     this.tokenEndpoint = options.tokenEndpoint ?? '/api/voice/token'
@@ -159,8 +166,10 @@ export class OpenAIVoiceProvider implements VoiceProvider {
       () => this.send({ type: 'response.create' }),
       {
         // She looks up before she answers, and looks up faster as she warms.
-        // Read live so the pause shortens across the rep (§H6).
-        delayMs: () => replyDelayMs(this.warmth),
+        // Read live so the pause shortens across the rep (§H6), and DRAWN
+        // rather than fixed — a constant beat at a plausible mean is still a
+        // metronome. Timing is the fifth layer: `lib/warmth/timing.ts`.
+        delayMs: () => responseDelayFor(this.warmth, this.replyShape),
         onStall: () => {
           // Clear the translator's side too, or the recovery response is
           // cancelled as an overlap the moment it is created.
@@ -894,8 +903,9 @@ export class OpenAIVoiceProvider implements VoiceProvider {
    * Idempotent and cheap. `setInterruptible` no-ops when nothing changed, so
    * this can be called on every turn without spending a session update.
    */
-  setWarmth(warmth: number): void {
+  setWarmth(warmth: number, shape: ReplyShape = DEFAULT_REPLY_SHAPE): void {
     this.warmth = warmth
+    this.replyShape = shape
     if (!this.persona) return
     // §05 is the ceiling and this cannot raise it: levels 1-4 never interrupt,
     // whatever the meter says. Above that, interruption becomes a sign of

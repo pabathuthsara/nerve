@@ -14,7 +14,16 @@ import { WarmthEngine, type WarmthTelemetry } from './engine'
 import type { Trajectory } from '@/lib/voice/types'
 import { scoreFast, type FastScore } from './fast'
 import type { SlowScorer, SlowScoreRequest } from './slow'
-import { slowScoreTriggers, type SlowTriggerReason } from './triggers'
+import { NEGATIVE_TURN_THRESHOLD, slowScoreTriggers, type SlowTriggerReason } from './triggers'
+import { DEFAULT_REPLY_SHAPE, type ReplyShape, type TurnKind } from './timing'
+import { isOpenQuestion } from './fast'
+import {
+  DISCLOSURE_WORDS,
+  mayAskFor,
+  mayStaySilentFor,
+  mirrorCapFor,
+  type UserTurnShape,
+} from './reciprocity'
 import { composeSteering } from './steering'
 
 /**
@@ -88,6 +97,23 @@ export class WarmthSession {
   private turnsSinceSteer = 0
   /** The closing decision owns the next direction on its own. */
   private closingHandover = false
+  /**
+   * What kind of thing she is about to answer — the fifth layer's other input.
+   *
+   * Derived from the pre-filter that has already run on his turn, so it costs
+   * nothing and is available the instant the turn finalises. See `TurnKind`.
+   */
+  private lastTurnKind: TurnKind = DEFAULT_REPLY_SHAPE.turnKind
+  /**
+   * What HE just did, in the four terms the reciprocity gates read.
+   *
+   * The warmth engine models how much she likes him. This is the other half —
+   * how much he is giving — and until it existed the two came apart completely.
+   * See `./reciprocity.ts`. Null until he has spoken.
+   */
+  private lastUserShape: UserTurnShape | null = null
+  /** She said nothing last turn, so she may not do it twice running. */
+  private silentLastTurn = false
 
   constructor(options: WarmthSessionOptions) {
     this.options = options
@@ -99,7 +125,7 @@ export class WarmthSession {
       personality: () => this.persona.personality,
       // Also a getter, for the same reason: a character switched in the dev
       // panel must not leave the engine reading the previous one's mode.
-      postureMode: () => this.persona.postureMode ?? 'absolute',
+      postureMode: () => this.persona.postureMode ?? 'relative',
       ...(options.rng ? { rng: options.rng } : {}),
     })
   }
@@ -124,6 +150,7 @@ export class WarmthSession {
       // rule warmth has always followed. Silent when the three agree.
       posture: this.engine.posture,
       repairOpen: this.engine.repairOpen,
+      his: this.lastUserShape,
     })
     this.lastDirective = line
     this.turnsSinceSteer = 0
@@ -157,6 +184,7 @@ export class WarmthSession {
       suppressQuestion: this.questionQuotaSpent(),
       posture: this.engine.posture,
       repairOpen: this.engine.repairOpen,
+      his: this.lastUserShape,
     })
     this.turnsSinceSteer += 1
     // Hers if she has one. See `Persona.steerHeartbeatTurns` — a wider band
@@ -201,6 +229,7 @@ export class WarmthSession {
       suppressQuestion: this.questionQuotaSpent(),
       posture: this.engine.posture,
       repairOpen: this.engine.repairOpen,
+      his: this.lastUserShape,
       includeStanding: false,
     })
   }
@@ -243,6 +272,12 @@ export class WarmthSession {
    * only, so one early run of questions does not gag her for the whole rep.
    */
   private questionQuotaSpent(): boolean {
+    // ONE OWNER FOR THE QUESTION RULE. The reciprocity gate rides here rather
+    // than adding a clause of its own, because two systems specifying one thing
+    // is the round-6 failure this file already documents. `mayAskFor` refuses
+    // turn one, refuses below ENGAGED, refuses after a dead end, and refuses
+    // when he has offered nothing to ask about — see `./reciprocity.ts`.
+    if (!mayAskFor(this.engine.warmth, this.lastUserShape)) return true
     const recent = this.agentTurns.slice(-QUESTION_WINDOW)
     if (recent.length < QUESTION_WINDOW) return false
     const asked = recent.filter((turn) => turn.text.trim().endsWith('?')).length
@@ -251,6 +286,51 @@ export class WarmthSession {
 
   get steeringItemsSent(): number {
     return this.steeringSent
+  }
+
+  /**
+   * Everything below the application that decides HOW LONG she takes.
+   *
+   * Timing is the fifth layer (`./timing.ts`) and it reads the same warmth the
+   * other four read, plus two things only this class knows: the posture the
+   * three axes are currently in, and what kind of turn she is answering. The
+   * adapter applies it; she is never told any of it.
+   */
+  get replyShape(): ReplyShape {
+    return { posture: this.engine.posture, turnKind: this.lastTurnKind }
+  }
+
+  /**
+   * Her ceiling for the next reply: the band's, lowered to mirror his turn.
+   *
+   * The band still owns how much she gives. This decides whether the turn has
+   * earned it — "Mhm." buys two words, not nine. See `mirrorCapFor`.
+   */
+  get replyWordCap(): number {
+    return mirrorCapFor(this.engine.warmth, this.lastUserShape)
+  }
+
+  /**
+   * Whether she says nothing at all this turn.
+   *
+   * Read by the adapter, which then makes no request: enforced rather than
+   * asked for, the same way the word cap is. A model told to say nothing says
+   * something short instead.
+   */
+  get staysSilent(): boolean {
+    // NEVER ON THE CLOSING TURN. Thirty seconds out she is told exactly one
+    // thing — wind down and leave, or wind down and offer him her number — and
+    // that decision is the moment the whole product is built around. A grunt at
+    // 2:30 must not be able to swallow it.
+    if (this.closingHandover) return false
+    return mayStaySilentFor(this.engine.warmth, this.lastUserShape, {
+      silentLastTurn: this.silentLastTurn,
+    })
+  }
+
+  /** The adapter reports back what it did, so silence cannot repeat. */
+  noteSilence(silent: boolean): void {
+    this.silentLastTurn = silent
   }
 
   onAgentTurn(turn: TranscriptTurn): void {
@@ -280,10 +360,23 @@ export class WarmthSession {
       agentTurns: this.agentTurns,
       precedingDeadEnds: this.consecutiveDeadEnds,
       gapSeconds,
+      // His first turn is not a dead end however short it is — see `scoreFast`.
+      // Counted here rather than inferred from `agentTurns`, so it holds whether
+      // he opened or she did.
+      openingTurn: this.userTurnCount === 1,
     })
 
     this.engine.applyFast(score, turn.t_end, turn.text)
     this.consecutiveDeadEnds = score.deadEnd ? this.consecutiveDeadEnds + 1 : 0
+
+    // What he gave, for the reciprocity gates. Everything here is already
+    // computed above or is one call away from it; nothing sees a model.
+    this.lastUserShape = {
+      words: score.wordCount,
+      askedQuestion: turn.text.includes('?') || isOpenQuestion(turn.text),
+      disclosed: score.wordCount >= DISCLOSURE_WORDS,
+      deadEnd: score.deadEnd,
+    }
 
     // Evidence-driven, with a count-based floor underneath (§2a).
     const triggers = slowScoreTriggers({
@@ -291,7 +384,17 @@ export class WarmthSession {
       fastRaw: score.raw,
       wordCount: score.wordCount,
       text: turn.text,
+      deadEnd: score.deadEnd,
     })
+    // Timing reads the same evidence the scorer does, one turn earlier. A
+    // dispreferred answer is the one people hesitate in front of; so is a
+    // personal one, and that pause is the most legible signal in the product.
+    this.lastTurnKind = triggers.includes('hostility') || score.raw <= NEGATIVE_TURN_THRESHOLD
+      ? 'dispreferred'
+      : triggers.includes('personal-marker')
+        ? 'intimate'
+        : 'ordinary'
+
     if (triggers.length > 0) {
       this.awaiting = {
         turn,

@@ -217,7 +217,11 @@ export class ElevenLabsPersonaCompiler implements PersonaCompiler<ElevenLabsPipe
     this.config = isResolved(env) ? env : resolvePipelineConfig(env)
   }
 
-  compile(persona: Persona, calibration: Calibration): ElevenLabsPipelineConfig {
+  compile(
+    persona: Persona,
+    calibration: Calibration,
+    options: { rng?: () => number } = {},
+  ): ElevenLabsPipelineConfig {
     const spec = ttsModelSpec(this.config.tts.model)
     const silenceMs = resolveSilenceMs(calibration)
 
@@ -241,7 +245,12 @@ export class ElevenLabsPersonaCompiler implements PersonaCompiler<ElevenLabsPipe
     // the wrong kind of instruction to double: thirty-six prohibitions and no
     // demonstrations push a writer towards hedging, and hedging is words.
     const systemPrompt = [
-      compileInstructions(persona, { canEndScene: false }),
+      compileInstructions(persona, {
+        canEndScene: false,
+        // Her afternoon, rolled from the rep's own seed so this recompiles to
+        // the identical prompt on every turn of one rep. See `lib/voice/seed.ts`.
+        ...(options.rng ? { rng: options.rng } : {}),
+      }),
       '',
       '# Output',
       'Reply with spoken words only. No stage directions, no asterisks, no markdown, no emoji.',

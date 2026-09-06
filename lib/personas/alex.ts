@@ -128,14 +128,22 @@ export const alex: Persona = {
 
   // LAYER 4 — loud and reflective, the opposite of the bookshop in every field.
   room: {
-    bed: 'bar',
+    bed: 'gallery',
     bedDb: -24,
-    reverbIr: 'bar',
+    reverbIr: 'gallery',
     reverbWet: 0.22,
     oneShotIntervalMs: [6_000, 15_000],
+    place: 'gallery',
   },
 
   contract: CONTRACT,
+
+  /** Three evenings, one rolled per rep. Content only; never a dial. */
+  moods: [
+    'You know three people in this room and every one of them is on the far side of it.',
+    'You have already seen the work and you did not think much of it, which you are not going to say out loud in here.',
+    'You came straight from something that ran late and you have not eaten.',
+  ],
 
   want: 'back with the people you actually came here to see',
 

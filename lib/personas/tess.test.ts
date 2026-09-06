@@ -28,11 +28,12 @@ import { describe, expect, it } from 'vitest'
 import { PERSONAS, RETIRED_PERSONAS } from './index'
 import { tess } from './tess'
 import { nadia } from './nadia'
-import { compileInstructions } from '@/lib/voice/openai/persona'
+import { compileInstructions, moodFor } from '@/lib/voice/openai/persona'
 import { composeSteering, wantClauses } from '@/lib/warmth/steering'
 import { bandFor, specFor } from '@/lib/warmth/bands'
 import { DEFAULT_SCORER_PLACE, buildSystemPrompt, scorerPlaceFor } from '@/lib/warmth/prompt'
 import { ARM_THRESHOLD } from '@/lib/data/rep-rules'
+import { seededRandom } from '@/lib/voice/seed'
 import type { Persona } from '@/lib/voice/types'
 
 const EVERYONE: Persona[] = [...Object.values(PERSONAS), ...Object.values(RETIRED_PERSONAS)]
@@ -185,13 +186,78 @@ describe('Tess — no character carries a per-character escape hatch', () => {
     // a character who genuinely needs one — but nobody uses one today, and the
     // reason is recorded in PERSONA-AUDIT §6: the overrides were the thing
     // making Tess read as an AI, not the thing that would have fixed her.
+    //
+    // `moods` is NOT on this list and never belonged on it. It was deleted from
+    // Tess as collateral in the wholesale port, not because it was one of the
+    // overrides that had made her read as an AI — every field above changes
+    // what she GIVES, and a mood cannot. The test below is the one that
+    // matters, and it is the reason this one can safely lose an entry.
     for (const persona of EVERYONE) {
       expect(persona.disposition, persona.slug).toBeUndefined()
       expect(persona.bandDirectives, persona.slug).toBeUndefined()
       expect(persona.postureMode, persona.slug).toBeUndefined()
-      expect(persona.moods, persona.slug).toBeUndefined()
       expect(persona.steerHeartbeatTurns, persona.slug).toBeUndefined()
       expect(persona.verbosityMedian, persona.slug).toBeUndefined()
+    }
+  })
+})
+
+describe('every character has more than one afternoon', () => {
+  // PERSONA-AUDIT §3.9, shipped for the roster rather than for Tess alone.
+  // `composeSteering` is deterministic in warmth and the directive is only
+  // re-sent when it changes, so a rep that stays inside one band carries one
+  // instruction start to finish — and the SECOND rep against that character is
+  // the same instruction and the same afternoon. §08 re-offers the sign-up rep
+  // at day 28 as a side-by-side measurement, so for Tess the thing being
+  // measured was contaminated by the thing being remembered.
+
+  it('authors at least three, for everybody', () => {
+    for (const persona of EVERYONE) {
+      expect(persona.moods?.length ?? 0, persona.slug).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('rolls a different one from a different rep, and the same one within a rep', () => {
+    // Deterministic in the seed, because the pipeline arm recompiles the
+    // contract on every single turn. See `lib/voice/seed.ts`.
+    const rolled = (seed: string) => compileInstructions(nadia, { rng: seededRandom(seed) })
+    expect(rolled('rep-one')).toBe(rolled('rep-one'))
+    const seen = new Set(
+      Array.from({ length: 40 }, (_, i) => moodFor(nadia, seededRandom(`rep-${i}`))),
+    )
+    expect(seen.size).toBeGreaterThan(1)
+  })
+
+  it('reaches the contract under its own heading, and only there', () => {
+    const mood = moodFor(nadia, seededRandom('rep-one'))!
+    const compiled = compileInstructions(nadia, { rng: seededRandom('rep-one') })
+    expect(compiled).toContain('# Today, specifically')
+    expect(compiled).toContain(mood)
+  })
+
+  it('NEVER touches a dial — same warmth, same steering, whatever the day', () => {
+    // The whole licence for this field. A mood that moved warmth would be a
+    // difficulty roll wearing a costume and the ladder would stop meaning
+    // anything. These change what she has to talk about, never what she gives.
+    for (const persona of EVERYONE) {
+      for (const warmth of [10, 30, 50, 70, 90]) {
+        const line = composeSteering({ persona, warmth })
+        for (const mood of persona.moods ?? []) {
+          const withMood = composeSteering({ persona: { ...persona, moods: [mood] }, warmth })
+          expect(withMood, `${persona.slug} @${warmth}`).toBe(line)
+        }
+      }
+    }
+  })
+
+  it('is about her day and never about him', () => {
+    // Second person, present tense, her own afternoon. A mood that mentioned
+    // him would be a disposition, and disposition is layer 1's.
+    for (const persona of EVERYONE) {
+      for (const mood of persona.moods ?? []) {
+        expect(mood, persona.slug).toMatch(/^[A-Z].*[.]$/)
+        expect(mood.toLowerCase(), persona.slug).not.toMatch(/\b(he|him|his)\b/)
+      }
     }
   })
 })
@@ -223,14 +289,18 @@ describe('Tess — she is still rung 1', () => {
 
 describe('Tess — the two fixes kept from the audit', () => {
   it('stands in a launderette, in the section that says what is inviolable', () => {
-    // `sceneId` returns `bed ?? reverbIr`, and with ambient beds off that is the
+    // `sceneId` returns `bed ?? reverbIr`, and with `bed: null` that was the
     // impulse response — so her Absolute rules told her to react "the way a
-    // stranger in a bookshop would" while she stood in a launderette. The
-    // reverb borrowing is an acoustic choice and was never the bug.
+    // stranger in a bookshop would" while she stood in a launderette.
+    //
+    // She has her own authored room now (`lib/audio/scenes.ts`), so the IR is
+    // no longer borrowed and `place` no longer carries the fix on its own. It
+    // stays anyway: the name of the room and its acoustics are separate fields
+    // by design, and the next character to borrow an IR will need that again.
     const compiled = compileInstructions(tess, { canEndScene: true })
     expect(compiled).toContain('the way a stranger in a launderette would react')
     expect(compiled).not.toContain('a stranger in a bookshop')
-    expect(tess.room.reverbIr).toBe('bookshop')
+    expect(tess.room.reverbIr).toBe('launderette')
     expect(tess.room.place).toBe('launderette')
   })
 

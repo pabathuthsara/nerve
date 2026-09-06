@@ -60,12 +60,12 @@ export function spokenWordCount(text: string): number {
  * So the ceiling is enforced where the words are actually produced. Two rules,
  * and both matter:
  *
- *  1. **Never mid-sentence.** Generation is already flushed sentence by
- *     sentence (`shouldFlush`), so the stop lands on a boundary she chose. A
- *     reply cut mid-clause is worse than a long one — that is the same rule
- *     this module exists to enforce for barge-in.
- *  2. **Always at least one sentence.** The first flush is spent before the
- *     budget can refuse anything, so a low band can never produce silence.
+ *  1. **Never mid-sentence.** The reply is split on terminal punctuation and
+ *     kept whole sentence by whole sentence, so the stop lands on a boundary
+ *     she chose. A reply cut mid-clause is worse than a long one — that is the
+ *     same rule this module exists to enforce for barge-in.
+ *  2. **Always at least one sentence.** The first is spent before the budget
+ *     can refuse anything, so a low band can never produce silence.
  *
  * The consequence is that a single long sentence still goes out whole. That is
  * deliberate: this is a ceiling on how much she PILES ON, not a shredder.
@@ -88,13 +88,14 @@ export class ReplyBudget {
 }
 
 /**
- * The same ceiling applied to a reply that arrived whole.
+ * The ceiling, applied to a reply that arrived whole. **This is the live path.**
  *
- * The live pipeline stops GENERATION at the flush that reaches the budget, so
- * it never has a complete reply to trim. Anything holding one — the audition
- * harness, an offline measurement — has to reach the same answer by the same
- * rule, or it reports numbers no customer experiences. Sentences are split on
- * terminal punctuation, which is the boundary `shouldFlush` uses.
+ * It used to be the offline one. The pipeline flushed sentence by sentence and
+ * stopped generating at the flush that reached the budget, so it never held a
+ * complete reply to trim, and this existed for the audition harness alone.
+ * Since a turn became one prosodic unit (`combined.ts`) the buffered reply is
+ * exactly what both need — so the harness and the customer now go through the
+ * same function rather than through two implementations of one rule.
  */
 export function capToBudget(text: string, cap: number): string {
   const sentences = text.trim().split(/(?<=[.!?]["'’”)]?)\s+/).filter(Boolean)

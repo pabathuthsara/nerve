@@ -49,8 +49,14 @@ describe('dialsToSource', () => {
 
   it('quotes strings and leaves null alone', () => {
     const { expression } = dialsOf('nadia').personality
+    const { bed } = dialsOf('nadia').room
     expect(source).toContain(`expression: '${expression}',`)
-    expect(source).toContain('bed: null,')
+    expect(source).toContain(`bed: '${bed}',`)
+    // `bed` is a string on every character now that each one has her own
+    // authored room, so null is exercised on a dial set rather than on hers.
+    const silenced = dialsOf('nadia')
+    expect(dialsToSource({ ...silenced, room: { ...silenced.room, bed: null } }))
+      .toContain('bed: null,')
   })
 
   it('keeps arrays inline', () => {

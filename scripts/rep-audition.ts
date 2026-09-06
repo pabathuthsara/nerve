@@ -25,9 +25,14 @@
  *     which is the cadence the shipping ElevenLabs arm actually runs. It drove
  *     `directiveIfChanged()` until 5 September, so its numbers described the
  *     retained-instruction path no customer is on (PERSONA-AUDIT §11, "Owed")
- *   · her reply is trimmed by `capToBudget` at the band's ceiling, the same
- *     rule the live turn enforces by stopping generation. Without it the
- *     harness reports over-cap turns a customer would never hear
+ *   · her reply is trimmed by `capToBudget` at `session.replyWordCap` — the
+ *     band's ceiling already lowered to mirror his last turn — which is the
+ *     number `bindVoiceSteering` hands the live adapter. It read the band alone
+ *     until 6 September, so the mirror cap and the silent turn, the two rules
+ *     added that day, were the only two the harness could not see
+ *   · a turn she stays silent on is a turn with no request, exactly as the
+ *     adapter enforces it (`ReplyState.silent`), so a rep that goes quiet here
+ *     goes quiet for a customer
  *   · scene beats fire off the rep clock through `dueSceneBeat`
  *   · her turns go through `StabilityMeter`, at HER verbosity ceiling
  *
@@ -53,7 +58,7 @@ import { loadEnvLocal } from './env'
 import { getPersonaEverAuthored } from '../lib/personas'
 import { compileInstructions } from '../lib/voice/openai/persona'
 import { WarmthSession } from '../lib/warmth/session'
-import { bandFor, wordCapFor } from '../lib/warmth/bands'
+import { bandFor } from '../lib/warmth/bands'
 import { capToBudget } from '../lib/voice/elevenlabs/truncate'
 import { chatApiKey, completeChat, type ChatMessage } from '../lib/voice/chat'
 import { StabilityMeter, DEFAULT_VERBOSITY_MEDIAN } from '../lib/metrics/stability'
@@ -114,8 +119,10 @@ interface RepResult {
   drifts: number
   breakDetail: string[]
   distinctDirectives: number
-  /** Turns the band ceiling trimmed. See `capToBudget`. */
+  /** Turns the reply ceiling trimmed. See `capToBudget`. */
   cappedTurns: number
+  /** Turns she had nothing to say on. See `mayStaySilentFor`. */
+  silentTurns: number
 }
 
 function words(text: string): number {
@@ -181,9 +188,11 @@ async function runRep(
   const breakDetail: string[] = []
   let peak = session.engine.warmth
   let beatsFired = 0
-  /** Turns the band ceiling actually trimmed. High is not a fault; it is the
-   *  gap between what she wants to say and what the band allows. */
+  /** Turns the reply ceiling actually trimmed. High is not a fault; it is the
+   *  gap between what she wants to say and what she is allowed. */
   let capped = 0
+  /** Turns she said nothing at all. */
+  let silent = 0
 
   for (let turn = 0; turn < MAX_TURNS; turn += 1) {
     // ── his turn ────────────────────────────────────────────────────────
@@ -221,12 +230,39 @@ async function runRep(
     bands.push(bandFor(warmth))
 
     // ── what she is told, on the shipping cadence ───────────────────────
+    //
+    // Read in the same order and through the same three members as
+    // `bindVoiceSteering`, which is the seam the live adapter uses. Reading
+    // them in any other order tests a pipeline nobody is on: `staysSilent`
+    // refuses two in a row and so has to be recorded before the next turn, and
+    // the ceiling depends on the shape of the turn just scored.
+    const saysNothing = session.staysSilent
+    session.noteSilence(saysNothing)
+
+    // SHE HAS NOTHING TO SAY. No request, no turn, no cost — the adapter
+    // enforces this by making no call at all rather than by asking a model for
+    // an empty line. The clock still moves, so the rep can still run out.
+    if (saysNothing) {
+      silent += 1
+      process.stdout.write(
+        `\n  ${String(turn + 1).padStart(2)}  warmth ${warmth.toFixed(0)} ${bandFor(warmth)}\n`
+          + `      HIM  ${userText}\n`
+          + '      HER  (nothing)\n',
+      )
+      clock += 3
+      continue
+    }
+
     const steer: ChatMessage[] = []
     const directive = session.statelessDirective()
     if (directive) {
       directives.add(directive)
       steer.push({ role: 'system', content: directive })
     }
+    // The ceiling the live turn is held to: the band's, lowered to mirror what
+    // he just gave (`mirrorCapFor`). Read after the directive, for the same
+    // reason the adapter reads both out of one `ReplyState`.
+    const replyCap = session.replyWordCap
 
     // ── what the room does to her, on its own clock ─────────────────────
     const beat = dueSceneBeat({
@@ -250,7 +286,7 @@ async function runRep(
     // The live turn stops synthesising at the flush that reaches the ceiling.
     // Applied here so the transcript she is fed back — and every number this
     // harness prints — is what a customer would actually have heard.
-    const agentText = capToBudget(generated, wordCapFor(warmth))
+    const agentText = capToBudget(generated, replyCap)
     if (agentText !== generated) capped += 1
 
     history.push({ role: 'assistant', content: agentText })
@@ -291,6 +327,7 @@ async function runRep(
     breakDetail,
     distinctDirectives: directives.size,
     cappedTurns: capped,
+    silentTurns: silent,
   }
 }
 
@@ -339,7 +376,8 @@ async function main(): Promise<void> {
         + ` · ${result.armed ? 'ARMED' : 'not armed'} · median ${result.medianAgentWords} words`
         + ` · ${result.breaks} breaks / ${result.drifts} drifts`
         + ` · ${result.distinctDirectives} distinct directions`
-        + ` · ${result.cappedTurns}/${result.agentTurns.length} capped\n`,
+        + ` · ${result.cappedTurns}/${result.agentTurns.length} capped`
+        + `${result.silentTurns ? ` · ${result.silentTurns} silent` : ''}\n`,
     )
     for (const detail of result.breakDetail) console.log(`     ${detail}`)
   }
@@ -361,12 +399,17 @@ async function main(): Promise<void> {
   console.log(
     `  distinct directions  ${median(results.map((r) => r.distinctDirectives))} per rep (median)`,
   )
-  // How often what she wanted to say ran past what the band allows. Not a
+  // How often what she wanted to say ran past what she is allowed. Not a
   // fault: it is the size of the gap the ceiling is closing, and it is the
-  // number to watch after a retune of `bands.ts`.
+  // number to watch after a retune of `bands.ts` or `reciprocity.ts`.
   console.log(
-    `  capped by the band   ${results.reduce((sum, r) => sum + r.cappedTurns, 0)}`
+    `  capped by the ceiling ${results.reduce((sum, r) => sum + r.cappedTurns, 0)}`
     + `/${results.reduce((sum, r) => sum + r.agentTurns.length, 0)} turns`,
+  )
+  // Zero is not a pass. She is allowed to have nothing to say, and a rep where
+  // the player never gives her a reason to withdraw simply will not show one.
+  console.log(
+    `  said nothing at all  ${results.reduce((sum, r) => sum + r.silentTurns, 0)} turns`,
   )
   console.log(`  breaks / 5 min       ${((totalBreaks / minutes) * 5).toFixed(2)}  (gate < 0.5)`)
   console.log(`  drifts               ${results.reduce((sum, r) => sum + r.drifts, 0)}`)

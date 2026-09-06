@@ -10,6 +10,7 @@
 
 import type { Personality, TranscriptTurn } from '@/lib/voice/types'
 import { temperamentOf } from './temperament'
+import { hasHostilityMarker } from './triggers'
 
 export interface FastScoreContext {
   /** Persona level. Gates the pause penalty. */
@@ -25,6 +26,14 @@ export interface FastScoreContext {
   agentTurns: readonly TranscriptTurn[]
   /** How many dead-end replies immediately precede this one. */
   precedingDeadEnds: number
+  /**
+   * This is the first thing he has said in the rep.
+   *
+   * Only the caller knows, and the caller is `WarmthSession`, which counts his
+   * turns. Absent means "not the opener", so a fixture that says nothing keeps
+   * the ordinary rules — see `deadEnd` below for what it changes and why.
+   */
+  openingTurn?: boolean
   /**
    * Seconds between her finishing and him starting. Null when unknown — the
    * opening turn, or a turn where she never spoke.
@@ -186,12 +195,32 @@ export function scoreFast(turn: TranscriptTurn, context: FastScoreContext): Fast
   const wordCount = words.length
   const reasons: FastReason[] = []
 
-  if (isOpenQuestion(text)) {
+  /**
+   * HOSTILITY IS NOT FARMABLE.
+   *
+   * The two structural positives below are the only reasons in this file that
+   * can be earned without meaning anything: "What the fuck?" is an open
+   * question by shape, and a paragraph of abuse is engaged-length by shape.
+   * Measured: a user was openly contemptuous for two minutes and warmth rose
+   * from 47 to 52 on exactly those two reasons.
+   *
+   * This does not score contempt DOWN — judging what a turn meant is the slow
+   * scorer's job and §07 splits the two layers precisely so this one never
+   * pretends to understand. It refuses to pay for shape alone. A user who
+   * learns to insult her with a question mark is being trained in the wrong
+   * direction, and that is the largest single threat to the product's claim.
+   *
+   * The same turn is routed to the slow scorer by `hostility` in
+   * `./triggers.ts`, off this same filter, so the judgement still happens.
+   */
+  const hostile = hasHostilityMarker(text)
+
+  if (!hostile && isOpenQuestion(text)) {
     reasons.push({ code: 'open-question', points: 3, detail: 'asked an open question' })
   }
 
   // Engaged but not rambling. Both ends of this band are failure modes (§07).
-  if (wordCount >= 8 && wordCount <= 25) {
+  if (!hostile && wordCount >= 8 && wordCount <= 25) {
     reasons.push({ code: 'engaged-length', points: 2, detail: `${wordCount} words` })
   }
 
@@ -212,15 +241,49 @@ export function scoreFast(turn: TranscriptTurn, context: FastScoreContext): Fast
     })
   }
 
-  const deadEnd = wordCount > 0 && wordCount < 3
+  // A DEAD END IS A FAILURE TO ANSWER, AND AN OPENER ANSWERS NOTHING.
+  //
+  // "Hey there." is two words. It scored -6, and because a dead end also opens
+  // the silence gate (`mayStaySilentFor`) she said nothing back — so the
+  // product's reply to the first sentence a nervous user had ever spoken to a
+  // stranger was to dock him six points and ignore him. Her own contract says
+  // the opposite in as many words: "Saying anything at all. The bar is
+  // genuinely this low — they opened their mouth in front of a stranger and
+  // that is the whole skill being trained here."
+  //
+  // Nothing had been asked, so nothing had been left unanswered. A short opener
+  // is an opener. Everything after his first turn is scored exactly as before,
+  // including a two-word reply to her greeting — that one IS a dead end, and
+  // the exemption is one turn wide by construction.
+  const deadEnd = !context.openingTurn && wordCount > 0 && wordCount < 3
   if (deadEnd) {
-    reasons.push({ code: 'dead-end', points: -3, detail: `${wordCount}-word reply` })
-    // The streak penalty is on top of the individual one: the third dead end
-    // costs 7, which is what makes a conversation actually die.
-    if (context.precedingDeadEnds + 1 >= 3) {
+    /**
+     * A CONVERSATION DECAYS FASTER THAN IT BUILDS.
+     *
+     * These were -3 and -4, and against `open-question` at +3 that made the
+     * applied ratio 2.6:1 in favour of reward on Nadia — measured, +3.30 for a
+     * question against -1.25 for "Ok.". The consequence is the one that matters:
+     * she never visibly withdraws, so signal-reading has no signal to read and
+     * is unlearnable. In the rep that produced these numbers the user gave three
+     * consecutive one-word turns and the meter fell by four points in total.
+     *
+     * Raised at SOURCE rather than by touching `gain`/`decay`, because those two
+     * are the difficulty ladder — Tess is 1.8/0.3 because rung 1 must be nearly
+     * impossible to fail, Alex is 0.4/2.0 — and inverting them roster-wide would
+     * flatten the ladder into one curve. A forgiving character still forgives
+     * this faster than a sharp one does, which is the ladder working.
+     */
+    reasons.push({ code: 'dead-end', points: -6, detail: `${wordCount}-word reply` })
+    // AND THE STREAK STARTS AT TWO, not three.
+    //
+    // Three in a row is already her exit condition, so a penalty that waited for
+    // it arrived on the turn she was leaving anyway — the withdrawal was never
+    // visible while there was still time to read it. The second one is where a
+    // person starts to go.
+    if (context.precedingDeadEnds + 1 >= 2) {
       reasons.push({
         code: 'dead-end-streak',
-        points: -4,
+        points: -8,
         detail: `${context.precedingDeadEnds + 1} dead ends in a row`,
       })
     }

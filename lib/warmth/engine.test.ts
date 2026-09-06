@@ -237,18 +237,30 @@ describe('fast scoring', () => {
       precedingDeadEnds: 0,
       gapSeconds: null,
     })
-    expect(dead.raw).toBe(-3)
+    expect(dead.raw).toBe(-6)
     expect(dead.deadEnd).toBe(true)
+    // A conversation decays faster than it builds. A dead end has to cost more
+    // than a good question earns, or the meter only ever ratchets up and
+    // signal-reading has no signal to read.
+    expect(-dead.raw).toBeGreaterThan(good.raw - 2)
   })
 
-  it('charges the third consecutive dead end twice over', () => {
-    const third = scoreFast(turn('Sure.'), {
+  it('charges the SECOND consecutive dead end twice over', () => {
+    // It used to wait for the third, which is also her exit condition — so the
+    // penalty landed on the turn she was leaving anyway and the withdrawal was
+    // never visible while there was still time to read it.
+    const second = scoreFast(turn('Sure.'), {
       level: 1,
       agentTurns: [],
-      precedingDeadEnds: 2,
+      precedingDeadEnds: 1,
       gapSeconds: null,
     })
-    expect(third.raw).toBe(-7) // -3 for the reply, -4 for the streak
+    expect(second.raw).toBe(-14) // -6 for the reply, -8 for the streak
+
+    const first = scoreFast(turn('Sure.'), {
+      level: 1, agentTurns: [], precedingDeadEnds: 0, gapSeconds: null,
+    })
+    expect(first.raw).toBe(-6)
   })
 
   it('never charges an anxious beginner for hesitating', () => {
@@ -467,8 +479,15 @@ describe('WarmthEngine', () => {
       engine.applyFast(score, at, 'Yeah.')
     }
     expect(engine.warmth).toBeLessThan(before)
-    // -3, -3, -7 raw => -6.5 after decay 0.5, plus three turns of natural decay.
-    expect(engine.warmth).toBeCloseTo(before - 6.5 - 3 * L1.decayPerTurn, 5)
+    // -6, -14, -14 raw => -3, -7, -7 after decay 0.5, plus three turns of
+    // natural decay. The streak now starts on the SECOND, which is why the
+    // second and third cost the same.
+    expect(engine.warmth).toBeCloseTo(before - 17 - 3 * L1.decayPerTurn, 5)
+
+    // The property, not the arithmetic: giving her nothing has to get worse
+    // rather than settling into a flat rate she can absorb.
+    const deltas = engine.events.map((event) => event.delta)
+    expect(deltas[1]).toBeLessThan(deltas[0]!)
   })
 
   it('rises slowly and falls fast', () => {
@@ -1153,5 +1172,45 @@ describe('the anti-farming taper', () => {
     const earlyCost = early.events[0]?.rawDelta ?? 0
     const lateCost = late.events[late.events.length - 1]?.rawDelta ?? 0
     expect(lateCost).toBeLessThanOrEqual(earlyCost)
+  })
+})
+
+describe('hostility is not farmable', () => {
+  // Measured: a user was openly contemptuous for two minutes and warmth ROSE
+  // from 47 to 52, because "What the fuck?" was scored as an open question.
+  // The fast layer has no representation for contempt and never will — that is
+  // the slow scorer's job. What it must stop doing is PAYING for the shape.
+
+  const scored = (text: string) => scoreFast(turn(text), {
+    level: 1, agentTurns: [], precedingDeadEnds: 0, gapSeconds: null,
+  })
+
+  it('refuses the open-question payment on the turn that started this', () => {
+    expect(scored('What are you reading?').reasons.map((r) => r.code)).toContain('open-question')
+    expect(scored('What the fuck?').reasons.map((r) => r.code)).not.toContain('open-question')
+  })
+
+  it('refuses engaged-length for a paragraph of abuse', () => {
+    const civil = scored('I have been meaning to read that one for about a year now')
+    const abusive = scored('you are so boring and I have no idea why I bothered coming over here')
+    expect(civil.reasons.map((r) => r.code)).toContain('engaged-length')
+    expect(abusive.reasons.map((r) => r.code)).not.toContain('engaged-length')
+    expect(abusive.raw).toBeLessThan(civil.raw)
+  })
+
+  it('still pays an enthusiastic user who happens to swear', () => {
+    // The guard costs points, so it cannot be as loose as the slow-score
+    // pre-filter is allowed to be. Bare profanity about a subject is not
+    // contempt, and charging for it is the filler-rate mistake again.
+    expect(scored('what the hell is that one about, it looks fucking great')
+      .reasons.map((r) => r.code)).toContain('open-question')
+  })
+
+  it('does not turn a hostile turn into a positive move on the meter', () => {
+    const engine = new WarmthEngine({ trajectory: fixed(L1, 47) })
+    const before = engine.warmth
+    const text = 'what the fuck are you even talking about'
+    engine.applyFast(scored(text), 1, text)
+    expect(engine.warmth).toBeLessThanOrEqual(before)
   })
 })

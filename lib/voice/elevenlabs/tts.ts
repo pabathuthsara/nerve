@@ -7,9 +7,14 @@
  * moving if `ttsFirstByteMs` comes back ugly — the route runs on the edge for
  * exactly that reason.
  *
- * Playback begins on the first chunk. Her replies are about three words long,
- * so there is nothing to hide latency behind and waiting for the full clip
- * would add its own duration to every turn.
+ * Playback begins on the first AUDIO chunk. Her replies are about three words
+ * long, so there is nothing to hide latency behind and waiting for the full
+ * clip would add its own duration to every turn.
+ *
+ * That is a different question from how much TEXT is sent at once, and the two
+ * were once conflated. A turn is now buffered whole before synthesis starts —
+ * one turn, one prosodic unit (HUMANNESS-PLAN §2) — and the audio of that one
+ * clip still streams chunk by chunk, which is what this file does.
  *
  * Where the vendor returns character alignment we keep it, because that is what
  * lets a barge-in cut her transcript at the exact character that reached the
@@ -190,26 +195,4 @@ async function readRawPcm(
     }
     if (bytes.length > 0) emit(pcm16ToFloat(bytes), null)
   }
-}
-
-/* ------------------------------------------------------------------ *
- * Chunking
- * ------------------------------------------------------------------ */
-
-/**
- * When to hand accumulated tokens to synthesis.
- *
- * Kept blunt on purpose. Her replies are around three words, so for most turns
- * the first flush and the last are the same moment and any cleverness here buys
- * nothing. The one case worth catching is the occasional longer line, where
- * flushing at the first sentence end starts her talking a beat sooner.
- */
-export function shouldFlush(pending: string, streamEnded: boolean): boolean {
-  const text = pending.trim()
-  if (text.length === 0) return false
-  if (streamEnded) return true
-  // Below this a "sentence" is usually an abbreviation or a false positive, and
-  // a two-character clip costs a whole request for nothing.
-  if (text.length < 12) return false
-  return /[.!?]["'’]?$/.test(text)
 }

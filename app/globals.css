@@ -2220,7 +2220,7 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .admin-select > span { color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 11px; }
 .admin-select select { min-height: 34px; border: 1px solid var(--line); border-radius: 2px; padding: 0 8px; background: var(--surface-2); color: var(--text); font-family: var(--font-mono), monospace; font-size: 12px; }
 .admin-readout { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); }
-.admin-readout__row { display: grid; grid-template-columns: 4.5rem 7rem minmax(0, 1fr); gap: 10px; padding: 7px 10px; background: var(--surface-2); font-family: var(--font-mono), monospace; font-size: 11.5px; color: var(--text-dim); }
+.admin-readout__row { display: grid; grid-template-columns: 3.5rem 4.5rem 3.5rem 4rem minmax(0, 7rem) minmax(0, 1fr); gap: 10px; padding: 7px 10px; background: var(--surface-2); font-family: var(--font-mono), monospace; font-size: 11.5px; color: var(--text-dim); }
 .admin-readout__row--head { color: var(--text-mute); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
 .admin-readout__row .data { color: var(--text); font-variant-numeric: tabular-nums; }
 .admin-gates { display: flex; flex-wrap: wrap; gap: 4px; }

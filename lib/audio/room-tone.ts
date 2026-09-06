@@ -48,6 +48,9 @@ const LAYER_BANDS: Record<AmbientLayer['kind'], { low: number; high: number }> =
   'room-rumble': { low: 30, high: 160 },
   'crowd-wash': { low: 180, high: 2600 },
   'platform-wind': { low: 80, high: 1400 },
+  'machine-tumble': { low: 50, high: 420 },
+  'hall-air': { low: 60, high: 900 },
+  'muffled-music': { low: 40, high: 180 },
 }
 
 /**
@@ -67,6 +70,14 @@ const ONE_SHOT_VOICES: Record<OneShot['kind'], { centre: number; decay: number; 
   'glass-clink': { centre: 3200, decay: 0.24, noise: 0.15 },
   'chair-scrape': { centre: 700, decay: 0.32, noise: 0.85 },
   'distant-announcement': { centre: 900, decay: 0.4, noise: 0.55 },
+  'coin-drop': { centre: 4200, decay: 0.22, noise: 0.2 },
+  'machine-buzzer': { centre: 1100, decay: 0.5, noise: 0.1 },
+  'cup-on-saucer': { centre: 3600, decay: 0.16, noise: 0.2 },
+  'steam-hiss': { centre: 3000, decay: 0.9, noise: 1 },
+  'heel-on-stone': { centre: 1800, decay: 0.18, noise: 0.45 },
+  'lift-chime': { centre: 2100, decay: 0.7, noise: 0.05 },
+  'weight-clank': { centre: 480, decay: 0.45, noise: 0.3 },
+  'rail-squeal': { centre: 2400, decay: 1.1, noise: 0.15 },
 }
 
 /** Seconds. The bed fades in rather than snapping on with her first word. */

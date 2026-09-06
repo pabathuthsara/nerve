@@ -38,7 +38,15 @@ export interface LlmStreamRequest {
 
 export interface LlmStreamEvents {
   onFirstToken: () => void
-  onDelta: (text: string) => void
+  /**
+   * Optional, and both live paths now omit it.
+   *
+   * A turn is one prosodic unit: the pipeline buffers her whole line and
+   * speaks it once, so nothing needs the tokens as they arrive. It stays on
+   * the interface because a caller that wants to watch a reply form — the
+   * audition bench, a harness — should not have to reimplement the reader.
+   */
+  onDelta?: (text: string) => void
   onUsage?: (usage: { input: number; output: number; cachedInput?: number }) => void
 }
 
@@ -112,7 +120,7 @@ export class LlmClient {
       if (!delta) return
       if (first) { first = false; events.onFirstToken() }
       text += delta
-      events.onDelta(delta)
+      events.onDelta?.(delta)
     }
 
     try {

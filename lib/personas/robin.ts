@@ -117,14 +117,24 @@ export const robin: Persona = {
   },
 
   room: {
-    bed: null,
+    // Same defect as Maya's, one rung up: a hotel lobby with a bookshop's
+    // near-silent bed and a bookshop in her Absolute rules.
+    bed: 'hotel-lobby',
     bedDb: -34,
-    reverbIr: 'bookshop',
+    reverbIr: 'hotel-lobby',
     reverbWet: 0.13,
     oneShotIntervalMs: [14_000, 30_000],
+    place: 'hotel lobby',
   },
 
   contract: contract(CHARACTER),
+
+  /** Three evenings, one rolled per rep. Content only; never a dial. */
+  moods: [
+    'The car is twenty minutes late now and the app has stopped updating.',
+    'The thing you have just come from went better than you expected and you have nobody to tell yet.',
+    'Your shoes are wrong for this and you have been standing for an hour.',
+  ],
 
   want: 'your car to arrive so that this evening can finally be over',
 

@@ -12,6 +12,11 @@ the real world and log the outcome.
    opens with the two §17 gates that never passed — M0's blind provider A/B and
    M2's twenty hand-scored transcripts — because neither is code and both were
    walked past. `docs/M2-PLAN.md` is now history: all nine of its items shipped.
+   **`docs/HUMANNESS-PLAN.md` is the rendering work**, ordered by impact per
+   unit of cost, and it is where the answer to "she still sounds like an AI"
+   lives. Items 1–4 shipped on 6 September; 5–10 are open, and item 5 — one
+   Text-to-Dialogue socket per rep, `new_turn` on band change — is the natural
+   next one now that a turn is buffered whole.
 3. **`docs/LAUNCH-GAP.md` is what is blocking launch.** Ten numbered blockers,
    the product-promise gaps, and nine pieces of spec drift that need a
    decision rather than a ticket.
@@ -59,7 +64,7 @@ future sessions read those markers to decide what to do.
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint
-npm test              # vitest, 1429 assertions
+npm test              # vitest, 1488 assertions
 npm run build:check   # production build into .next-check, never .next
 npm run db:verify     # RLS from a second real account, 51 checks
 npm run db:rep        # the whole rep lifecycle, without a microphone
@@ -104,13 +109,16 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    decision with tests rather than two arithmetic expressions in a component.
 4. **A word cap is a runtime ceiling, and it is what she writes to.** The band
    table in `lib/warmth/bands.ts` states a **typical first and a maximum
-   second**, and `maxWords` is handed to the turn pipeline, which stops
-   generating at the first sentence boundary past it. Both halves matter: a
-   text model asked for "twelve at most" delivers twelve, and every number in
+   second**, and `maxWords` is handed to the turn pipeline, which buffers her
+   whole line and keeps sentences up to the first boundary at or past it
+   (`capToBudget`). Both halves matter: a text model asked for "twelve at
+   most" delivers twelve, and every number in
    that table was originally authored against a speech model that ran at half
    of whatever it was allowed. Moving a cap changes what customers hear.
    `DEFAULT_VERBOSITY_MEDIAN` is derived from the same table, so the drift
    alarm can no longer be set below the rules. (`PERSONA-AUDIT.md` §12)
+   **The band is not the only ceiling** — see the reciprocity rule at the end
+   of this list, which can lower it and never raise it.
 5. **On a stateless arm, a permission repeated is an order.** The directive is
    the last system message before every generation. The band's length and
    question rules ship every turn, because nothing else owns reply length.
@@ -204,6 +212,26 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL` and `SITE_ORIGIN`'s fallback
     all name `www` for that reason. Related: **a Vercel env var added after a
     build starts is not in that build** — set it, then redeploy.
+
+16. **Warmth is not the only meter. `lib/warmth/reciprocity.ts` models who is
+    doing the work**, and without it the two come apart: at warmth 41 she
+    answered three consecutive one-word turns with self-disclosure, a question
+    and more self-disclosure. The mirror cap (`min(bandCap, ceil(hisWords ×
+    1.3))`) may only ever LOWER the band, never mirrors a question, and floors a
+    real turn at the band's typical; the question and volunteer gates need OPEN
+    **and** something offered; and she may say nothing at all — enforced by
+    making no request, never twice running, never on the closing turn, never on
+    his opening line.
+    **This file is not allowed a warmth opinion of its own.** Every gate was hung
+    on ENGAGED for a day — twenty points above the band table it was gating, and
+    above every `unlocksAt` on the roster — and it won every argument silently: a
+    rep that peaked at 56 asked no question in seventeen turns, added nothing to
+    any answer, and had all four of Nadia's authored gates dropped unread. Warmth
+    is the band's; `unlocksAt` is the author's; this file only ever answers "what
+    did he just do".
+    A dead end costs more than a good question earns, or she never visibly
+    withdraws. Reprice in `fast.ts`, never through `gain`/`decay` — those are the
+    difficulty ladder. (`HUMANNESS.md` §7.1)
 
 ## Design system — Arena
 

@@ -137,6 +137,24 @@ export function fastAuthority(turnIndex: number): number {
   return 1 - (1 - FAST_AUTHORITY_FLOOR) * through
 }
 
+/**
+ * How much worse a single bad turn may be than a single good one.
+ *
+ * The whole expression of "warmth rises slow and falls fast" that is NOT
+ * per-character. `gain` and `decay` are the difficulty ladder — Tess is 1.8/0.3
+ * because rung 1 must be nearly impossible to fail, Alex is 0.4/2.0 — so the
+ * asymmetry cannot live there without flattening the ladder into one curve.
+ * This is the bound that applies to everybody.
+ *
+ * FOUR AND NOT TWO. Two bounded the cliff and flattened the thing the ladder is
+ * made of: at level 8 a misstep is supposed to cost several times what a good
+ * turn earns — "effort barely counts, missteps cost quadruple" — and a 2x cap
+ * held Alex's ratio down to 2.2:1 against a test that requires better than 3:1.
+ * This is a guard against one turn emptying the meter, not a second opinion
+ * about how forgiving a character is.
+ */
+export const LOSS_CAP_MULTIPLE = 4
+
 export interface WarmthEvent {
   at: number
   turnIndex: number
@@ -269,7 +287,7 @@ export class WarmthEngine {
         : typeof personality === 'function'
           ? personality
           : () => personality
-    const postureMode = options.postureMode ?? 'absolute'
+    const postureMode = options.postureMode ?? 'relative'
     this.readPostureMode =
       typeof postureMode === 'function' ? postureMode : () => postureMode
     const rng = options.rng ?? Math.random
@@ -394,7 +412,19 @@ export class WarmthEngine {
    */
   private scale(raw: number, options: { repair?: boolean; breakthrough?: boolean } = {}): number {
     const config = this.config
-    if (raw <= 0) return raw * config.decay
+    // LOSSES ARE CAPPED TOO, and they were not.
+    //
+    // `maxGainPerTurn` exists so one exceptional turn cannot do the work of
+    // four. Nothing did the same for the other direction, which was harmless
+    // while a dead end cost -3 and stopped being harmless when it cost -6: on a
+    // character at `decay: 2.0` a single "Ok." came to -15.6, which is not a
+    // conversation decaying, it is a cliff.
+    //
+    // Derived rather than authored, so it needs no new field on nine personas
+    // and cannot drift from the gain cap it is defined against. Twice, because
+    // this is the one place the product asserts that warmth falls faster than
+    // it rises — a ratio, and a bounded one.
+    if (raw <= 0) return Math.max(raw * config.decay, -config.maxGainPerTurn * LOSS_CAP_MULTIPLE)
     const falloff = Math.max(0, (100 - this.current) / 100)
     const gained = raw * config.gain * falloff * (options.repair ? REPAIR_BONUS : 1)
 

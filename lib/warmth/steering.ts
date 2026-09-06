@@ -31,6 +31,7 @@ import {
 } from '@/lib/voice/types'
 import { bandDirectiveParts, bandPermissionParts, type DirectiveContext } from './bands'
 import { postureClause, type Posture } from './affect'
+import { reciprocityClauses, type UserTurnShape } from './reciprocity'
 
 export interface SteeringContext extends DirectiveContext {
   persona: Persona
@@ -73,6 +74,15 @@ export interface SteeringContext extends DirectiveContext {
    * free. See `WarmthSession.statelessDirective`.
    */
   includeStanding?: boolean
+  /**
+   * What HE just did — the reciprocity half of the meter (`./reciprocity.ts`).
+   *
+   * Warmth says how much she likes him. This says how much he is giving, and
+   * without it the two came apart entirely: at warmth 41 she answered three
+   * consecutive one-word turns with self-disclosure, a question and more
+   * self-disclosure. Null on the opening turn, where the gates are tightest.
+   */
+  his?: UserTurnShape | null
 }
 
 /**
@@ -118,16 +128,42 @@ export function composeSteering(context: SteeringContext): string {
   //                than telling her to do anything, so repeating it is free.
   //   gates        what she has earned. Standing orders, rationed.
   const standing = context.includeStanding !== false
+  // The band's own invitation is a permission to DRIVE — volunteer something,
+  // start a topic, ask about him — and handing one to somebody who has just
+  // grunted at her is the failure this whole layer exists to stop. Shipping the
+  // invitation and the refusal in the same line is two competing directions,
+  // which this file's header is an argument against, so on a dead end the
+  // invitation simply does not go.
+  //
+  // A DEAD END, AND NOTHING ELSE. This used to be `mayVolunteerFor`, which
+  // carried a warmth floor of ENGAGED — so the invitation and the gates were
+  // vetoed twenty points above the band that composed the invitation, and above
+  // the `unlocksAt` every persona author had chosen. Nadia's four gates open at
+  // 40 and 45 and could not fire below 60; Tess, the sign-up character, has all
+  // four open below 35 and could never use one. Whether she is warm enough is
+  // the band's decision and the gate's own, and this line is not allowed a
+  // third opinion. See `lib/warmth/reciprocity.ts`.
+  const invited = !(context.his?.deadEnd ?? false)
   return assemble([
     // Her own band table when she has one, the shared one otherwise. The band
     // still owns reply length either way — see `BandDirectives`.
     bandDirectiveParts(context.warmth, context, context.persona.bandDirectives),
+    // Directly under the band, because it qualifies the band: it is the clause
+    // that decides whether this turn has earned what the band allows.
+    reciprocityClauses(context.warmth, context.his ?? null),
     postureClauses(context),
     repairClauses(context),
-    bandPermissionParts(context.warmth, context),
+    invited ? bandPermissionParts(context.warmth, context) : [],
+    // The want is NOT gated, and that is deliberate: when he has given her
+    // nothing, an agenda pulling her away from him is exactly the right thing
+    // for her to have. It is the one standing order that is not about him.
     standing ? wantClauses(context.persona, context.warmth) : [],
     personalityClauses(context.persona, context.warmth),
-    standing ? gateClauses(context.persona, context.warmth) : [],
+    // The gates are. "You may start a topic" and "You may use his name" are
+    // permissions to drive, same as the band's invitation, and a line that
+    // says both "match him, do not fill the gap" and "start a topic" is the
+    // third answer nobody asked for.
+    standing && invited ? gateClauses(context.persona, context.warmth) : [],
   ])
 }
 
@@ -322,6 +358,13 @@ function gateText(persona: Persona, name: GateName): string | null {
     case 'initiatesTopics':
       return 'You may start a topic.'
     case 'usesYourName':
-      return 'You may use his name.'
+      // "MAY", ONCE, AND NOT AGAIN.
+      //
+      // Measured on 6 September: she said "Pabath" four times in twelve lines.
+      // Real people barely use your name, and a stranger who keeps using it is
+      // doing the thing a salesman does. The permission is what she had; the
+      // rationing is what she needed, and on a stateless arm a bare permission
+      // at maximum recency reads as an instruction to use it now.
+      return 'You may use his name, once at most, and not if you used it recently.'
   }
 }

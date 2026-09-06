@@ -18,7 +18,19 @@ export interface AmbientLayer {
    * actively breaks immersion — a page turn heard twice is worse than silence.
    * Character goes in one-shots.
    */
-  kind: 'hvac-hum' | 'traffic-through-glass' | 'room-rumble' | 'crowd-wash' | 'platform-wind'
+  kind:
+    | 'hvac-hum'
+    | 'traffic-through-glass'
+    | 'room-rumble'
+    | 'crowd-wash'
+    | 'platform-wind'
+    /** A drum turning, a treadmill, a fan on a compressor. Low with a body. */
+    | 'machine-tumble'
+    /** The air in a big quiet space. Wider and thinner than a room rumble. */
+    | 'hall-air'
+    /** Music through a wall or a floor. All body, no detail — which is why it
+     *  is allowed to loop: the part that would be recognisable is gone. */
+    | 'muffled-music'
   /**
    * Level in dB RELATIVE to the bed master, which carries the absolute level.
    *
@@ -42,6 +54,14 @@ export interface OneShot {
     | 'glass-clink'
     | 'chair-scrape'
     | 'distant-announcement'
+    | 'coin-drop'
+    | 'machine-buzzer'
+    | 'cup-on-saucer'
+    | 'steam-hiss'
+    | 'heel-on-stone'
+    | 'lift-chime'
+    | 'weight-clank'
+    | 'rail-squeal'
   /** Relative likelihood when a one-shot fires. Weights need not sum to 1. */
   weight: number
   /** dB relative to the bed master. Positive: events sit above the floor. */

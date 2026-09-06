@@ -10,7 +10,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { buildImpulseResponse, measureRt60, dbToGain } from './impulse'
 import { nextIntervalSeconds, pickOneShot } from './schedule'
-import { BOOKSHOP, BAR, roomAcousticsEnabled, sceneFor, sceneForRoom } from './scenes'
+import { BOOKSHOP, BAR, SCENES, roomAcousticsEnabled, sceneFor, sceneForRoom } from './scenes'
 import { Room } from './engine'
 import type { OneShot } from './types'
 import { nadia } from '@/lib/personas/nadia'
@@ -147,12 +147,30 @@ describe('one-shot scheduling', () => {
 describe('scene presets', () => {
   it('keeps everything distinctive out of the looping bed', () => {
     // A page turn heard twice inside a loop is worse than no page turn at all.
-    for (const scene of [BOOKSHOP, BAR]) {
+    // Asserted as the invariant rather than as a list of allowed kinds: the two
+    // unions are the list, and restating them here means a new scene passes a
+    // test that has stopped checking anything.
+    const events = new Set(
+      Object.values(SCENES).flatMap((scene) => scene.ambient.oneShots.map((shot) => shot.kind)),
+    )
+    for (const scene of Object.values(SCENES)) {
+      expect(scene.ambient.layers.length, scene.id).toBeGreaterThan(0)
+      expect(scene.ambient.oneShots.length, scene.id).toBeGreaterThan(0)
       for (const layer of scene.ambient.layers) {
-        expect(['hvac-hum', 'traffic-through-glass', 'room-rumble', 'crowd-wash', 'platform-wind'])
-          .toContain(layer.kind)
+        expect(events, `${scene.id}: ${layer.kind}`).not.toContain(layer.kind)
       }
-      expect(scene.ambient.oneShots.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('gives every room a level, a rhythm and a reverb somebody chose', () => {
+    for (const scene of Object.values(SCENES)) {
+      const [min, max] = scene.ambient.oneShotIntervalSeconds
+      expect(min, scene.id).toBeGreaterThan(0)
+      expect(max, scene.id).toBeGreaterThan(min)
+      expect(scene.reverb.wetMix, scene.id).toBeGreaterThan(0)
+      expect(scene.reverb.wetMix, scene.id).toBeLessThanOrEqual(0.25)
+      // Outdoors is the one place with almost no room to return.
+      expect(scene.reverb.rt60Seconds, scene.id).toBeGreaterThan(0.2)
     }
   })
 
@@ -175,7 +193,10 @@ describe('scene presets', () => {
 
   it('resolves scenes by id', () => {
     expect(sceneFor('bookshop')?.id).toBe('bookshop')
-    expect(sceneFor('train-platform')).toBeNull()
+    // `train-platform` used to be the stand-in for an unauthored scene. It is
+    // a real room now — Erin has been standing on one since she was written.
+    expect(sceneFor('train-platform')?.id).toBe('train-platform')
+    expect(sceneFor('multi-storey-car-park')).toBeNull()
   })
 })
 
@@ -480,7 +501,7 @@ describe('the procedural room switch', () => {
     expect(roomAcousticsEnabled()).toBe(true)
     expect(sceneForRoom('bookshop')?.id).toBe('bookshop')
     // Still a lookup: an unknown scene is null whether or not this is on.
-    expect(sceneForRoom('train-platform')).toBeNull()
+    expect(sceneForRoom('multi-storey-car-park')).toBeNull()
     vi.unstubAllEnvs()
   })
 

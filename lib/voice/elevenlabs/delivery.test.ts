@@ -4,15 +4,17 @@ import { PERSONAS } from '@/lib/personas'
 const ROSTER = Object.values(PERSONAS)
 import { DEFAULT_CALIBRATION } from '../types'
 import { ElevenLabsPersonaCompiler, deliveryFor, EXPRESSION_TAG } from './persona'
-import { remainingReplyDelayMs } from '@/lib/warmth/timing'
+import { remainingResponseDelayMs, responseDelayFor } from '@/lib/warmth/timing'
 
 describe('latency-aware persona timing', () => {
   it('counts VAD and generation toward the personality beat', () => {
-    expect(remainingReplyDelayMs(0, 600)).toBe(100)
-    expect(remainingReplyDelayMs(0, 900)).toBe(0)
-    expect(remainingReplyDelayMs(30, 600)).toBe(0)
-    expect(remainingReplyDelayMs(100, 0)).toBe(0)
-    expect(remainingReplyDelayMs(0, -100)).toBe(700)
+    // The target is an ONSET measured from the user finishing, not a wait to
+    // add on top of the pipeline. Cold bands are usually already paid for.
+    const cold = responseDelayFor(0, undefined, () => 0.5)
+    expect(remainingResponseDelayMs(cold, 0)).toBe(cold)
+    expect(remainingResponseDelayMs(cold, cold - 100)).toBe(100)
+    expect(remainingResponseDelayMs(cold, cold + 400)).toBe(0)
+    expect(remainingResponseDelayMs(responseDelayFor(90, undefined, () => 0.5), 800)).toBe(0)
   })
 })
 
