@@ -528,11 +528,34 @@ export type Speaker = 'user' | 'agent'
  *
  * `t_start` / `t_end` are seconds elapsed since the session connected.
  */
+/**
+ * What kind of turn this was, when it was more than an ordinary reply.
+ *
+ * ── WHY THE TRANSCRIPT SCHEMA GROWS AT ALL ───────────────────────────────
+ *
+ * INTERVIEW-TECHNICAL-PLAN §8.1. The accuracy grader cannot score correctness
+ * over a whole transcript, because "walk me through what you built" has no
+ * correct answer. It needs the **probe questions paired with the answers that
+ * followed them**, and the only moment anything knows a turn is a probe is the
+ * moment the probe beat fires. So the mark is applied when the turn is
+ * committed and rides the transcript through to the grade.
+ *
+ * ── AND WHY IT IS OPTIONAL ───────────────────────────────────────────────
+ *
+ * §04 requires both adapters to emit identical normalised turns, and they do:
+ * **neither adapter sets this.** It is applied above them, in `lib/data/rep.ts`,
+ * which is where the beats fire — so a provider switch cannot change what is
+ * marked, and a dating turn is byte-identical to what it was yesterday.
+ */
+export type TurnMark = 'probe' | 'brief'
+
 export interface TranscriptTurn {
   speaker: Speaker
   text: string
   t_start: number
   t_end: number
+  /** Absent on the dating arm and on every unmarked interview turn. */
+  kind?: TurnMark
 }
 
 /* ------------------------------------------------------------------ *
@@ -794,6 +817,18 @@ export type VoiceErrorCode =
   /** Our own misconfiguration — a missing key, not a provider failure. */
   | 'not_configured'
   | 'token_mint_failed'
+  /**
+   * The server REFUSED, and the user can do something about it.
+   *
+   * Distinct from `token_mint_failed`, which is a transport or vendor problem
+   * a retry might fix. A refusal is a decision — no credits, the daily quota
+   * spent, the spend ceiling reached — and it carries a sentence written for
+   * the person reading it. Retrying it can never work, and offering a Retry
+   * button is the failure this code exists to prevent: measured on 7 September,
+   * a 402 for a screener credit that could not buy a recruiter round surfaced
+   * as "Connection lost" and was retried twice.
+   */
+  | 'refused'
   | 'mic_denied'
   | 'transport_failed'
   | 'session_failed'

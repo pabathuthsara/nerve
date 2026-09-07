@@ -32,6 +32,7 @@ import {
   type ProviderId,
   type SessionSummary,
   type TranscriptTurn,
+  type TurnMark,
 } from '@/lib/voice/types'
 import { WarmthSession } from '@/lib/warmth/session'
 import { bindVoiceSteering } from '@/lib/warmth/voice-steering'
@@ -44,10 +45,9 @@ import {
 } from '@/lib/voice/incidents'
 import { compileReinforcement } from '@/lib/voice/reinforcement'
 import { SafetyMonitor } from '@/lib/safety/monitor'
+import { safetyDirectiveFor } from '@/lib/safety/interview-escalation'
 import {
   CLOSE_DIRECTIVE,
-  CORRECT_DIRECTIVE,
-  DECLINE_DIRECTIVE,
   type SafetyAction,
 } from '@/lib/safety/escalation'
 import { StabilityMeter, warrantsReinforcement } from '@/lib/metrics/stability'
@@ -57,7 +57,22 @@ import { abandonSession, attachAudio, finishSession, saveScore, startSession } f
 import { completeRep } from './rep-completion'
 import type { Scorecard } from '@/lib/grade/types'
 import { uiBand, uiWarmth } from './progression'
+import { interviewShouldWrapUp, interviewWrapUpMs } from './interview-rules'
 import {
+  agendaStep,
+  captionOrNull,
+  dueInterviewBeat,
+  isGrounded,
+  questionCaption,
+} from './interview-agenda'
+import { DEFAULT_ROUND, roundType, type RoundTypeId } from './interview-credits'
+import { DEFAULT_DIFFICULTY, type DifficultyLevel } from './interview-difficulty'
+import { probeLadderEnabled } from './interview-probes'
+import { opensOnDesignBrief } from './interview-briefs'
+import { DEFAULT_FIELD, type InterviewFieldId } from './interview-fields'
+import { INTERVIEW_NEXT_STEPS_DIRECTIVE, INTERVIEW_WRAP_UP_DIRECTIVE } from '@/lib/personas/interview/shared'
+import {
+  WRAP_UP_MS,
   dueSceneBeat,
   givesNumber,
   inventNumber,
@@ -104,8 +119,66 @@ export interface RepSessionOptions {
   fast?: boolean
   trainingWheels?: boolean
   interview?: boolean
+  /**
+   * Which round this interview is (§5.7). Ignored on the dating arm.
+   *
+   * It decides the length, the wind-down and the per-turn gain cap, and it is
+   * resolved on the SERVER from `interview_setups` before this ever runs — the
+   * browser is handed the answer, never asked for it (rule 11).
+   */
+  round?: RoundTypeId
+  /**
+   * The candidate's field, and how hard the questions are (§5, §7.2).
+   *
+   * Both are resolved on the SERVER from `interview_setups` and handed down,
+   * for the same reason the round is. The field decides whether there is
+   * anything authored to probe with — eleven of the twelve have nothing yet and
+   * run exactly as they did before this plan — and the difficulty decides how
+   * hard to pitch what there is. **Neither touches warmth** (§5.3).
+   *
+   * Ignored entirely on the dating arm, which passes neither.
+   */
+  field?: InterviewFieldId
+  difficulty?: DifficultyLevel
+  /**
+   * SURVIVE A DROP AND A BACKGROUNDED TAB (A3, A4).
+   *
+   * **Off by default, and the dating rep never sets it.** At three minutes a
+   * dropped connection is an annoyance and the retry button is the right
+   * answer; at twenty minutes on a $9 item it is a refund, and §7 measured an
+   * 11% rate of reps hitting a provider error. Two behaviours ride this one
+   * flag, because they are the same promise:
+   *
+   *   · a fatal transport error reconnects up to three times, adopting the
+   *     same voice session and keeping warmth, the transcript and the clock;
+   *   · the clock STOPS while the rep is paused, instead of running through it.
+   *
+   * The second is a real difference from the dating rule and is deliberate.
+   * `pause` is a mute there — "the scene keeps running, three minutes is three
+   * minutes" — which is correct for a stranger in a shop who does not wait for
+   * you. An interviewer whose clock ran down through a thirty-second network
+   * outage would be charging somebody for time nobody was in the room.
+   */
+  reconnect?: boolean
   config?: LiveRepConfig | null
 }
+
+/**
+ * How many times a dropped interview reconnects before it gives up (A3).
+ *
+ * Three, and then the rep ends and A2 credits it back. A fourth attempt is not
+ * a reconnection strategy, it is a user watching a spinner.
+ */
+export const RECONNECT_ATTEMPTS = 3
+
+/**
+ * How long a drop may last and still be the same interview.
+ *
+ * Past this the conversation has a hole in it that neither side can see, and
+ * resuming would put the interviewer back mid-answer to a question the
+ * candidate has forgotten. Ending and crediting is the honest outcome.
+ */
+export const RECONNECT_GRACE_MS = 15_000
 
 /**
  * What the safety layer has done to this rep (§16.3, §16.8).
@@ -183,7 +256,18 @@ export interface RepSessionState {
    * `outcome.won` cannot separate them.
    */
   endReason: 'user' | 'character' | 'cap' | 'error' | null
-  error: 'mic' | 'connection' | null
+  /**
+   * What went wrong, and whether the user can do anything about it.
+   *
+   * `refused` is the server saying no ON PURPOSE — no credits, quota spent, the
+   * spend ceiling reached — and it is deliberately not `connection`. A refusal
+   * cannot be retried, and rendering one as a lost connection gave a user a
+   * Retry button that failed three times in a row and an End button that did
+   * nothing (7 September, a screener credit against a recruiter round).
+   */
+  error: 'mic' | 'connection' | 'refused' | null
+  /** The refusal's own sentence, written by the route. Null unless refused. */
+  refusal: string | null
   /** What moderation has done to this rep, if anything. See `RepSafety`. */
   safety: RepSafety
   /** The database row, once it exists. The result screen is keyed to it. */
@@ -236,9 +320,45 @@ function levelOf(node: AnalyserNode | null, buffer: Uint8Array<ArrayBuffer>): nu
   return Math.min(1, Math.sqrt(sum / buffer.length) * 4.5)
 }
 
+/**
+ * The transcript, with the probe marks applied (§8.1).
+ *
+ * A new array of new objects rather than a mutation, so nothing that already
+ * holds a turn sees it change underneath. Turns with no mark are returned as
+ * they are — object identity included — which is what makes this a no-op on
+ * every dating rep and on every interview round that never probed.
+ */
+export function markTurns(
+  turns: readonly TranscriptTurn[],
+  marks: ReadonlyMap<TranscriptTurn, TurnMark>,
+): TranscriptTurn[] {
+  if (marks.size === 0) return [...turns]
+  return turns.map((turn) => {
+    const mark = marks.get(turn)
+    return mark ? { ...turn, kind: mark } : turn
+  })
+}
+
 export function useRepSession(personaId: string, options: RepSessionOptions = {}): RepSessionState {
   const config = options.config ?? null
   const interview = options.interview ?? false
+  /** A3/A4. Off everywhere except the interview live screen. */
+  const resumable = options.reconnect ?? false
+  const round: RoundTypeId = options.round ?? DEFAULT_ROUND
+  const field: InterviewFieldId = options.field ?? DEFAULT_FIELD
+  const difficulty: DifficultyLevel = options.difficulty ?? DEFAULT_DIFFICULTY
+  /**
+   * Does the probe ladder run at all this rep (§7.2)?
+   *
+   * Three things decide it and all three are facts about the setup rather than
+   * about the moment: the round has to probe, and the field has to have the
+   * material the ladder climbs. False is the ordinary case today — eleven of
+   * the twelve fields have no probe domains authored — and false means the rep
+   * is exactly the interview it was before this plan.
+   */
+  const probes = interview && probeLadderEnabled({ round, field })
+  /** She poses an authored design problem on her first turn (§4.3, §6.7). */
+  const posesBrief = probes && opensOnDesignBrief({ round, field })
   const durationMs = options.durationMs ?? repDurationMs(interview)
   const threshold = repThreshold(interview)
 
@@ -255,7 +375,8 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   const [outcome, setOutcome] = useState<RepOutcome | null>(null)
   const [lastDelta, setLastDelta] = useState(0)
   const [paused, setPaused] = useState(false)
-  const [error, setError] = useState<'mic' | 'connection' | null>(null)
+  const [error, setError] = useState<'mic' | 'connection' | 'refused' | null>(null)
+  const [refusal, setRefusal] = useState<string | null>(null)
   const [retryAttempt, setRetryAttempt] = useState(0)
   const [sessionId, setSessionId] = useState('')
   const [safety, setSafety] = useState<RepSafety>({ ended: false, distress: false })
@@ -276,8 +397,49 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   const wrappedRef = useRef(false)
   /** How many authored scene beats have fired this rep. */
   const beatsFiredRef = useRef(0)
+  /**
+   * How many AGENDA beats have fired — the ones that move an interviewer off a
+   * thread she has been on too long. Counted separately from scene beats
+   * because they are different clocks answering different questions: a scene
+   * beat is a fact about the room, and this is a fact about the interview
+   * running out of time. See `dueAgendaBeat`.
+   */
+  const agendaBeatsRef = useRef(0)
+  /**
+   * How many PROBE beats have fired — the ones that take her down rather than
+   * sideways (INTERVIEW-TECHNICAL-PLAN §6.4). A third clock, counted
+   * separately for the same reason the second one is.
+   */
+  const probeBeatsRef = useRef(0)
+  /**
+   * When the last direction of any kind reached her.
+   *
+   * The agenda beat says *leave this thread* and the probe beat says *go deeper
+   * on what they just named*, and arriving together they are flatly
+   * contradictory. Two evenly-spaced schedules collide by construction, so the
+   * spacing is enforced in time — see `dueInterviewBeat`. Zero means "long
+   * enough ago", which is correct at the start of a rep.
+   */
+  const lastInterviewBeatAtRef = useRef(0)
+  /**
+   * What her NEXT committed turn is, when it is more than a reply (§8.1).
+   *
+   * Set when the beat that asked for it fires, applied to the turn that comes
+   * back, and cleared. The mark rides the transcript through to the grade,
+   * which is the only thing that knows which questions had a right answer.
+   */
+  const pendingTurnMarkRef = useRef<TurnMark | null>(null)
+  /** The marks, by the turn object the adapter committed. See `markTurns`. */
+  const turnMarksRef = useRef(new Map<TranscriptTurn, TurnMark>())
   /** §05 countermeasure 3. Detects a character break so it can be repaired. */
-  const stabilityRef = useRef(new StabilityMeter({ nonStaff: personaId === 'nadia' }))
+  const stabilityRef = useRef(new StabilityMeter({
+    nonStaff: personaId === 'nadia',
+    // An interviewer asks something on nearly every turn, because that is what
+    // an interview is. `question-every-turn` is a dating rule and reports her
+    // doing her job as a frame break — see `StabilityMeterOptions`.
+    questionsAreTheJob: interview,
+    verbosityMedian: options.config?.persona.verbosityMedian ?? undefined,
+  }))
   const numberRef = useRef<string>('')
   /**
    * What she was told at the wind-down, and therefore what she has already
@@ -327,6 +489,18 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   const agentSpeakingRef = useRef(false)
   const startedAtRef = useRef(0)
   const pausedRef = useRef(false)
+  /**
+   * A3/A4 state, and it is inert unless `options.reconnect` is set.
+   *
+   * `resuming` says the next `start()` is a continuation rather than a new rep,
+   * so it must not wipe warmth, the transcript, the clock or the session row.
+   * `pausedAt` is when the clock stopped — a drop and a backgrounded tab both
+   * set it, because they are the same fact about the room being empty.
+   */
+  const resumingRef = useRef(false)
+  const reconnectsRef = useRef(0)
+  const pausedAtRef = useRef<number | null>(null)
+  const startRef = useRef<() => void>(() => undefined)
   const frameRef = useRef<number | null>(null)
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const stopPromiseRef = useRef<Promise<void> | null>(null)
@@ -349,7 +523,32 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   const stop = useCallback(
     async (reason: SessionSummary['reason'] = 'user') => {
       const voice = providerRef.current
-      if (!voice || finishedRef.current) return
+      if (finishedRef.current) return
+      /**
+       * **NO PROVIDER IS NOT "NOTHING TO DO".**
+       *
+       * This used to be `if (!voice || finishedRef.current) return`, and the
+       * `!voice` half made the End button dead on exactly the screens that need
+       * it most. A mint that fails — a refusal, a vendor outage — runs
+       * `disposeAttempt()`, which nulls `providerRef`, and THEN raises the error
+       * modal. Every button on that modal called `stop()`, which saw no
+       * provider and returned without touching a single piece of state: no
+       * status change, no end reason, nothing. Measured on 7 September, three
+       * times in a row.
+       *
+       * There is genuinely nothing to persist here — no transport, no session
+       * row, no transcript, and no credit was ever held — so this is a LOCAL
+       * teardown rather than the full path below. What matters is that it
+       * happens at all, so the screen can see the rep is over and leave.
+       */
+      if (!voice) {
+        finishedRef.current = true
+        clearLoops()
+        setEndReason(reason)
+        setStatus('ended')
+        setSpeaking('none')
+        return
+      }
       setEndReason(reason)
       finishedRef.current = true
       providerRef.current = null
@@ -470,7 +669,11 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
               method: 'POST',
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify({
-                transcript: summary.turns,
+                // The probe marks ride the transcript to the grade, which is
+                // the only place that can ask whether an answer was RIGHT.
+                // An unmarked transcript grades exactly as it did before this
+                // plan, which is every dating rep and every behavioural round.
+                transcript: markTurns(summary.turns, turnMarksRef.current),
                 sessionSeconds: summary.seconds,
                 personaName: config?.persona.name ?? personaId,
                 ...(voice.getSessionId?.() ? { sessionId: id } : {}),
@@ -533,52 +736,155 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     [interview],
   )
 
+  /**
+   * A3. Rebuild the transport under a rep that is still running.
+   *
+   * The provider is torn down and the session is NOT finished — that is the
+   * whole point, and it is why this cannot be `retry`, which writes the rep and
+   * starts a new one. Warmth, the transcript, the session row and the clock all
+   * stay where they are; the clock stops until the new transport is live.
+   *
+   * Unreachable unless `options.reconnect` is set, so a dating rep cannot enter
+   * it by any path.
+   */
+  const reconnect = useCallback((dead: VoiceProvider) => {
+    reconnectsRef.current += 1
+    setRetryAttempt(reconnectsRef.current)
+    resumingRef.current = true
+    if (pausedAtRef.current === null) pausedAtRef.current = performance.now()
+    setStatus('connecting')
+    void (async () => {
+      await dead.end('error').catch(() => undefined)
+      if (providerRef.current === dead) providerRef.current = null
+      safetyRef.current?.stop()
+      safetyRef.current = null
+      incidentsStopRef.current?.()
+      incidentsStopRef.current = null
+      startedRef.current = false
+      // Past the window the conversation has a hole in it neither side can
+      // see, and putting the interviewer back mid-answer is worse than ending.
+      const away = performance.now() - (pausedAtRef.current ?? performance.now())
+      if (away > RECONNECT_GRACE_MS) {
+        resumingRef.current = false
+        void stopRef.current?.('error')
+        return
+      }
+      startRef.current()
+    })()
+  }, [])
+
+  /**
+   * A resume attempt that did not come back up.
+   *
+   * Three in total, bounded by the window, and then the rep ends as an error —
+   * which is exactly the case A2 credits back. A fourth attempt is a spinner.
+   */
+  const retryResume = useCallback((): boolean => {
+    if (!resumingRef.current) return false
+    resumingRef.current = false
+    const away = performance.now() - (pausedAtRef.current ?? performance.now())
+    if (reconnectsRef.current < RECONNECT_ATTEMPTS && away <= RECONNECT_GRACE_MS) {
+      reconnectsRef.current += 1
+      setRetryAttempt(reconnectsRef.current)
+      resumingRef.current = true
+      startedRef.current = false
+      window.setTimeout(() => startRef.current(), 800)
+      return true
+    }
+    void stopRef.current?.('error')
+    return true
+  }, [])
+
   const start = useCallback(() => {
     if (startedRef.current || stopPromiseRef.current || !config) return
     startedRef.current = true
     finishedRef.current = false
-    armedRef.current = false
-    wrappedRef.current = false
-    beatsFiredRef.current = 0
-    stabilityRef.current = new StabilityMeter({ nonStaff: personaId === 'nadia' })
-    closingDecisionRef.current = null
-    decisionWarmthRef.current = null
-    timeUpAtRef.current = null
-    agentSpeakingRef.current = false
-    numberRef.current = ''
-    turnsRef.current = []
-    sessionIdRef.current = null
-    sessionOpenRef.current = null
-    startedAtRef.current = 0
-    pausedRef.current = false
-    setPaused(false)
-    setSessionId('')
-    setOutcome(null)
-    setSpeaking('none')
-    setLevels({ user: 0, persona: 0 })
-    setAgentTurns(0)
-    setEndReason(null)
-    safetyCloseAtRef.current = null
-    safetyEndedRef.current = false
-    setSafety({ ended: false, distress: false })
-    // A retry is a fresh attempt at being heard, so the nudge gets to fire
-    // again — the microphone that was not working may be the thing they just
-    // went and fixed.
-    setHeardUser(false)
+
+    /**
+     * A3. **A resume is not a new rep**, and this is the whole difference.
+     *
+     * Everything below wipes the rep: warmth back to its rolled start, the
+     * transcript emptied, the clock back to zero, a new session row. That is
+     * exactly right for the retry button, which is somebody starting again. It
+     * is exactly wrong for a reconnection, where the interviewer is mid-question
+     * and the candidate has been talking for eleven minutes.
+     *
+     * So on a resume none of it runs, and the transport is the only thing that
+     * is rebuilt. `resumingRef` is only ever set by `reconnect`, which is only
+     * reachable with `options.reconnect` on — so the dating rep reaches the
+     * identical block it reached yesterday.
+     */
+    const resuming = resumingRef.current
+    if (!resuming) {
+      armedRef.current = false
+      wrappedRef.current = false
+      beatsFiredRef.current = 0
+      agendaBeatsRef.current = 0
+      probeBeatsRef.current = 0
+      lastInterviewBeatAtRef.current = 0
+      turnMarksRef.current = new Map()
+      // The first turn of a system design round is the authored problem, and
+      // she has not taken it yet. Set here rather than in the tick because it
+      // is not on a clock — it is what her opening turn IS (§4.3).
+      pendingTurnMarkRef.current = posesBrief ? 'brief' : null
+      stabilityRef.current = new StabilityMeter({
+        nonStaff: personaId === 'nadia',
+        questionsAreTheJob: interview,
+        // Hers, not the roster's. A character with her own band table is
+        // allowed a longer median and must not be scored as broken for it.
+        verbosityMedian: config.persona.verbosityMedian ?? undefined,
+      })
+      closingDecisionRef.current = null
+      decisionWarmthRef.current = null
+      timeUpAtRef.current = null
+      agentSpeakingRef.current = false
+      numberRef.current = ''
+      turnsRef.current = []
+      sessionIdRef.current = null
+      sessionOpenRef.current = null
+      startedAtRef.current = 0
+      pausedRef.current = false
+      reconnectsRef.current = 0
+      pausedAtRef.current = null
+      setPaused(false)
+      setSessionId('')
+      setOutcome(null)
+      setSpeaking('none')
+      setLevels({ user: 0, persona: 0 })
+      setAgentTurns(0)
+      setEndReason(null)
+      safetyCloseAtRef.current = null
+      safetyEndedRef.current = false
+      setSafety({ ended: false, distress: false })
+      // A retry is a fresh attempt at being heard, so the nudge gets to fire
+      // again — the microphone that was not working may be the thing they just
+      // went and fixed.
+      setHeardUser(false)
+    }
     setError(null)
     setStatus('connecting')
 
     void (async () => {
-      warmthRef.current?.dispose()
-      warmthRef.current = new WarmthSession({
-        persona: config.persona,
-        trajectory: config.persona.trajectory,
-        scorer: new HttpSlowScorer(undefined, undefined, () => {
-          const id = providerRef.current?.getSessionId?.()
-          return id ? { sessionId: id } : {}
-        }),
-        nowSeconds: () => startedAtRef.current > 0 ? (performance.now() - startedAtRef.current) / 1000 : 0,
-      })
+      // The meter survives a reconnection. Disposing and rebuilding it would
+      // put an eleven-minute interview back at its opening impression, which
+      // is a worse outcome than the drop.
+      if (!resuming || !warmthRef.current) {
+        warmthRef.current?.dispose()
+        warmthRef.current = new WarmthSession({
+          persona: config.persona,
+          trajectory: config.persona.trajectory,
+          // §6.7. Her first turn poses a forty-to-seventy word problem, and
+          // every interview band tops out at thirty-four. Absent on every
+          // dating rep and on four of the five interview rounds, and read on
+          // the first agent turn only.
+          ...(posesBrief ? { openingTurnKind: 'brief' as const } : {}),
+          scorer: new HttpSlowScorer(undefined, undefined, () => {
+            const id = providerRef.current?.getSessionId?.()
+            return id ? { sessionId: id } : {}
+          }),
+          nowSeconds: () => startedAtRef.current > 0 ? (performance.now() - startedAtRef.current) / 1000 : 0,
+        })
+      }
       setWarmth(uiWarmth(warmthRef.current.engine.warmth))
       setBand(uiBand(warmthRef.current.engine.band))
 
@@ -601,8 +907,12 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         if (providerRef.current !== voice) return
         providerRef.current = null
         startedRef.current = false
-        warmthRef.current?.dispose()
-        warmthRef.current = null
+        // The meter is the one thing a reconnection has to carry across. On
+        // an ordinary failed attempt it goes with everything else.
+        if (!resumingRef.current) {
+          warmthRef.current?.dispose()
+          warmthRef.current = null
+        }
         safetyRef.current?.stop()
         safetyRef.current = null
         incidentsStopRef.current?.()
@@ -618,10 +928,19 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
        */
       function applySafetyAction(action: SafetyAction): void {
         const live = providerRef.current
-        if (!live || finishedRef.current) return
+        if (!live || finishedRef.current || !config) return
+        const track = config.persona.track
 
-        if (action === 'decline') { live.reinforce(DECLINE_DIRECTIVE); return }
-        if (action === 'correct') { live.reinforce(CORRECT_DIRECTIVE); return }
+        // B9. The SEQUENCE is track-blind and stays that way — the verdict
+        // mapping, the strike counters, the age arithmetic and the distress
+        // path are the same functions on both arms. What is not track-blind is
+        // the VOICE: "I do not want that" from somebody conducting an
+        // interview reads as a different genre of refusal entirely.
+        if (action === 'decline' || action === 'correct') {
+          const line = safetyDirectiveFor(action, track)
+          if (line) live.reinforce(line)
+          return
+        }
 
         if (action === 'distress') {
           // The frame is dropped, not wound down (§16.8). She does not get a
@@ -640,7 +959,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
           safetyCloseAtRef.current = performance.now()
           setSafety({ ended: true, distress: false })
           // She closes the scene herself, bounded — see `safetyCloseAtRef`.
-          live.reinforce(CLOSE_DIRECTIVE)
+          live.reinforce(safetyDirectiveFor('end', track) ?? CLOSE_DIRECTIVE)
         }
       }
 
@@ -699,6 +1018,19 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       voice.on('agent.transcript', ({ turn, final }) => {
         if (!final) return
         turnsRef.current.push(turn)
+        // THE MARK, APPLIED TO THE TURN THE BEAT ASKED FOR (§8.1).
+        //
+        // Recorded against the turn OBJECT rather than mutated onto it: both
+        // adapters push the turn into their own array and then emit that same
+        // reference, so this map keys the very turns `SessionSummary` will
+        // carry. If that ever stops being true the marks simply do not match
+        // and the accuracy pass is skipped, which is the right way for this to
+        // fail — a missing mark costs a dimension, a wrong one costs a verdict.
+        const mark = pendingTurnMarkRef.current
+        if (mark) {
+          turnMarksRef.current.set(turn, mark)
+          pendingTurnMarkRef.current = null
+        }
         // One half of an exchange. Only committed turns get here, so a reply
         // that was generated and never reached the ear does not advance the
         // guided script. See `agentTurns`.
@@ -740,6 +1072,12 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         if (!err.fatal || !stillCurrent()) return
         setError('connection')
         if (activated) {
+          // A3. Three attempts, and only on the arm that asked for them. Every
+          // other rep ends here exactly as it did before.
+          if (resumable && reconnectsRef.current < RECONNECT_ATTEMPTS) {
+            reconnect(voice)
+            return
+          }
           void stopRef.current?.('error')
         } else {
           // A socket error during setup must close the provider, even when its
@@ -756,9 +1094,21 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         await abandonAttempt()
         if (!stillCurrent()) return
         disposeAttempt()
-        // A refused microphone has a different remedy from a network failure.
+        // Three different remedies, and they must not share a screen. A refused
+        // microphone is fixed in the browser; a lost connection is worth
+        // retrying; a REFUSAL is a decision the user has to act on somewhere
+        // else entirely, and retrying it can never work.
         const message = cause instanceof VoiceError ? cause.message : String(cause)
+        if (cause instanceof VoiceError && cause.code === 'refused') {
+          setRefusal(message)
+          setError('refused')
+          // Not `retryResume()`. A reconnection loop against a refusal is three
+          // more identical refusals and thirty seconds of a spinner.
+          setStatus('idle')
+          return
+        }
         setError(/microphone|permission|NotAllowed/i.test(message) ? 'mic' : 'connection')
+        if (retryResume()) return
         setStatus('idle')
         return
       }
@@ -767,6 +1117,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         await abandonAttempt()
         disposeAttempt()
         setError('connection')
+        if (retryResume()) return
         setStatus('idle')
         return
       }
@@ -798,14 +1149,31 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       voice.setWarmth(warmthRef.current?.engine.warmth ?? 0, warmthRef.current?.replyShape)
 
       setStatus('live')
-      startedAtRef.current = performance.now()
-      setMsRemaining(durationMs)
+      if (resuming) {
+        // The clock was stopped when the transport dropped. Move its origin
+        // forward by however long the room was empty, so the outage costs the
+        // candidate nothing and the remaining time is what it was.
+        if (pausedAtRef.current !== null) {
+          startedAtRef.current += performance.now() - pausedAtRef.current
+          pausedAtRef.current = null
+        }
+        resumingRef.current = false
+      } else {
+        startedAtRef.current = performance.now()
+        setMsRemaining(durationMs)
+      }
 
       // The row is opened when the transport connects, so a rep that crashes
       // still leaves evidence it happened — and this is where the daily quota
       // is spent.
-      sessionIdRef.current = null
-      sessionOpenRef.current = (ownedSessionId
+      // A resume keeps the row it already has. `startSession` would adopt the
+      // same one anyway — it resumes an open row for ten minutes — but going
+      // back through it would re-run the safety wiring against a session id
+      // that has not changed.
+      if (!resuming) sessionIdRef.current = null
+      sessionOpenRef.current = (resuming && sessionIdRef.current
+        ? Promise.resolve({ sessionId: sessionIdRef.current })
+        : ownedSessionId
         ? Promise.resolve({ sessionId: ownedSessionId })
         : startSession({
           personaSlug: config.persona.slug,
@@ -856,6 +1224,10 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       // wall-clock rather than a tick count so a throttled background tab
       // cannot buy anybody extra time.
       tickRef.current = setInterval(() => {
+        // A4. While the room is empty the clock does not move, and neither does
+        // anything it drives — no wind-down, no scene beat, no ending. Off for
+        // dating, where a pause is a mute and the scene keeps running.
+        if (resumable && pausedRef.current) return
         const elapsed = performance.now() - startedAtRef.current
         const remaining = Math.max(0, durationMs - elapsed)
         setMsRemaining(remaining)
@@ -877,7 +1249,19 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         // one thing — and which one is settled here, on the meter as it stands
         // at this instant. She then says it in her own time; the answer does
         // not change underneath her.
-        if (shouldWrapUp({ msRemaining: remaining, alreadyWrapped: wrappedRef.current })) {
+        // B7. THE INTERVIEW'S CLOSING BEAT IS A QUESTION, AND THIRTY SECONDS
+        // IS NOT ENOUGH TIME TO ANSWER IT.
+        //
+        // The dating rule is untouched: `shouldWrapUp` still carries
+        // `WRAP_UP_MS`, `givesNumber` still decides the number, and a dating
+        // rep reaches the identical branch. The interview arm fires on its own
+        // proportional constant — fifteen percent of the round — and hands her
+        // "do you have any questions for me?", which is a beat candidates
+        // really do lose offers on and which needs room to land.
+        const wrapDue = interview
+          ? interviewShouldWrapUp({ msRemaining: remaining, alreadyWrapped: wrappedRef.current, round })
+          : shouldWrapUp({ msRemaining: remaining, alreadyWrapped: wrappedRef.current })
+        if (wrapDue) {
           wrappedRef.current = true
           const engine = warmthRef.current?.engine
           const offering = givesNumber({
@@ -892,21 +1276,81 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
           // so the decision arrives on its own rather than behind a line that
           // still says she would rather be somewhere else.
           warmthRef.current?.handOverToClosing()
-          providerRef.current?.reinforce(offering ? NUMBER_DIRECTIVE : WRAP_UP_DIRECTIVE)
+          providerRef.current?.reinforce(
+            interview
+              ? (roundType(round).nextSteps ? INTERVIEW_NEXT_STEPS_DIRECTIVE : INTERVIEW_WRAP_UP_DIRECTIVE)
+              : offering ? NUMBER_DIRECTIVE : WRAP_UP_DIRECTIVE,
+          )
         }
 
         // The scene, on its own clock. Fired before the wind-down check so a
         // beat can never land on top of the closing direction, and never after
         // the wrap-up has been sent.
         if (!wrappedRef.current) {
+          const elapsedFraction = 1 - remaining / durationMs
           const beat = dueSceneBeat({
             beats: config.persona.sceneBeats,
-            elapsedFraction: 1 - remaining / durationMs,
+            elapsedFraction,
             fired: beatsFiredRef.current,
           })
           if (beat) {
             beatsFiredRef.current += 1
             providerRef.current?.reinforce(beat.direction)
+          }
+
+          // THE AGENDA AND THE PROBE, ON THE SAME CLOCK AND THE SAME CHANNEL.
+          //
+          // An interviewer with permission to follow a thread and nothing
+          // telling her to leave it follows one thread for the whole rep —
+          // measured, fifteen of seventeen turns on the opening question. The
+          // agenda beat is the only thing in the build that pushes her back to
+          // her list, and it says the thread is finished rather than what to
+          // ask next.
+          //
+          // The probe beat is its sibling and pushes DOWN rather than sideways:
+          // stop asking what they did, take one technical thing they just
+          // named, and ask how it actually works. Four reps on a real
+          // microphone asked that question zero times.
+          //
+          // `dueInterviewBeat` owns both clocks and returns at most one, so
+          // they can never arrive in the same turn — two directions at once is
+          // the argument this file already settles with `LAST_BEAT_FRACTION`.
+          // `else if`, so a scene beat cannot land on top of either.
+          else if (interview) {
+            const due = dueInterviewBeat({
+              elapsedFraction,
+              round,
+              difficulty,
+              agendaFired: agendaBeatsRef.current,
+              probeFired: probeBeatsRef.current,
+              // A probe fired at somebody who has described nothing is the
+              // interrogation in rep `e9c74f80`. Suppressed outright — and the
+              // whole ladder is off for a round or a field with nothing
+              // authored, which is most of them today.
+              ladder: probes,
+              grounded: isGrounded(turnsRef.current),
+              msSinceLastBeat: lastInterviewBeatAtRef.current === 0
+                ? Number.POSITIVE_INFINITY
+                : performance.now() - lastInterviewBeatAtRef.current,
+            })
+            if (due) {
+              lastInterviewBeatAtRef.current = performance.now()
+              if (due.kind === 'agenda') {
+                agendaBeatsRef.current += 1
+              } else {
+                probeBeatsRef.current += 1
+                // The turn she is about to take is the probe. Marked here
+                // because this is the only moment anything knows (§8.1) — and
+                // only for the rungs that have a right answer: `requirements`
+                // and `shape` are structural moves, and asking a grader whether
+                // "how would you lay this out" was CORRECT is asking it to
+                // invent a verdict.
+                if (due.beat.rung !== 'requirements' && due.beat.rung !== 'shape') {
+                  pendingTurnMarkRef.current = 'probe'
+                }
+              }
+              providerRef.current?.reinforce(due.beat.direction)
+            }
           }
         }
 
@@ -921,7 +1365,14 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         }
       }, 200)
     })()
-  }, [config, durationMs, interview, personaId, publish])
+    // `difficulty`, `probes` and `posesBrief` join `round` here: all four are
+    // server-resolved facts about the setup that cannot change while a rep is
+    // running, and all four are read inside the tick.
+  }, [config, difficulty, durationMs, interview, personaId, posesBrief, probes, publish, resumable, retryResume, reconnect, round])
+
+  // `reconnect` and `retryResume` re-enter `start`, and a callback cannot name
+  // itself. The ref is assigned on every render so it is never a stale closure.
+  startRef.current = start
 
   const end = useCallback(() => { void stopRef.current?.('user') }, [])
 
@@ -936,18 +1387,30 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     if (pausedRef.current) return
     pausedRef.current = true
     setPaused(true)
+    // A4, and ONLY on the arm that asked for it. A dating rep's clock runs
+    // through a pause on purpose — "three minutes is three minutes", and a
+    // stranger in a shop does not wait for you. A twenty-minute interview that
+    // burned its clock through a backgrounded tab would be charging somebody
+    // for time nobody was in the room.
+    if (resumable && pausedAtRef.current === null) pausedAtRef.current = performance.now()
     // She stops cutting across him while he is away. Restored on resume from
     // the level rule rather than from a remembered flag, because the level is
     // what the answer actually depends on (§05).
     providerRef.current?.setMuted?.(true)
     providerRef.current?.setInterruptible(false)
     setSpeaking(agentSpeakingRef.current ? 'persona' : 'none')
-  }, [])
+  }, [resumable])
 
   const resume = useCallback(() => {
     if (!pausedRef.current) return
     pausedRef.current = false
     setPaused(false)
+    // The clock's origin moves forward by however long they were away, so the
+    // remaining time is exactly what it was when they left.
+    if (resumable && pausedAtRef.current !== null && startedAtRef.current > 0) {
+      startedAtRef.current += performance.now() - pausedAtRef.current
+      pausedAtRef.current = null
+    }
     // Restored through the meter rather than from the level alone. The level is
     // still the ceiling (§05), but whether she actually takes the turn depends
     // on how the rep is going — and going back to the raw level rule here would
@@ -955,7 +1418,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     // `publish` corrected it.
     providerRef.current?.setMuted?.(false)
     providerRef.current?.setWarmth(warmthRef.current?.engine.warmth ?? 0, warmthRef.current?.replyShape)
-  }, [])
+  }, [resumable])
 
   const retry = useCallback(() => {
     void (async () => {
@@ -965,6 +1428,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       setRetryAttempt((value) => Math.min(3, value + 1))
       startedRef.current = false
       setError(null)
+      setRefusal(null)
       start()
     })()
   }, [start])
@@ -990,6 +1454,18 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     recorderRef.current?.dispose()
   }, [clearLoops])
 
+  // The rail's own reading of where he is. Recomputed on every render rather
+  // than held in state: it is two counters and a transcript scan, and a second
+  // copy in state is a second thing that can disagree with the transcript.
+  const agenda = agendaStep({
+    userTurns,
+    agentTurns,
+    wrapping: !outcome && status === 'live' && msRemaining <= (interview
+      ? interviewWrapUpMs(round)
+      : WRAP_UP_MS),
+    round,
+  })
+
   return {
     status,
     warmth,
@@ -1009,12 +1485,23 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     agentTurns,
     endReason,
     error,
+    refusal,
     safety,
     sessionId,
-    // Interview reps are M4. The fields stay so the screen keeps one shape.
-    questionIndex: 0,
-    questionTotal: 0,
-    question: null,
+    // C6. The rail, wired at last. `questionIndex` advances on COMPLETED
+    // exchanges — his turn AND her reply — because a rail that counts his turns
+    // alone points at an answer that never arrived (D13), and the wind-down owns
+    // the last step outright.
+    //
+    // `question` is her own most recent question, taken verbatim out of the
+    // transcript and refused by `captionOrNull` if it is not. It is a caption
+    // and never a prompt: §11 forbids it ever carrying a hint, a structure
+    // reminder or an example answer, and that is enforced in code.
+    //
+    // Zeroed on the dating arm, which never renders any of the three.
+    questionIndex: interview ? agenda.index : 0,
+    questionTotal: interview ? agenda.total : 0,
+    question: interview ? captionOrNull(questionCaption(turnsRef.current), turnsRef.current) : null,
     start,
     end,
     pause,

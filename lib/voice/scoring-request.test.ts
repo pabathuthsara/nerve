@@ -18,19 +18,46 @@ describe('scoring input boundaries', () => {
     }
   })
 
+  // Expressed against `SCORING_LIMITS` rather than against literals. The
+  // bounds moved once already — a deep technical round is 1,500 seconds and
+  // `sessionSeconds` was 600, so the longest thing the product sells was
+  // silently ungradeable — and a test carrying its own copy of a number is a
+  // test that has to be found and edited before the bug can be fixed.
   it('rejects oversized transcripts instead of scoring an invisible truncation', () => {
     const turn = { speaker: 'user', text: 'hello', t_start: 0, t_end: 1 }
-    expect(parseGradeTranscript(Array(161).fill(turn))).toBeNull()
-    expect(parseGradeTranscript([{ ...turn, text: 'x'.repeat(4_001) }])).toBeNull()
-    expect(parseGradeTranscript(Array(9).fill({ ...turn, text: 'x'.repeat(4_000) }))).toBeNull()
+    expect(parseGradeTranscript(Array(SCORING_LIMITS.gradeTurns + 1).fill(turn))).toBeNull()
+    expect(parseGradeTranscript([{ ...turn, text: 'x'.repeat(SCORING_LIMITS.gradeTurnCharacters + 1) }])).toBeNull()
+    const overCharacters = Math.ceil(SCORING_LIMITS.gradeCharacters / SCORING_LIMITS.gradeTurnCharacters) + 1
+    expect(parseGradeTranscript(
+      Array(overCharacters).fill({ ...turn, text: 'x'.repeat(SCORING_LIMITS.gradeTurnCharacters) }),
+    )).toBeNull()
+  })
+
+  it('accepts the longest round the product actually sells', () => {
+    // A twenty-five-minute deep technical, at the far end of its clock. This is
+    // the case the old 600-second bound refused with a 400 and no explanation.
+    const turn = { speaker: 'user', text: 'hello', t_start: 1_480, t_end: 1_499 }
+    expect(parseGradeTranscript([turn])).toHaveLength(1)
   })
 
   it('rejects invalid clocks while preserving actual overlapping speech', () => {
     const turn = { speaker: 'user', text: 'hello', t_start: 0, t_end: 1 }
-    for (const clocks of [{ t_start: -1 }, { t_end: Number.NaN }, { t_start: 2 }, { t_end: 601 }]) {
+    const past = SCORING_LIMITS.sessionSeconds + 1
+    for (const clocks of [{ t_start: -1 }, { t_end: Number.NaN }, { t_start: 2 }, { t_end: past }]) {
       expect(parseGradeTranscript([{ ...turn, ...clocks }])).toBeNull()
     }
     expect(parseGradeTranscript([turn, { ...turn, speaker: 'agent', t_start: 0.5 }])).toHaveLength(2)
+  })
+
+  it('carries the probe mark and refuses any other value (§8.1)', () => {
+    const turn = { speaker: 'agent', text: 'How does that work?', t_start: 0, t_end: 1 }
+    expect(parseGradeTranscript([{ ...turn, kind: 'probe' }])?.[0]?.kind).toBe('probe')
+    expect(parseGradeTranscript([{ ...turn, kind: 'brief' }])?.[0]?.kind).toBe('brief')
+    // An unrecognised mark is dropped rather than refused: it decides which
+    // pairs the accuracy pass reads, and widening that set silently is the one
+    // thing it must not do. A dating turn carries no `kind` at all.
+    expect(parseGradeTranscript([{ ...turn, kind: 'wrong' }])?.[0]).not.toHaveProperty('kind')
+    expect(parseGradeTranscript([turn])?.[0]).not.toHaveProperty('kind')
   })
 
   it('bounds bytes even if a client omits Content-Length', async () => {

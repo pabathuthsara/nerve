@@ -32,7 +32,7 @@
  * it can charge nothing; it is refused outright on the live base.
  */
 
-import { OFFERS, PUBLIC_PLANS, TRIAL_DAYS, planById } from '@/lib/site/plans'
+import { INTERVIEW_PACKS, OFFERS, PUBLIC_PLANS, TRIAL_DAYS, planById } from '@/lib/site/plans'
 import {
   apiBase,
   apiVersionDate,
@@ -87,6 +87,8 @@ interface WhopPlan {
   visibility: string
   tax_type: string
   product: { id: string } | null
+  /** Free-form provenance. Packs carry `nerve_pack` and `nerve_credits`. */
+  metadata: Record<string, unknown> | null
 }
 
 interface WhopWebhook {
@@ -306,10 +308,78 @@ async function main(): Promise<void> {
     if (vendor.product?.id) productIds.add(vendor.product.id)
   }
 
-  // One product, two plans (D1). Two products would mean two storefront pages
-  // for a reviewer to read and two places for the description to drift.
+  /**
+   * The interview packs (INTERVIEW-PLAN D3).
+   *
+   * A one-time plan is the mirror image of a subscription at Whop — the money
+   * is on `initial_price` and `renewal_price` is zero — and the failure mode of
+   * getting that backwards is silent in the worst way: a plan whose price is on
+   * the wrong field charges NOTHING at checkout and keeps charging nothing, so
+   * the first anyone knows is a credit balance that filled up for free.
+   *
+   * The prices come from `lib/site/plans.ts`, which is also what `/pricing`
+   * prints. §14 has a human at the merchant of record reading that page, and a
+   * page that says $29 over a plan that takes $290 is the kind of thing that
+   * ends an application.
+   */
+  console.log('\ninterview packs')
+
+  for (const pack of INTERVIEW_PACKS) {
+    const id = process.env[pack.env]?.trim()
+    console.log(`\n  ${pack.name} — ${pack.env}`)
+    if (!id) {
+      check(false, `${pack.env} is set`)
+      continue
+    }
+
+    const response = await get(`/plans/${encodeURIComponent(id)}`)
+    if (!response.ok) {
+      check(false, `${id} resolves at the provider (${response.status})`)
+      continue
+    }
+
+    const vendor = (await response.json()) as WhopPlan
+    check(true, `${id} resolves — "${vendor.title ?? 'untitled'}"`)
+    check(vendor.plan_type === 'one_time',
+      `it is a one-off, not a subscription (${vendor.plan_type})`)
+    // THE ONE THIS BLOCK EXISTS FOR. On a one-time plan the price is the
+    // INITIAL price; a pack created with it on `renewal_price` sells for $0.
+    check(vendor.initial_price === pack.priceUsd,
+      `it charges what lib/site/plans.ts advertises ($${vendor.initial_price} vs $${pack.priceUsd})`)
+    check((vendor.renewal_price ?? 0) === 0,
+      `and charges nothing again afterwards (renewal_price ${vendor.renewal_price})`)
+    check(vendor.currency.toLowerCase() === 'usd', `it is priced in USD (${vendor.currency})`)
+    // A trial in front of a one-off purchase is a free interview followed by a
+    // charge nobody expects.
+    check((vendor.trial_period_days ?? 0) === 0,
+      `it has no trial (${vendor.trial_period_days ?? 0})`)
+    check(vendor.tax_type !== 'inclusive',
+      `tax is not inclusive, so we keep the full ${pack.price} (${vendor.tax_type})`)
+    check(vendor.visibility !== 'visible',
+      `it is not listed on Whop's public marketplace (${vendor.visibility})`)
+    /**
+     * The pack the webhook will resolve, asserted at the vendor.
+     *
+     * `credit-rules.ts` grants `INTERVIEW_PACKS[…].credits` off the plan id
+     * alone, so a plan whose metadata says five while the app's record says
+     * twelve is a discrepancy nothing else would ever surface — the credits
+     * would simply be wrong, on a real charge.
+     */
+    const meta = (vendor.metadata ?? {}) as Record<string, unknown>
+    check(meta['nerve_pack'] === pack.id,
+      `the vendor's own record says which pack this is (${String(meta['nerve_pack'] ?? 'unset')})`)
+    check(String(meta['nerve_credits'] ?? '') === String(pack.credits),
+      `and how many interviews it buys (${String(meta['nerve_credits'] ?? 'unset')} vs ${pack.credits})`)
+
+    if (vendor.product?.id) productIds.add(vendor.product.id)
+  }
+
+  // One product, every plan (D1). Two products would mean two storefront pages
+  // for a reviewer to read and two places for the description to drift — and
+  // now that packs are sold as well, it is also what keeps the subscriptions
+  // and the packs on one receipt-facing listing.
   check(productIds.size <= 1,
-    `both plans belong to one product (${productIds.size === 0 ? 'none resolved' : [...productIds].join(', ')})`)
+    `every plan and pack belongs to one product (${productIds.size === 0 ? 'none resolved' : [...productIds].join(', ')})`)
 
   console.log('\nthe webhook')
 

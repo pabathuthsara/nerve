@@ -340,6 +340,31 @@ rows × three plan columns, ✓ / — marks. Its whole argument is *the only thi
 that varies is one row*, which a matrix says instantly and two lists do not.
 **Size: S.**
 
+**V19 · `/pricing` quoted five numbers for three plans** — **fixed 7 September**
+`components/site/plan-board.tsx`
+Each card printed its monthly price and then a smaller line offering the weekly
+one, so a three-card board carried five prices and the reader's first job was
+working out which applied to them. The page also had **three left edges** — a
+hero at `--site-read`, a plan board at `--site-width` and an interview-pack
+section back at `--site-read` — and **three volts**: Pro's button, Elite's
+button, and the in-app period toggle's current segment.
+
+**Fixed:** one period at a time behind a segmented control, seven identical grid
+rows on every card so prices, meters and buttons sit on the same lines, one
+container width for the whole page, and volt spent once on the lead plan's
+action. The control is shared with `/profile/subscription` rather than
+duplicated, which is also what stops the two surfaces disagreeing about what is
+on sale.
+
+**What the move was not allowed to lose** is the reason the old layout was
+built that way: weekly costs more per month than monthly, and a ladder that
+hides that is a trick. It is louder now, in three places instead of one grey
+line — the saving is on the tab, `PERIOD_NOTE` sits under it in plain words,
+and any non-monthly price prints its effective monthly rate directly beneath
+itself. `trialNoteFor` scopes the footnote to the period on screen, which fixed
+a real contradiction: the static note promised "charged 7 days later" directly
+under a weekly card reading "charged today".
+
 **V14 · The three legal pages are 3,245 words with no visual summary** —
 `components/site/legal-pages.tsx`
 The privacy page already has a summary grid; the other two do not. **Do not

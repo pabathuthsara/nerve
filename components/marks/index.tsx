@@ -72,6 +72,10 @@ const GLYPHS: Record<MarkName, ReactNode> = {
   'dim-composure': <><path d="M3 12h6" /><path d="M15 12h6" /><path d="M9 8.5v7" /><path d="M15 8.5v7" /></>,
   // Close: it converges, and then it goes on without you.
   'dim-close': <><path d="M3 6 15 12h6" /><path d="M3 18 15 12" /></>,
+  // Technical accuracy: a mark against a line, and it either lands on it or it
+  // does not. Deliberately not a tick — a tick is a verdict on the person, and
+  // this dimension is a verdict on one answer (INTERVIEW-TECHNICAL-PLAN §8.4).
+  'dim-accuracy': <><path d="M3 12h18" /><path d="M8 12 11 16 16.5 6.5" /></>,
 
   /* ---- Roster tier. An aperture that closes as the tier rises. ---------- *
    * The gap IS the reading: Tess is wide open, Robin is shut with something

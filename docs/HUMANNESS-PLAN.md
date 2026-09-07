@@ -814,6 +814,46 @@ attacks the pattern-recognition complaint above.
 
 ---
 
+## 7.5 Two dead dials, measured — and neither was in the code
+
+Added 7 September, after the first real interview was reported as "robotic".
+Both halves belong here rather than in `INTERVIEW-PLAN.md` because neither is
+about interviews: they are about what this arm can actually control, and a
+tuning pass that does not know them is a tuning pass on nothing.
+
+**`speed` is inert on `eleven_v3_conversational`.** That is the shipping model.
+One line, Aisha's voice, the full documented range:
+
+| Model | `speed: 0.7` | `speed: 1.2` | spread |
+|---|---|---|---|
+| `eleven_v3_conversational` | 3.84 s | 3.76 s | **1.02x** — noise |
+| `eleven_flash_v2_5` | 5.25 s | 2.97 s | 1.77x |
+
+So `deliveryFor`'s three pace bands are computed, sent, and dropped by the
+vendor on every turn of every rep, on both tracks. This does not make §3's
+latency layer wrong — that is `setTimeout` between turns and is unaffected — but
+it does mean **the pace inside a turn is not currently ours to set**, and any
+plan that leans on speaking rate as a warmth channel needs Flash or needs to
+stop. Left in the request because it is correct for Flash; recorded beside the
+code so nobody auditions against it.
+
+**Stability was being set from outside the repo.** `ELEVENLABS_STABILITY=0.85`
+in the production environment overrode `STABILITY_BY_EXPRESSION` for every
+persona on this arm. On dating that is deliberate and stays. It also silently
+governed a second track, which is how an interviewer authored `earnest` (0.55)
+shipped at near-flat. Now scoped: an interviewer takes `INTERVIEW_STABILITY` and
+the environment may not touch it.
+
+**The generalisation, which is the reason this section exists.** The model is
+**nondeterministic** — the same request twice differed by 13% in encoded length —
+so A/B-ing voice settings by comparing output bytes proves nothing, and two of
+the three "differences" in the first pass of this investigation were variance.
+Voice settings can only be judged by ear, on more than one sample, and v3
+documents stability as three modes (0.0 Creative, 0.5 Natural, 1.0 Robust)
+rather than a continuous dial. Author on the points the vendor names.
+
+---
+
 ## 8. Cost
 
 Everything in this document is free, near-free, or cost-reducing, with one

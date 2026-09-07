@@ -363,8 +363,21 @@ export function describeBand(band: MetricBand): string {
  * audited instead of trusted. A 96 that nobody can take apart is worse than a
  * 73 that anyone can.
  */
-export function scoreMetrics(metrics: DeterministicMetrics): MetricScore[] {
-  return METRIC_BANDS.map((band) => {
+export function scoreMetrics(
+  metrics: DeterministicMetrics,
+  /**
+   * The band table to score against. Defaults to the §07 dating table.
+   *
+   * A DEFAULT rather than a required argument, deliberately: every existing
+   * caller reaches the identical numbers it reached before the interview arm
+   * had a table of its own, and `dating-arm.test.ts` pins them. The interview
+   * table is `lib/grade/interview/metrics.ts`, chosen at `lib/grade/track.ts`
+   * — four of these eight bands score correct interview behaviour at zero, and
+   * the note there is the argument.
+   */
+  bands: readonly MetricBand[] = METRIC_BANDS,
+): MetricScore[] {
+  return bands.map((band) => {
     const raw = metrics[band.key]
     const value = typeof raw === 'number' ? raw : null
     const points = bandScore(value, band)

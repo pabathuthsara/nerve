@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  BEST_VALUE_PERIOD,
   BILLING_PERIODS,
+  CREDIT_EXPIRY_NOTE,
+  PERIOD_NOTE,
+  INTERVIEW_PACKS,
   OFFERS,
+  PLAN_INTERVIEW_CREDITS,
+  SCREENER_NOTE,
   CHECKOUT_NOTE,
   PAID_PLANS,
   PUBLIC_PLANS,
@@ -12,6 +18,15 @@ import {
   monthlyEquivalent,
   offerFor,
   offersFor,
+  chargeLine,
+  creditsLine,
+  interviewsLine,
+  packById,
+  periodNoun,
+  periodSavings,
+  periodTabLabel,
+  trialNoteFor,
+  perInterview,
   periodLabel,
   planById,
   repsLine,
@@ -176,5 +191,188 @@ describe('billing periods', () => {
     for (const offer of OFFERS) {
       expect(offer.price).toBe(`$${offer.priceUsd}`)
     }
+  })
+})
+
+
+describe('the interview packs (INTERVIEW-PLAN D3, §5.4)', () => {
+  it('orders them cheapest first and gets cheaper per interview as they grow', () => {
+    // The ladder only makes sense if the bigger pack is the better rate. A pack
+    // that cost more per interview than the one below it would be a page asking
+    // somebody to do arithmetic and then punishing them for it.
+    for (let index = 1; index < INTERVIEW_PACKS.length; index += 1) {
+      const previous = INTERVIEW_PACKS[index - 1]!
+      const current = INTERVIEW_PACKS[index]!
+      expect(current.priceUsd).toBeGreaterThan(previous.priceUsd)
+      expect(current.credits).toBeGreaterThan(previous.credits)
+      expect(perInterview(current)).toBeLessThan(perInterview(previous))
+    }
+  })
+
+  it('quotes a price that matches its own numeric value', () => {
+    // `price` is printed on two surfaces and `priceUsd` is what
+    // `npm run whop:setup` creates the vendor plan at. Two fields, one number.
+    for (const pack of INTERVIEW_PACKS) {
+      expect(pack.price).toBe(`$${pack.priceUsd}`)
+    }
+  })
+
+  it('keeps every pack comfortably above the measured cost of an interview', () => {
+    // §6, measured: $0.45-0.60 at p90 with a reconnect. The worst pack is the
+    // twelve at ~11% COGS. A pack that dipped under about a dollar an interview
+    // would be selling voice minutes below what they cost.
+    for (const pack of INTERVIEW_PACKS) {
+      expect(perInterview(pack)).toBeGreaterThan(1)
+    }
+  })
+
+  it('gives every pack its own environment variable', () => {
+    // Two packs sharing a variable would sell one at the other's price and
+    // credit the wrong number of interviews.
+    const vars = INTERVIEW_PACKS.map((pack) => pack.env)
+    expect(new Set(vars).size).toBe(vars.length)
+    expect(vars.every((name) => name.startsWith('WHOP_PACK_'))).toBe(true)
+  })
+
+  it('resolves a pack by id and nothing else', () => {
+    expect(packById('pack5')?.credits).toBe(5)
+    expect(packById('nonsense')).toBeUndefined()
+  })
+
+  it('never sells an interview allotment on free', () => {
+    // A plan grants credits; free grants none, the same way it grants no voice
+    // reps. This is the paywall's second half rather than a copy decision.
+    expect(PLAN_INTERVIEW_CREDITS.free).toBe(0)
+    expect(creditsLine('free')).toBe('None')
+  })
+
+  it('grants strictly more on the dearer plan', () => {
+    expect(PLAN_INTERVIEW_CREDITS.elite).toBeGreaterThan(PLAN_INTERVIEW_CREDITS.pro)
+    expect(PLAN_INTERVIEW_CREDITS.pro).toBeGreaterThan(PLAN_INTERVIEW_CREDITS.free)
+  })
+
+  it('never advertises an unlimited interview allowance', () => {
+    // §5.2 is arithmetic, not restraint: three twenty-minute interviews a day
+    // on Pro is about $45/month of voice against a $19 price.
+    const copy = [
+      ...INTERVIEW_PACKS.flatMap((pack) => [pack.name, pack.tagline]),
+      CREDIT_EXPIRY_NOTE,
+      SCREENER_NOTE,
+      creditsLine('pro'),
+      creditsLine('elite'),
+    ].join(' ').toLowerCase()
+    expect(copy).not.toContain('unlimited')
+  })
+
+  it('states both expiry rules in the one string every surface reads', () => {
+    /**
+     * §5.5, and the reason this is asserted rather than trusted: the pricing
+     * page, the interview home, `TermsDocument` clause 07 and `RefundDocument`
+     * clause 04 all say this, and a disputing customer quotes whichever is more
+     * generous. One string is what stops the four drifting.
+     */
+    const note = CREDIT_EXPIRY_NOTE.toLowerCase()
+    expect(note).toContain('never expire')
+    expect(note).toContain('do not roll over')
+    expect(note).toContain('cancel')
+  })
+
+  it('promises the free screener without calling it a trial or a demo', () => {
+    // §5.6: five minutes is a recruiter screen, which is a real format rather
+    // than a truncated one. Calling it a demo would misdescribe the product to
+    // the person least able to tell.
+    expect(SCREENER_NOTE.toLowerCase()).toContain('free')
+    expect(SCREENER_NOTE.toLowerCase()).toContain('real thing')
+    expect(SCREENER_NOTE.toLowerCase()).toContain('five')
+  })
+
+  it('never calls the product anything a payment reviewer bans by name', () => {
+    const copy = INTERVIEW_PACKS
+      .flatMap((pack) => [pack.name, pack.tagline])
+      .concat(CREDIT_EXPIRY_NOTE, SCREENER_NOTE)
+      .join(' ').toLowerCase()
+    for (const word of ['dating', 'flirt', 'girlfriend', 'companion', 'therapy', 'treatment', 'get hired', 'guarantee']) {
+      expect(copy, `pack copy says "${word}"`).not.toContain(word)
+    }
+  })
+})
+
+describe('the period control the pricing surfaces render', () => {
+  it('has a note for every period it can show', () => {
+    // The note under the tabs is what carries the honesty the old
+    // every-price-at-once layout carried in a grey line. A period without one
+    // would be a tab that explains nothing.
+    for (const period of BILLING_PERIODS) {
+      expect(PERIOD_NOTE[period]).toBeTruthy()
+      expect(periodTabLabel(period)).toBeTruthy()
+      expect(periodNoun(period)).toBeTruthy()
+    }
+  })
+
+  it('says out loud, on the weekly tab, that weekly costs more per month', () => {
+    /**
+     * The one thing the redesign was not allowed to lose. §14 has a
+     * merchant-of-record reviewer reading this page, and a ladder whose cheap
+     * door is quietly the dearest rate is a trick rather than a ladder.
+     */
+    const note = PERIOD_NOTE.weekly.toLowerCase()
+    expect(note).toContain('dearer per month')
+    expect(note).toContain('no trial')
+  })
+
+  it('opens on the cheaper effective rate', () => {
+    // A control that opens on the dearer option is one that hopes you do not
+    // do the arithmetic.
+    const rates = BILLING_PERIODS.map((period) => ({
+      period,
+      rate: Math.min(...OFFERS.filter((offer) => offer.period === period).map(monthlyEquivalent)),
+    }))
+    const cheapest = rates.reduce((best, entry) => (entry.rate < best.rate ? entry : best))
+    expect(BEST_VALUE_PERIOD).toBe(cheapest.period)
+  })
+
+  it('puts a real saving on the tab, derived from the prices', () => {
+    // 37% today: $30.33 a month by the week against $19 by the month. Derived
+    // from `monthlyEquivalent`, so it cannot drift from what the cards print.
+    expect(periodSavings('monthly')).toBe(
+      Math.round((1 - 19 / monthlyEquivalent(offerFor('pro', 'weekly')!)) * 100),
+    )
+    // Nothing is saved by paying more, and the tab must not claim otherwise.
+    expect(periodSavings('weekly')).toBeNull()
+  })
+})
+
+describe('what a card says happens to the card', () => {
+  it('leads with the trial where there is one, and with the charge where there is not', () => {
+    expect(chargeLine(offerFor('pro', 'monthly')!)).toContain(`${TRIAL_DAYS} days free`)
+    const weekly = chargeLine(offerFor('pro', 'weekly')!)
+    expect(weekly).toContain('today')
+    expect(weekly).not.toContain('free')
+  })
+
+  it('scopes the trial footnote to the period on screen', () => {
+    /**
+     * THE BUG THIS PINS. `TRIAL_NOTE` was printed under the board on every
+     * tab, so the weekly tab promised "your card is authorised when the trial
+     * starts and charged 7 days later" directly beneath a Pro card reading
+     * "Charged $7 today" — the page contradicting itself about when money
+     * moves.
+     */
+    expect(trialNoteFor('monthly')).toBe(TRIAL_NOTE)
+    const weekly = trialNoteFor('weekly')
+    // Weekly Pro has no trial and Elite falls back to monthly, which does — so
+    // the note survives, scoped, rather than being dropped or left absolute.
+    expect(weekly).toContain('plans that include one')
+    expect(weekly).not.toBe(TRIAL_NOTE)
+  })
+
+  it('never tells a free account it has no interviews when it has one', () => {
+    // The card meter and the comparison row ask different questions and are
+    // allowed different words — but both read PLAN_INTERVIEW_CREDITS, so they
+    // can never disagree about a number.
+    expect(creditsLine('free')).toBe('None')
+    expect(interviewsLine('free')).toBe('1 free')
+    expect(interviewsLine('pro')).toBe(creditsLine('pro'))
+    expect(interviewsLine('elite')).toBe(creditsLine('elite'))
   })
 })

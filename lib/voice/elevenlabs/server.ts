@@ -22,6 +22,7 @@
  */
 
 import { getPersona } from '@/lib/personas'
+import { withInterviewBrief } from '@/lib/personas/interview/overlay'
 import { ElevenLabsPersonaCompiler } from './persona'
 import {
   isPcmOutputFormat,
@@ -83,6 +84,13 @@ export interface PersonaOverlay {
   memorySummary?: string
   userName?: string
   /**
+   * The interview brief, appended to the contract (C5).
+   *
+   * Absent on every dating rep, so `withBrief` below is a no-op there and the
+   * compiled prompt is byte-identical to what it was — which A0 pins.
+   */
+  interviewBrief?: string
+  /**
    * The rep's own id, used to roll her authored `moods` deterministically.
    *
    * This route recompiles the contract on EVERY turn — the arm is stateless by
@@ -114,8 +122,10 @@ export async function handleLlmRequest(
   const base = getPersona(typeof body.personaId === 'string' ? body.personaId : '')
   if (!base) return json({ error: 'No such persona.' }, 404)
 
-  const { moodSeed, ...personaOverlay } = overlay
-  const persona = { ...base, ...personaOverlay }
+  const { moodSeed, interviewBrief, ...personaOverlay } = overlay
+  // The interview brief joins the CONTRACT rather than the messages, so it is
+  // inside the cached prefix (C5). A no-op on every dating rep.
+  const persona = withInterviewBrief({ ...base, ...personaOverlay }, { interviewBrief })
 
   const config = resolvePipelineConfig(env())
   const compiled = new ElevenLabsPersonaCompiler(config).compile(
@@ -261,8 +271,11 @@ export async function handleTtsRequest(request: Request): Promise<Response> {
           similarity_boost: settings.similarity_boost,
           speed: settings.speed,
         },
-        // Nothing to optimise a latency setting against on a three-word reply,
-        // and the aggressive levels degrade prosody. Left at the default.
+        // NOT the default — the vendor's default is 'auto'. Chosen because
+        // there is nothing to optimise against on a three-word dating reply
+        // and the aggressive levels degrade prosody. Worth revisiting for
+        // interviews specifically, where acronyms, years and figures are the
+        // normal register rather than the exception.
         apply_text_normalization: 'off',
       }),
       signal: request.signal,

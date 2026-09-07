@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Check, ChevronDown, ChevronUp, Crosshair, Flame, MicOff, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useInterviewers, useLifetimeStats, usePendingUnlock, usePersonaMemory, usePersonas, useScorecard, useSession, useSessionHistory, useTranscript, useUserState } from '@/lib/data'
-import type { Band, JudgementBand, LifetimeStats, MetricBand, Moment, SessionSummary, TranscriptTurn } from '@/lib/data/types'
+import type { Band, JudgementBand, LifetimeStats, MetricBand, Moment, ScorecardAccuracy, SessionSummary, TranscriptTurn } from '@/lib/data/types'
 import { techniqueForSubScore, type Technique } from '@/lib/techniques/library'
 import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
 import { LEVEL_NAMES, nextUnlockProgress, qualifyingByLevel, unlockProgressLabel, type UnlockProgress } from '@/lib/data/progression'
@@ -124,8 +124,16 @@ function ResultScreen({ session }: { session: SessionSummary }) {
    * against itself would make every old rep a personal best.
    */
   const earlier = useMemo(
-    () => history.filter((row) => row.id !== session.id),
-    [history, session.id],
+    // AND ON THE SAME TRACK (INTERVIEW-PLAN B1, §5.12). A personal best is a
+    // comparison, and comparing a twenty-minute interview against a
+    // three-minute dating rep is comparing two different things scored by two
+    // different rubrics — so the loud moment would fire on whichever arm
+    // happened to grade higher rather than on somebody getting better. Every
+    // dating number the constraint protects stays exactly where it was: for a
+    // dating rep this filter selects the rows it selected yesterday, because
+    // every row was a dating row.
+    () => history.filter((row) => row.id !== session.id && row.track === session.track),
+    [history, session.id, session.track],
   )
 
   // R3's doctrine fix. Strictly better than every graded rep before it, and
@@ -492,7 +500,14 @@ function ScorecardScreen({ session }: { session: SessionSummary }) {
   if (loading) return <AppShell title="Scorecard"><div className="scorecard-grid"><Skeleton height={490} /><Skeleton height={490} /></div></AppShell>
   // Grading runs once, after the rep, on a model call that can fail. A rep
   // with no grade says so; it does not draw an empty card that reads as zero.
-  if (!scorecard) return <AppShell title="Scorecard"><EmptyState mark="state-session" title="This rep was not graded" description="Grading runs once after a rep and did not complete for this one. Your rep has been given back — run another and this page will have something to say." action={<div className="empty-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link><Link className="arena-button arena-button--ghost" href={`/session/${session.id}/transcript`}>Read the transcript</Link></div>} /></AppShell>
+  if (!scorecard) return <AppShell title="Scorecard"><EmptyState mark="state-session" title={session.track === 'interview' ? 'This interview was not graded' : 'This rep was not graded'} description={session.track === 'interview'
+    // A CREDIT IS NOT A DAILY REP, and this line was claiming it was. An
+    // interview credit is spent when the scorecard is written and held until
+    // then, so a grade that never completed leaves the hold outstanding rather
+    // than handing anything back — telling somebody their money is returned
+    // when it is not is the one sentence on this screen that can cost trust.
+    ? 'Grading runs once after an interview and did not complete for this one. The transcript is still here, and the credit is not settled against a scorecard that does not exist.'
+    : 'Grading runs once after a rep and did not complete for this one. Your rep has been given back — run another and this page will have something to say.'} action={<div className="empty-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link><Link className="arena-button arena-button--ghost" href={`/session/${session.id}/transcript`}>Read the transcript</Link></div>} /></AppShell>
   /**
    * R16. The word, and it climbs with the number rather than sitting finished
    * above it — `Sloppy → Solid → Sharp` resolving in nine hundred milliseconds
@@ -539,17 +554,30 @@ function ScorecardScreen({ session }: { session: SessionSummary }) {
       people come back for verdicts. The composite still climbs — it is the
       same `useCountUp` and the same `land` chord — it just does it beside the
       verdict rather than over the top of it. */}
-<strong className="verdict display-xl" data-revealing={!composite.done}>{verdict}</strong><span className="composite composite--footnote data">{composite.value}<small>/100</small></span></div><p className="composite-card__context">{personaLevel ? <Mark name={tierMark(personaLevel)} size={15} /> : null}<span>{session.personaName} · Level {levelLabel} · {formatDuration(session.durationMs)} · {outcomeLabel}</span></p></Card>{scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}<section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric, index) => <div key={metric.key} data-reveal={index < rowsShown ? 'shown' : 'pending'}><MetricBandRow metric={metric} /></div>)}{scorecard.judgement ? <div data-reveal={scorecard.metrics.length < rowsShown ? 'shown' : 'pending'}><JudgementRow judgement={scorecard.judgement} /></div> : null}</div></section></div><aside className="scorecard-right"><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} turns={turns} tone="up" /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} turns={turns} tone="down" /><section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card>{/* The mission this rep sets, and the same words Train, the brief
+<strong className="verdict display-xl" data-revealing={!composite.done}>{verdict}</strong><span className="composite composite--footnote data">{composite.value}<small>/100</small></span></div>{/* "Level Interview" is what this said on an interview scorecard — the
+      dating rung has no meaning on a track where all four interviewers are
+      open from the first credit (§5.10), and the tier mark beside it is the
+      roster aperture. Both are dropped rather than relabelled: what is worth
+      knowing after an interview is who, how long, and what happened. */}
+<p className="composite-card__context">{session.track === 'dating' && personaLevel ? <Mark name={tierMark(personaLevel)} size={15} /> : null}<span>{session.personaName}{session.track === 'dating' ? ` · Level ${levelLabel}` : ''} · {formatDuration(session.durationMs)} · {outcomeLabel}</span></p></Card>{scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}{scorecard.accuracy ? <TechnicalAccuracy accuracy={scorecard.accuracy} composure={scorecard.judgement?.subScores.find((entry) => entry.key === 'composure')?.value ?? null} /> : null}<section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric, index) => <div key={metric.key} data-reveal={index < rowsShown ? 'shown' : 'pending'}><MetricBandRow metric={metric} /></div>)}{scorecard.judgement ? <div data-reveal={scorecard.metrics.length < rowsShown ? 'shown' : 'pending'}><JudgementRow judgement={scorecard.judgement} /></div> : null}</div></section></div><aside className="scorecard-right"><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} turns={turns} tone="up" /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} turns={turns} tone="down" /><section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card>{/* The mission this rep sets, and the same words Train, the brief
       and the live screen will show until the weakest dimension moves.
       It is the connective tissue the audit said was missing. */}
-<MissionCard mission={missionFor(scorecard.focus)} kicker="Next rep" /><FocusLinks focus={scorecard.focus} /></section></aside></div><div className="scorecard-actions">{/* THE UPGRADE MOMENT, and the best-placed one in the product. Somebody
+{/* DATING ONLY, AND BOTH HALVES ARE.
+      `MISSIONS` is authored about a stranger in a shop — "open with something
+      about the room you are both standing in, not about her" — and the library
+      cards `FocusLinks` points at are dating techniques. Neither has an
+      interview equivalent written yet, and a mission telling a candidate to
+      ask her about the room is worse than no mission at all. What replaces it
+      on this track is `scorecard.tryNext`, which is already above and is
+      already interview prose (`lib/data/interview-scorecard.ts`). */}
+{session.track === 'dating' ? <><MissionCard mission={missionFor(scorecard.focus)} kicker="Next rep" /><FocusLinks focus={scorecard.focus} /></> : null}</section></aside></div><div className="scorecard-actions">{/* THE UPGRADE MOMENT, and the best-placed one in the product. Somebody
     who has just finished the sign-up rep and wants to go again is the whole
     funnel in one click, so Run it back opens the sheet rather than walking
     them to a brief that will refuse them. Everything else on this screen —
     every metric, both moments, the transcript — is theirs either way. */}
 {user?.voiceLocked && session.track === 'dating'
   ? <Button onClick={() => setPaywall(true)}>Run it back</Button>
-  : <Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>}<Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link><Link className="arena-button arena-button--ghost" href="/roster">Next persona</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div><ReportButton sessionId={session.id} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={session.track === 'dating' ? session.personaId : null} /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet open={explainer} onClose={() => setExplainer(false)} /></AppShell>
+  : <Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>}<Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link><Link className="arena-button arena-button--ghost" href={session.track === 'interview' ? '/interview/interviewers' : '/roster'}>{session.track === 'interview' ? 'Another interviewer' : 'Next persona'}</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div><ReportButton sessionId={session.id} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={session.track === 'dating' ? session.personaId : null} /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet interview={session.track === 'interview'} open={explainer} onClose={() => setExplainer(false)} /></AppShell>
 }
 
 /**
@@ -614,6 +642,56 @@ function JudgementSubRow({ entry }: { entry: { key: string; label: string; value
  * Never gated. Whatever else is behind the paywall, the encouraging half of
  * the scorecard is not.
  */
+/**
+ * THE TWO NUMBERS, AND THE CORRECTIONS (INTERVIEW-TECHNICAL-PLAN §8.5).
+ *
+ * The valuable sentence this product can say is *you handled that well and you
+ * were wrong*, so composure and technical accuracy are shown side by side and
+ * never folded into one verdict. Interview reps only, and only when the round
+ * actually probed — `scorecard.accuracy` is null on every dating rep and on
+ * every behavioural round, and null renders nothing at all rather than a zero.
+ *
+ * **It is not a lesson** (§10.7). One line per answer that was not right: what
+ * they said, and what is true. No tutorial, no links, no encouragement copy.
+ * Nerve is a gym, not a course, and a course is a different product with
+ * different obligations.
+ *
+ * **And nothing here surfaced during the rep** (rule 8, §05). She never said
+ * "that is wrong", never corrected and never hinted. This screen is the first
+ * and only place any of it appears.
+ */
+function TechnicalAccuracy({ accuracy, composure }: { accuracy: ScorecardAccuracy; composure: number | null }) {
+  return (
+    <Card className="accuracy-card">
+      <div className="accuracy-pair">
+        {composure !== null ? (
+          <span>
+            <span className="label">Composure</span>
+            <strong className="data">{composure}<small>/100</small></strong>
+          </span>
+        ) : null}
+        <span>
+          <span className="mark-row"><Mark name="dim-accuracy" size={15} /><span className="label">Technical accuracy</span></span>
+          <strong className="data">{accuracy.score}<small>/100</small></strong>
+        </span>
+      </div>
+      {accuracy.reading ? <p className="accuracy-reading">{accuracy.reading}</p> : null}
+      {accuracy.notes.length > 0 ? (
+        <ul className="accuracy-notes">
+          {accuracy.notes.map((note) => (
+            <li key={note.index} className={`accuracy-note${note.verdict === 'WRONG' ? ' accuracy-note--wrong' : ''}`}>
+              <span className="accuracy-note__verdict">{note.verdict === 'WRONG' ? 'Wrong' : 'Incomplete'}</span>
+              {note.quote ? <p className="accuracy-note__quote">&ldquo;{note.quote}&rdquo;</p> : null}
+              <p className="accuracy-note__correction">{note.correction}</p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Card>
+  )
+}
+
+
 function WhatWorked({ line }: { line: string }) {
   return <Card className="went-well"><Check size={18} strokeWidth={1.6} className="volt" /><div><span className="label">What worked</span><p>{line}</p></div></Card>
 }

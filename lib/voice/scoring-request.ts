@@ -1,16 +1,29 @@
 /** Transport bounds and provider usage for the two independent scorers.
  * The prompts, rubric and models remain owned by their existing modules. */
-import type { TranscriptTurn } from './types'
+import type { TranscriptTurn, TurnMark } from './types'
 import { priceChatUsage } from './rates'
 
 export const SCORING_LIMITS = {
   jsonBytes: 128 * 1024,
-  gradeTurns: 160,
+  gradeTurns: 220,
   gradeTurnCharacters: 4_000,
-  gradeCharacters: 32_000,
-  // Validation headroom for the eight-minute diagnostic rep. The product's
-  // three-minute timer remains in rep-rules; this is not a format change.
-  sessionSeconds: 600,
+  gradeCharacters: 60_000,
+  /**
+   * Validation headroom for the LONGEST round the product sells.
+   *
+   * It was 600 — the eight-minute diagnostic rep plus headroom — and a deep
+   * technical is 1,500 seconds. Any turn past ten minutes failed this check,
+   * `parseGradeTranscript` returned null, and `/api/grade` answered 400: a
+   * twenty-five-minute interview would have been ungradeable, silently, on the
+   * round this plan exists to make worth buying. `gradeTurns` and
+   * `gradeCharacters` moved with it for the same reason.
+   *
+   * These are TRANSPORT bounds and nothing else. The product's three-minute
+   * dating timer is `rep-rules.ts`'s and the round lengths are
+   * `interview-credits.ts`'s; widening a validation ceiling is not a format
+   * change on either arm.
+   */
+  sessionSeconds: 1_800,
   gradeOutputTokens: 1_200,
   warmthOutputTokens: 160,
   gradeTimeoutMs: 45_000,
@@ -72,7 +85,15 @@ export function parseGradeTranscript(raw: unknown): TranscriptTurn[] | null {
     if (typeof t.t_start !== 'number' || typeof t.t_end !== 'number'
       || !Number.isFinite(t.t_start) || !Number.isFinite(t.t_end)
       || t.t_start < 0 || t.t_end < t.t_start || t.t_end > SCORING_LIMITS.sessionSeconds) return null
-    turns.push({ speaker: t.speaker, text: t.text, t_start: t.t_start, t_end: t.t_end })
+    // The probe mark, when the caller sent one (§8.1). Validated against the
+    // union rather than passed through, for the same reason `speaker` is: it
+    // decides which pairs the accuracy pass reads, and an unrecognised value
+    // would quietly widen that set.
+    const kind = t.kind === 'probe' || t.kind === 'brief' ? (t.kind as TurnMark) : null
+    turns.push({
+      speaker: t.speaker, text: t.text, t_start: t.t_start, t_end: t.t_end,
+      ...(kind ? { kind } : {}),
+    })
   }
   return turns
 }

@@ -78,7 +78,7 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
               })}
             </nav>
             <div className="rail-bottom">
-              {loading ? <Skeleton height={32} /> : user ? <RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} locked={user.voiceLocked} /> : null}
+              {loading ? <Skeleton height={32} /> : user ? <RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} locked={user.voiceLocked} track={track} credits={user.interviewCredits} /> : null}
               <Link className="account-row" href="/profile">
                 <Avatar name={user?.displayName ?? 'N'} size={32} />
                 <span style={{ minWidth: 0 }}><strong style={{ display: 'block', color: 'var(--text)', fontWeight: 500 }}>{user?.displayName ?? 'Account'}</strong><span className="label">{user?.plan ?? 'free'} plan</span></span>
@@ -139,8 +139,25 @@ export function useResetCountdown(resetAt: string | null | undefined): string {
   return remaining
 }
 
-export function RepsRemaining({ count, resetAt, locked = false }: { count: number; resetAt: string; locked?: boolean }) {
+export function RepsRemaining({ count, resetAt, locked = false, track = 'dating', credits = 0 }: { count: number; resetAt: string; locked?: boolean; track?: Track; credits?: number }) {
   const remaining = useResetCountdown(resetAt)
+  /**
+   * TWO METERS, AND THE PILL HAS TO KNOW WHICH ONE IT IS ON.
+   *
+   * A rep is a daily rate that comes back at midnight; an interview credit is a
+   * balance that does not (§5.3). Showing "9 reps left" to somebody on the
+   * interview track is the pill lying on every screen — the same objection this
+   * component already makes about a countdown on a plan with no voice, which is
+   * why there are three states rather than two.
+   *
+   * A credit is never "locked" and never "resets", so neither branch below
+   * applies to it.
+   */
+  if (track === 'interview') {
+    return credits > 0
+      ? <span className="reps-pill"><strong>{credits}</strong> credit{credits === 1 ? '' : 's'}</span>
+      : <Link className="reps-pill reps-pill--locked" href="/interview">No credits</Link>
+  }
   if (locked) {
     return <Link className="reps-pill reps-pill--locked" href="/profile/subscription">Voice on Pro</Link>
   }

@@ -66,6 +66,14 @@ export function isOnboardingRoute(path: string): boolean {
 export interface BillingContext {
   checkoutOpen: boolean
   /**
+   * Whether the three interview packs can be bought right now.
+   *
+   * Separate from `checkoutOpen` on purpose: a deployment missing one
+   * `WHOP_PACK_*` should hide the interview buy buttons and keep selling
+   * subscriptions, rather than taking the subscription page down with it.
+   */
+  packsOpen: boolean
+  /**
    * True when a purchase here is theatre — a non-live key, on any runtime.
    *
    * The screen has to say so out loud. This deployment is on a public domain,
@@ -76,7 +84,18 @@ export interface BillingContext {
 }
 
 export function isBillingRoute(path: string): boolean {
-  return path === '/profile/subscription'
+  /**
+   * `/interview` is here for the same reason `/profile/subscription` is: it
+   * draws buy buttons, and whether a checkout can actually be opened is an
+   * environment-level fact only the server knows (`packsConfigured()`). A
+   * client component cannot read it, and a buy button that opens a checkout
+   * naming a missing environment variable is the worst of the three outcomes —
+   * worse than one that admits it is not ready, and much worse than a working
+   * one. Rule 15's corollary makes this concrete rather than theoretical: a
+   * Vercel variable added after a build started is not in that build, so there
+   * is always a window where the ids exist and the deployment cannot see them.
+   */
+  return path === '/profile/subscription' || path === '/interview'
 }
 
 /**
@@ -118,7 +137,9 @@ export function RouteView({ path, query = {}, auth, onboarding, billing }: { pat
     if (!sessionViews.has(view as SessionView)) return <NotFound />
     return <SessionScreen sessionId={sessionId} view={view as SessionView} />
   }
-  if (path === '/interview' || path === '/interview/setup/role' || path === '/interview/setup/cv' || path === '/interview/setup/questions' || path === '/interview/interviewers') return <InterviewScreen route={path as InterviewRoute} />
+  if (path === '/interview' || path === '/interview/setup/role' || path === '/interview/setup/cv' || path === '/interview/setup/questions' || path === '/interview/interviewers') {
+    return <InterviewScreen route={path as InterviewRoute} packsOpen={billing?.packsOpen ?? false} />
+  }
   if (authRoutes.has(path as AuthRoute)) {
     return <AuthScreen route={path as AuthRoute} query={query} recoverySession={auth?.recoverySession ?? false} devLoginEmail={auth?.devLoginEmail ?? null} />
   }

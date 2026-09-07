@@ -89,6 +89,10 @@ export async function recentScoresAtLevel(userId: string, level: number, limit =
         .from('sessions')
         .select('id, persona_slug, started_at')
         .eq('user_id', userId)
+        // Adaptive difficulty is per level, and a level is a rung on the dating
+        // ladder. An interview rep scoring 90 must not ease the character above
+        // Robin (§08, and INTERVIEW-PLAN §5.10 — interview difficulty is chosen).
+        .eq('track', 'dating')
         .not('ended_at', 'is', null)
         .order('started_at', { ascending: false })
         .limit(40),

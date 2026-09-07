@@ -61,9 +61,32 @@ import { jules } from './jules'
 import { erin } from './erin'
 import { sam } from './sam'
 import { alex } from './alex'
+import { INTERVIEWERS } from './interview'
 
 /** The shipped roster. Seeded, listed, and reachable by a rep. */
 export const PERSONAS: Record<string, Persona> = {
+  [tess.slug]: tess,
+  [nadia.slug]: nadia,
+  [maya.slug]: maya,
+  [robin.slug]: robin,
+  // ── THE INTERVIEW TRACK (INTERVIEW-PLAN B8) ──────────────────────────
+  //
+  // Four interviewers, `track: 'interview'`, in `lib/personas/interview/`.
+  // Merged here rather than kept in a second registry because `getPersona` is
+  // what the token route, the turn pipeline and the live page all resolve
+  // against: an interviewer that is not in this object is an interviewer no
+  // rep can be started against.
+  //
+  // **Nothing about the four above moved.** Every read that must stay
+  // dating-only filters on `track` at the query — `fetchPersonas`,
+  // `fetchRepRecords`, `syncLevel`, `recentScoresAtLevel` — and
+  // `levelTrajectory` already filtered before these existed, so the four
+  // dating difficulty curves are untouched by there being a second rung 1.
+  ...INTERVIEWERS,
+}
+
+/** The dating roster alone, in ladder order. What `/roster` is about. */
+export const DATING_PERSONAS: Record<string, Persona> = {
   [tess.slug]: tess,
   [nadia.slug]: nadia,
   [maya.slug]: maya,
@@ -109,3 +132,4 @@ export function getPersonaEverAuthored(slug: string): Persona | null {
 export const PERSONA_SLUGS: readonly string[] = Object.keys(PERSONAS)
 
 export { tess, nadia, maya, robin, priya, jules, erin, sam, alex }
+export { INTERVIEWERS, INTERVIEWER_SLUGS } from './interview'

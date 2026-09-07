@@ -45,6 +45,43 @@ export function voiceBudgetPolicy(env: Record<string, string | undefined> = proc
   }
 }
 
+/**
+ * The envelope an INTERVIEW runs inside (INTERVIEW-PLAN A1, A5, §6).
+ *
+ * Its own policy rather than a scaled `voiceBudgetPolicy`, for the same reason
+ * the interview has its own `voice_session_open_interview`: the dating numbers
+ * are tuned and shipped, and a shared function with a multiplier on it is a
+ * shared function somebody will retune.
+ *
+ * The budget is §6's measured p90 with a reconnect on top — $0.45–0.60 for
+ * twenty minutes, bounded at $0.90 — and the resources are its components
+ * scaled by the round rather than by a guess: ~22 exchanges of ~170 characters,
+ * a transcript growing sevenfold, and a grading pass over all of it.
+ *
+ * `budget_usd <= 1` is a CHECK on the table, so this can never exceed it.
+ */
+export function interviewBudgetPolicy(durationMs: number): VoiceBudgetPolicy {
+  const minutes = Math.max(5, Math.min(25, durationMs / 60_000))
+  // 2.8c/minute measured, doubled for p90 plus a reconnect, floored so a
+  // five-minute screener still has room for its grading pass.
+  const budgetUsd = Math.min(0.9, Math.max(0.2, Number((minutes * 0.056 + 0.06).toFixed(3))))
+  return {
+    budgetUsd,
+    gradeReserveUsd: Math.min(0.05, budgetUsd / 4),
+    // The round, plus connection and the wind-down's grace. The SQL refuses
+    // anything outside 300-1800, which is the same statement in the other place.
+    liveSeconds: Math.round(Math.min(1800, Math.max(300, durationMs / 1000 + 120))),
+    gradeSeconds: 900,
+    resources: {
+      llmInputTokens: 900_000, llmOutputTokens: 24_000,
+      warmthInputTokens: 300_000, warmthOutputTokens: 12_000,
+      // A transcript seven times longer, graded once.
+      gradeInputTokens: 120_000, gradeOutputTokens: 4_000,
+      ttsCharacters: 12_000, sttAudioMs: 3_600_000,
+    },
+  }
+}
+
 export interface VoiceRefusal {
   ok: false
   status: number
@@ -141,11 +178,52 @@ export async function openVoiceSession(input: {
   } catch { return UNAVAILABLE }
 }
 
+/**
+ * The same thing for an interview, against the function that does not touch the
+ * daily rep counter.
+ *
+ * **`openVoiceSession` is not reached by this path and is not modified.** A
+ * dating rep opens exactly the way it opened yesterday; the only thing the two
+ * share is the refusal vocabulary, which is a translation table rather than a
+ * decision.
+ */
+export async function openInterviewVoiceSession(input: {
+  userId: string
+  personaSlug: string
+  provider: string
+  model: string
+  context: PersonaContext
+  durationMs: number
+}): Promise<OpenVoiceSessionResult> {
+  if (halted()) return refusal({ reason: 'halted' })
+  const policy = interviewBudgetPolicy(input.durationMs)
+  try {
+    const { data, error } = await supabaseAdmin().rpc('voice_session_open_interview', {
+      p_user_id: input.userId, p_persona_slug: input.personaSlug,
+      p_provider: input.provider, p_model: input.model,
+      p_context: { ...input.context }, p_budget_usd: policy.budgetUsd,
+      p_grade_reserve_usd: policy.gradeReserveUsd,
+      p_live_seconds: policy.liveSeconds, p_grade_seconds: policy.gradeSeconds,
+      p_resource_limits: { ...policy.resources },
+    })
+    const row = object(data)
+    if (error || !row) return UNAVAILABLE
+    if (!row.ok) return refusal(row)
+    if (typeof row.session_id !== 'string' || typeof row.expires_at !== 'string') return UNAVAILABLE
+    return {
+      ok: true, sessionId: row.session_id, expiresAt: row.expires_at,
+      context: personaContextFrom(row.context), resumed: row.resumed === true,
+      budgetUsd: typeof row.budget_usd === 'number' ? row.budget_usd : policy.budgetUsd,
+    }
+  } catch { return UNAVAILABLE }
+}
+
 function personaContextFrom(value: Json | undefined): PersonaContext {
   const raw = object(value ?? null)
   return {
     ...(typeof raw?.memorySummary === 'string' ? { memorySummary: raw.memorySummary } : {}),
     ...(typeof raw?.userName === 'string' ? { userName: raw.userName } : {}),
+    ...(typeof raw?.interviewBrief === 'string' ? { interviewBrief: raw.interviewBrief } : {}),
   }
 }
 

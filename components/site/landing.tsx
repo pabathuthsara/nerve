@@ -23,7 +23,7 @@ import { SiteSection, SITE_LINKS } from './site-chrome'
 import { PRESENTATION } from '@/lib/personas/presentation'
 import { PERSONA_VISUAL } from '@/lib/personas/visual'
 import { LEVEL_NAMES } from '@/lib/data/progression'
-import { PUBLIC_PLANS, TRIAL_DAYS, repsLine } from '@/lib/site/plans'
+import { PUBLIC_PLANS, SCREENER_NOTE, TRIAL_DAYS, repsLine } from '@/lib/site/plans'
 import type { CSSProperties } from 'react'
 
 /** The shipped roster, in rung order, with the tier name the app uses. */
@@ -110,7 +110,7 @@ const FAQ = [
   },
   {
     q: 'Will this work if dating is not the point for me?',
-    a: 'Dating is the sharpest wedge and it is where the roster starts, but the skill underneath — starting a conversation, reading whether it is welcome, leaving well — is the same one interviews and hard conversations at work need. Those tracks run on the same engine and are not open yet.',
+    a: 'Dating is the sharpest wedge and it is where the roster starts, but the skill underneath — starting a conversation, reading whether it is welcome, leaving well — is the same one interviews and hard conversations at work need. The interview track is open: four interviewers, your own CV and job description, and a graded round. Every account gets one free five-minute screen to try it.',
   },
   {
     q: 'Can I use this to get better at pressuring someone?',
@@ -125,6 +125,7 @@ export function Landing() {
       <ScoringLaw />
       <Loop />
       <Roster />
+      <InterviewTrack />
       <TextMode />
       <NotThis />
       <PricingTeaser />
@@ -332,6 +333,75 @@ function Roster() {
         A tier opens when you score 70 or better in two reps at the tier below it.
         Not when you win two — winning is not a thing you can grind, and it is not
         the thing being measured.
+      </p>
+    </SiteSection>
+  )
+}
+
+/**
+ * The interview track (INTERVIEW-PLAN E2, §9).
+ *
+ * ── WHY THIS IS NOT A FOOTNOTE ───────────────────────────────────────────
+ *
+ * `PAYMENTS-APPROVAL.md` §3: every merchant of record on the shortlist bans
+ * dating products by name, and a human reviewer opens `/` during onboarding.
+ * This account has already been declined once, by Creem, on 1 September.
+ * Interview rehearsal sits inside `public_speaking_coaching` — the category
+ * the Whop account is registered under — without any strain, so a landing page
+ * that leads with conversation practice and carries interview rehearsal beside
+ * it is describing itself accurately *and* in its own registered category.
+ *
+ * ── AND WHY THE DATING HALF IS UNTOUCHED ─────────────────────────────────
+ *
+ * §9 is explicit that the dividend does not license overstating it. The dating
+ * track is still the majority of the product, the hero is still three minutes
+ * with a stranger, and D13's "your first character walks you through it"
+ * sentence is load-bearing and was argued for once already. This section is
+ * added; nothing above it moved.
+ */
+function InterviewTrack() {
+  return (
+    <SiteSection
+      kicker="The second track"
+      title={<>The same engine,<br />pointed at an interview.</>}
+      lede="An interviewer who has read your CV and the job description, asks what you actually know rather than only what you did, and comes back with a graded scorecard. Ten to twenty-five minutes, four interviewers, five round types — and the same rule as everywhere else: you are scored on how you handled it, never on whether you got the job."
+    >
+      <ul className="not-grid">
+        <li>
+          <Mark name="dim-listening" size={22} />
+          <div>
+            <strong>It has read your CV</strong>
+            <p>
+              Upload it once and the questions are about your work. Skip it and the
+              round still runs on the role, the field and the job description.
+            </p>
+          </div>
+        </li>
+        <li>
+          <Mark name="dim-signal" size={22} />
+          <div>
+            <strong>It asks what you know</strong>
+            <p>
+              A technical round mines a project for the fundamental underneath it. A
+              system design round does not touch your CV at all.
+            </p>
+          </div>
+        </li>
+        <li>
+          <Mark name="dim-accuracy" size={22} />
+          <div>
+            <strong>Seven scored dimensions</strong>
+            <p>
+              Structure, specificity, listening, composure, signal reading, the
+              questions you asked back — and technical accuracy, which abstains
+              rather than guess.
+            </p>
+          </div>
+        </li>
+      </ul>
+      <p className="site-aside">
+        {SCREENER_NOTE} After that, interviews are bought by the interview rather than
+        by the month — see <Link href={SITE_LINKS.pricing} className="volt-link">pricing</Link>.
       </p>
     </SiteSection>
   )

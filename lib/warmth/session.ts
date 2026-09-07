@@ -17,14 +17,13 @@ import type { SlowScorer, SlowScoreRequest } from './slow'
 import { NEGATIVE_TURN_THRESHOLD, slowScoreTriggers, type SlowTriggerReason } from './triggers'
 import { DEFAULT_REPLY_SHAPE, type ReplyShape, type TurnKind } from './timing'
 import { isOpenQuestion } from './fast'
-import {
-  DISCLOSURE_WORDS,
-  mayAskFor,
-  mayStaySilentFor,
-  mirrorCapFor,
-  type UserTurnShape,
-} from './reciprocity'
-import { composeSteering } from './steering'
+import { DISCLOSURE_WORDS, type UserTurnShape } from './reciprocity'
+import type { SteeringContext } from './steering'
+// B2's seam. One selector, reading `persona.track`, with dating as the default
+// branch that reaches exactly the code it reached yesterday. Nothing in
+// `bands.ts`, `reciprocity.ts` or `steering.ts` is opened to make this work.
+import { judgementFor } from './track'
+import type { InterviewTurnKind } from './interview/bands'
 
 /**
  * Re-send an unchanged direction at least this often.
@@ -37,7 +36,14 @@ export const STEER_HEARTBEAT_TURNS = 4
 
 /** Recent agent turns considered when rationing her questions (§4e). */
 const QUESTION_WINDOW = 5
-/** At most this share of that window may end in a question. */
+/**
+ * At most this share of that window may end in a question.
+ *
+ * The DATING number, and it is where it has always been. The interview arm
+ * carries its own on `TrackJudgement.maxQuestionShare`, because an interviewer
+ * asks a question on nearly every turn and this quota gags her on four turns in
+ * five — see the note there.
+ */
 const MAX_QUESTION_SHARE = 0.4
 
 export interface WarmthSessionOptions {
@@ -50,6 +56,21 @@ export interface WarmthSessionOptions {
   trajectory: Trajectory | (() => Trajectory)
   /** Null disables slow scoring entirely — the fast layer still runs. */
   scorer?: SlowScorer | null
+  /**
+   * What her FIRST turn is, when it is not a reply (§6.7).
+   *
+   * **Absent on every dating rep, and absent on four of the five interview
+   * rounds.** Set to `'brief'` only when a `system_design` round opens on an
+   * authored design problem, which is the one turn in this product that is
+   * longer than a band allows: the statement is forty to seventy words and
+   * every interview band tops out at thirty-four.
+   *
+   * It is read on the FIRST agent turn and never again, so a round that has
+   * already started behaves exactly as it does today. Undefined reaches
+   * `mirrorCapFor` as a third argument it does not declare and therefore
+   * ignores — the dating ceiling is byte-identical arithmetic.
+   */
+  openingTurnKind?: InterviewTurnKind
   /** Seconds since the session connected. */
   nowSeconds: () => number
   /** Monotonic milliseconds, for async latency. */
@@ -114,6 +135,16 @@ export class WarmthSession {
   private lastUserShape: UserTurnShape | null = null
   /** She said nothing last turn, so she may not do it twice running. */
   private silentLastTurn = false
+  /**
+   * Her turns since she last said nothing at all.
+   *
+   * Starts at infinity rather than zero: at the beginning of a rep she has
+   * never done it, and reading that as "too soon" would suppress the first one
+   * for the first four turns of every interview.
+   */
+  private turnsSinceSilence = Number.POSITIVE_INFINITY
+  /** His last turn actually contained a question mark. See `askedDirectly`. */
+  private lastUserAskedDirectly = false
 
   constructor(options: WarmthSessionOptions) {
     this.options = options
@@ -142,10 +173,11 @@ export class WarmthSession {
     // Composed from all four layers, and read LIVE — the persona reference is
     // whatever the tuning store currently holds, so a slider moved mid-rep
     // changes her very next reply (§3).
-    const line = composeSteering({
+    const line = this.judgement.steer({
       persona: this.persona,
       warmth: this.engine.warmth,
       suppressQuestion: this.questionQuotaSpent(),
+      ...this.openingBriefFlag,
       // The other two axes reach her as a posture, never as numbers — the same
       // rule warmth has always followed. Silent when the three agree.
       posture: this.engine.posture,
@@ -178,13 +210,14 @@ export class WarmthSession {
    */
   directiveIfChanged(): string | null {
     if (this.consumeClosingHandover()) return null
-    const next = composeSteering({
+    const next = this.judgement.steer({
       persona: this.persona,
       warmth: this.engine.warmth,
       suppressQuestion: this.questionQuotaSpent(),
       posture: this.engine.posture,
       repairOpen: this.engine.repairOpen,
       his: this.lastUserShape,
+      ...this.openingBriefFlag,
     })
     this.turnsSinceSteer += 1
     // Hers if she has one. See `Persona.steerHeartbeatTurns` — a wider band
@@ -223,7 +256,7 @@ export class WarmthSession {
     if (this.consumeClosingHandover()) return ''
     const fresh = this.directiveIfChanged()
     if (fresh !== null) return fresh
-    return composeSteering({
+    return this.judgement.steer({
       persona: this.persona,
       warmth: this.engine.warmth,
       suppressQuestion: this.questionQuotaSpent(),
@@ -231,6 +264,7 @@ export class WarmthSession {
       repairOpen: this.engine.repairOpen,
       his: this.lastUserShape,
       includeStanding: false,
+      ...this.openingBriefFlag,
     })
   }
 
@@ -260,6 +294,17 @@ export class WarmthSession {
   }
 
   /** The persona as it stands right now, not as it stood at connect. */
+  /**
+   * Which track's judgement this rep runs under.
+   *
+   * Read LIVE off the persona for the same reason the persona itself is: the
+   * dev panel can swap the character mid-session, and a cached selector would
+   * keep steering the previous one. It is one property lookup.
+   */
+  private get judgement() {
+    return judgementFor(this.persona)
+  }
+
   private get persona(): Persona {
     return typeof this.options.persona === 'function'
       ? this.options.persona()
@@ -277,11 +322,16 @@ export class WarmthSession {
     // is the round-6 failure this file already documents. `mayAskFor` refuses
     // turn one, refuses below ENGAGED, refuses after a dead end, and refuses
     // when he has offered nothing to ask about — see `./reciprocity.ts`.
-    if (!mayAskFor(this.engine.warmth, this.lastUserShape)) return true
+    if (!this.judgement.mayAsk(this.engine.warmth, this.lastUserShape)) return true
+    // The share is the track's. Dating keeps §4e's 0.4; an interviewer has no
+    // quota at all, because asking is the job and a rationed interviewer is a
+    // form. `MAX_QUESTION_SHARE` is the default and is unchanged.
+    const share = this.judgement.maxQuestionShare ?? MAX_QUESTION_SHARE
+    if (share >= 1) return false
     const recent = this.agentTurns.slice(-QUESTION_WINDOW)
     if (recent.length < QUESTION_WINDOW) return false
     const asked = recent.filter((turn) => turn.text.trim().endsWith('?')).length
-    return asked / recent.length >= MAX_QUESTION_SHARE
+    return asked / recent.length >= share
   }
 
   get steeringItemsSent(): number {
@@ -307,7 +357,24 @@ export class WarmthSession {
    * earned it — "Mhm." buys two words, not nine. See `mirrorCapFor`.
    */
   get replyWordCap(): number {
-    return mirrorCapFor(this.engine.warmth, this.lastUserShape)
+    return this.judgement.wordCap(this.engine.warmth, this.lastUserShape, this.openingTurnKind)
+  }
+
+  /**
+   * The kind of turn she is about to take, when it is not a reply.
+   *
+   * Her first one only, and only when the caller said so. Everything after it —
+   * and every turn of every dating rep — is `undefined`, which is the argument
+   * `mirrorCapFor` never sees.
+   */
+  private get openingTurnKind(): InterviewTurnKind | undefined {
+    if (this.agentTurns.length > 0) return undefined
+    return this.options.openingTurnKind
+  }
+
+  /** The same fact, in the shape the steering context wants it. */
+  private get openingBriefFlag(): { openingBrief?: true } {
+    return this.openingTurnKind === 'brief' ? { openingBrief: true } : {}
   }
 
   /**
@@ -323,14 +390,28 @@ export class WarmthSession {
     // that decision is the moment the whole product is built around. A grunt at
     // 2:30 must not be able to swallow it.
     if (this.closingHandover) return false
-    return mayStaySilentFor(this.engine.warmth, this.lastUserShape, {
+    return this.judgement.maySayNothing(this.engine.warmth, this.lastUserShape, {
       silentLastTurn: this.silentLastTurn,
+      // How long since she last did it. The dating arm does not read this —
+      // its silence is a cold-band withdrawal and "never twice running" is the
+      // whole spacing rule there. An interviewer's pause is a technique, and a
+      // technique used every other turn is a tic.
+      turnsSinceSilence: this.turnsSinceSilence,
+      // The stricter reading of "he asked me something". `UserTurnShape` is
+      // Tier 0 and stays byte-identical; this is carried beside it, and only
+      // the interview arm reads it. See the option's own note.
+      askedDirectly: this.lastUserAskedDirectly,
+      // An interviewer who greets a candidate with silence is not applying
+      // pressure, she is broken. The dating arm never reads this — `deadEnd`
+      // cannot be true on an opening turn, which already covers it there.
+      opening: this.userTurnCount === 0,
     })
   }
 
   /** The adapter reports back what it did, so silence cannot repeat. */
   noteSilence(silent: boolean): void {
     this.silentLastTurn = silent
+    this.turnsSinceSilence = silent ? 0 : this.turnsSinceSilence + 1
   }
 
   onAgentTurn(turn: TranscriptTurn): void {
@@ -377,6 +458,10 @@ export class WarmthSession {
       disclosed: score.wordCount >= DISCLOSURE_WORDS,
       deadEnd: score.deadEnd,
     }
+    // Recorded BESIDE the shape rather than in it: `UserTurnShape` is Tier 0
+    // and every dating gate reads it exactly as it always has. This is the
+    // stricter question test the interview arm needs, and nothing else reads it.
+    this.lastUserAskedDirectly = turn.text.includes('?')
 
     // Evidence-driven, with a count-based floor underneath (§2a).
     const triggers = slowScoreTriggers({

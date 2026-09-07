@@ -15,7 +15,11 @@ import { ARM_THRESHOLD, KEEP_THRESHOLD } from '@/lib/data/rep-rules'
 import { nadia } from '@/lib/personas/nadia'
 import { tess } from '@/lib/personas/tess'
 import { alex } from '@/lib/personas/alex'
-import { PERSONAS } from '@/lib/personas'
+// `DATING_PERSONAS`, not `PERSONAS`: `levelTrajectory` builds its map off the
+// dating roster alone (it always has), so a ladder assertion against the whole
+// registry would be asserting against four interviewers who share those rungs
+// and are deliberately not on this ladder. See `lib/personas/interview/`.
+import { DATING_PERSONAS } from '@/lib/personas'
 import type { Personality, Trajectory } from '@/lib/voice/types'
 import { scoreFast, isOpenQuestion, referencesAgent } from './fast'
 import { classifyOverreach, clampSlowScore } from './slow'
@@ -584,7 +588,7 @@ describe('level config', () => {
     // ladder, and each has to read back exactly what its character was authored
     // with. Nadia is rung 2 since Tess took the bottom, and this is the
     // assertion that says the renumber renumbered the curves with her.
-    for (const persona of Object.values(PERSONAS)) {
+    for (const persona of Object.values(DATING_PERSONAS)) {
       expect(levelTrajectory(persona.level)).toEqual(persona.trajectory)
     }
     expect(levelTrajectory(1)).toEqual(tess.trajectory)
@@ -597,7 +601,7 @@ describe('level config', () => {
     // nearest authored rung is used. Nothing routes a user here — it exists so a
     // stored level from an older session, or an interview rung, still resolves
     // to something real.
-    const authored = Object.values(PERSONAS).map((persona) => persona.trajectory)
+    const authored = Object.values(DATING_PERSONAS).map((persona) => persona.trajectory)
     for (const level of [5, 6, 7, 8]) {
       expect(authored).toContainEqual(levelTrajectory(level))
     }
@@ -608,7 +612,7 @@ describe('level config', () => {
     // every clamp in this engine and the tests below still drive her directly.
     // What must NOT happen is her curve leaking back onto a rung a user can be
     // routed to, which is what would silently reintroduce an unwinnable level.
-    expect(Object.values(PERSONAS)).not.toContain(alex)
+    expect(Object.values(DATING_PERSONAS)).not.toContain(alex)
     for (const level of [1, 2, 3, 4, 5, 6, 7, 8]) {
       expect(levelTrajectory(level)).not.toEqual(L8)
     }
@@ -762,9 +766,7 @@ describe('the retuned trajectory', () => {
 
   /** The roster, by rung, so a ladder check uses the real characters. */
   const RUNG = Object.fromEntries(
-    Object.values(PERSONAS)
-      .filter((persona) => persona.track === 'dating')
-      .map((persona) => [persona.level, persona]),
+    Object.values(DATING_PERSONAS).map((persona) => [persona.level, persona]),
   ) as Record<number, (typeof nadia)>
 
   const rungPersonality = (level: number) => RUNG[level]?.personality
@@ -792,7 +794,7 @@ describe('the retuned trajectory', () => {
     // The shipped rungs, and only those. An unheld rung resolves to a
     // neighbour's curve, so including 3 or 5-8 here would assert against a
     // duplicate rather than against a character anybody can be matched with.
-    const SHIPPED = Object.values(PERSONAS).map((persona) => persona.level).sort((a, b) => a - b)
+    const SHIPPED = Object.values(DATING_PERSONAS).map((persona) => persona.level).sort((a, b) => a - b)
     const armedRungs = (turns: number) =>
       SHIPPED.filter((level) =>
         play(levelTrajectory(level), GOOD, turns, her, level, rungPersonality(level))

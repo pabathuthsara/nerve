@@ -342,6 +342,154 @@ export const GYM: SceneAcoustics = {
  *
  * A scene was always meant to be a config row (§1c). These are those rows.
  */
+/* ------------------------------------------------------------------ *
+ * The interview track's four rooms.
+ *
+ * ADDED, NEVER EDITED. Not one number above this line moves: rule 19 makes
+ * `lib/audio/` Tier 0, and what that protects is the acoustics of the nine
+ * rooms nine tuned characters stand in. Four new rows beside them change none
+ * of it, and the alternative — an interviewer whose `reverbIr` resolves to
+ * null — is a character with no room at all, which is precisely the defect
+ * PERSONA-AUDIT §3.6 records and B8 refuses to repeat.
+ *
+ * All four are quieter and deader than anything on the dating side, and that
+ * is the point rather than an accident of taste: an interview room is a place
+ * built to have nothing in it, and the silence is doing work. There is nowhere
+ * to look and nothing to comment on, so a pause is only ever about the two
+ * people in it.
+ * ------------------------------------------------------------------ */
+
+/**
+ * MEETING ROOM — glass, carpet, and a corridor outside (Dan, rung 1).
+ *
+ * The first room anybody meets on this track. Slightly alive rather than dead:
+ * a glass wall carries a corridor through it, and the point of rung 1 is that
+ * a nervous person is not sitting in a soundproof box.
+ */
+export const MEETING_ROOM: SceneAcoustics = {
+  id: 'meeting-room',
+  label: 'Glass-walled meeting room, mid-morning',
+  ambient: {
+    layers: [
+      { kind: 'hvac-hum', levelDb: 0, lowCutHz: 40, highCutHz: 240 },
+      // A corridor through glass. Voices with no words in them.
+      { kind: 'crowd-wash', levelDb: -12, lowCutHz: 200, highCutHz: 1600 },
+    ],
+    oneShots: [
+      { kind: 'distant-door', weight: 3, levelDb: 8 },
+      { kind: 'chair-scrape', weight: 2, levelDb: 6 },
+      { kind: 'page-turn', weight: 2, levelDb: 10 },
+    ],
+    oneShotIntervalSeconds: [25, 55],
+    masterDb: -44,
+  },
+  reverb: {
+    // Carpet and one hard wall. Short, with a little glass on the top end.
+    rt60Seconds: 0.38,
+    preDelayMs: 10,
+    earlyReflectionRatio: 0.8,
+    dampingHz: 7500,
+    wetMix: 0.08,
+  },
+}
+
+/**
+ * PANEL ROOM — a booked room with a call open in it (Aisha, rung 2).
+ *
+ * The only room on either roster with a second acoustic in it: a laptop
+ * speaker carrying two people who are not speaking. It is the reason a panel
+ * feels different from a one-to-one even when only one person is asking.
+ */
+export const PANEL_ROOM: SceneAcoustics = {
+  id: 'panel-room',
+  label: 'Booked room with the panel dialled in, early afternoon',
+  ambient: {
+    layers: [
+      { kind: 'hvac-hum', levelDb: 0, lowCutHz: 40, highCutHz: 220 },
+      // The call, open and silent. Band-limited to a laptop speaker.
+      { kind: 'room-rumble', levelDb: -14, lowCutHz: 300, highCutHz: 3200 },
+    ],
+    oneShots: [
+      { kind: 'page-turn', weight: 3, levelDb: 11 },
+      { kind: 'chair-scrape', weight: 2, levelDb: 7 },
+      { kind: 'distant-door', weight: 1, levelDb: 6 },
+    ],
+    oneShotIntervalSeconds: [22, 48],
+    masterDb: -42,
+  },
+  reverb: {
+    rt60Seconds: 0.42,
+    preDelayMs: 9,
+    earlyReflectionRatio: 0.78,
+    dampingHz: 7000,
+    wetMix: 0.1,
+  },
+}
+
+/**
+ * OFFICE BOOTH — small, upholstered, and on the office floor (Marcus, rung 3).
+ *
+ * The deadest room in the product. A booth is built to keep sound out and it
+ * keeps it in as well, so there is nothing to hide behind and no room tone to
+ * fill a pause. That is the acoustic of being asked "and then what?".
+ */
+export const OFFICE_BOOTH: SceneAcoustics = {
+  id: 'office-booth',
+  label: 'Booth on the office floor, late afternoon',
+  ambient: {
+    layers: [
+      { kind: 'hvac-hum', levelDb: 0, lowCutHz: 40, highCutHz: 180 },
+      { kind: 'crowd-wash', levelDb: -16, lowCutHz: 250, highCutHz: 1400 },
+    ],
+    oneShots: [
+      { kind: 'distant-door', weight: 2, levelDb: 5 },
+      { kind: 'chair-scrape', weight: 2, levelDb: 5 },
+    ],
+    oneShotIntervalSeconds: [18, 40],
+    masterDb: -38,
+  },
+  reverb: {
+    // Foam on every surface. Almost anechoic, which is unnerving and correct.
+    rt60Seconds: 0.22,
+    preDelayMs: 6,
+    earlyReflectionRatio: 0.9,
+    dampingHz: 5500,
+    wetMix: 0.05,
+  },
+}
+
+/**
+ * EXECUTIVE OFFICE — large, hard, and nearly silent (Elena, rung 4).
+ *
+ * The longest tail on either roster, and the quietest bed. A big room with
+ * glass and no soft furnishing rings slightly, and everything a nervous person
+ * says into it comes back at them. Rung 4 is about reading somebody who tells
+ * you nothing, and the room tells you nothing either.
+ */
+export const EXECUTIVE_OFFICE: SceneAcoustics = {
+  id: 'executive-office',
+  label: 'Corner office, end of the day',
+  ambient: {
+    layers: [
+      { kind: 'hvac-hum', levelDb: 0, lowCutHz: 40, highCutHz: 200 },
+      { kind: 'traffic-through-glass', levelDb: -8, lowCutHz: 60, highCutHz: 600 },
+    ],
+    oneShots: [
+      { kind: 'distant-door', weight: 2, levelDb: 4 },
+      { kind: 'page-turn', weight: 1, levelDb: 8 },
+    ],
+    oneShotIntervalSeconds: [26, 60],
+    masterDb: -46,
+  },
+  reverb: {
+    rt60Seconds: 0.62,
+    preDelayMs: 16,
+    earlyReflectionRatio: 0.6,
+    dampingHz: 9000,
+    wetMix: 0.11,
+  },
+}
+
 export const SCENES: Record<string, SceneAcoustics> = {
   [BOOKSHOP.id]: BOOKSHOP,
   [BAR.id]: BAR,
@@ -352,6 +500,11 @@ export const SCENES: Record<string, SceneAcoustics> = {
   [HOUSE_PARTY.id]: HOUSE_PARTY,
   [TRAIN_PLATFORM.id]: TRAIN_PLATFORM,
   [GYM.id]: GYM,
+  // The interview track. Additive; nothing above this line moved.
+  [MEETING_ROOM.id]: MEETING_ROOM,
+  [PANEL_ROOM.id]: PANEL_ROOM,
+  [OFFICE_BOOTH.id]: OFFICE_BOOTH,
+  [EXECUTIVE_OFFICE.id]: EXECUTIVE_OFFICE,
 }
 
 export function sceneFor(id: string): SceneAcoustics | null {

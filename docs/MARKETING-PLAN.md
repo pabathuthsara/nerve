@@ -173,6 +173,34 @@ customers, not at a thousand.
 > closed union with a test that walks it), `/pricing` going three columns to
 > four, and `db:billing` + `db:spend` coverage. A day, not an afternoon.
 
+### 4.4a · There is now a $9 door, and it is not a plan — **7 September**
+
+`INTERVIEW-PLAN.md` D3 shipped: **one interview for $9**, five for $29, twelve
+for $59, bought outright and never expiring. It answers most of §4.4 without
+paying any of §4.4's price.
+
+**None of the blast radius above applies**, and that is the point. A pack is a
+balance rather than an entitlement, so there is no fourth `Plan` value, no
+migration, no CHECK constraint, no new mark glyph and no fourth column on
+`/pricing` — the packs sit in their own section under the plan board. What §4.4
+was actually asking for is an impulse-priced first purchase, and $9 for a graded
+twenty-minute interview is one.
+
+**And the acquisition angle is different from the subscription's**, which is
+worth more than the price point. A subscription is bought on intent to practise
+for months; a $9 interview is bought by somebody who has one on Thursday. That
+is a search-shaped, urgency-shaped buyer, and it is reachable by content the
+dating angle cannot reach — which §4.7 and §2's channel mix should both be
+re-read against.
+
+**The free five-minute screener is the top of that funnel.** Every account is
+granted one at sign-up, so the demo is the product rather than a video of it,
+and nobody is asked for $9 before hearing an interviewer. It costs about 14¢.
+
+Nothing here changes the subscription ladder. Pro stays $19 and Elite $49, and
+both now include interview credits (1 and 4 a month) rather than a price change
+— which is the cheapest possible way to make the paid tiers worth more.
+
 ### 4.5 · Nothing on the funnel is instrumented
 
 Six events are needed to run this plan: landing view, signup, onboarding rep

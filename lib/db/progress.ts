@@ -432,7 +432,21 @@ export async function syncLevel(userId: string): Promise<void> {
   const [{ data: personas }, { data: sessions }, { data: scores }, { data: profile }] =
     await Promise.all([
       admin.from('personas').select('slug, level'),
-      admin.from('sessions').select('id, persona_slug').eq('user_id', userId).not('ended_at', 'is', null),
+      // **THE TRACK FILTER** (INTERVIEW-PLAN §8, B1).
+      //
+      // Without it, the day the first interviewer is seeded at level 2 and
+      // somebody scores 70+ against them: a DATING tier unlocks, `recordUnlocks`
+      // fires its once-ever celebration, `rankFor` reads the same counts so the
+      // rank rail moves, and `profiles.current_level` drags `unlockedTier` and
+      // the field tier with it. That is the precise failure rule 19 exists to
+      // prevent, and nobody would have chosen it — it is what happens by
+      // default.
+      //
+      // A provable no-op on the day it landed, because every session row in the
+      // database was a dating session and the column defaults to 'dating'. The
+      // proof evaporates the moment an interview session exists, which is why
+      // it landed before the first interviewer was seeded.
+      admin.from('sessions').select('id, persona_slug').eq('user_id', userId).eq('track', 'dating').not('ended_at', 'is', null),
       admin.from('scores').select('session_id, composite').eq('user_id', userId),
       admin.from('profiles').select('current_level, rank').eq('id', userId).maybeSingle(),
     ])

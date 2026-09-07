@@ -912,8 +912,19 @@ function ReadyStep({ firstRep, name }: { firstRep: FirstRepCandidate | null; nam
   )
 }
 
-export function RuleBlock({ interview }: { interview: boolean }) {
-  const rows = interview ? [['Time', '8:00'], ['Goal', 'Get a callback'], ['It ends', "When they've heard enough"]] : [['Time', '3:00'], ['Goal', 'Get her number'], ['She leaves', 'When time runs out']]
+/**
+ * The three facts about the format, on the brief.
+ *
+ * The interview row used to read `Time 8:00` — a number no round has had since
+ * length became a property of the round (§5.7), which runs from five minutes to
+ * twenty-five — and `It ends: When they've heard enough`, which is not how it
+ * ends. It ends on the clock, like everything else here, and saying otherwise
+ * makes a candidate answer as though they can be dismissed early.
+ */
+export function RuleBlock({ interview, minutes }: { interview: boolean; minutes?: number }) {
+  const rows = interview
+    ? [['Time', `${minutes ?? 20}:00`], ['Goal', 'Answer well enough to be called back'], ['It ends', 'When time runs out']]
+    : [['Time', '3:00'], ['Goal', 'Get her number'], ['She leaves', 'When time runs out']]
   return <div className="rule-block">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
 }
 

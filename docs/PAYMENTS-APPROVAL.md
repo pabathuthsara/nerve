@@ -157,12 +157,12 @@ site as an application document, not marketing.
 |---|---|---|
 | A real product, described plainly | `/` | **Ready.** Landing page with a recorded rep, the scoring law, the loop, the roster, text mode, and what the product is not |
 | How it works, in detail | `/how-it-works` | **Ready.** The rep anatomy, the 60/40 split, the memory rule, the field tiers and the ranks |
-| Public, unambiguous pricing | `/pricing` | **Ready**, but see D2 below — the page quotes the built plans, not §14's |
+| Public, unambiguous pricing | `/pricing` | **Ready**, but see D2 below — the page quotes the built plans, not §14's. **Widened and rebuilt 7 September**: it now also carries the three interview credit packs ($9 / $29 / $59), the per-interview rate on each, and both credit expiry rules — bought credits never expire, plan-included ones do not roll over. **The board is a period control** rather than a list of every price, so a reviewer sees one price per plan and one sentence saying what the card is charged and when; the trial footnote is scoped to the period on screen, which removed a contradiction where a static "charged 7 days later" sat under a weekly card reading "charged today" (`VISUAL-AUDIT.md` V19) |
 | Terms of service | `/legal/terms` | **Written** 27 Aug, clause 02 updated 28 Aug. Eleven clauses, Sri Lankan governing law. A solicitor's pass is still owed (B4) |
 | Privacy policy | `/legal/privacy` | **Written** 27 Aug, updated 28 Aug. Nine clauses plus a summary grid; names Supabase and OpenAI as processors, including OpenAI's classifier and what the safety record does and does not hold |
 | Acceptable use / safety | `/legal/safety` | **Written** 27 Aug, rewritten 28 Aug. Seven clauses. The PG-13 position stated in full, and every control on it now described in the present tense because it exists |
 | Automated content moderation | Both conversation streams | **Built** 28 Aug (B3). Decline in frame, then the rep ends; content involving minors ends it on sight with no in-character answer. Every decision recorded to `safety_events` |
-| Refund and cancellation terms | Terms clause 07 | **Ready.** Renews monthly, cancelling stops the next renewal, fourteen days to ask for a refund |
+| Refund and cancellation terms | Terms clause 07, and `/legal/refunds` clause 04 | **Ready.** Renews monthly, cancelling stops the next renewal, fourteen days to ask for a refund. **Extended 7 September** to cover interview credits: what a credit is, when it is spent (at the scorecard, not at the start), the two expiry rules, that a refunded pack loses only its *unused* credits, and that credits have no cash value. Both documents say it in the same words, from the same string, and `npm run legal:pdf` was re-run |
 | An age statement | Terms clause 02, every footer, and `/signup` | **Enforced** 28 Aug, and made the first step of sign-up 30 Aug. A date of birth before any other field, checked on the server before the account is created. **Strengthened 30 Aug:** Google sign-in is no longer offered — it was on both doors and the provider was never configured — so there is now exactly one way to create an account and it collects the date first. `/onboarding/age` stays for accounts that predate the gate, and still works if §04 reopens OAuth |
 | A way for a user to report a problem | Every rep's result, scorecard and transcript screen | **Built** 28 Aug (B3). Goes to `safety_events` with the session attached |
 | A working support address | `support@hellonerve.com` | **Fixed in the tree, 30 Aug; not yet deployed.** Was `support@nerve.training`, a domain with no DNS at all — no A record, no MX — so every message to the address in the footer, in Settings and in all three legal pages bounced. Now a real mailbox on the domain the product runs on, with a catch-all behind it. `SUPPORT_EMAIL` in `components/site/site-chrome.tsx` is the single record; `profile-screens.tsx` had spelled it out instead, which is how three of the four copies went stale together. **Ships with §5.3** |
@@ -170,6 +170,52 @@ site as an application document, not marketing.
 | A company to pay | — | **Open.** We trade as "Nerve". The entity that signs and the bank account that receives payout have not been recorded anywhere in this repo |
 | The site actually serving all of this | `hellonerve.com` | **Live and public, 30 Aug.** Deployment protection is off, so a reviewer reaches it without a Vercel login; all six §11 routes return 200; `robots.txt` and `sitemap.xml` resolve against the real origin. **But it serves the last commit, not the working tree** — see the note at the top and §5.4 |
 | A recorded demo that is not a mock | `/` | **Ready, 30 Aug.** The hero manifest is committed and deployed, and the stamp on the live page names the models that actually spoke |
+
+### 4.0 Check the industry classification before you submit, and again after
+
+**It has now reverted three times, to three different values, and only one of
+them was from an account write.** `health_and_wellness / mental_health_app` on
+4 September from a `PATCH` that set only an image;
+`ai_and_automation_software / ai_chatbot_software` on 7 September from a
+`PATCH /products` that rewrote the storefront description; and
+`industry_specific_software / other_general` twenty minutes after that, from
+nothing at all. Whop re-derives it from product content, asynchronously.
+
+It is `personal_development / public_speaking_coaching` and it has to be that
+when a reviewer looks: it is the first field they read, it is what makes the
+product's own pages consistent with its registration (§4.1), and
+`mental_health_app` contradicts terms clause 08 in as many words.
+
+`npm run whop:verify` asserts it and is the only thing that has ever caught a
+revert. **Run it immediately before submitting, and again if anything about a
+product changes** — the API key cannot repair it (404 on `/accounts`), so fixing
+it needs the Whop MCP or the dashboard, which is minutes rather than seconds.
+
+### 4.1 The interview track is the strongest thing on this page, 7 September
+
+**This is the compliance dividend `INTERVIEW-PLAN.md` §9 predicted, and it has
+now arrived on the public surface.** §3 of this document is blunt: every
+merchant of record on the shortlist bans dating products by name, a human
+reviewer opens `/` during onboarding, and this account has already been declined
+once — by Creem, on 1 September.
+
+The Whop account is registered as
+`software / personal_development / public_speaking_coaching`. **Interview
+rehearsal sits inside that category without any strain at all**, and as of
+7 September the landing page carries a section describing it — an interviewer
+who has read your CV, seven scored dimensions, one free five-minute screen per
+account — and `/pricing` sells it. A reviewer opening either page now reads a
+product that matches its own registered classification in the first screenful of
+the second section.
+
+**It does not license overstating it, and the pages do not.** The dating track
+is still the majority of the product, the hero is still three minutes with a
+stranger, and the landing page's dating half was not rewritten — one section was
+added and one FAQ answer corrected because it had become false ("those tracks
+are not open yet"). Rule 12 still governs every word: "interview practice",
+never "get hired", and `lib/site/plans.test.ts` asserts that no pack's copy
+contains `get hired`, `guarantee`, or any of the six words a payment reviewer
+bans by name.
 
 ## 5. Before we submit
 

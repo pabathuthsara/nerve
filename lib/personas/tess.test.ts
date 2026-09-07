@@ -25,7 +25,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { PERSONAS, RETIRED_PERSONAS } from './index'
+import { DATING_PERSONAS, RETIRED_PERSONAS } from './index'
 import { tess } from './tess'
 import { nadia } from './nadia'
 import { compileInstructions, moodFor } from '@/lib/voice/openai/persona'
@@ -36,7 +36,12 @@ import { ARM_THRESHOLD } from '@/lib/data/rep-rules'
 import { seededRandom } from '@/lib/voice/seed'
 import type { Persona } from '@/lib/voice/types'
 
-const EVERYONE: Persona[] = [...Object.values(PERSONAS), ...Object.values(RETIRED_PERSONAS)]
+// Every DATING character ever authored, shipped or retired. The craft rules
+// below are the dating arm's — a mood that never mentions "him", a roster with
+// no per-character escape hatches — and an interviewer is neither: her mood may
+// mention a colleague, and every interviewer carries an authored `disposition`
+// and her own `verbosityMedian` on purpose. See `interview/roster.test.ts`.
+const EVERYONE: Persona[] = [...Object.values(DATING_PERSONAS), ...Object.values(RETIRED_PERSONAS)]
 
 /**
  * Every craft rule in Nadia's contract, verbatim.

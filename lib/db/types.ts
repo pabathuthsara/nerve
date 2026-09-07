@@ -235,8 +235,103 @@ export type Database = {
           },
         ]
       }
+      interview_credit_entries: {
+        Row: {
+          amount: number
+          created_at: string
+          expires_at: string | null
+          id: string
+          kind: string
+          metadata: Json
+          reference: string | null
+          session_id: string | null
+          source: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          kind: string
+          metadata?: Json
+          reference?: string | null
+          session_id?: string | null
+          source: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          kind?: string
+          metadata?: Json
+          reference?: string | null
+          session_id?: string | null
+          source?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_credit_entries_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      interview_credit_holds: {
+        Row: {
+          created_at: string
+          expires_at: string
+          round: string
+          session_id: string
+          settled_at: string | null
+          source: string
+          state: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          round: string
+          session_id: string
+          settled_at?: string | null
+          source: string
+          state?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          round?: string
+          session_id?: string
+          settled_at?: string | null
+          source?: string
+          state?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_credit_holds_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       interview_setups: {
         Row: {
+          difficulty: number | null
+          captions_enabled: boolean
+          cv_error: string | null
+          cv_text: string | null
+          cv_text_chars: number | null
+          field: string | null
+          round_type: string | null
           company: string | null
           created_at: string
           custom_questions: string[]
@@ -250,6 +345,13 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          difficulty?: number | null
+          captions_enabled?: boolean
+          cv_error?: string | null
+          cv_text?: string | null
+          cv_text_chars?: number | null
+          field?: string | null
+          round_type?: string | null
           company?: string | null
           created_at?: string
           custom_questions?: string[]
@@ -263,6 +365,13 @@ export type Database = {
           user_id: string
         }
         Update: {
+          difficulty?: number | null
+          captions_enabled?: boolean
+          cv_error?: string | null
+          cv_text?: string | null
+          cv_text_chars?: number | null
+          field?: string | null
+          round_type?: string | null
           company?: string | null
           created_at?: string
           custom_questions?: string[]
@@ -534,6 +643,8 @@ export type Database = {
       }
       scores: {
         Row: {
+          accuracy: Json | null
+          technical_accuracy: number | null
           close: number | null
           composite: number
           composure: number | null
@@ -555,6 +666,8 @@ export type Database = {
           went_well: string | null
         }
         Insert: {
+          accuracy?: Json | null
+          technical_accuracy?: number | null
           close?: number | null
           composite: number
           composure?: number | null
@@ -576,6 +689,8 @@ export type Database = {
           went_well?: string | null
         }
         Update: {
+          accuracy?: Json | null
+          technical_accuracy?: number | null
           close?: number | null
           composite?: number
           composure?: number | null
@@ -608,6 +723,7 @@ export type Database = {
       }
       sessions: {
         Row: {
+          track: string
           pipeline_telemetry: Json | null
           audio_expires_at: string | null
           audio_path: string | null
@@ -633,6 +749,7 @@ export type Database = {
           won: boolean | null
         }
         Insert: {
+          track?: string
           pipeline_telemetry?: Json | null
           audio_expires_at?: string | null
           audio_path?: string | null
@@ -658,6 +775,7 @@ export type Database = {
           won?: boolean | null
         }
         Update: {
+          track?: string
           pipeline_telemetry?: Json | null
           audio_expires_at?: string | null
           audio_path?: string | null
@@ -1155,6 +1273,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      voice_daily_cap_cents: {
+        Args: { p_user_id: string }
+        Returns: number
+      }
+      voice_session_open_interview: {
+        Args: {
+          p_budget_usd: number
+          p_context: Json
+          p_grade_reserve_usd: number
+          p_grade_seconds: number
+          p_live_seconds: number
+          p_model: string
+          p_persona_slug: string
+          p_provider: string
+          p_resource_limits: Json
+          p_user_id: string
+        }
+        Returns: Json
+      }
       voice_session_open: {
         Args: {
           p_user_id: string; p_persona_slug: string; p_provider: string; p_model: string;
@@ -1202,6 +1339,14 @@ export type Database = {
         Returns: number
       }
       export_my_data: { Args: never; Returns: Json }
+      interview_credit_balance: {
+        Args: { p_user_id: string }
+        Returns: {
+          held: number
+          remaining: number
+          source: string
+        }[]
+      }
       spend_allowance: {
         Args: {
           p_bucket: string

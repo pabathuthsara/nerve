@@ -24,7 +24,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/db/types'
 import { toBillingEvent } from '@/lib/billing/events'
-import { hasVoice, planById } from '@/lib/site/plans'
+import { INTERVIEW_PACKS, PLAN_INTERVIEW_CREDITS, hasVoice, packById, planById } from '@/lib/site/plans'
 
 let failures = 0
 
@@ -44,6 +44,18 @@ const ELITE_PLAN = 'plan_verify_elite'
  * left on free. This is the id that proves the second row of `planMap` works.
  */
 const PRO_WEEKLY_PLAN = 'plan_verify_pro_weekly'
+/**
+ * The one-time plans behind the three interview packs (INTERVIEW-PLAN D3).
+ *
+ * A pack resolves to a BALANCE and never to a plan, which is the thing this
+ * harness has to prove: the same `refund.created` that revokes a subscription
+ * must take credits back and leave a Pro subscriber on Pro.
+ */
+const PACK_PLANS: Record<string, string> = {
+  single: 'plan_verify_pack_single',
+  pack5: 'plan_verify_pack_5',
+  pack12: 'plan_verify_pack_12',
+}
 const ACCOUNT = 'biz_verify'
 
 async function main(): Promise<void> {
@@ -63,6 +75,9 @@ async function main(): Promise<void> {
   process.env['WHOP_PLAN_PRO'] = PRO_PLAN
   process.env['WHOP_PLAN_PRO_WEEKLY'] = PRO_WEEKLY_PLAN
   process.env['WHOP_PLAN_ELITE'] = ELITE_PLAN
+  process.env['WHOP_PACK_SINGLE'] = PACK_PLANS['single']!
+  process.env['WHOP_PACK_FIVE'] = PACK_PLANS['pack5']!
+  process.env['WHOP_PACK_TWELVE'] = PACK_PLANS['pack12']!
 
   // Imported after the environment is set: `configuredPlanMap` reads it.
   const { applyBillingEvent } = await import('@/lib/billing/apply')
@@ -93,6 +108,14 @@ async function main(): Promise<void> {
       periodEnd?: string | null
       status?: string
       cancelAtPeriodEnd?: boolean
+      /**
+       * The `pay_` this event carries.
+       *
+       * Distinct per charge, because that is the idempotency key every
+       * interview credit is written against (`credit-rules.ts`): one payment is
+       * one period is one grant, and a replay of the same id must add nothing.
+       */
+      payment?: string
     } = {},
   ) => {
     const membership = {
@@ -108,7 +131,7 @@ async function main(): Promise<void> {
       manage_url: 'https://whop.com/orders/mem_verify_1',
     }
     const payment = {
-      id: 'pay_verify_1',
+      id: options.payment ?? 'pay_verify_1',
       status: 'succeeded',
       metadata: { user_id: userId },
       membership: { id: membership.id, status: options.status ?? 'active' },
@@ -154,6 +177,30 @@ async function main(): Promise<void> {
   const mirrorNow = async () => {
     const { data } = await admin.from('subscriptions').select('*').eq('user_id', userId).maybeSingle()
     return data
+  }
+
+  /** The live balance per source, read through the same RPC the app reads. */
+  const creditsNow = async (): Promise<Record<string, number>> => {
+    const { data } = await admin.rpc('interview_credit_balance', { p_user_id: userId })
+    const rows = (Array.isArray(data) ? data : []) as { source: string; remaining: number }[]
+    const out: Record<string, number> = { grant: 0, purchase: 0, screener: 0 }
+    for (const row of rows) out[row.source] = row.remaining ?? 0
+    return out
+  }
+
+  const tracksNow = async (): Promise<string[]> => {
+    const { data } = await admin.from('profiles').select('unlocked_tracks').eq('id', userId).maybeSingle()
+    return data?.unlocked_tracks ?? []
+  }
+
+  /** Every ledger row for this account, newest first. */
+  const ledgerNow = async () => {
+    const { data } = await admin
+      .from('interview_credit_entries')
+      .select('kind, source, amount, expires_at, reference')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+    return data ?? []
   }
 
   try {
@@ -327,6 +374,144 @@ async function main(): Promise<void> {
     // paid plan to have a period worth filling, and the checks below assert on
     // a revoked one — a harness step that quietly changes the state its
     // successors read is how a suite starts failing for reasons nobody wrote.
+    await deliver('membership.deactivated', { status: 'expired' })
+    check((await planNow()) === 'free', 'and the account is put back on free for what follows')
+
+    /* ================================================================== *
+     * INTERVIEW CREDITS (INTERVIEW-PLAN D3, D4, D5, E1)
+     *
+     * A pack is a BALANCE and a subscription is an ENTITLEMENT, and the whole
+     * point of this block is that the two never touch each other. The most
+     * expensive thing it asserts is a single sentence from §5.5 — "a user who
+     * cancels keeps every credit they paid for and loses only the ones this
+     * month's subscription was handing them" — because that is the sentence
+     * the terms are written on and the one a disputing customer will quote.
+     * ================================================================== */
+
+    console.log('\nwhat a brand-new account starts with (D5, E1)')
+    // The free five-minute screener, granted by `handle_new_user` at sign-up,
+    // and the interview track opened by the trigger that fires off it. Both
+    // are asserted here rather than assumed, because both are database rules
+    // with no application code to read: if the migration is ever reverted,
+    // this is the only thing that would notice.
+    const opening = await creditsNow()
+    check(opening['screener'] === 1, `it holds one free screener (${opening['screener']})`)
+    check(opening['purchase'] === 0 && opening['grant'] === 0, 'and nothing it has not been given')
+    check((await tracksNow()).includes('interview'), 'and the interview track is open on it')
+
+    console.log('\na pack purchase')
+    const packFive = packById('pack5')!
+    const bought = await deliver('payment.succeeded', { plan: PACK_PLANS['pack5'], payment: 'pay_pack_a' })
+    check(bought.ok, 'the purchase applies')
+    check((await creditsNow())['purchase'] === packFive.credits,
+      `it credits the ${packFive.credits} interviews the pack sells`)
+    // A pack is not a subscription. Nothing about the plan may have moved.
+    check((await planNow()) === 'free', 'and it moves NO plan — a pack is a balance, not an entitlement')
+    const purchaseRow = (await ledgerNow()).find((row) => row.kind === 'purchase')
+    check(purchaseRow?.expires_at === null, 'purchased credits carry no expiry, which the CHECK also enforces (§5.5)')
+
+    console.log('\nthe same purchase delivered again')
+    // Whop redelivers an unacknowledged event twelve times over seventy-one
+    // hours. Eleven of those must be worth nothing.
+    await deliver('payment.succeeded', { plan: PACK_PLANS['pack5'], payment: 'pay_pack_a' })
+    check((await creditsNow())['purchase'] === packFive.credits, 'the replay credits nothing more')
+
+    console.log('\na second pack, genuinely bought')
+    const single = packById('single')!
+    await deliver('payment.succeeded', { plan: PACK_PLANS['single'], payment: 'pay_pack_b' })
+    check((await creditsNow())['purchase'] === packFive.credits + single.credits,
+      'a different payment is a different purchase, and it credits again')
+
+    console.log('\na subscription grant (D4)')
+    // The trial's activation first, so there is a period end to expire against
+    // — and so that this asserts the thing that would have double-granted.
+    await deliver('membership.activated', { status: 'trialing', periodEnd: '2099-03-01T00:00:00.000Z' })
+    check((await creditsNow())['grant'] === 0,
+      'membership.activated grants NOTHING — the trial\'s $0 payment is what grants (D2)')
+    await deliver('payment.succeeded', { payment: 'pay_period_1', periodEnd: '2099-03-01T00:00:00.000Z' })
+    check((await creditsNow())['grant'] === PLAN_INTERVIEW_CREDITS.pro,
+      `the payment grants Pro's ${PLAN_INTERVIEW_CREDITS.pro} interview credit`)
+    const grantRow = (await ledgerNow()).find((row) => row.kind === 'grant')
+    check(String(grantRow?.expires_at ?? '').startsWith('2099-03-01'),
+      'and it expires at the end of the period that handed it out (§5.5)')
+
+    console.log('\nthe same period delivered again')
+    await deliver('payment.succeeded', { payment: 'pay_period_1', periodEnd: '2099-03-01T00:00:00.000Z' })
+    check((await creditsNow())['grant'] === PLAN_INTERVIEW_CREDITS.pro, 'a replayed renewal grants nothing more')
+
+    console.log('\nthe next month')
+    await deliver('payment.succeeded', { payment: 'pay_period_2', periodEnd: '2099-04-01T00:00:00.000Z' })
+    check((await creditsNow())['grant'] === PLAN_INTERVIEW_CREDITS.pro * 2, 'a new period is a new credit')
+
+    console.log('\nthe subscription lapsing — THE SENTENCE THE TERMS ARE QUOTED ON (§5.5)')
+    const beforeLapse = await creditsNow()
+    await deliver('membership.deactivated', { status: 'expired' })
+    const afterLapse = await creditsNow()
+    check((await planNow()) === 'free', 'the account lands on free')
+    check(afterLapse['grant'] === 0, `every unspent GRANTED credit is voided (${beforeLapse['grant']} → ${afterLapse['grant']})`)
+    check(afterLapse['purchase'] === beforeLapse['purchase'],
+      `and every PURCHASED credit is untouched (${afterLapse['purchase']})`)
+    check(afterLapse['screener'] === beforeLapse['screener'], 'as is the free screener')
+    const voidRow = (await ledgerNow()).find((row) => row.kind === 'expiry')
+    check(voidRow?.source === 'grant', 'the void names the grant source and no other')
+
+    console.log('\ntwo live grant lots, then a lapse — the resurrection bug')
+    /**
+     * A void has to write ONE ROW PER LOT, and this is why.
+     *
+     * An upgrade mid-period leaves two live grant lots with different expiries.
+     * A single void row of -2 carrying the SOONER expiry balances to zero today
+     * and then falls out with its lot, leaving the later grant alone and the
+     * voided credits alive again. Carrying the LATER expiry is worse: the
+     * balance goes negative when the earlier lot drops.
+     *
+     * Driven here rather than argued, because it only shows up across a date
+     * boundary that a unit test would have to fake and this table would not.
+     */
+    const soon = new Date(Date.now() + 2 * 86_400_000).toISOString()
+    const later = new Date(Date.now() + 40 * 86_400_000).toISOString()
+    await admin.from('interview_credit_entries').insert([
+      { user_id: userId, kind: 'grant', source: 'grant', amount: 1, expires_at: soon, reference: `verify:lot:a:${stamp}` },
+      { user_id: userId, kind: 'grant', source: 'grant', amount: 1, expires_at: later, reference: `verify:lot:b:${stamp}` },
+    ])
+    check((await creditsNow())['grant'] === 2, 'two grant lots are live at once')
+    await deliver('membership.deactivated', { status: 'expired' })
+    check((await creditsNow())['grant'] === 0, 'the lapse voids both')
+    const voids = (await ledgerNow()).filter((row) => row.kind === 'expiry' && row.amount === -1)
+    // Compared as instants, not as strings: Postgres hands `timestamptz` back
+    // as `+00:00` where this harness wrote `Z`, and the two are the same moment.
+    const expiries = new Set(voids.map((row) => Date.parse(String(row.expires_at))))
+    check(expiries.has(Date.parse(soon)) && expiries.has(Date.parse(later)),
+      `and it wrote one void per lot, each carrying its own lot expiry (${voids.length} rows)`)
+
+    console.log('\na refund of a pack')
+    // The ordering bug this whole branch exists for: `refund.created` maps to
+    // `revoke`, so a Pro subscriber refunding a $9 pack would have had their
+    // SUBSCRIPTION cancelled by a refund of something else entirely.
+    await deliver('payment.succeeded', { payment: 'pay_period_3', periodEnd: '2099-05-01T00:00:00.000Z' })
+    check((await planNow()) === 'pro', 'the account is back on pro')
+    const beforeRefund = await creditsNow()
+    await deliver('refund.created', { plan: PACK_PLANS['single'], payment: 'pay_pack_b' })
+    check((await planNow()) === 'pro', 'refunding a PACK does not cancel the subscription')
+    check((await creditsNow())['purchase'] === (beforeRefund['purchase'] ?? 0) - single.credits,
+      'and it takes back exactly what that pack sold')
+
+    console.log('\na chargeback on a pack bigger than what is left')
+    // Somebody buys five, uses four, then disputes. The clawback is clamped to
+    // what remains: a ledger that went negative would silently make their next
+    // purchase pay off a debt instead of buying interviews.
+    const spendable = (await creditsNow())['purchase'] ?? 0
+    await admin.from('interview_credit_entries').insert({
+      user_id: userId, kind: 'spend', source: 'purchase', amount: -spendable + 1,
+      reference: `verify:spend:${stamp}`,
+    })
+    check((await creditsNow())['purchase'] === 1, 'one purchased credit is left')
+    await deliver('dispute.created', { plan: PACK_PLANS['pack5'], payment: 'pay_pack_a' })
+    check((await creditsNow())['purchase'] === 0, 'the chargeback takes the last one')
+    const negative = (await ledgerNow()).reduce((sum, row) => sum + row.amount, 0)
+    check(negative >= 0, `and the balance never goes below zero (${negative})`)
+
+    // Put the account back on free for the rule-9 checks that follow.
     await deliver('membership.deactivated', { status: 'expired' })
     check((await planNow()) === 'free', 'and the account is put back on free for what follows')
 

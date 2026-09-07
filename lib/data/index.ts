@@ -8,9 +8,12 @@
  * Supabase rather than from a timer. The screens did not have to change for
  * this, which was the point of building them against a seam.
  *
- * One thing is still mock, deliberately rather than by omission: the
- * interview track is M4, there are no interviewer characters written yet, and
- * a seeded row would be a character nobody authored.
+ * **Nothing here is mock any more.** The interview hooks were the last two, and
+ * they were mock deliberately rather than by omission: there were no
+ * interviewer characters written, and a seeded row would have been a character
+ * nobody authored. Four are authored now (`lib/personas/interview/`) and
+ * `interview_setups` is read and written for real, so `lib/data/mock/` is gone
+ * rather than left beside the thing that replaced it.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -18,7 +21,6 @@ import { useRouter } from 'next/navigation'
 import { sessionStatus } from './session'
 import { assignToday } from '@/app/field/actions'
 import type { Milestone } from '@/lib/field/milestones'
-import { interviewers, interviewSetup } from './mock/interview'
 import {
   fetchBaseline,
   fetchFieldLog,
@@ -34,6 +36,9 @@ import {
   fetchLibrary,
   fetchLibraryCard,
   fetchLibraryReads,
+  fetchInterviewProgress,
+  fetchInterviewSetup,
+  fetchInterviewers,
   fetchPersonas,
   fetchRepRecords,
   fetchScorecard,
@@ -47,6 +52,7 @@ import {
   fetchWeeklyReviews,
 } from './queries'
 import type { RepRecord } from './records'
+import { interviewProgress, type InterviewProgress } from './interview-progress'
 import type {
   LibraryCard,
   ProgressPoint,
@@ -146,15 +152,6 @@ function useAsync<T>(load: () => Promise<T>, fallback: T, deps: unknown[], optio
   return { ...state, reload: useCallback(() => setNonce((value) => value + 1), []) }
 }
 
-function useMock<T>(value: T, delay = 280): Loadable<T> {
-  const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    const timer = window.setTimeout(() => setLoading(false), delay)
-    return () => window.clearTimeout(timer)
-  }, [delay])
-  return { data: value, loading, reload: () => undefined }
-}
-
 const NO_PERSONAS: Persona[] = []
 /** Stable empty arrays: a fresh literal each render restarts every effect. */
 const NO_CARDS: LibraryCard[] = []
@@ -166,6 +163,8 @@ const NO_SESSIONS: SessionSummary[] = []
 const NO_TURNS: TranscriptTurn[] = []
 const NO_PROGRESS: PersonaProgress[] = []
 const NO_WAITLIST: string[] = []
+/** The empty run. Stable, for the same reason every array here is. */
+const EMPTY_INTERVIEW_PROGRESS: InterviewProgress = interviewProgress([])
 const NO_LOG: FieldLogEntry[] = []
 
 export function usePersonas(): Loadable<Persona[]> {
@@ -377,5 +376,9 @@ export function usePendingMilestone(): Loadable<Milestone | null> {
 }
 
 /* --- still mock, and labelled as such ------------------------------------ */
-export function useInterviewers(): Loadable<Interviewer[]> { return useMock(interviewers, 310) }
-export function useInterviewSetup(): Loadable<InterviewSetup | null> { return useMock(interviewSetup, 260) }
+const NO_INTERVIEWERS: Interviewer[] = []
+export function useInterviewers(): Loadable<Interviewer[]> { return useAsync(fetchInterviewers, NO_INTERVIEWERS, []) }
+export function useInterviewSetup(): Loadable<InterviewSetup | null> { return useAsync(fetchInterviewSetup, null, []) }
+export function useInterviewProgress(): Loadable<InterviewProgress> {
+  return useAsync(fetchInterviewProgress, EMPTY_INTERVIEW_PROGRESS, [])
+}

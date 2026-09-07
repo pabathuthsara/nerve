@@ -12,6 +12,7 @@
 import { VoiceEmitter } from '../emitter'
 import { priceUsageSample, summarizeUsage } from '../rates'
 import { sortTurns } from '../transcript'
+import { mintRefusal } from '../refusal'
 import type { VoiceProvider } from '../provider'
 import {
   mayInterrupt,
@@ -326,14 +327,10 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     } catch (cause) {
       throw new VoiceError('token_mint_failed', PROVIDER, 'Could not reach the token endpoint.', { cause })
     }
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '')
-      throw new VoiceError(
-        'token_mint_failed',
-        PROVIDER,
-        `Token mint failed (${response.status}). ${detail.slice(0, 300)}`,
-      )
-    }
+    // The same split the pipeline arm makes, from the same function. Both arms
+    // mint through the same route, so a refusal has to read the same way on
+    // both — rule 1, and `audibility.ts` is the note on what happens otherwise.
+    if (!response.ok) throw await mintRefusal(response, PROVIDER)
     return (await response.json()) as MintedSession
   }
 

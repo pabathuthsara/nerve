@@ -353,6 +353,7 @@ describe('resolvedPlan', () => {
     userId: USER,
     providerCustomerId: null,
     providerSubscriptionId: null,
+    paymentId: null,
     planId: null,
     currentPeriodEnd: null,
     cancelAtPeriodEnd: null,
@@ -495,5 +496,38 @@ describe('the real deliveries from the first live purchase', () => {
   it('accepts the account under the name this API version actually sends', () => {
     expect(readAccountId(REAL_MEMBERSHIP_ACTIVATED)).toBe('biz_G4B33AGA0sWgzq')
     expect(readAccountId(REAL_PAYMENT_SUCCEEDED)).toBe('biz_G4B33AGA0sWgzq')
+  })
+
+  /**
+   * ── WHAT THE SAME TWO PAYLOADS TAUGHT PHASE D (7 September) ────────────
+   *
+   * Read again before writing the credit handler, and they answered a question
+   * nobody had thought to ask: **a card-backed trial emits a real
+   * `payment.succeeded`.** `total: "0.0"`, `status: "paid"`,
+   * `billing_reason: "subscription_create"`, ninety milliseconds after the
+   * membership event.
+   *
+   * The obvious design for interview credits — grant on `membership.activated`,
+   * top up on `payment.succeeded` — therefore hands two credits to every trial
+   * on day zero, and the specification says nothing about it. So the grant keys
+   * on the payment and only on the payment (`lib/billing/credit-rules.ts`).
+   * These three assertions are what that decision rests on.
+   */
+  it('emits a real payment event for the $0 trial authorisation', () => {
+    expect(REAL_PAYMENT_SUCCEEDED.data.total).toBe('0.0')
+    expect(REAL_PAYMENT_SUCCEEDED.data.billing_reason).toBe('subscription_create')
+    expect(REAL_PAYMENT_SUCCEEDED.data.status).toBe('paid')
+  })
+
+  it('sends both events for one purchase, within the same second', () => {
+    const gap = Date.parse(REAL_PAYMENT_SUCCEEDED.timestamp) - Date.parse(REAL_MEMBERSHIP_ACTIVATED.timestamp)
+    expect(gap).toBeGreaterThanOrEqual(0)
+    expect(gap).toBeLessThan(1_000)
+  })
+
+  it('carries a payment id on the payment event and none on the membership one', () => {
+    // The idempotency key for every credit this account will ever be given.
+    expect(toBillingEvent(REAL_PAYMENT_SUCCEEDED, 1_000)?.paymentId).toBe('pay_PjRU2V3WOafQJ9')
+    expect(toBillingEvent(REAL_MEMBERSHIP_ACTIVATED, 1_000)?.paymentId).toBeNull()
   })
 })

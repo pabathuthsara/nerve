@@ -165,7 +165,50 @@ button { color: inherit; }
 .arena-input--error { border-color: var(--red); }
 .arena-textarea { min-height: 128px; resize: vertical; }
 .field__hint { color: var(--text-mute); font-size: 12px; }
+
+/* THE LISTBOX (components/ui `Select`).
+   `.arena-select` used to be a class name on a native <select> with no rule
+   behind it at all — browser chrome, in the platform font, in the middle of a
+   dark-only system. This is the control that replaces it.
+
+   Volt lands on the SELECTED row and nowhere else: the trigger stays Ink and
+   the highlighted row is marked by its ground, so a screen with an open
+   dropdown still spends its one accent once. Hairlines, 2px, no shadow. */
+.arena-select__shell { position: relative; }
+.arena-select__trigger { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; border: 1px solid var(--line); border-radius: 2px; padding: 8px 12px; background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; transition: border-color 120ms; }
+.arena-select__trigger:hover { border-color: var(--line-bright); }
+.arena-select__trigger:focus-visible { border-color: var(--volt); outline: 0; }
+.arena-select__trigger[aria-expanded='true'] { border-color: var(--line-bright); }
+.arena-select__trigger--error { border-color: var(--red); }
+.arena-select__value { min-width: 0; display: grid; gap: 2px; flex: 1 1 auto; }
+.arena-select__value > span { overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.arena-select__value > small { overflow: hidden; color: var(--text-mute); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.arena-select__trailing { flex: 0 0 auto; color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+/* A caret, drawn rather than an icon import: two hairlines, and it turns over
+   when the list is open so the control says which way it is going. */
+.arena-select__caret { width: 8px; height: 8px; flex: 0 0 auto; border-right: 1px solid var(--text-dim); border-bottom: 1px solid var(--text-dim); margin-bottom: 3px; transform: rotate(45deg); transition: transform 140ms cubic-bezier(.2,0,0,1); }
+.arena-select__trigger[aria-expanded='true'] .arena-select__caret { margin-top: 3px; margin-bottom: 0; transform: rotate(-135deg); }
+.arena-select__list { position: absolute; z-index: 40; top: calc(100% + 4px); right: 0; left: 0; max-height: 320px; overflow-y: auto; border: 1px solid var(--line-bright); border-radius: 2px; padding: 4px; background: var(--surface); outline: 0; }
+.arena-select__option { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 10px; border-radius: 2px; color: var(--text-dim); cursor: pointer; }
+.arena-select__option[data-active='true'] { background: var(--surface-2); color: var(--text); }
+.arena-select__option[data-selected='true'] { color: var(--volt); }
+.arena-select__option[aria-disabled='true'] { color: var(--text-mute); cursor: not-allowed; }
+.arena-select__option-body { min-width: 0; display: grid; gap: 2px; flex: 1 1 auto; }
+.arena-select__option-body strong { font-weight: 500; }
+.arena-select__option-body small { color: var(--text-mute); font-size: 12px; line-height: 1.4; }
+.arena-select__option[data-selected='true'] .arena-select__option-body small { color: var(--text-dim); }
+@media (prefers-reduced-motion: no-preference) {
+  .arena-select__list { animation: select-in 130ms cubic-bezier(.2,0,0,1) both; }
+}
+@keyframes select-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .field__error { margin: 0; color: var(--red); font-size: 12px; }
+/* A field whose value is not a choice yet. Reads as the control it will become
+   rather than as a disabled one — a greyed-out picker with one option in it is
+   a worse answer to "why can I not change this" than a sentence. */
+.static-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; border: 1px solid var(--line); border-radius: 2px; padding: 8px 12px; background: var(--surface); }
+.static-field strong { font-weight: 500; }
+.setup-note { margin: -4px 0 0; }
+.difficulty-example { color: var(--text-dim); }
 
 /* Date of birth. One frame, three boxes, and the frame is what reads as the
    field — the boxes carry no border of their own, so a caret moving between
@@ -1404,6 +1447,28 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .went-well { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 12px; padding: 16px 18px; }
 .went-well p { margin: 4px 0 0; font-size: 15px; line-height: 1.55; }
 
+/* THE TWO NUMBERS, AND THE THING BETWEEN THEM (INTERVIEW-TECHNICAL-PLAN §8.5).
+   Interview scorecards only, and only when the round actually probed.
+
+   No volt anywhere in here. The composite above already spends the one accent
+   this screen is allowed, and a second one on "you were wrong three times"
+   would make the corrective block the loudest thing on the page — which is the
+   opposite of §07's order, where what worked is named before anything critical.
+   Amber marks a wrong answer because amber is semantic and this is a semantic
+   statement about one answer, never about the person. */
+.accuracy-card { display: grid; gap: 14px; padding: 16px 18px; }
+.accuracy-pair { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+.accuracy-pair > span { display: grid; gap: 2px; }
+.accuracy-pair strong { font-family: var(--font-mono), monospace; font-variant-numeric: tabular-nums; font-size: 30px; line-height: 1; font-weight: 500; }
+.accuracy-pair strong small { font-size: 13px; color: var(--text-dim); }
+.accuracy-reading { margin: 0; font-size: 15px; line-height: 1.55; }
+.accuracy-notes { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); padding-top: 14px; }
+.accuracy-note { display: grid; gap: 3px; }
+.accuracy-note__verdict { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-dim); }
+.accuracy-note--wrong .accuracy-note__verdict { color: var(--amber); }
+.accuracy-note__quote { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-dim); }
+.accuracy-note__correction { margin: 0; font-size: 15px; line-height: 1.55; }
+
 .try-next { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 12px; }
 .try-next p { margin: 0; font-size: 16px; line-height: 1.55; }
 .scorecard-actions { display: grid; gap: 8px; margin-top: 30px; }
@@ -1443,6 +1508,47 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .interview-last > span:first-child { display: grid; gap: 2px; }
 .interview-last strong { font-weight: 500; }
 .interview-last small { color: var(--text-dim); }
+
+/* Four classes on the interview home shipped with no rule behind them at all.
+   `.interview-dimensions` is a <ul> and was rendering as a bulleted list with
+   the browser's own margins inside an Arena card, which is the most visible of
+   the four and the one nobody would have shipped on purpose. */
+.interview-readiness { display: grid; gap: 12px; }
+.interview-readiness .interview-last { margin-top: 0; border-top: 0; padding-top: 0; }
+.interview-readiness p { margin: 0; }
+.interview-dimensions { display: grid; gap: 0; margin: 4px 0 0; padding: 0; list-style: none; }
+.interview-dimensions li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; border-top: 1px solid var(--line); }
+.interview-dimensions li:first-child { border-top: 0; }
+.interview-dimensions .data { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+/* The credit balance and the three packs (INTERVIEW-PLAN D3, E1).
+   Buy buttons are SECONDARY on purpose: volt appears once per screen and on
+   this one it is Start interview. The per-interview rate sits under each
+   button rather than inside it, so the button stays a price and the
+   comparison stays a comparison. */
+.interview-credits { display: grid; gap: 12px; }
+.interview-credits .interview-last { margin-top: 0; border-top: 0; padding-top: 0; }
+.interview-credits p { margin: 0; }
+/* The seconds between paying and the webhook landing. Not an error and not a
+   celebration — a statement of fact with the one action that resolves it. */
+.credits-bought { display: grid; gap: 8px; justify-items: start; border: 1px solid var(--line-bright); padding: 14px; background: var(--surface-2); }
+.credits-bought p { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.5; }
+.pack-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.pack-list li { display: grid; gap: 4px; }
+.pack-list .arena-button { justify-content: space-between; }
+.pack-list .data { font-variant-numeric: tabular-nums; }
+/* E1's "not a dead end": what stands where Start interview would, when the
+   balance cannot pay for the round that is set. */
+.interview-empty { display: grid; gap: 8px; border: 1px solid var(--line); padding: 18px; background: var(--surface-2); }
+.interview-empty p { margin: 0; font-size: 15px; line-height: 1.5; }
+.interview-captions { display: grid; gap: 10px; }
+.interview-captions .setting-row { min-height: 0; border-top: 0; }
+.interview-captions p { margin: 0; }
+/* Not an error, and it must not look like one. §C4: a CV nobody can read
+   degrades to the field, the role and the job description rather than to a
+   generic interview — so amber, and a sentence, rather than red. */
+.cv-warning { display: grid; gap: 6px; border-color: rgba(255,176,32,.32); }
+.cv-warning .label { color: var(--amber); }
+.cv-warning p { margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.5; }
 .interview-last > .data { font-size: 22px; }
 .setup-prompt { min-height: 520px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 22px; border: 1px solid var(--line); padding: 28px; background: var(--surface); }
 .setup-prompt > p { max-width: 470px; margin: 0; color: var(--text-dim); font-size: 16px; }
@@ -2033,6 +2139,12 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 }
 .page-hero .display-xl { font-size: clamp(2.3rem, 8.4vw, 3.7rem); }
 .page-hero > p { max-width: 54ch; margin: 0; color: var(--text-dim); font-size: clamp(15px, 1.6vw, 16.5px); line-height: 1.7; }
+/* A hero that introduces a full-width board has to START where the board does.
+   At `--site-read` on /pricing it began 175px to the right of the cards under
+   it, so the page had two left edges and read as two pages stacked. The text
+   keeps its readable measure through `max-width` on the children; only the
+   container widens. */
+.page-hero--wide { width: var(--site-width); }
 
 .timeline { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; background: var(--line); border-block: 1px solid var(--line); }
 .timeline li { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 14px; background: var(--ground); padding: 20px 0; }
@@ -2071,48 +2183,114 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 
 /* ---- /pricing ---- */
 
-.plan-board { width: var(--site-width); display: grid; gap: 14px; margin: 0 auto; }
-/* Four explicit rows — header, the rep count, the features, the action — with
-   the features absorbing the slack. Without this each card laid itself out
-   independently and the three read as three cards rather than one table: the
-   rep counts sat at three different heights and the buttons never aligned. */
-.plan-board__card { display: grid; grid-template-rows: auto auto 1fr auto; gap: 18px; border: 1px solid var(--line); border-radius: 2px; background: var(--surface); padding: 24px 22px; }
-.plan-board__card--lead { border-color: var(--line-bright); background: var(--surface-2); }
-.plan-board__card header { display: grid; gap: 8px; }
-.plan-board__price { display: flex; align-items: baseline; gap: 8px; }
-.plan-board__price strong { font-size: 40px; font-weight: 500; line-height: 1; }
-.plan-board__price .mute { font-size: 12px; }
-/* The weekly alternative, under the headline price. Ink-3 and small: it is the
-   second option, and promoting it to the same weight would make the card argue
-   with itself about which price it is quoting. */
-.plan-board__alt { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--text-mute); }
-.plan-board__alt b { color: var(--text-dim); font-weight: 500; }
-
-/* The billing-period control on /profile/subscription. Hairlines and 2px, per
-   Arena; volt marks the current position and nothing else here takes it. */
-.plan-section__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.period-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
-.period-toggle__option {
-  appearance: none; background: transparent; border: 0; cursor: pointer;
-  padding: 6px 14px; font-family: var(--font-mono); font-size: 11px;
-  letter-spacing: .1em; text-transform: uppercase; color: var(--text-mute);
+/* ---- the plan board, one period at a time ----
+   Seven explicit rows, identical on every card: name, price, what the card is
+   charged, tagline, the two meters, the features (absorbing the slack) and the
+   action. Without this each card lays itself out and three cards read as three
+   unrelated cards rather than one comparison — the prices sat at three
+   different heights and the buttons never lined up, which is most of what
+   "the prices are all over the place" was pointing at. */
+.plan-board-wrap { width: var(--site-width); margin: 0 auto; }
+.plan-board { display: grid; gap: 14px; align-items: stretch; }
+.plan-board__card {
+  display: grid; grid-template-rows: auto auto auto auto auto 1fr auto; gap: 16px;
+  border: 1px solid var(--line); border-radius: 2px; background: var(--surface); padding: 26px 22px;
 }
-.period-toggle__option + .period-toggle__option { border-left: 1px solid var(--line); }
-.period-toggle__option:hover { color: var(--text-dim); }
-.period-toggle__option.is-current { background: var(--volt); color: var(--ground); }
-.period-toggle__option:focus-visible { outline: 2px solid var(--volt); outline-offset: -2px; }
+.plan-board__card--lead { border-color: var(--line-bright); background: var(--surface-2); }
+.plan-board__name { min-height: 26px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
-/* The effective monthly rate on a weekly card. Stated, never buried. */
-.plan-card__equiv { font-size: 12px; line-height: 1.5; margin: -4px 0 4px; }
+/* The price. One number, large, in the data face with tabular figures so the
+   three columns align on the decimal rather than drifting. */
+.plan-board__price { display: flex; align-items: baseline; gap: 8px; }
+.plan-board__price strong { font-size: 44px; font-weight: 500; line-height: 1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.plan-board__price .mute { font-size: 12px; }
 
-.plan-board__tagline { max-width: 34ch; margin: 2px 0 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.6; }
-.plan-board__reps { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-block: 1px solid var(--line); padding: 12px 0; }
-.plan-board__reps strong { color: var(--text); font-size: 16px; }
-.plan-board__card ul { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+/* What the card is CHARGED, in a sentence, on every card. The trial, the day
+   the money moves, and — on any period that is not monthly — the effective
+   monthly rate. §14's failure is somebody learning the terms of a charge from
+   their statement, so this row exists on the free card too rather than being
+   the thing that makes the three cards different heights. */
+.plan-board__charge { min-height: 34px; margin: -4px 0 0; color: var(--text-dim); font-size: 12.5px; line-height: 1.55; }
+.plan-board__equiv { color: var(--text-mute); }
+
+.plan-board__tagline { max-width: 34ch; margin: 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.6; }
+
+/* The two things a plan actually changes, as data. Everything else on the card
+   is identical across the three, which is the argument the page is making. */
+.plan-board__meters { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; margin: 0; border-block: 1px solid var(--line); padding: 14px 0; }
+.plan-board__meters div { display: grid; gap: 4px; }
+.plan-board__meters dt { margin: 0; }
+.plan-board__meters dd { margin: 0; color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; }
+
+/* `align-content: start` matters: this row is `1fr` and absorbs the slack,
+   and without it the browser distributes that slack BETWEEN the bullets — so
+   the plan with fewer features got airy double-spaced ones and the three lists
+   stopped scanning as one comparison. */
+.plan-board__card ul { display: grid; align-content: start; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .plan-board__card li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; color: var(--text-dim); font-size: 13.5px; line-height: 1.5; }
 .plan-board__card li svg { margin-top: 2px; color: var(--text-mute); }
-.plan-board__name { min-height: 26px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.plan-board__note { width: var(--site-read); margin: 22px auto 0; color: var(--text-mute); font-size: 13px; line-height: 1.7; text-align: center; }
+
+/* ---- the period control ----
+   A segmented control on hairlines, 2px, per Arena. The current segment is a
+   surface lift and a bright border, NOT volt: volt is spent once per screen and
+   on this one it is the lead plan's action. The saving rides on the segment
+   itself so the reader is never asked to derive it from two prices on two
+   different cards. */
+.period-tabs { display: inline-flex; margin: 0 0 12px; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+.period-tabs__option {
+  appearance: none; background: transparent; border: 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 18px; font-family: var(--font-mono), monospace; font-size: 11px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text-mute);
+  transition: color .12s ease, background-color .12s ease;
+}
+.period-tabs__option + .period-tabs__option { border-left: 1px solid var(--line); }
+.period-tabs__option:hover { color: var(--text-dim); }
+.period-tabs__option.is-current { background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-bright); }
+.period-tabs__option:focus-visible { outline: 2px solid var(--volt); outline-offset: -2px; }
+.period-tabs__save { color: var(--text-mute); font-size: 10px; letter-spacing: .06em; text-transform: none; }
+.period-tabs__option.is-current .period-tabs__save { color: var(--text-dim); }
+
+/* The in-app compare-plans header, which carries the same period control. */
+.plan-section__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+.plan-section__head .period-tabs { margin: 0; }
+/* The effective monthly rate on a weekly card, in-app. Stated, never buried. */
+.plan-card__equiv { font-size: 12px; line-height: 1.5; margin: -4px 0 4px; }
+
+/* The one sentence that keeps the tab honest. Weekly costs more per month than
+   monthly and this is where it says so, in plain words, above the fold of the
+   board rather than in a footnote under it. */
+.plan-board__period-note { max-width: 62ch; margin: 0 0 20px; color: var(--text-mute); font-size: 13px; line-height: 1.65; }
+
+/* Left-aligned and on the board's own edge. Centred text under left-aligned
+   cards was the last thing on the page with its own idea of where the margin
+   is. */
+.plan-board__note { max-width: 78ch; margin: 22px 0 0; color: var(--text-mute); font-size: 13px; line-height: 1.7; }
+/* The three interview packs (INTERVIEW-PLAN E2). Deliberately quieter than
+   `.plan-board`: the subscription cards are the page's main offer and these sit
+   inside a section under them. Same grid at the same breakpoint so the two
+   boards line up rather than reading as two unrelated widths. */
+.pack-board { display: grid; gap: 14px; align-items: stretch; }
+/* Five rows, identical on all three, for the same reason the plan board has
+   seven: three cards that each lay themselves out read as three cards, not as
+   one comparison. The tagline absorbs the slack so the unit rate and the
+   "never expires" line stay on their own baselines across the board. */
+.pack-board__card { display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 12px; border: 1px solid var(--line); border-radius: 2px; background: var(--surface); padding: 22px 20px; }
+.pack-board__card--best { border-color: var(--line-bright); background: var(--surface-2); }
+.pack-board__name { min-height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pack-board__price { display: flex; align-items: baseline; gap: 8px; }
+.pack-board__price strong { font-size: 34px; font-weight: 500; line-height: 1; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.pack-board__price .mute { font-size: 12px; }
+/* The unit rate, on every card including the single one, so the three are
+   comparable at a glance instead of by arithmetic. */
+.pack-board__rate { margin: -2px 0 0; color: var(--text); font-size: 14px; font-variant-numeric: tabular-nums; }
+.pack-board__rate .mute { font-family: var(--font-sans), sans-serif; font-size: 12px; }
+/* The tagline is the only unclassed paragraph on the card; scoping it that
+   way is what lets the rate and the expiry line style themselves without an
+   `!important` fighting this rule. */
+.pack-board__card p:not([class]) { margin: 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.55; }
+/* §5.5's promise, on the card where the money is. */
+.pack-board__keeps { margin: 0; border-top: 1px solid var(--line); padding-top: 12px; color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 
 .tick-grid { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
 .tick-grid li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; color: var(--text-dim); font-size: 14px; line-height: 1.6; }
@@ -2195,7 +2373,7 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
   .tier-grid, .loop-grid { grid-template-columns: 1fr 1fr; }
   .loop-diagram { display: block; }
   .loop-layout { grid-template-columns: 320px minmax(0, 1fr); gap: 34px; align-items: center; }
-  .roster-grid, .teaser-grid, .plan-board { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .roster-grid, .teaser-grid, .plan-board, .pack-board { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .roster-grid { gap: 12px; }
   .rank-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .legal__summary { grid-template-columns: 1fr 1fr; }

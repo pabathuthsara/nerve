@@ -118,6 +118,24 @@ const DAILY_CAP_CENTS: Record<string, number> = {
 const DEFAULT_CAP_CENTS = DAILY_CAP_CENTS.free ?? 100
 
 /**
+ * Extra room per interview credit held (INTERVIEW-PLAN A5).
+ *
+ * The three numbers above are sized against a three-minute rep and know nothing
+ * about a twenty-minute one: at `free: 100` an account halts after roughly 1.7
+ * twenty-minute interviews, whichever way it paid for them. So the ceiling
+ * carries headroom for the credits the account is actually holding — §6's
+ * measured p90 of $0.60 plus a reconnect, rounded to 90 cents.
+ *
+ * **Keyed to a balance the server owns**, never to a figure the browser
+ * reports (rule 18), and additive: an account with no interview credits meets
+ * exactly the numbers above. The arithmetic lives in
+ * `public.voice_daily_cap_cents` so the SQL that opens a session and the TypeScript
+ * that guards a route cannot disagree about it, and the constant is mirrored
+ * here for the tests and the harness.
+ */
+const INTERVIEW_CREDIT_CAP_CENTS = 90
+
+/**
  * The project-wide kill switch.
  *
  * An environment variable rather than a row, so that stopping the bill is a
@@ -213,13 +231,22 @@ export async function spendVerdict(
   const policy = POLICY[bucket]
   const admin = supabaseAdmin()
 
-  const { data: entitlement } = await admin
-    .from('entitlements')
-    .select('plan')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  const cap = DAILY_CAP_CENTS[entitlement?.plan ?? 'free'] ?? DEFAULT_CAP_CENTS
+  // ONE ROUND TRIP, STILL. This replaced a `select plan from entitlements`
+  // rather than being added beside it: the function reads the plan AND the
+  // interview credit balance in a single statement, so the credit-aware ceiling
+  // costs nothing on the path in front of a live rep. Falls back to the plan
+  // table when the function is unavailable, which is the pre-credit number and
+  // therefore the safe direction.
+  const { data: capCents } = await admin.rpc('voice_daily_cap_cents', { p_user_id: userId })
+  let cap = typeof capCents === 'number' && Number.isFinite(capCents) ? capCents : null
+  if (cap === null) {
+    const { data: entitlement } = await admin
+      .from('entitlements')
+      .select('plan')
+      .eq('user_id', userId)
+      .maybeSingle()
+    cap = DAILY_CAP_CENTS[entitlement?.plan ?? 'free'] ?? DEFAULT_CAP_CENTS
+  }
 
   const { data, error } = await admin.rpc('spend_allowance', {
     p_user_id: userId,
@@ -260,4 +287,4 @@ export async function spendVerdict(
 }
 
 /** Exported for the tests and the harness, so the numbers have one home. */
-export const SPEND_POLICY = { POLICY, DAILY_CAP_CENTS, DEFAULT_CAP_CENTS } as const
+export const SPEND_POLICY = { POLICY, DAILY_CAP_CENTS, DEFAULT_CAP_CENTS, INTERVIEW_CREDIT_CAP_CENTS } as const

@@ -19,9 +19,9 @@ eleventh anything.
 |---|---|---|
 | `profiles` | user | Created by trigger on sign-up. Holds `vad_offset_ms`, the per-user turn-taking calibration |
 | `personas` | character | Content, not code. Seeded from the TypeScript registry |
-| `sessions` | rep | Provider and model stamped, so a provider switch keeps history comparable |
+| `sessions` | rep | Provider and model stamped, so a provider switch keeps history comparable. `track` is set from the persona by a trigger at insert and is what stops an interview rep opening a dating tier — see below |
 | `transcripts` | rep | The normalised turns both adapters emit |
-| `scores` | graded rep | Six sub-scores plus the deterministic audit trail |
+| `scores` | graded rep | Six sub-scores plus the deterministic audit trail. **`technical_accuracy` is a nullable seventh** and is populated only on an interview round that probed (`INTERVIEW-TECHNICAL-PLAN.md` §8.4) — null on every dating rep, and null is not zero: a round where the grader abstained on everything has no reading rather than a bad one. `accuracy` carries the counts and the per-answer corrections behind it |
 | `persona_memory` | user × character | The one-line callback on return, filtered before it is stored |
 | `usage_ledger` | charge | Append-only. The source of truth for metering |
 | `voice_sessions` | server-authorized voice rep | Atomic quota, user/persona binding, cached context, deadlines and reserved AI budget. Service role only |
@@ -38,7 +38,9 @@ eleventh anything.
 | `subscriptions` | user | Mirror of the merchant of record. `/api/webhooks/whop` writes it, service role only; `npm run db:billing` |
 | `weekly_reviews` | user × week | Generated Sunday, stored because it is about that week |
 | `safety_events` | incident | Boundary hits, distress flags, moderation, user reports |
-| `interview_setups` | user | Role, JD, CV pointer, custom questions (M4) |
+| `interview_setups` | user | Role, JD, field, round, CV pointer, the CV's extracted text, custom questions, the captions setting and the question `difficulty`. Written in the user's own context — it is their document about their own job hunt, not something anybody could pay to change. **`difficulty` is nullable and null does not mean 3**: it means "follow my role title", so editing a role from Junior to Senior moves the questions without anybody touching the slider (§5.2) |
+| `interview_credit_entries` | credit movement | **Append-only, service-role write, owner read.** The balance an interview is bought out of (§5.2: a daily rate cannot hold a twenty-minute item). Every row carries a `source` and **the expiry of the lot it belongs to, spends included** — see below |
+| `interview_credit_holds` | connected interview rep | One credit promised to a rep that is running, **keyed on the session id**, which is what makes "two connects for one rep cannot spend two" true by construction rather than by care |
 | `rate_limits` | user × bucket | The spend ceiling's counter. **No policies at all** — see below |
 | `text_threads` | user × character | Text mode's one rolling conversation. Owner-writable, unmetered, and never reaches `sessions` — see below |
 
@@ -529,6 +531,117 @@ The boundary is the point. Clearing any of these costs the user an explainer
 shown twice. Anything that records something *earned* — a level, a field tier,
 a rejection milestone — goes to `unlocks`, which is service-role write.
 
+## The interview credit ledger, and why every row carries an expiry
+
+`entitlements.reps_per_day` is a **daily rate**. An interview is up to
+twenty-five minutes, and three a day on Pro would be about $45/month of voice
+against a $19 price — so interviews are sold as a **balance** instead
+(`INTERVIEW-PLAN.md` §5.2, §5.3). The balance is a sum over an append-only
+ledger, never a column anybody edits, which is rule 11 applied to the one number
+somebody would most want to write.
+
+Two expiry rules, and they are the sentence the terms will be quoted on:
+**a purchase never expires and survives cancellation; a grant dies at the end of
+the billing period that handed it out.** A CHECK constraint refuses a `purchase`
+row with an `expires_at`, so the first half is enforced by the database rather
+than by care.
+
+**The non-obvious part is that `expires_at` is on every row, including the
+spends and the refunds.** It is the expiry of the LOT the row belongs to, not of
+the row. That is what makes the balance a single filtered sum — `sum(amount)
+where expires_at is null or expires_at > now()` — because a grant and everything
+charged against it fall out together at the same instant. So an unspent grant
+evaporates on its own and the arithmetic does not depend on the period-boundary
+job having run; the `expiry` row that job writes is the *record*, not the
+mechanism. Get it the other way round, with spends carrying no expiry, and a
+grant that was spent and then expired leaves its negative behind and the balance
+goes below zero. `npm run db:credits` asserts exactly that.
+
+**Append-only means the owner, not the service role.** The trigger covers UPDATE
+only — exactly as `usage_ledger`'s `forbid_update` does, and for a reason that
+cost an afternoon to find: a DELETE trigger blocks the cascade from `auth.users`
+and makes every account undeletable, which is the opposite of what §16.7
+requires. `npm run db:credits` and `npm run db:verify` printed "test user
+removed" for a day while removing nothing, and the collision that finally
+surfaced it was an unrelated RLS check failing on a leftover row. What keeps the
+ledger honest for the person it is about is RLS: `authenticated` has a SELECT
+policy and no other. `db:credits` now asserts the teardown actually tears down.
+
+A hold is not a spend. A rep that connects **holds** a credit and settles it when
+the scorecard is written, which is rule 18's doctrine applied to a credit and the
+difference between a refund request and a receipt at twenty minutes. Holds are
+keyed on `sessions.id`, expire on their own after 45 minutes so a browser that
+vanished mid-rep gives the credit back the same evening, and come off the
+spendable balance while they stand.
+
+### How a credit gets in, and what takes it out again (D3, D4, D5, E1)
+
+Four doors in, and all four write the same table:
+
+| Door | Kind | Expiry | Idempotency key |
+|---|---|---|---|
+| **Sign-up** — every account, once | `screener` | none in practice; it is spent last and only buys the five-minute round | `screener:<user id>`, so abandoning and resuming onboarding cannot mint a second |
+| **A pack purchase** — `payment.succeeded` on a one-time Whop plan | `purchase` | **never** | `pack:<pay_…>` |
+| **A subscription period** — `payment.succeeded` on a renewing plan | `grant` | the period end | `grant:<pay_…>` |
+| **`npm run db:interview`** — the service key, by hand | `purchase` | never | `dev:purchase:<ms>` |
+
+And two out, beyond an ordinary spend:
+
+| Event | Kind | What it takes |
+|---|---|---|
+| The subscription lapses, is refunded or is charged back | `expiry` on `source = 'grant'` | every unspent GRANTED credit. **Purchased ones are named nowhere in that write**, which is §5.5's promise expressed as an argument rather than as a comment |
+| A pack is refunded or charged back | `revoke` on `source = 'purchase'` | what is LEFT of that pack, clamped. Credits already spent are not clawed back — a ledger that went to minus two would make somebody's next purchase pay off a debt |
+
+**Everything keys on the payment, and that was a measurement rather than a
+design.** The captured `payment.succeeded` from the first live purchase carries
+`total: "0.0"` and `billing_reason: "subscription_create"` — Whop emits a real
+payment event for the $0 authorisation that starts a card-backed trial, ninety
+milliseconds after `membership.activated`. So the obvious shape — grant on the
+membership, top up on the payment — hands two credits to every trial on day
+zero. `membership.activated` now grants nothing at all. It is pinned in
+`lib/billing/events.test.ts` against the real delivery.
+
+**The trigger is what opens the track.** `interview_credits_open_track` fires
+after any insert with a positive amount and adds `interview` to
+`profiles.unlocked_tracks`. It is a trigger rather than a line in the webhook
+because four separate paths issue credits, and a rule expressed once at the
+table is true of all four by construction — which is exactly what `sessions.track`
+was not, for the fortnight when nothing wrote it. It only ever adds:
+`db:interview -- --close` is a deliberate act and a credit arriving must not
+undo it.
+
+**The free screener buys no extra spend headroom, and that is a promise being
+kept rather than an oversight.** `voice_daily_cap_cents` adds 90c per credit
+because a credit is a twenty-five-minute item costing 45–60c at p90. A screener
+is five minutes and about 14c, and it fits inside free's existing 100c beside
+the sign-up rep. Counting it would have moved free's daily ceiling from 100c to
+190c for every account in the product the moment D5 landed — a change to what a
+DATING account may spend, arriving sideways from a feature on the other track,
+which is precisely the shape rule 19 exists to catch. `db:credits` asserts both
+halves: an account holding credits has more room, and an account holding nothing
+but the screener meets free's 100c unchanged.
+
+## `sessions.track` — the column that stops one ladder feeding another
+
+Added 7 September, defaulted to `dating`, and set from `personas.track` by a
+BEFORE INSERT trigger rather than by the three separate paths that create a
+session — a rule written in three places is a rule that will be right in two.
+
+It exists because `syncLevel` selects every session a user has, joins
+`personas.slug → level`, and feeds `qualifyingByLevel → unlockedLevels →
+earnedLevels → rankFor`. Without a filter, the day the first interviewer was
+seeded at level 2 a rep scoring 70+ against them would have opened a **dating**
+tier, fired its once-ever celebration, moved the rank rail and dragged the field
+tier with it. Nobody would have chosen that; it is what happens by default.
+
+The filter landed **before** the first interviewer was seeded, and the no-op was
+measured rather than argued: 89 sessions across 17 users, every one of them
+dating, so the filtered set was the identical set. That proof expired the moment
+an interview session existed, which is the whole reason the ordering mattered.
+The same filter is applied in `fetchPersonas`, `fetchRepRecords` and
+`recentScoresAtLevel`, because two implementations of one rule is how the roster
+and the stored ladder position come to disagree.
+
 ## Content is authored in the repo, seeded downstream
 
 Three libraries now follow the persona pattern — `lib/personas/`,
@@ -652,9 +765,11 @@ npm run db:verify        # prove RLS holds, with two real users
 npm run db:rep           # drive a whole rep lifecycle, without a microphone
 npm run db:field         # the field loop: assign, accept, log, streak, counters, milestones, the T4 gate
 npm run db:spend         # the spend ceiling: rate limit, daily cap, both kill switches
+npm run db:credits       # the interview credit: hold, settle, release, refund, both expiry rules
 npm run db:billing       # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
 npm run db:types         # regenerate lib/db/types.ts from the live schema
 npm run db:plan -- you@example.com pro   # grant a plan (free 0/day, pro 3, elite 6)
+npm run db:interview -- you@example.com  # open the interview track and put credits in it
 npm run whop:setup                       # creates the product, plans and webhook (dry run without --apply)
 npm run whop:verify                      # the money preflight, before any deploy that can charge
 npm run whop:probe                       # the webhook route itself, over HTTP, against a running server
@@ -662,6 +777,14 @@ npm run db:repair-wins -- --dry          # wins the old outcome rule invented; d
 npm run grade:collect                   # stored transcripts, in calibration-fixture shape
 npm run grade:calibrate                 # the §17 gate: drift on the deployed /api/grade
 ```
+
+`db:interview` exists for the same reason as `db:plan` and is the only way to
+see the interview track today: `profiles.unlocked_tracks` is what the guard
+reads, `interview_credit_entries` is the balance, and neither has a user write
+path (rule 11). Until D4 grants credits from a webhook and E1 opens the track on
+purchase, somebody with the service key opens it by hand. Every credit it writes
+carries a `dev:` reference so the ledger says which credits were bought and which
+were handed over.
 
 `db:plan` exists because `entitlements` has no write path a user can reach, and
 a fresh account is free — which since 31 August is **no** voice reps at all past

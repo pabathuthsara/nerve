@@ -106,10 +106,22 @@ export async function POST(request: NextRequest) {
     const result = await applyBillingEvent(event)
 
     if (!result.ok) {
-      // Logged rather than 500'd. These are the cases a retry cannot fix — an
-      // unattributable purchase, or a plan no variable names — and they need a
-      // human reading the log, not eleven more deliveries.
       console.error(`[billing] ${result.detail}`)
+      /**
+       * The one failure worth redelivering.
+       *
+       * Everything else that lands here is a case a retry cannot fix — an
+       * unattributable purchase, or a plan no variable names — and they need a
+       * human reading the log rather than eleven more deliveries. A credit
+       * write that failed is different: somebody has paid and the interviews
+       * they bought are not in the account, and the cause is a database that
+       * was briefly unreachable, which is exactly what Whop's twelve attempts
+       * over seventy-one hours exist for. `applyBillingEvent` is idempotent, so
+       * the retry re-does nothing that already worked.
+       */
+      if (result.retryable) {
+        return NextResponse.json({ error: 'the credit did not land; please redeliver' }, { status: 500 })
+      }
       return NextResponse.json({ ok: true, handled: false })
     }
 

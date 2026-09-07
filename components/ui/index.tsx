@@ -151,6 +151,218 @@ export function Textarea({ label, error, hint, id: providedId, className = '', .
   return <label className="field" htmlFor={id}><span className="label">{label}</span><textarea id={id} className={`arena-input arena-textarea${error ? ' arena-input--error' : ''} ${className}`} {...props} />{hint ? <span className="field__hint">{hint}</span> : null}{error ? <span className="field__error">{error}</span> : null}</label>
 }
 
+/* ------------------------------------------------------------------ *
+ * Select
+ * ------------------------------------------------------------------ */
+
+export interface SelectOption<T extends string> {
+  value: T
+  label: string
+  /** A second line under the label. What this option actually means. */
+  meta?: string
+  /** A short right-aligned value — a duration, a level, a count. */
+  trailing?: string
+  disabled?: boolean
+}
+
+/**
+ * A listbox, because a native `<select>` cannot be an Arena control.
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────
+ *
+ * Three `<select className="arena-select">` shipped on the interview setup and
+ * **`.arena-select` was never written**. On a dark-only design system that
+ * renders as browser chrome: a light popup in the platform font with the
+ * platform's own focus ring, in the middle of a screen built out of hairlines
+ * and Barlow Condensed. It is the single most obviously unfinished thing in the
+ * track.
+ *
+ * A native select also cannot carry what these options have to say. "Technical"
+ * is not a choice a candidate can make — "Technical · Projects + fundamentals ·
+ * 20 min" is, and the difference between a round that tests fundamentals and
+ * one that does not is the whole reason two of the first four interview reps
+ * went out on the wrong one. Options need a label, a description and a value,
+ * on separate lines, which `<option>` does not do.
+ *
+ * ── ARENA BOUNDS ─────────────────────────────────────────────────────────
+ *
+ * Hairlines, 2px radius, no shadow. **Volt appears on the selected row and
+ * nowhere else** — the trigger stays Ink, the hovered row is marked by its
+ * ground rather than by a second accent, so a screen with an open dropdown
+ * still spends its accent exactly once. `tabular-nums` on the trailing value.
+ * `prefers-reduced-motion` removes the open transition entirely.
+ *
+ * ── AND IT IS A REAL LISTBOX ─────────────────────────────────────────────
+ *
+ * Arrow keys, Home/End, Enter, Escape, click-outside, focus returned to the
+ * trigger on close, `aria-activedescendant` tracking the highlighted row. A
+ * custom control that is not keyboard-operable is worse than the native one it
+ * replaced, and the whole reason the native one was there is that it was free.
+ */
+export function Select<T extends string>({
+  label,
+  hint,
+  error,
+  value,
+  onChange,
+  options,
+  placeholder = 'Choose',
+  id: providedId,
+}: {
+  label: string
+  hint?: ReactNode
+  error?: string
+  value: T
+  onChange: (value: T) => void
+  options: readonly SelectOption<T>[]
+  placeholder?: string
+  id?: string
+}) {
+  const generated = useId()
+  const id = providedId ?? generated
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  const selectedIndex = options.findIndex((option) => option.value === value)
+  const selected = selectedIndex >= 0 ? options[selectedIndex] : undefined
+
+  // Opening lands the highlight on what is already chosen, which is the only
+  // starting position that does not make the first arrow key a surprise.
+  useEffect(() => {
+    if (open) setActive(selectedIndex >= 0 ? selectedIndex : 0)
+  }, [open, selectedIndex])
+
+  useEffect(() => {
+    if (!open) return
+    const onPointer = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    // `pointerdown` rather than `click`: a click that starts inside and ends
+    // outside should not close it, and a scroll gesture on a phone should not
+    // count as a dismissal.
+    document.addEventListener('pointerdown', onPointer)
+    return () => document.removeEventListener('pointerdown', onPointer)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    listRef.current?.querySelector<HTMLElement>('[data-active="true"]')
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [open, active])
+
+  const close = (focusTrigger = true) => {
+    setOpen(false)
+    if (focusTrigger) triggerRef.current?.focus()
+  }
+
+  const commit = (index: number) => {
+    const option = options[index]
+    if (!option || option.disabled) return
+    onChange(option.value)
+    close()
+  }
+
+  const step = (delta: number) => {
+    if (options.length === 0) return
+    let next = active
+    for (let attempt = 0; attempt < options.length; attempt += 1) {
+      next = (next + delta + options.length) % options.length
+      if (!options[next]?.disabled) break
+    }
+    setActive(next)
+  }
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (!open) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        setOpen(true)
+      }
+      return
+    }
+    if (event.key === 'Escape') { event.preventDefault(); close(); return }
+    if (event.key === 'Tab') { setOpen(false); return }
+    if (event.key === 'ArrowDown') { event.preventDefault(); step(1); return }
+    if (event.key === 'ArrowUp') { event.preventDefault(); step(-1); return }
+    if (event.key === 'Home') { event.preventDefault(); setActive(0); return }
+    if (event.key === 'End') { event.preventDefault(); setActive(options.length - 1); return }
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); commit(active) }
+  }
+
+  return (
+    <div className="field arena-select" ref={rootRef}>
+      <span className="label" id={`${id}-label`}>{label}</span>
+      {/* The list is positioned against the TRIGGER, not against the field —
+          `.field` is a grid whose last row is the hint, so anchoring to it
+          would drop the popover below the help text. */}
+      <div className="arena-select__shell">
+      <button
+        ref={triggerRef}
+        type="button"
+        id={id}
+        role="combobox"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        // Unconditional, even while the list is not rendered: the ARIA 1.2
+        // combobox pattern requires `aria-controls` and `aria-expanded` on the
+        // control itself, and `aria-expanded="false"` is what says the popup is
+        // absent rather than missing.
+        aria-controls={`${id}-list`}
+        aria-labelledby={`${id}-label ${id}`}
+        className={`arena-select__trigger${error ? ' arena-select__trigger--error' : ''}`}
+        onClick={() => setOpen((was) => !was)}
+        onKeyDown={onKeyDown}
+      >
+        <span className="arena-select__value">
+          <span>{selected?.label ?? placeholder}</span>
+          {selected?.meta ? <small>{selected.meta}</small> : null}
+        </span>
+        {selected?.trailing ? <span className="arena-select__trailing data">{selected.trailing}</span> : null}
+        <i className="arena-select__caret" aria-hidden="true" />
+      </button>
+      {open ? (
+        <div
+          ref={listRef}
+          id={`${id}-list`}
+          role="listbox"
+          tabIndex={-1}
+          aria-labelledby={`${id}-label`}
+          aria-activedescendant={`${id}-option-${active}`}
+          className="arena-select__list"
+          onKeyDown={onKeyDown}
+        >
+          {options.map((option, index) => (
+            <div
+              key={option.value}
+              id={`${id}-option-${index}`}
+              role="option"
+              aria-selected={option.value === value}
+              aria-disabled={option.disabled || undefined}
+              data-active={index === active}
+              data-selected={option.value === value}
+              className="arena-select__option"
+              onMouseEnter={() => setActive(index)}
+              onClick={() => commit(index)}
+            >
+              <span className="arena-select__option-body">
+                <strong>{option.label}</strong>
+                {option.meta ? <small>{option.meta}</small> : null}
+              </span>
+              {option.trailing ? <span className="arena-select__trailing data">{option.trailing}</span> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      </div>
+      {hint ? <span className="field__hint">{hint}</span> : null}
+      {error ? <span className="field__error">{error}</span> : null}
+    </div>
+  )
+}
+
 export function FileDrop({ file, onFile, accept = '.pdf,.docx', error }: { file: File | null; onFile: (file: File | null) => void; accept?: string; error?: string }) {
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)

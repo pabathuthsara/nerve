@@ -29,7 +29,7 @@
  * be minted from here — see the handover note at the bottom of the output.
  */
 
-import { OFFERS, PUBLIC_PLANS, TRIAL_DAYS, planById } from '@/lib/site/plans'
+import { INTERVIEW_PACKS, OFFERS, PUBLIC_PLANS, TRIAL_DAYS, planById } from '@/lib/site/plans'
 import { apiBase, apiVersionDate, isLiveBase } from '@/lib/billing/plans'
 
 /**
@@ -45,6 +45,14 @@ import { apiBase, apiVersionDate, isLiveBase } from '@/lib/billing/plans'
  * of the terms says in as many words that no part of this product treats a
  * condition. A processor's own record of us should not say the opposite of our
  * legal page.
+ *
+ * **A PRODUCT WRITE RE-CLASSIFIES THE ACCOUNT.** Found on 7 September and it is
+ * not what rule 12 anticipated: rewriting `PRODUCT_DESCRIPTION` below to mention
+ * interviews and AI characters moved the account to `ai_and_automation_software
+ * / ai_chatbot_software` — from a `PATCH /products` that names no account field
+ * at all. Whop re-derives the classification from product content. The API key
+ * cannot write `/accounts` (404), so the repair needs a user-token credential.
+ * **Always run `npm run whop:verify` after this script**, whatever it printed.
  */
 const ACCOUNT = {
   business_type: 'software',
@@ -106,13 +114,14 @@ const AFFILIATES = {
  * re-run.
  */
 const AFFILIATE_INSTRUCTIONS = [
-  'Nerve is confidence training for conversation. Users take timed three-minute voice reps against AI characters and get scored on how they handled it — never on whether they succeeded.',
+  'Nerve is confidence training for conversation and for interviews. Users take timed three-minute voice reps against AI characters, or a full practice interview against an interviewer who has read their CV, and get scored on how they handled it — never on whether they succeeded.',
   '',
   'WHAT YOU EARN',
-  '40% of every payment, for as long as your referral keeps paying. 50% if you are a Nerve member yourself. Pro is $19/month and Elite is $49/month, both with a 7-day free trial, so a single referral on Pro is $7.60 a month to you for as long as they stay.',
+  '40% of every payment, for as long as your referral keeps paying. 50% if you are a Nerve member yourself. Pro is $19/month and Elite is $49/month, both with a 7-day free trial, so a single referral on Pro is $7.60 a month to you for as long as they stay. Interview credits are also sold outright — $9 for one, $29 for five, $59 for twelve — and those pay the same rate on a purchase somebody makes the week before an interview.',
   '',
   'WHAT WORKS',
   'Screen-record an actual rep and cut it. The warmth meter moving in real time is the product, and no other app in this category can show a real recording — everything else is fabricated text over B-roll. The strongest angle is the contradiction at the heart of the scoring: a conversation that ends in rejection can still score 92, because the score is for process and never for outcome.',
+  'The interview track reaches a different audience with a sharper deadline: somebody who interviews on Thursday. Every account gets one free five-minute recruiter screen, so the demo is the product rather than a video of it. Never promise anybody a job — the product does not score outcomes and saying it does is the fastest way to lose the link.',
   '',
   'WHAT NOT TO DO',
   'No manipulation framing, no scripts for pushing past a no, and nothing that reads as a technique for wearing somebody down. The product itself refuses to train that and scores it down. Keep it about the skill, never about the target. Content that breaks this gets the affiliate link revoked, because it puts our payment processing at risk.',
@@ -154,17 +163,46 @@ const WEBHOOK_EVENTS = [
   'dispute.created',
 ]
 
-const PRODUCT_DESCRIPTION = `Nerve is confidence training for conversation. You take three-minute voice reps against AI characters who can lose interest, get distracted, and say no — then you get a score for how you handled it.
+/**
+ * What the storefront and the receipt say Nerve is.
+ *
+ * A public representation of the business to a payment processor, so it is
+ * authored here and reviewed in a pull request rather than typed into a
+ * dashboard field once (rule 10, `PAYMENTS-APPROVAL.md` §3).
+ *
+ * **It leads with the two tracks from 7 September**, because as of Phase E it
+ * sells both and the interview half is the one that matches the account's own
+ * registered classification — `personal_development / public_speaking_coaching`
+ * — without any strain. §9 of `INTERVIEW-PLAN.md` is the argument. It does not
+ * overstate it: conversation practice is still the larger half and is still
+ * described first-class.
+ *
+ * Every commitment in it also exists in the terms and on `/pricing`, in the
+ * same words. Three places describing one refund policy is three chances to
+ * disagree, and the one a disputing customer quotes is whichever is most
+ * generous.
+ *
+ * **1,500 characters, hard.** Whop refuses a longer one with
+ * *"Shortened description is too long"* — which the description written on
+ * 2 September exceeded, so re-saving the product had been failing with a 400
+ * that this script reported and nobody had needed to act on until now. Count
+ * before adding a sentence; there is no room left.
+ */
+const PRODUCT_HEADLINE = 'Timed voice reps and practice interviews, scored on how you handled it'
 
-The score is for process, never outcome. A clean rep that ends in a polite rejection can score in the nineties. You are graded on how you opened, how you handled the turn and whether you asked — not on whether the character said yes.
+const PRODUCT_DESCRIPTION = `Nerve is confidence training for conversation and for interviews. You take timed voice reps against AI characters, or a practice interview against an interviewer who has read your CV, and are scored on how you handled it.
 
-A paid plan adds volume and nothing else. Every tier sees the same characters; the roster opens by scoring well, never by paying. Pro is three voice reps a day, Elite is six. The free plan keeps everything that does not use a microphone — the real-world challenges, the log, text mode, your streak, your history and your transcripts — and needs no card.
+The score is for process, never outcome. A rep that ends in a polite rejection can score in the nineties, and so can a candidate who does not get the callback.
 
-Both paid plans start with a ${TRIAL_DAYS}-day free trial. Your card is authorised when the trial starts and charged for the first month on the day it ends, unless you cancel first. Cancelling takes one tap on your own subscription screen — no email and no form — and access stays open to the end of the period you have paid for. Ask us within 14 days of any charge and we will refund it.
+Voice reps are three minutes against characters who can lose interest and say no. A plan adds volume and nothing else — the roster opens by scoring, never by paying. Pro is 3 reps a day, Elite 6.
 
-18+ only. Conversations are moderated on both sides and kept PG-13.
+Practice interviews run 10-25 minutes on a role you set, graded on seven dimensions. They are metered as credits rather than by the day: Pro includes 1 a month, Elite 4, and packs of 1, 5 or 12 cost $9, $29 and $59. Every account gets one free five-minute screen. Credits you buy never expire and survive cancelling; credits included with a plan are part of that month and do not roll over.
 
-Nerve is training, not therapy, treatment or clinical care. It does not diagnose or treat anything and is not a substitute for working with a clinician.
+The free plan keeps everything that does not use a microphone, and needs no card.
+
+Paid plans start with a ${TRIAL_DAYS}-day free trial. Your card is authorised at the start and charged when it ends unless you cancel — one tap on your own subscription screen, no email and no form. Access lasts to the end of the period you paid for. Ask within 14 days of a charge and we refund it.
+
+18+ only. Conversations are moderated on both sides and kept PG-13. Nerve is training, not therapy or clinical care.
 
 Support: support@hellonerve.com`
 
@@ -314,6 +352,10 @@ async function main(): Promise<void> {
     if (apply) {
       const patched = await call('PATCH', `/products/${encodeURIComponent(productId)}`, {
         description: PRODUCT_DESCRIPTION,
+        // Refreshed on every run, not only at creation. It was set once when the
+        // product only sold one track, and a storefront headline that names half
+        // the product is the half a compliance reviewer reads first.
+        headline: PRODUCT_HEADLINE,
         // Hidden is a DECISION, not a default — see MARKETING-PLAN.md §4.1.
         // Public discoverability raises our visibility to processor review and
         // this account watched Creem decline it on 1 September.
@@ -327,7 +369,7 @@ async function main(): Promise<void> {
     const created = await call('POST', '/products', {
       account_id: accountId,
       title: 'Nerve',
-      headline: 'Timed voice reps against AI characters, scored on how you handled it',
+      headline: PRODUCT_HEADLINE,
       description: PRODUCT_DESCRIPTION,
       route: PRODUCT_ROUTE,
       // Unlisted. We sell from our own pricing page through a checkout
@@ -472,6 +514,68 @@ async function main(): Promise<void> {
     }
   }
 
+  // ── one vendor plan per PACK ─────────────────────────────────────────────
+  //
+  // One-time plans under the same product, and that is the whole difference: a
+  // pack is a balance, not an entitlement (INTERVIEW-PLAN §5.4). Whop expresses
+  // it as `plan_type: 'one_time'` with the money on `initial_price` and
+  // `renewal_price: 0` — the mirror image of a subscription, and the field most
+  // likely to be filled in wrongly by hand, because a one-time plan created
+  // with the price on `renewal_price` charges nothing at all and then keeps
+  // charging nothing.
+  //
+  // No trial on any of them. A trial in front of a one-off purchase is a free
+  // interview followed by a charge nobody expects.
+  step('the interview packs')
+  const packIds: Record<string, string> = {}
+
+  for (const pack of INTERVIEW_PACKS) {
+    const body = {
+      account_id: accountId,
+      ...(productId ? { product_id: productId } : {}),
+      title: `Nerve — ${pack.name}`,
+      description: `${pack.credits} full interview${pack.credits === 1 ? '' : 's'}, graded. `
+        + 'Bought outright: these never expire and stay in the account if a subscription is cancelled.',
+      plan_type: 'one_time',
+      currency: 'usd',
+      // The money is HERE on a one-time plan, and nowhere else.
+      initial_price: pack.priceUsd,
+      renewal_price: 0,
+      visibility: 'hidden',
+      release_method: 'buy_now',
+      unlimited_stock: true,
+      metadata: { nerve_pack: pack.id, nerve_credits: String(pack.credits) },
+    }
+
+    const found = existingPlans.find((p) => {
+      const meta = p['metadata'] as Record<string, unknown> | null
+      return meta?.['nerve_pack'] === pack.id
+    })
+
+    console.log(`\n  ${pack.name} — ${pack.price} for ${pack.credits} interview${pack.credits === 1 ? '' : 's'}`)
+
+    if (found) {
+      const id = found['id'] as string
+      packIds[pack.id] = id
+      console.log(`  ok    already exists — ${id}`)
+      if (apply) {
+        const patched = await call('PATCH', `/plans/${encodeURIComponent(id)}`, body, `pack-update:${pack.id}`)
+        if (patched.ok) done('price, type and visibility refreshed')
+        else fail(`could not update the pack (${patched.status}) — ${JSON.stringify(patched.data).slice(0, 200)}`)
+      }
+    } else if (apply) {
+      const created = await call('POST', '/plans', body, `pack:${pack.id}`)
+      if (created.ok) {
+        packIds[pack.id] = created.data['id'] as string
+        done(`created — ${created.data['id']}`)
+      } else {
+        fail(`could not create the pack (${created.status}) — ${JSON.stringify(created.data).slice(0, 300)}`)
+      }
+    } else {
+      done('create it')
+    }
+  }
+
   // ── one webhook ──────────────────────────────────────────────────────────
   step('the webhook')
   // `account_id` is required on this one, unlike /products and /plans where it
@@ -536,6 +640,13 @@ async function main(): Promise<void> {
     for (const offer of OFFERS) {
       const id = planIds[`${offer.plan}-${offer.period}`] ?? '<not created>'
       console.log(`    ${offer.env}=${id}`)
+    }
+    // One line per pack, for the same reason: a pack authored in
+    // `lib/site/plans.ts` and created here is still unbuyable until the app
+    // knows its vendor id, and `packsConfigured()` hides the buy buttons rather
+    // than erroring — which is silent, and is exactly what this block prevents.
+    for (const pack of INTERVIEW_PACKS) {
+      console.log(`    ${pack.env}=${packIds[pack.id] ?? '<not created>'}`)
     }
     console.log('\n  Then: npm run whop:verify')
   }

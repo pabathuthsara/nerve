@@ -35,8 +35,20 @@ import {
 import { qualifyingByLevel, uiBand, uiLevel, uiWarmth, unlockProgress, unlockRequirement, unlockedLevels, wonFromOutcome } from './progression'
 import { toScorecard, type StoredMetricScore, type StoredWarmthEvent } from './scorecard'
 import { RANKS, type Rank } from './rank'
+import { INTERVIEWERS, interviewerStyleFor } from '@/lib/personas/interview'
+import { INTERVIEW_SETUP_COLUMNS, setupFromRow, type SetupRow } from '@/lib/db/interview-shape'
+import { DEFAULT_ROUND } from './interview-credits'
+import {
+  DIMENSION_COLUMN,
+  INTERVIEW_DIMENSIONS,
+  interviewProgress,
+  type InterviewProgress,
+  type InterviewRep,
+} from './interview-progress'
 import type {
   BaselineState,
+  Interviewer,
+  InterviewSetup,
   WeeklyReview,
   FieldLogEntry,
   FieldOutcome,
@@ -100,6 +112,34 @@ export async function fetchUserState(): Promise<UserState | null> {
     supabase.from('streaks').select('current, last_active_on').eq('user_id', user.id).maybeSingle(),
   ])
 
+  // The interview meter, read through the owner's own SELECT policy. A separate
+  // await rather than a fourth entry in the Promise.all because it depends on
+  // nothing above it and because the RPC is cheap — and because a failure here
+  // must not take the whole user state down with it. An account that has never
+  // bought a credit has none, which is the honest fallback.
+  let interviewCredits = 0
+  /**
+   * The free screener, counted separately — and it has to be.
+   *
+   * A screener credit only buys the five-minute screener round
+   * (`nextLotToSpend`), so it is not interchangeable with the others and a
+   * single total cannot answer "may this person start THIS round". Without it
+   * the setup screen cannot know whether to offer the screener at all, and a
+   * granted screener credit is unspendable: the picker filters on
+   * `credits > 0`, which is exactly the round the screener pays for.
+   */
+  let interviewScreenerCredits = 0
+  try {
+    const { data: credits } = await supabase.rpc('interview_credit_balance', { p_user_id: user.id })
+    const rows = (Array.isArray(credits) ? credits : []) as { source: string; remaining: number; held: number }[]
+    const total = rows.reduce((sum, row) => sum + (row.remaining ?? 0), 0)
+    const held = rows.reduce((sum, row) => sum + (row.held ?? 0), 0)
+    interviewCredits = Math.max(0, total - held)
+    interviewScreenerCredits = rows
+      .filter((row) => row.source === 'screener')
+      .reduce((sum, row) => sum + (row.remaining ?? 0), 0)
+  } catch { /* no credits is the correct reading of an unreadable balance */ }
+
   const timezone = profile?.timezone ?? null
   const today = localDay(new Date(), timezone)
   // The reset is stored, not scheduled. A counter belonging to yesterday is
@@ -150,6 +190,8 @@ export async function fetchUserState(): Promise<UserState | null> {
     // failing a page load over.
     rank: RANKS.includes(profile?.rank as Rank) ? (profile?.rank as Rank) : 'rookie',
     repsRemainingToday: remainingToday,
+    interviewCredits,
+    interviewScreenerCredits,
     repsPerDay: perDay,
     repsResetAt: nextLocalMidnight(new Date(), timezone).toISOString(),
     signupRepAvailable: signupRep,
@@ -217,7 +259,10 @@ export async function fetchPersonas(): Promise<Persona[]> {
   const supabase = supabaseBrowser()
   const [{ data: rows }, { data: sessions }, { data: scoreRows }] = await Promise.all([
     supabase.from('personas').select(PERSONA_COLUMNS).eq('track', 'dating').eq('published', true).order('level'),
-    supabase.from('sessions').select('id, persona_slug').not('ended_at', 'is', null),
+    // Dating only — the same filter `syncLevel` applies on the server, for the
+    // same reason (INTERVIEW-PLAN §8). Two implementations of one rule is how
+    // the roster and the stored ladder position come to disagree.
+    supabase.from('sessions').select('id, persona_slug').eq('track', 'dating').not('ended_at', 'is', null),
     supabase.from('scores').select('session_id, composite'),
   ])
 
@@ -258,7 +303,9 @@ export async function fetchRepRecords(): Promise<RepRecord[]> {
   const supabase = supabaseBrowser()
   const [{ data: personaRows }, { data: sessionRows }, { data: scoreRows }] = await Promise.all([
     supabase.from('personas').select('slug, name, level, setting_short').eq('track', 'dating').eq('published', true).order('level'),
-    supabase.from('sessions').select('id, persona_slug, started_at, duration_s, outcome, won').not('ended_at', 'is', null),
+    // The contact shelf is a dating artefact: one row per character on the
+    // dating roster. An interview rep must not appear on it or move it.
+    supabase.from('sessions').select('id, persona_slug, started_at, duration_s, outcome, won').eq('track', 'dating').not('ended_at', 'is', null),
     supabase.from('scores').select('session_id, composite, went_well'),
   ])
 
@@ -391,13 +438,21 @@ export async function fetchScorecard(sessionId: string): Promise<Scorecard | nul
   if (!isUuid(sessionId)) return null
   const supabase = supabaseBrowser()
 
-  const [{ data: score }, { data: transcript }] = await Promise.all([
+  const [{ data: score }, { data: transcript }, { data: session }] = await Promise.all([
     supabase
       .from('scores')
-      .select('composite, metric_scores, focus, went_well, opening, curiosity, listening, signal_reading, composure, close')
+      // `technical_accuracy` and `accuracy` are the seventh dimension and its
+      // working (§8.4, §8.5). Null on every dating rep, which is why the
+      // scorecard renders nothing for them rather than a zero.
+      .select('composite, metric_scores, focus, went_well, opening, curiosity, listening, signal_reading, composure, close, technical_accuracy, accuracy')
       .eq('session_id', sessionId)
       .maybeSingle(),
     supabase.from('transcripts').select('warmth').eq('session_id', sessionId).maybeSingle(),
+    // Which room this was. It decides which axis table the rows are read
+    // against and which instruction "Try this next time" carries — the dating
+    // prose on an interview scorecard was telling candidates to make the ask
+    // early enough that it grows out of the conversation.
+    supabase.from('sessions').select('track').eq('id', sessionId).maybeSingle(),
   ])
 
   // Not graded yet, or grading failed. The screen says so rather than drawing
@@ -408,6 +463,7 @@ export async function fetchScorecard(sessionId: string): Promise<Scorecard | nul
     sessionId,
     score,
     events: warmthEvents(transcript?.warmth),
+    track: session?.track === 'interview' ? 'interview' : 'dating',
   })
 }
 
@@ -478,6 +534,128 @@ export async function fetchTranscript(sessionId: string): Promise<TranscriptTurn
       reason: event?.reason ?? null,
     }
   })
+}
+
+/**
+ * The interview roster (C1).
+ *
+ * Read from `personas` exactly as the dating roster is, filtered to the other
+ * track. **Nothing here is locked**: §5.10 says difficulty is CHOSEN rather than
+ * earned on this track, because somebody who paid because they interview on
+ * Thursday needs the hard one tonight and a pack mostly spent on tutorial is a
+ * refund request. What gates an interview is a credit, and that is checked where
+ * the money is (`holdInterviewCredit`), not on a card.
+ *
+ * Style and gender are read off the authored registry rather than the row: they
+ * are claims about the character, and the row is a mirror of the registry.
+ */
+export async function fetchInterviewers(): Promise<Interviewer[]> {
+  const supabase = supabaseBrowser()
+  const { data: rows } = await supabase
+    .from('personas')
+    .select('slug, name, level, blurb, portrait_url')
+    .eq('track', 'interview')
+    .eq('published', true)
+    .order('level')
+
+  return (rows ?? []).map((row) => {
+    const authored = INTERVIEWERS[row.slug]
+    const style = interviewerStyleFor(row.slug)
+    return {
+      id: row.slug,
+      name: row.name,
+      style: style.style,
+      styleLabel: style.label,
+      gender: authored?.voice.timbre === 'masculine' ? 'male' : 'female',
+      blurb: row.blurb ?? '',
+      portraitUrl: row.portrait_url ?? '',
+      level: uiLevel(row.level),
+      locked: false,
+    } satisfies Interviewer
+  })
+}
+
+/**
+ * The setup, as the screens read it (C1).
+ *
+ * `useInterviewSetup` was `useMock` and `CvSetup` ticked a `setInterval` at a
+ * progress bar; the table and the private bucket have been RLS-correct and
+ * entirely unused since 23 August. This is the read half.
+ */
+export async function fetchInterviewSetup(): Promise<InterviewSetup | null> {
+  const supabase = supabaseBrowser()
+  const user = await currentUser()
+  if (!user) return null
+  const { data } = await supabase
+    .from('interview_setups')
+    .select(INTERVIEW_SETUP_COLUMNS)
+    .eq('user_id', user.id)
+    .maybeSingle()
+  const record = setupFromRow(data as unknown as SetupRow | null)
+  if (!record) return null
+  return {
+    roleTitle: record.roleTitle,
+    company: record.company,
+    jobDescription: record.jobDescription,
+    cvFileName: record.cvFileName,
+    cvUploadedAt: record.cvUploadedAt,
+    customQuestions: record.customQuestions,
+    complete: record.complete,
+    field: record.field,
+    round: record.round,
+    captions: record.captions,
+    cvTextChars: record.cvTextChars,
+    cvError: record.cvError,
+    interviewerId: record.interviewerSlug,
+    difficultyChoice: record.difficultyChoice,
+    difficulty: record.difficulty,
+  }
+}
+
+/**
+ * This preparation run's trend (§5.12, B1).
+ *
+ * Interview reps only, and it touches no dating number: `current_level`,
+ * `rank`, `unlockedLevels`, the field tier and the personal best that fires
+ * `BestBeat` are all somewhere else and stay there.
+ */
+export async function fetchInterviewProgress(): Promise<InterviewProgress> {
+  const supabase = supabaseBrowser()
+  const { data: sessions } = await supabase
+    .from('sessions')
+    .select('id, started_at, persona_slug')
+    .eq('track', 'interview')
+    .not('ended_at', 'is', null)
+    .order('started_at', { ascending: false })
+    .limit(40)
+
+  const rows = sessions ?? []
+  if (rows.length === 0) return interviewProgress([])
+
+  const { data: scores } = await supabase
+    .from('scores')
+    .select('session_id, composite, opening, curiosity, listening, signal_reading, composure, close')
+    .in('session_id', rows.map((row) => row.id))
+
+  const bySession = new Map((scores ?? []).map((row) => [row.session_id, row]))
+  return interviewProgress(rows.map((row) => {
+    const score = bySession.get(row.id)
+    const dimensions: InterviewRep['dimensions'] = {}
+    for (const dimension of INTERVIEW_DIMENSIONS) {
+      const value = score?.[DIMENSION_COLUMN[dimension] as keyof typeof score]
+      if (typeof value === 'number') dimensions[dimension] = value
+    }
+    return {
+      sessionId: row.id,
+      startedAt: row.started_at,
+      // The round is not stored on the session; the setup is one row per user
+      // and a run is one role, so the setup's round is the run's round. When
+      // rounds become per-rep this reads a column instead.
+      round: DEFAULT_ROUND,
+      composite: score?.composite ?? null,
+      dimensions,
+    }
+  }))
 }
 
 /** Your record against each character. Derived; nothing to keep in sync. */

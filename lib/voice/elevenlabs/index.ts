@@ -35,6 +35,7 @@
 
 import { VoiceEmitter } from '../emitter'
 import { makeTurn, sortTurns } from '../transcript'
+import { mintRefusal } from '../refusal'
 import { deliveryFor, stripDeliveryTags } from './persona'
 import type { ReplyState, VoiceProvider } from '../provider'
 import {
@@ -278,9 +279,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
         body: JSON.stringify({ personaId: persona.slug, calibration }),
         signal: abort.signal,
       })
-      if (!response.ok) {
-        throw new VoiceError('token_mint_failed', PROVIDER, `Token mint failed (${response.status}).`)
-      }
+      // A REFUSAL IS NOT A FAILED CONNECTION. `mintRefusal` reads the body and
+      // separates "we said no, and here is why" from "the transport broke" —
+      // the two need different screens and only one of them is worth retrying.
+      if (!response.ok) throw await mintRefusal(response, PROVIDER)
       return (await response.json()) as MintedPipelineSession
     } catch (cause) {
       if (cause instanceof VoiceError) throw cause

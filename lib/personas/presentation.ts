@@ -29,6 +29,59 @@ export interface PersonaPresentation {
 }
 
 export const PRESENTATION: Record<string, PersonaPresentation> = {
+  /* ---------------------------------------------------------------- *
+   * The interview track.
+   *
+   * The same six fields, read by the interviewer picker instead of the
+   * roster card. `respondsTo` and `shutsDownOn` are drawn from each
+   * interviewer's own "what impresses you" and "what does not", exactly as
+   * the dating rows are drawn from "what earns your warmth" — so a card
+   * cannot describe somebody the model was never told to be.
+   *
+   * Nothing here promises an outcome (§07, §11). "Responds to" is about how
+   * they answer, never about whether they get the job.
+   * ---------------------------------------------------------------- */
+  'dan-whitfield': {
+    setting: 'Glass meeting room, mid-morning',
+    settingShort: 'Screen call',
+    hook: 'He has your CV open and four of these before eleven.',
+    blurb:
+      'Warm, unhurried, and completely unbothered by a silence. He tells you what he is asking for, then waits for it — and asks again, once, if it does not arrive.',
+    respondsTo: ['a real situation with you in it', 'saying you do not know', 'a question at the end'],
+    shutsDownOn: ['a rehearsed block', 'blaming a former manager'],
+    portraitUrl: '',
+  },
+  'aisha-rahman': {
+    setting: 'Panel room, early afternoon',
+    settingShort: 'Panel',
+    hook: 'She is chairing, two colleagues are on the call, and she is writing everything down.',
+    blurb:
+      'Pleasant, precise, and impossible to read. She follows up on the exact word you used, and she comes back to the vague answer you gave ten minutes ago.',
+    respondsTo: ['an answer that gets more specific under pressure', 'being clear about what was yours', 'changing your mind'],
+    shutsDownOn: ['the same phrase twice', 'an answer that shrinks when she pushes'],
+    portraitUrl: '',
+  },
+  'marcus-vance': {
+    setting: 'Office booth, late afternoon',
+    settingShort: 'Technical',
+    hook: 'No small talk. He starts with the work and stays there.',
+    blurb:
+      'Twenty years in, dry, and one level down from wherever you stopped. He does not mind you not knowing something. He minds you pretending.',
+    respondsTo: ['going deeper before he asks', 'a real trade-off with what it cost', 'admitting a mistake'],
+    shutsDownOn: ['naming a tool as if it did the work', 'confidence about something you only read about'],
+    portraitUrl: '',
+  },
+  'elena-kovac': {
+    setting: 'Corner office, end of the day',
+    settingShort: 'Final round',
+    hook: 'Twenty minutes that were originally thirty, and a phone face down on the desk.',
+    blurb:
+      'Courteous, quick and unreadable. She decides early and never says so; the only signal is that the questions get shorter and she stops following up.',
+    respondsTo: ['noticing she has gone quiet', 'one true thing that costs you something', 'asking about the work'],
+    shutsDownOn: ['filling her silence with more of the same', 'trying to close her'],
+    portraitUrl: '',
+  },
+
   /**
    * Rung 1, and the first thing anybody reads about this product from the
    * inside. Every word of it is chosen to describe a bored person in a

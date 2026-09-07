@@ -5,7 +5,7 @@ import { ElevenLabsPersonaCompiler } from './persona'
 import { resolvePipelineConfig } from './config'
 import { getPersona } from '@/lib/personas'
 import { DEFAULT_CALIBRATION } from '../types'
-import type { TurnEvent, TurnRequest } from './turn-protocol'
+import { MAX_REQUESTED_WORD_CAP, type TurnEvent, type TurnRequest } from './turn-protocol'
 import { PROVIDER_REQUEST_ID_HEADER } from '../request-id'
 import { spokenWordCount } from './truncate'
 import { seededRandom } from '../seed'
@@ -372,7 +372,7 @@ describe('the band ceiling, enforced rather than stated', () => {
   it('clamps a supplied ceiling and falls back to the band when none is sent', async () => {
     expect((await parseTurnRequest(new Request('http://x', {
       method: 'POST', body: JSON.stringify({ ...input, wordCap: 9_000 }),
-    })))?.wordCap).toBe(40)
+    })))?.wordCap).toBe(MAX_REQUESTED_WORD_CAP)
     expect((await parseTurnRequest(new Request('http://x', {
       method: 'POST', body: JSON.stringify({ ...input, wordCap: -3 }),
     })))?.wordCap).toBe(1)

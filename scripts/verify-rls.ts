@@ -316,7 +316,14 @@ async function main(): Promise<void> {
     // Share cards (§18). The token is the capability and the public page
     // resolves it with the service role, which is exactly why this table has
     // one owner-read policy and no anonymous policy at all.
-    const token = 'a'.repeat(32)
+    // UNIQUE PER RUN, because `token` is unique across the table and this
+    // script is meant to be re-runnable. A fixed literal means one crashed run
+    // — a teardown that did not reach its `finally`, a killed process — poisons
+    // every future run with a collision that reads as an RLS failure. It cost
+    // an afternoon once; the row was still there from a run that had passed.
+    // 32 lowercase hex characters, which is what `share_cards_token_check`
+    // enforces and what the app itself mints.
+    const token = crypto.randomUUID().replace(/-/g, '')
     const { error: cardForgery } = await a
       .from('share_cards')
       .insert({ user_id: aId, token, kind: 'rejections', payload: {} })
@@ -429,6 +436,36 @@ async function main(): Promise<void> {
     check(!ownCv, `A can upload her own CV${ownCv ? ` (${ownCv.message})` : ''}`)
     const { error: crossCv } = await b.storage.from('cv').download(`${aId}/cv.pdf`)
     check(!!crossCv, 'B cannot download A\'s CV')
+
+    console.log('\nthe interview credit ledger (INTERVIEW-PLAN A1, D1)')
+    // Rule 11. A balance somebody can write is a free product, so the ledger
+    // grants the owner SELECT and nothing else — no insert, no update, no
+    // delete policy exists for `authenticated` on either table.
+    await admin.from('interview_credit_entries').insert({
+      user_id: aId, kind: 'purchase', source: 'purchase', amount: 3, reference: `rls:${stamp}`,
+    })
+    const { data: ownCredits } = await a
+      .from('interview_credit_entries').select('kind, amount').eq('user_id', aId)
+    // Two rows, not one: the free screener `handle_new_user` grants at sign-up
+    // (D5) and the purchase written just above. Asserting on the kinds rather
+    // than the count is what keeps this a statement about RLS.
+    check(
+      (ownCredits ?? []).some((row) => row.kind === 'purchase')
+        && (ownCredits ?? []).some((row) => row.kind === 'screener'),
+      `A can read her own credit ledger — the sign-up screener and the purchase (${(ownCredits ?? []).length} rows)`,
+    )
+    const { data: bSeesCredits } = await b
+      .from('interview_credit_entries').select('amount').eq('user_id', aId)
+    check((bSeesCredits ?? []).length === 0, 'B cannot read A\'s credit ledger')
+    const { error: forgedCredit } = await a.from('interview_credit_entries').insert({
+      user_id: aId, kind: 'purchase', source: 'purchase', amount: 99, reference: `forged:${stamp}`,
+    })
+    check(!!forgedCredit, 'A cannot grant herself a credit')
+    const { error: forgedHold } = await a.from('interview_credit_holds').insert({
+      user_id: aId, session_id: crypto.randomUUID(), source: 'purchase', round: 'technical',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    })
+    check(!!forgedHold, 'and cannot write herself a hold')
 
     console.log('\nexport (§16.7)')
     const { data: exported, error: exportError } = await a.rpc('export_my_data')

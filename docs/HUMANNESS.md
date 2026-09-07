@@ -524,6 +524,19 @@ The cold bands already forbid questions outright, so the clause is only appended
 in the bands that allow one — saying it twice reads as emphasis on the wrong
 thing.
 
+**The share is the track's, and on the interview arm there is no quota.** An
+interviewer asks a question on essentially every turn, because that is what an
+interview is; applying 40% to one gags her on four turns in five. Measured in
+the first audition of Dan Whitfield: `suppressQuestion` was true on almost every
+turn, *"Do not follow up this turn. Move to the next question."* was composed
+into the directive, and it was ignored every single time. **A directive that is
+disobeyed every turn is worse than no directive** — it teaches the model that
+the bracketed line is optional, and the bracketed line is the only thing that
+owns reply length. `TrackJudgement.maxQuestionShare` is 0.4 on dating and 1 on
+interview; what stops an interviewer interrogating is her contract ("one question
+at a time, never one you have already asked") and the cold bands, which forbid a
+follow-up in their own words.
+
 ### 6.4 The stability meter — is she still in character?
 
 `lib/metrics/stability.ts`. §05's countermeasure 3. Watches **her** stream, not
@@ -895,7 +908,45 @@ the way they do:
 
 ---
 
+## 10. The second arm — what an interview judges instead (7 September 2026)
+
+Everything above describes the **dating** arm, which is the one every customer
+is on today. The interview track runs the same engine — one warmth number, the
+same bands by name, the same fast scorer, the same safety state machine, the same
+transport — and a **parallel judgement layer**, because four of the files above
+are authored in the first person about a woman in a shop.
+
+Rule 19 is why it is copied rather than parameterised, and
+`lib/characterization/dating-arm.test.ts` is the enforcement: no Tier 0 file was
+opened, and the suite fails on the commit that opens one.
+
+| What | Dating | Interview |
+|---|---|---|
+| **Bands** (§5.3) | 3–15 words. Coldness withholds curiosity | 8–34 words. Coldness withholds *reaction* — she stops following up and works through her list. Longer at both ends, because a recruiter who is unconvinced does not answer in four words, she moves briskly |
+| **Reciprocity** (§7.1) | `min(bandCap, ceil(hisWords × 1.3))`. He gives one word, he gets one | **Inverted.** A one-word answer buys her *whole band*, because that is the turn an interviewer digs into. A long answer buys her the band's typical — she has heard enough |
+| **Silence** | Fires on a dead end at a cold band. She withdraws | Fires on an **over**-answer, at most once every four turns. Letting a pause sit after somebody has filled the room is the single most uncomfortable thing in a real interview, and what they fill it with usually undoes the answer they just gave |
+| **The live scorer** (§6.2) | `intimacy`, anchored by topic, top of scale sexual | `specificity` — did the answer name a decision, a number, a consequence, or was it a job title. The overreach rule is re-derived as *unprompted* disclosure: salary, why they left, an opinion about the last employer |
+| **The rubric** (§6.5) | Opening, curiosity, listening, signal reading, composure, close | Structure and specificity replace opening and curiosity; the other four carry over as skills. **No memory line at all** — an interviewer who remembers your last attempt is the companion-app framing rule 9 refuses |
+| **The question quota** (§6.3) | 40% of her last five turns | None. Asking is the job |
+| **The stability meter** (§6.4) | `question-every-turn` is a break | Off. Same reason |
+| **Posture** (§5.2) | "You like him more than the conversation" | "This one is worth your afternoon." §16 refuses anything that reads as attraction here |
+| **The wind-down** | Thirty seconds. She leaves, or offers her number | 15% of the round, floored at 45s and capped at 120s. *"Do you have any questions for me?"* — a beat candidates lose offers on, and thirty seconds is not enough time to answer it |
+
+The seam is three selectors — `lib/warmth/track.ts`, `lib/warmth/track-prompt.ts`
+and `lib/grade/track.ts` — each reading `persona.track`, with dating as the
+default branch reaching the identical functions. A third track is a third
+directory and one more case, not a third `if`.
+
+**What is unchanged and must stay unchanged:** the engine, the three affect axes,
+`bandFor`, the fast scorer, the safety sequence, `capToBudget`, the whole
+transport. §07 too, and it matters *more* here: a candidate turned down can score
+92, and "did you get the job" is the thing every competitor in this category
+scores.
+
+---
+
 *Companion documents: `NERVE-SPEC.md` (the specification), `PRODUCT.md` (the
 shape as built), `PERSONA.md` (the four-layer schema), `PERSONA-AUDIT.md` (the
 defects and the arguments), `PIPELINE.md` (the voice arm), `DATA.md` (the
-tables).*
+tables), `INTERVIEW-PLAN.md` (the second track, and §14's record of what
+shipped).*

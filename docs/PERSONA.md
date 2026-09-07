@@ -391,6 +391,46 @@ The engine variable is always `warmth`. Only the label changes: **Warmth**
 variable per track would mean three engines; renaming the label means one engine
 and a lookup. The UI reads the label, the engine reads the variable.
 
+## The second roster — four interviewers (7 September 2026)
+
+`lib/personas/interview/` holds four characters on `track: 'interview'`, one per
+`Interviewer['style']`:
+
+| Rung | Slug | Style | Room | What she trains |
+|---|---|---|---|---|
+| 1 | `dan-whitfield` | Friendly HR | glass meeting room | Saying anything about your own work out loud |
+| 2 | `aisha-rahman` | Panel lead | panel room | Whether the second telling of an answer matches the first |
+| 3 | `marcus-vance` | Technical | office booth | Going one level down before you are asked to |
+| 4 | `elena-kovac` | Distracted exec | corner office | Noticing somebody has decided, when they will not say so |
+
+**The rung number is a curve, not a gate.** §5.10 of `INTERVIEW-PLAN.md` is the
+argument: the dating ladder is a progression and you earn Robin, but somebody who
+paid $29 because they interview on Thursday needs the hard one tonight, and a
+pack of five mostly spent on tutorial is a refund request. All four are open from
+the first credit and `fetchInterviewers` returns `locked: false` for every one.
+
+**They cannot renumber a dating curve**, and the reason predates them:
+`lib/warmth/levels.ts` already filtered on `track === 'dating'` when building the
+level → trajectory map. That filter is the only thing that makes a second rung 1
+through 4 safe, and it is worth knowing before adding a third track.
+
+**Everything about the judgement is a parallel file.** They read
+`lib/warmth/interview/` — a band table that is longer at both ends, a reciprocity
+model where the mirror is inverted, its own posture clauses and its own
+specificity anchors — and `lib/grade/interview/rubric.ts`. Nothing in
+`lib/warmth/bands.ts`, `reciprocity.ts`, `steering.ts`, `prompt.ts` or
+`lib/grade/prompt.ts` was opened to make that work (rule 19), and
+`lib/characterization/dating-arm.test.ts` asserts it on every run.
+
+Two per-character escape hatches that already existed carry them:
+`verbosityMedian` (all four set `INTERVIEW_VERBOSITY_MEDIAN`, because measuring
+an interviewer against the dating table's ceiling reports her as broken for the
+thing that makes her good) and `disposition` (the banded line is authored about a
+stranger being spoken to in a shop and reads as nonsense from a recruiter). A
+third was added for the same reason: `StabilityMeterOptions.questionsAreTheJob`,
+because `question-every-turn` is a dating rule and an interviewer asking a
+question every turn is the job.
+
 ## A bug this refactor surfaced
 
 `bandFor` selected on `value >= min && value <= max` against integer bounds and

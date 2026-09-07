@@ -15,7 +15,11 @@ import { requireUser } from '@/lib/db/api-auth'
 import { runScoringCall } from '@/lib/db/scoring-usage'
 import { readScoringBody, ScoringInputError, SCORING_LIMITS } from '@/lib/voice/scoring-request'
 import { clampSlowScore } from '@/lib/warmth/slow'
-import { buildSystemPrompt, scorerPlaceFor } from '@/lib/warmth/prompt'
+// B2's seam, on the live scorer. Dating is the default branch and reaches the
+// anchors it reached yesterday; an interviewer is scored on SPECIFICITY, because
+// the dating scale pins "work, where she lives" at 40-50 and its top is sexual —
+// a candidate describing their last job would be graded as overreaching.
+import { scorerPromptFor } from '@/lib/warmth/track-prompt'
 
 export const runtime = 'edge'
 
@@ -50,9 +54,10 @@ export async function POST(request: Request): Promise<Response> {
   const personaName = str(body.personaName, 40) ?? 'She'
   // Resolved from the registry, never taken from the body. The name arrives
   // from the client and is only ever interpolated as a name; where she is
-  // standing is prompt content that steers the intimacy scale, so it comes from
-  // the repo — the same rule the character contract follows.
-  const place = scorerPlaceFor(personaName)
+  // standing is prompt content that steers the scale, and WHICH SCALE is prompt
+  // content too — so both come from the repo, the same rule the character
+  // contract follows.
+  const systemPrompt = scorerPromptFor(personaName)
   const warmth =
     typeof body.warmth === 'number' && Number.isFinite(body.warmth)
       ? Math.max(0, Math.min(100, Math.round(body.warmth)))
@@ -77,7 +82,7 @@ export async function POST(request: Request): Promise<Response> {
     maxOutputTokens: SCORING_LIMITS.warmthOutputTokens,
     timeoutMs: SCORING_LIMITS.warmthTimeoutMs,
     messages: [
-      { role: 'system', content: buildSystemPrompt(personaName, place) },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: userContent },
     ],
   })

@@ -246,6 +246,17 @@ describe('persona compilation', () => {
     // fallback onto `coral` — Maya's voice, by accident rather than by casting.
     // Robin and Nadia were both `marin`, so Level 1 and Level 7 sounded
     // identical. Eight characters that share voices are not eight characters.
+    //
+    // UNIQUENESS IS PER TRACK, and that is a real narrowing rather than a
+    // convenience. The failure this test was written for is two characters ON
+    // THE SAME LADDER sounding identical, which is what makes a rung stop
+    // meaning anything. OpenAI ships five voices that do not read as male and
+    // the dating roster holds four of them, so a second four-character roster
+    // cannot be cast without either reusing one or casting a woman on a man's
+    // voice — and the test below refuses the second outright. A dating
+    // character and an interviewer in different rooms on different tracks
+    // sharing a fallback voice on the arm that is not shipping is not the
+    // defect. Casting explicitly still applies to everybody.
     const seen = new Map<string, string>()
     for (const persona of Object.values(PERSONAS)) {
       const named = persona.voice.ids.openai
@@ -254,9 +265,10 @@ describe('persona compilation', () => {
       const voice = resolveVoice(persona)
       expect(voice, `${persona.slug} fell through to the timbre default`).toBe(named)
 
-      const already = seen.get(voice)
+      const key = `${persona.track}:${voice}`
+      const already = seen.get(key)
       expect(already, `${persona.slug} shares "${voice}" with ${already}`).toBeUndefined()
-      seen.set(voice, persona.slug)
+      seen.set(key, persona.slug)
     }
     expect(seen.size).toBe(Object.keys(PERSONAS).length)
   })

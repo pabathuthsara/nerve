@@ -842,3 +842,154 @@ Covered by `lib/data/allowance.test.ts` and, against the real database, by the
 "upgrading on the day you signed up" block in `npm run db:rep`. No repair was
 needed for existing rows: the derivation is a read, so the affected account was
 correct on its next page load.
+
+---
+
+## 13 · Interview credits — a second meter, 7 September 2026
+
+`INTERVIEW-PLAN.md` Phases D and E shipped, and they add the first thing this
+document's model could not express: a **balance** alongside the daily rate.
+Everything in §5 stands unchanged — free is still `repsPerDay: 0`, Pro is still
+$19 with a seven-day card-backed trial, Elite still $49 — and none of it was
+edited to make room.
+
+### Why a balance and not another number in `reps_per_day`
+
+Arithmetic, not preference. `entitlements.reps_per_day` is a **rate**, and an
+interview is up to twenty-five minutes: three a day on Pro is about $45/month of
+voice against a $19 price, before the merchant of record takes its cut. Lowering
+the rate to compensate would break the dating plan it was sized for, which rule
+19 forbids anyway. So interviews are metered by a credit balance
+(`interview_credit_entries`), and a `Plan` remains exactly what §14's
+abstraction says it is: an entitlement identity that decides `reps_per_day` and
+the daily spend cap, and nothing else.
+
+**A pack is therefore not a `Plan`** — the same reasoning that let a billing
+period cost no migration. No new plan value, no CHECK constraint, no mark glyph.
+
+### What is sold
+
+| | Price | Contents | COGS at $0.55/interview |
+|---|---|---|---|
+| Free screener | **$0** | 1 × 5 min, once per account, granted at sign-up | ~14¢ |
+| One interview | **$9** | 1 × full round, graded | ~6% |
+| Five interviews | **$29** | 5 | ~9% |
+| Twelve interviews | **$59** | 12 | ~11% |
+| Pro $19/mo | — | **1 credit per billing period**, on top of 3 dating reps a day | — |
+| Elite $49/mo | — | **4 credits per billing period**, on top of 6 a day | — |
+
+Authored in `lib/site/plans.ts` beside `OFFERS`, created at Whop by
+`npm run whop:setup -- --apply`, asserted by `npm run whop:verify`. The three
+one-time plans are `plan_QrLflgYyHkFnq`, `plan_b8D7UKsSAnkTS` and
+`plan_v4te5KT1tHvF9`, injected as `WHOP_PACK_SINGLE`, `WHOP_PACK_FIVE` and
+`WHOP_PACK_TWELVE` — the same doctrine as `WHOP_PLAN_*`, and for the same
+reason: **an unrecognised plan id grants nothing.**
+
+### The two expiry rules, and where they are written down
+
+**A purchase never expires and survives cancellation. A grant dies at the end of
+the period that handed it out.** That is what the category does and it is
+coherent rather than merely conventional — a grant is part of the month you paid
+for, and a pack is a thing you bought outright.
+
+It is one string, `CREDIT_EXPIRY_NOTE`, read by four surfaces: `/pricing`, the
+interview home, `TermsDocument` clause 07 and `RefundDocument` clause 04. Two
+documents describing the same promise are two chances to disagree, and the one a
+disputing customer quotes is whichever is more generous — the rule the trial
+length already follows through `TRIAL_DAYS`. `npm run legal:pdf` was re-run.
+
+### The thing a real payload taught, again
+
+**Rule 14 earned its place a second time.** The obvious design grants on
+`membership.activated` and tops up on `payment.succeeded`. Reading the captured
+delivery from the first live purchase — `pay_PjRU2V3WOafQJ9`, 2 September —
+shows `total: "0.0"`, `status: "paid"`, `billing_reason: "subscription_create"`:
+**Whop emits a real payment event for the $0 authorisation that starts a
+card-backed trial**, ninety milliseconds after the membership event. The obvious
+design hands two credits to every trial on day zero, and nothing in the
+specification says so.
+
+So the whole credit layer keys on the payment and only on the payment. One
+payment is one period is one grant; `membership.activated` grants nothing at
+all; and the `pay_…` is the idempotency key, so eleven of Whop's twelve retries
+collide on the ledger's unique index. Pinned in `lib/billing/events.test.ts`
+against the real body.
+
+`npm run whop:probe -- --capture payment.succeeded` now prints the most recent
+real delivery of any event type, ready to pin. That is what turns "read one real
+payload before trusting the schema" from a discipline into a step.
+
+### The ordering bug that a pack would have caused
+
+`refund.created` maps to `revoke`, which lands the account on free. A Pro
+subscriber refunding a $9 pack would therefore have had their **subscription**
+cancelled by a refund of something else entirely. The pack branch in
+`applyBillingEvent` runs before the mirror, the entitlement and `shouldApply`,
+and returns — a pack moves a balance and never a plan. Asserted in
+`npm run db:billing`.
+
+### The one failure the route now asks to have redelivered
+
+Everything the webhook understands is answered 200, deliberately: a non-200 has
+Whop redeliver twelve times over seventy-one hours and then disable the
+endpoint, which is the wrong answer to an unattributable purchase or a plan no
+variable names. **A failed credit write is different** — somebody has paid and
+the interviews they bought are not in the account — so `ApplyResult.retryable`
+marks that one case and the route answers 500. `applyBillingEvent` is
+idempotent, so the retry re-does nothing that already worked.
+
+Found by `npm run whop:probe` rather than by reading: the probe's pack delivery
+came back `handled: true` for a purchase that had credited nobody, because a
+failed ledger insert was being reported with the same words as a duplicate one.
+
+### The pricing surfaces, rebuilt the same day
+
+Both of them, because the second meter is what broke the first one's layout: a
+board that had been quoting one price per plan now had a plan allotment, a pack
+price and two expiry rules to carry as well, and it was already printing every
+billing period at once.
+
+- **One period at a time.** `/pricing` and `/profile/subscription` share one
+  segmented control (`PeriodTabs`), driven from `BILLING_PERIODS`, so an annual
+  offer authored in `lib/site/plans.ts` would appear on both surfaces and in
+  `whop:verify` without a component being edited. Elite is monthly only and
+  falls back with a **Monthly only** chip rather than vanishing.
+- **What the card is charged, in a sentence, on every card** — `chargeLine`.
+  The trial is a property of the OFFER, not the plan, so the weekly card says
+  "Charged $7 today" and the monthly one says "7 days free, then $19 every
+  month".
+- **The footnote is scoped to the period on screen** — `trialNoteFor`. It had
+  been static, which put *"your card is authorised when the trial starts and
+  charged 7 days later"* directly beneath a card reading *"Charged $7 today"*.
+  A static footnote is fine under a static board and stops being fine the
+  moment the board has a control on it.
+- **Weekly's premium is louder, not quieter.** The old layout bought its
+  clutter with a real virtue and the redesign had to keep it: the saving is on
+  the tab (37%, derived from `monthlyEquivalent` rather than authored), the
+  period note says "dearer per month" in those words, and any non-monthly price
+  prints its effective monthly rate underneath.
+- **The feature lists state the interview allotment** — 1 a month on Pro, 4 on
+  Elite, one free screener on Free — because it is now a real plan difference
+  and the second one a plan has ever had.
+
+`VISUAL-AUDIT.md` V19 has the rest, including the three left edges and the
+three volts the page had before.
+
+### Still owed by hand
+
+1. **No pack has been bought with a real card.** D2 asks for exactly that — buy
+   one, capture the delivery, pin it *before* writing the handler — and it is
+   the one part of Phase D that a laptop cannot do. What stands in for it: six
+   real deliveries read from the live webhook, the two that matter pinned
+   verbatim, and a handler that reads only fields present in **every** captured
+   payment payload (`data.id`, `data.plan.id`, `data.metadata.user_id`,
+   `data.membership.status`) — none of which varies by plan type. The first real
+   purchase should be captured with `whop:probe -- --capture payment.succeeded`
+   and pinned beside the others.
+2. **The renewal date on `/profile/subscription` is still the previous period's**
+   after a renewal, because only membership events carry a period and a renewal
+   emits `payment.succeeded` alone. Known and deliberate since 4 September —
+   writing the absence through would blank the line entirely. Recorded here
+   because Phase D looked at it closely and left it alone: the interview grant
+   computes its own expiry rather than trusting the stored date, so nothing in
+   this section depends on it.

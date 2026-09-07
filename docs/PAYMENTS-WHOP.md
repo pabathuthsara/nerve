@@ -251,7 +251,15 @@ Whop" link once §2.6 tells us the URL.
 | `WHOP_ACCOUNT_ID` | `biz_...`. Every event's `account_id` must match |
 | `WHOP_PLAN_PRO` | `plan_...` |
 | `WHOP_PLAN_ELITE` | `plan_...` |
+| `WHOP_PACK_SINGLE` | `plan_...` — a **one-time** plan. One interview credit (D3) |
+| `WHOP_PACK_FIVE` | `plan_...` — five |
+| `WHOP_PACK_TWELVE` | `plan_...` — twelve |
 | `WHOP_TEST_MODE_IN_PRODUCTION` | Unset except during the production rehearsal |
+
+The three `WHOP_PACK_*` are gated separately from the rest by
+`packsConfigured()` rather than by `checkoutConfigured()`, on purpose: a
+deployment missing one of them hides the interview buy buttons and keeps
+selling subscriptions, instead of taking the subscription page down with it.
 
 Replaces the five `CREEM_*` variables. The whole block in `.env.example`
 (lines 209–253) is rewritten, comments included — those comments are
@@ -949,3 +957,72 @@ matches. Every one is either prose in a comment explaining why a guard exists
 is **refused** now that the legacy scheme is gone. No Creem code path, endpoint,
 environment variable or npm script remains. The checklist item is amended to say
 that rather than to demand the comments be stripped.
+---
+
+## 14. The interview packs, 7 September 2026
+
+`INTERVIEW-PLAN.md` D3. Three **one-time** plans under the same `Nerve` product
+(`prod_DlhZq3oMd4QHd`), created and read back by `npm run whop:setup -- --apply`:
+
+| Pack | Plan | `initial_price` | `renewal_price` | Metadata |
+|---|---|---|---|---|
+| One interview | `plan_QrLflgYyHkFnq` | 9 | 0 | `nerve_pack: single`, `nerve_credits: 1` |
+| Five interviews | `plan_b8D7UKsSAnkTS` | 29 | 0 | `nerve_pack: pack5`, `nerve_credits: 5` |
+| Twelve interviews | `plan_v4te5KT1tHvF9` | 59 | 0 | `nerve_pack: pack12`, `nerve_credits: 12` |
+
+All three hidden, no trial, `expiration_days: null`, USD, exclusive tax.
+
+**A one-time plan is the mirror image of a subscription and the failure mode of
+getting it backwards is silent in the worst way.** The money is on
+`initial_price`; a pack created with its price on `renewal_price` charges
+**nothing** at checkout and then keeps charging nothing, so the first anyone
+knows is a credit balance that filled up for free. `whop:verify` asserts both
+fields on every pack, along with the vendor's own `nerve_pack` and
+`nerve_credits` — a plan whose metadata says five while `lib/site/plans.ts` says
+twelve is a discrepancy nothing else would ever surface, on a real charge.
+
+**No new webhook events.** A one-time purchase emits `payment.succeeded` and
+`membership.activated`, both already subscribed. The credit layer acts on the
+first and ignores the second — see `PAYMENTS-NEW-INTEGRATION.md` §13 for why
+that is a measurement rather than a preference.
+
+**A PRODUCT WRITE RE-CLASSIFIED THE ACCOUNT, which is a new route for rule 12
+and a worse one.** The storefront description was rewritten the same day to lead
+with both tracks. The `PATCH /products` named no account field whatsoever — and
+`whop:verify` came back **`ai_and_automation_software / ai_chatbot_software`**.
+Not `mental_health_app`, which is the only revert target rule 12 knew about, and
+not from an account write, which is the only trigger it knew about. Whop
+evidently re-derives the account's classification from product content, and a
+description that says "AI characters" and "an interviewer" reads to that
+classifier as a chatbot company.
+
+It matters because the classification is the first thing a compliance reviewer
+sees and because `ai_chatbot_software` is a category several processors treat
+differently from coaching. The API key **cannot** write `/accounts` (404), so
+the repair needs a user-token credential — the MCP, or the dashboard.
+
+**And then it moved a second time, with no write at all.** Twenty minutes after
+the repair, `whop:verify` came back
+`industry_specific_software / other_general` — a third value, arriving from
+nothing that this repo did. The re-derivation is asynchronous, so **a preflight
+that passes immediately after a product write proves nothing about an hour
+later.** Check it again before any launch or marketing action, and check it
+again after any change to a product's title, headline or description.
+
+Two things follow, and the second is the general one. `npm run whop:verify` must
+be run after **every** `whop:setup --apply`, whatever the script printed, because
+it is the only thing that has ever caught this. And the trigger to watch is not
+"an account write" but "any write Whop can read as a statement about what this
+business does".
+
+**The storefront description is capped at 1,500 characters**, which is the other
+thing that run found: Whop refuses a longer one with *"Shortened description is
+too long"*. The description written on 2 September was already over it, so
+re-saving the product had been failing with a 400 that the script reported and
+nobody had needed to act on. There is no room left in the current one.
+
+`npm run whop:probe -- --capture <event>` reads the most recent real delivery of
+an event type out of Whop's own delivery log and prints the body verbatim. Whop
+keeps request bodies for a fortnight, so this is the command that makes rule
+14's "read one real payload before trusting the schema" a step rather than a
+discipline. It is what D2 asks for on the day the first pack is really bought.

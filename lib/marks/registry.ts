@@ -2,7 +2,7 @@
  * The mark vocabulary (`docs/VISUAL-AUDIT.md` §3, V1).
  *
  * Thirty things in this product are meant to be recognised on sight — four
- * ranks, four roster tiers, four field tiers, six score dimensions, five
+ * ranks, four roster tiers, four field tiers, seven score dimensions, five
  * library kinds, four rejection milestones and three plans — and until this
  * existed every one of them was drawn as a word in the same face, the same
  * size and the same grey. A user could not glance at Train and see where they
@@ -45,9 +45,12 @@ import type { FieldTier, Level, Plan } from '@/lib/data/types'
 export type MarkName =
   // Rank — ascending chevrons, then a capped form at the top (§08's rail).
   | 'rank-1' | 'rank-2' | 'rank-3' | 'rank-4'
-  // The six §07 dimensions, drawn as what the dimension does.
+  // The §07 dimensions, drawn as what the dimension does. Six on the dating
+  // arm; the interview arm adds a seventh (`dim-accuracy`).
   | 'dim-opening' | 'dim-curiosity' | 'dim-listening'
   | 'dim-signal' | 'dim-composure' | 'dim-close'
+  // The seventh, on the interview arm only. Absent from every dating scorecard.
+  | 'dim-accuracy'
   // Roster tier — an aperture that closes as the tier rises.
   | 'tier-1' | 'tier-2' | 'tier-3' | 'tier-4'
   // Field tier — rungs. The mark counts, so it cannot disagree with the label.
@@ -89,6 +92,11 @@ const DIMENSION_MARKS: Record<string, MarkName> = {
   signalReading: 'dim-signal',
   composure: 'dim-composure',
   close: 'dim-close',
+  // INTERVIEW-TECHNICAL-PLAN §8.4. It resolves on both arms, because this map
+  // is keyed by the label and the label exists whether or not a given rep
+  // produced a number for it — a mark that resolved only sometimes would be a
+  // hole in a scorecard that appeared for some users and not others.
+  technicalAccuracy: 'dim-accuracy',
 }
 
 export function dimensionMark(key: string): MarkName | null {

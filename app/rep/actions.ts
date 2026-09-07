@@ -26,6 +26,10 @@ import type { CharacterBreak } from '@/lib/metrics/stability'
 import { AUDIO_RETENTION_DAYS } from '@/lib/db/retention'
 import { asJson } from '@/lib/db/json'
 import { consumeRep, recordTrainingDay, refundRep, syncLevel } from '@/lib/db/progress'
+import { holdInterviewCredit, refundInterviewCredit, settleInterviewCredit } from '@/lib/db/credits'
+import { readInterviewRound } from '@/lib/db/interview'
+import { interviewCreditable, creditRefundReason } from '@/lib/data/interview-rules'
+import { getPersona } from '@/lib/personas'
 import type { RefusalKind } from '@/lib/data/allowance'
 import { adjustDifficulty, recentScoresAtLevel } from '@/lib/db/difficulty'
 import { wonFromRep } from '@/lib/data/progression'
@@ -44,8 +48,14 @@ export interface StartResult extends SaveResult {
    * `upgrade` means this account has no voice on its plan at all — a different
    * screen from "you are out for today", not a different wording of it. See
    * `voiceRefusal` in `lib/data/allowance.ts`.
+   *
+   * `credits` is the interview track's third answer, and it is a third screen
+   * rather than a rewording of either: an interview is bought out of a balance
+   * that does not reset at midnight and is not part of any plan (§5.3). It is
+   * widened here rather than in `lib/data/allowance.ts`, which owns the dating
+   * sign-up rep's arithmetic and is deliberately left alone (D5).
    */
-  refusal?: RefusalKind
+  refusal?: RefusalKind | 'credits'
 }
 
 const FAILED: SaveResult = { ok: false, message: 'Not saved — you are signed out.' }
@@ -117,8 +127,18 @@ export async function startSession(input: {
     return { ok: true, message: null, sessionId: open.id }
   }
 
-  const quota = await consumeRep(user.id)
-  if (!quota.ok) return { ok: false, message: quota.message, sessionId: null, refusal: quota.refusal ?? 'daily' }
+  // AN INTERVIEW IS NOT BOUGHT OUT OF THE DAILY RATE (§5.2, A1).
+  //
+  // `consumeRep` is left exactly as it is and is simply not reached: the track
+  // is read off the authored roster, so a client cannot talk its way into the
+  // cheaper meter by naming a different slug. The credit is held after the row
+  // exists, because the hold is keyed on the session id — which is what makes
+  // two connects for one rep unable to spend two credits.
+  const interview = getPersona(input.personaSlug)?.track === 'interview'
+  if (!interview) {
+    const quota = await consumeRep(user.id)
+    if (!quota.ok) return { ok: false, message: quota.message, sessionId: null, refusal: quota.refusal ?? 'daily' }
+  }
 
   // Resolve the character row if it has been seeded. The slug is stored either
   // way, so a rep against an unseeded persona is still a complete record.
@@ -141,6 +161,16 @@ export async function startSession(input: {
     .single()
 
   if (error) return { ok: false, message: `Not saved — ${error.message}`, sessionId: null }
+
+  if (interview) {
+    const held = await holdInterviewCredit({
+      userId: user.id,
+      sessionId: data.id,
+      round: await readInterviewRound(user.id),
+    })
+    if (!held.ok) return { ok: false, message: held.message, sessionId: null, refusal: 'credits' }
+  }
+
   return { ok: true, message: null, sessionId: data.id }
 }
 
@@ -224,7 +254,7 @@ export async function finishSession(input: {
 
   const warmth = input.warmth ?? null
 
-  const { error: sessionError } = await supabase
+  const { data: finished, error: sessionError } = await supabase
     .from('sessions')
     .update({
       ended_at: new Date().toISOString(),
@@ -260,8 +290,14 @@ export async function finishSession(input: {
         : null,
     })
     .eq('id', input.sessionId)
+    // The track, read back from the row rather than passed in by the caller.
+    // Which meter this rep was bought out of is a server fact, and a browser
+    // that could name it could name the cheaper one.
+    .select('persona_slug')
+    .maybeSingle()
 
   if (sessionError) return { ok: false, message: `Not saved — ${sessionError.message}`, refunded: false }
+  const interview = getPersona(finished?.persona_slug ?? '')?.track === 'interview'
 
   const { error: transcriptError } = await supabase.from('transcripts').upsert(
     {
@@ -329,7 +365,27 @@ export async function finishSession(input: {
   // of the day for a rep that produced nothing (§14 meters what was used; this
   // was not used).
   let refunded = false
-  if (!heardUser) {
+  if (interview) {
+    // A2. **The binary test is the wrong test for a long rep.** A dating rep is
+    // creditable only when it produced literally nothing, which is right at
+    // three minutes on a resetting quota and wrong at twenty on a $9 item: a
+    // rep that dies at minute fourteen has heard the user, keeps the money and
+    // returns nothing. So the interview arm asks whether the rep COMPLETED, and
+    // keeps `heardUser` beside it as the second creditable case — the
+    // muted-headset failure, which is different and still deserves the credit
+    // back. See `lib/data/interview-rules.ts`.
+    //
+    // **The dating branch below is the branch it has always been**, and A0's
+    // timing snapshots plus `npm run db:rep` say so.
+    if (interviewCreditable({ endedBy: input.reason, heardUser })) {
+      const credit = await refundInterviewCredit({
+        userId: user.id,
+        sessionId: input.sessionId,
+        reason: creditRefundReason({ endedBy: input.reason, heardUser }) ?? 'incomplete',
+      })
+      refunded = credit.ok && credit.changed
+    }
+  } else if (!heardUser) {
     if (serverMetered) {
       const credit = await refundEmptyVoiceSession({ userId: user.id, sessionId: input.sessionId })
       refunded = credit.ok && credit.refunded === true
@@ -440,6 +496,11 @@ export async function saveScore(input: {
     went_well: card.wentWell,
     focus: card.focus,
     outcome: card.outcome,
+    // THE SEVENTH DIMENSION (§8.4). Null on every dating rep and on every
+    // interview round that never probed, which is what keeps the stored row the
+    // same row it has always been on that path.
+    technical_accuracy: card.accuracy?.score ?? null,
+    accuracy: card.accuracy ? asJson(card.accuracy) : null,
     model_version: card.model,
     voice_provider: input.provider,
   })
@@ -450,9 +511,21 @@ export async function saveScore(input: {
   // It is recorded and worth zero points (§07).
   const { data: session } = await supabase
     .from('sessions')
-    .select('final_warmth, peak_warmth, won, persona_id')
+    .select('final_warmth, peak_warmth, won, persona_id, persona_slug')
     .eq('id', input.sessionId)
     .maybeSingle()
+
+  // A1. **The scorecard exists, so the credit is spent.**
+  //
+  // Not at connect, which is where `consumeRep` spends a dating rep: at
+  // twenty minutes a hold that settles only on delivery is the difference
+  // between a refund request and a receipt. Idempotent twice over — the hold
+  // moves from `held` once, and the ledger row carries the session id as its
+  // reference. Placed before `syncLevel` for no reason other than that the
+  // money question should be answered before the progression one.
+  if (getPersona(session?.persona_slug ?? '')?.track === 'interview') {
+    await settleInterviewCredit({ userId: user.id, sessionId: input.sessionId })
+  }
 
   await supabase
     .from('sessions')

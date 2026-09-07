@@ -16,16 +16,41 @@
  *
  * The cap is presented as a feature because it is one. Three reps a day is how
  * training works; unlimited practice is not how anybody gets better at anything.
+ *
+ * ── THE BOARD IS A PERIOD CONTROL NOW, AND THAT REVERSES A DECISION ──────
+ *
+ * This page used to print every price at once: a monthly figure on each card
+ * and a smaller line under it offering the weekly one. The note on that
+ * decision argued a toggle "would hide half the offer to no purchase". It
+ * measured the wrong cost. Three cards quoting five numbers do not read as
+ * generous, they read as undecided, and the reader's first task was working out
+ * which price applied to them.
+ *
+ * `components/site/plan-board.tsx` holds the replacement and the whole
+ * argument, including what had to be preserved in the move: weekly costs more
+ * per month than monthly, and that fact is now louder rather than quieter — on
+ * the tab, under the tabs, and beneath any non-monthly price.
  */
 
 import Link from 'next/link'
 import { Check } from 'lucide-react'
-import { Mark, planMark } from '@/components/marks'
+import { PlanBoard } from './plan-board'
 import { SiteSection, SITE_LINKS, SUPPORT_EMAIL } from './site-chrome'
 import {
-  BILLING_NOTE, CHECKOUT_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE,
-  monthlyEquivalent, offerFor, periodLabel, repsLine,
+  BILLING_NOTE, CHECKOUT_NOTE, CREDIT_EXPIRY_NOTE, INTERVIEW_PACKS,
+  PLAN_INTERVIEW_CREDITS, PUBLIC_PLANS, SCREENER_NOTE, TRIAL_DAYS,
+  creditsLine, perInterview, repsLine,
 } from '@/lib/site/plans'
+
+/**
+ * The pack with the lowest price per interview.
+ *
+ * Derived rather than hardcoded, so it follows the prices instead of being a
+ * marketing claim somebody has to remember to move. `plans.test.ts` asserts
+ * the packs get cheaper per interview as they grow, which is what makes this
+ * the last one.
+ */
+const BEST_VALUE_PACK = [...INTERVIEW_PACKS].sort((a, b) => perInterview(a) - perInterview(b))[0]?.id
 
 const BILLING_FAQ = [
   {
@@ -57,8 +82,16 @@ const BILLING_FAQ = [
     a: 'Yes, and it is not a trial in disguise. The free plan keeps every field challenge, the log, the predicted-versus-actual chart, your streak, your history and text mode against the same characters, for as long as you want it. What it does not include is voice — apart from one rep when you sign up, so that you know what you are deciding about.',
   },
   {
+    q: 'How do practice interviews work, and why are they not in the daily allowance?',
+    a: 'An interview runs ten to twenty-five minutes against an interviewer who has read your CV and the job description, and it is graded on seven dimensions. A daily rep allowance cannot hold an item that long — three twenty-minute interviews a day would cost us more in voice than the subscription does — so interviews are sold as credits instead. Pro includes one a month and Elite four; you can also buy them outright, and every account gets one free five-minute screen to see what it is.',
+  },
+  {
+    q: 'Do interview credits expire?',
+    a: 'The ones you buy do not, ever. They stay in the account, they survive cancelling, and nothing removes them but using them. The ones included with a plan are part of that month and do not roll over — and if the subscription ends, unspent included credits go and everything you bought stays. When you use one, we spend the expiring ones first.',
+  },
+  {
     q: 'Can I get a refund?',
-    a: `Write to ${SUPPORT_EMAIL} within fourteen days of a charge and we will refund it, no argument. Between the sign-up rep and the ${TRIAL_DAYS}-day trial, nobody should ever reach a charge they did not mean to make.`,
+    a: `Write to ${SUPPORT_EMAIL} within fourteen days of a charge and we will refund it, no argument — a subscription charge or a pack of interviews alike. Between the sign-up rep, the free five-minute interview and the ${TRIAL_DAYS}-day trial, nobody should ever reach a charge they did not mean to make.`,
   },
 ]
 
@@ -73,6 +106,7 @@ const BILLING_FAQ = [
  */
 const PLAN_MATRIX: { label: string; varies?: boolean; values: (boolean | string)[] }[] = [
   { label: 'Voice reps with a live character', varies: true, values: PUBLIC_PLANS.map((plan) => repsLine(plan)) },
+  { label: 'Practice interviews included each month', varies: true, values: PUBLIC_PLANS.map((plan) => creditsLine(plan.id)) },
   { label: 'The full scorecard — six dimensions, evidence, transcript', values: [true, true, true] },
   { label: 'Every character: tiers open on scores, never on price', values: [true, true, true] },
   { label: 'Every field challenge, at every tier', values: [true, true, true] },
@@ -80,12 +114,13 @@ const PLAN_MATRIX: { label: string; varies?: boolean; values: (boolean | string)
   { label: 'Streaks, ranks and the Sunday review letter', values: [true, true, true] },
   { label: 'Text mode against the same characters, unmetered', values: [true, true, true] },
   { label: 'One voice rep at sign-up, before you decide anything', values: [true, true, true] },
+  { label: 'One free five-minute practice interview, once per account', values: [true, true, true] },
 ]
 
 export function PricingPage() {
   return (
     <>
-      <section className="page-hero">
+      <section className="page-hero page-hero--wide">
         <span className="label">Pricing</span>
         <h1 className="display-xl">You pay for minutes<br />with a live character.<br />Nothing else.</h1>
         <p>
@@ -95,64 +130,71 @@ export function PricingPage() {
         </p>
       </section>
 
-      <section className="plan-board">
-        {PUBLIC_PLANS.map((plan) => (
-          <article key={plan.id} className={`plan-board__card${plan.id === 'pro' ? ' plan-board__card--lead' : ''}`}>
-            <header>
-              <div className="plan-board__name">
-                <span className="mark-row"><Mark name={planMark(plan.id)} size={18} current={plan.id === 'pro'} /><span className="label">{plan.name}</span></span>
-                {/* Only where it is true. Pro is also sold by the week with no
-                    trial, and the chip describes the MONTHLY offer. */}
-                {plan.id === 'free' ? null : <span className="arena-chip">{TRIAL_DAYS} days free monthly</span>}
-              </div>
-              <div className="plan-board__price">
-                <strong className="data">{plan.price ?? '$0'}</strong>
-                <span className="mute">{plan.price ? '/ month' : 'no card, ever'}</span>
-              </div>
-              {/* Both prices, side by side, rather than a toggle.
-                  Every button on this page goes to /signup — the purchase
-                  happens inside the account — so a stateful tab would make this
-                  a client component and hide half the offer to no purchase.
-                  The effective monthly rate is stated because weekly costs MORE
-                  per month, and a ladder that hides that is a trick. */}
-              {offerFor(plan.id, 'weekly')
-                ? (() => {
-                  const weekly = offerFor(plan.id, 'weekly')!
-                  return <p className="plan-board__alt">
-                    or <b className="data">{weekly.price}</b> {periodLabel(weekly.period)} —
-                    about ${monthlyEquivalent(weekly).toFixed(0)} a month, no trial, stop whenever
-                  </p>
-                })()
-                : null}
-              <p className="plan-board__tagline">{plan.tagline}</p>
-            </header>
-            <div className="plan-board__reps">
-              <span className="label">Voice reps</span>
-              <strong className="data">{repsLine(plan)}</strong>
-            </div>
-            <ul>
-              {plan.features.map((feature) => (
-                <li key={feature}><Check size={15} strokeWidth={1.75} aria-hidden="true" /> {feature}</li>
-              ))}
-            </ul>
-            {/* Every card sends people to sign-up. The trial is started from
-                inside the account, after the sign-up rep — see the note at the
-                top of this file. */}
-            {plan.id === 'free' ? (
-              <Link href="/signup" className="arena-button arena-button--secondary arena-button--full">Start free</Link>
-            ) : (
-              <Link href="/signup" className="arena-button arena-button--primary arena-button--full">Start the {TRIAL_DAYS}-day trial</Link>
-            )}
-          </article>
-        ))}
-      </section>
+      {/* The board owns the trial half of the footnote, because only it knows
+          which period is on screen (`trialNoteFor`). What is passed in is the
+          part that is true on every tab. */}
+      <PlanBoard note={CHECKOUT_NOTE} />
 
-      <p className="plan-board__note">{TRIAL_NOTE} {CHECKOUT_NOTE}</p>
+      {/* ── INTERVIEW CREDITS (INTERVIEW-PLAN E2, §9) ──────────────────────
+          The compliance dividend, and the reason this is not a footnote. Every
+          merchant of record on the shortlist bans dating products by name and a
+          human reviewer opens this page during onboarding
+          (`PAYMENTS-APPROVAL.md` §3). Interview rehearsal sits inside
+          `public_speaking_coaching` — the category this account is already
+          registered under — without any strain at all.
+
+          It does not license overstating it, and this section does not: the
+          dating track is the majority of the product and the plan board above
+          it is still about voice reps. */}
+      <SiteSection
+        wide
+        kicker="Practice interviews"
+        title={<>Bought one at<br />a time, not by the month.</>}
+        lede="An interview runs ten to twenty-five minutes against an interviewer who has read your CV and the job description, and comes back graded on seven dimensions. Demand for that is episodic — you need four of them the week before an onsite and none for three months — so it is sold by the interview rather than by the month."
+      >
+        {/* The same seven-row discipline as the plan board above, so the two
+            read as one system rather than as a pricing page with a bolt-on.
+            No volt anywhere in here: the page's one accent is already spent on
+            the lead plan's action, and a second one would make the packs argue
+            with the subscriptions about which is the offer. The best rate is
+            marked with a chip instead. */}
+        <div className="pack-board">
+          {INTERVIEW_PACKS.map((pack) => {
+            const best = pack.id === BEST_VALUE_PACK
+            return (
+              <article key={pack.id} className={`pack-board__card${best ? ' pack-board__card--best' : ''}`}>
+                <div className="pack-board__name">
+                  <span className="label">{pack.name}</span>
+                  {best ? <span className="arena-chip">Best rate</span> : null}
+                </div>
+                <div className="pack-board__price">
+                  <strong className="data">{pack.price}</strong>
+                  <span className="mute">one-off</span>
+                </div>
+                {/* The unit rate, on every card including the single, so the
+                    three are comparable at a glance instead of by arithmetic. */}
+                <p className="pack-board__rate data">
+                  ${perInterview(pack).toFixed(2)} <span className="mute">per interview</span>
+                </p>
+                <p>{pack.tagline}</p>
+                <p className="pack-board__keeps">
+                  {pack.credits} credit{pack.credits === 1 ? '' : 's'} · never expires
+                </p>
+              </article>
+            )
+          })}
+        </div>
+        <p className="site-aside">{CREDIT_EXPIRY_NOTE}</p>
+        <p className="site-aside">
+          {SCREENER_NOTE} Pro includes {PLAN_INTERVIEW_CREDITS.pro} interview a month
+          and Elite {PLAN_INTERVIEW_CREDITS.elite}, on top of the daily voice reps.
+        </p>
+      </SiteSection>
 
       <SiteSection
         kicker="Every plan"
         title={<>The only thing<br />a plan changes.</>}
-        lede="A plan buys voice minutes and nothing else. It does not buy characters, scorecards, field challenges or progression — the top of the roster is opened by scoring, never by paying, and a free account keeps every part of the loop that happens outside the microphone."
+        lede="A plan buys voice minutes and a small interview allotment, and nothing else. It does not buy characters, scorecards, field challenges or progression — the top of the roster is opened by scoring, never by paying, and a free account keeps every part of the loop that happens outside the microphone."
       >
         {/* V13. Two columns of prose asked the reader to hold six items in
             their head and diff them. The argument is *one row varies and the

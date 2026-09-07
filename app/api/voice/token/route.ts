@@ -21,7 +21,13 @@ import { mayOpenSession } from '@/lib/db/progress'
 import { getPersona } from '@/lib/personas'
 import { mintSession, pipelineSessionModel, pipelineTranscriptionAllowance } from '@/lib/voice/mint'
 import { readScoringBody, ScoringInputError } from '@/lib/voice/scoring-request'
-import { openVoiceSession, abortVoiceStartupAttempt, reserveVoiceOperation, settleVoiceOperation } from '@/lib/db/voice-session'
+import { openVoiceSession, openInterviewVoiceSession, abortVoiceStartupAttempt, reserveVoiceOperation, settleVoiceOperation } from '@/lib/db/voice-session'
+import { holdInterviewCredit, interviewCreditState, releaseInterviewCredit } from '@/lib/db/credits'
+import { readCvText, readInterviewSetupFor } from '@/lib/db/interview'
+import { compileInterviewBrief } from '@/lib/personas/interview/brief'
+import { DEFAULT_DIFFICULTY } from '@/lib/data/interview-difficulty'
+import { DEFAULT_FIELD } from '@/lib/data/interview-fields'
+import { nextLotToSpend, roundType } from '@/lib/data/interview-credits'
 import { resolveProviderId } from '@/lib/voice'
 import { DEFAULT_CALIBRATION, VoiceError, clamp, type Calibration } from '@/lib/voice/types'
 
@@ -83,10 +89,22 @@ export async function POST(request: Request): Promise<Response> {
     userId: auth.userId === 'internal' && typeof body.userId === 'string' ? body.userId : auth.userId,
   })
 
+  const personaId = typeof body.personaId === 'string' ? body.personaId : ''
+  const base = getPersona(personaId)
+  if (!base) {
+    return NextResponse.json({ error: `No persona named "${personaId}".` }, { status: 404 })
+  }
+
   // The daily quota, at the point where money is actually committed. The rep
   // itself spends the counter when the transport connects; this refuses to
   // hand out a credential to somebody who has none left to spend (§14).
-  if (auth.userId !== 'internal' && provider !== 'elevenlabs') {
+  //
+  // Resolved before the quota check because an INTERVIEW is not bought out of
+  // the daily rate at all — it is bought out of a credit balance (§5.2), and
+  // `mayOpenSession` must not be asked about it. `persona.track` is read off
+  // the authored roster, never off the request.
+  const interview = base?.track === 'interview'
+  if (auth.userId !== 'internal' && provider !== 'elevenlabs' && !interview) {
     const allowed = await mayOpenSession(auth.userId)
     if (!allowed.ok) {
       // `refusal` travels with the message so the browser can tell a Pro
@@ -98,12 +116,6 @@ export async function POST(request: Request): Promise<Response> {
         { status: 429 },
       )
     }
-  }
-
-  const personaId = typeof body.personaId === 'string' ? body.personaId : ''
-  const base = getPersona(personaId)
-  if (!base) {
-    return NextResponse.json({ error: `No persona named "${personaId}".` }, { status: 404 })
   }
 
   // THE HOP THAT LOST CHARACTER MEMORY.
@@ -136,13 +148,93 @@ export async function POST(request: Request): Promise<Response> {
   const sttAllowance = pipelineTranscriptionAllowance()
   if (provider === 'elevenlabs' && auth.userId !== 'internal') {
     if (!sttAllowance) return NextResponse.json({ error: 'This transcription model has no verified rate.' }, { status: 503 })
-    const opened = await openVoiceSession({
-      userId: auth.userId, personaSlug: base.slug, provider, model: pipelineSessionModel(),
-      context: { userName: persona.userName, memorySummary: persona.memorySummary },
-    })
+
+    // THE INTERVIEW BRANCH, AND IT IS A BRANCH RATHER THAN A PARAMETER (A1).
+    //
+    // The round decides how long the envelope is and therefore what the rep
+    // costs, so it is read from `interview_setups` with the service role rather
+    // than accepted from the request body — the same rule that compiles the
+    // persona from an id (rule 11, rule 18).
+    //
+    // The credit is HELD before the session opens and released if the session
+    // does not. Held rather than spent: it is settled when the scorecard is
+    // written, so a rep that dies at minute fourteen of twenty leaves the
+    // balance where it was.
+    // Read ONCE, here, and stored on the session: every turn of the rep then
+    // reads the identical string, which is what keeps the CV inside the cached
+    // prefix rather than paying for it twenty-two times (C5).
+    const setup = interview ? await readInterviewSetupFor(auth.userId) : null
+    const round = interview ? roundType(setup?.round).id : null
+    // WHICH DESIGN PROBLEM A SYSTEM DESIGN ROUND POSES (§7.3).
+    //
+    // A fresh id per session rather than anything derived from the account, so
+    // two consecutive deep technicals land on different briefs without anything
+    // having to remember the last one. It is minted here because this is where
+    // the brief is compiled, and it is thrown away afterwards — the chosen
+    // problem survives as prose inside `voice_sessions.context`, which is the
+    // only copy anything downstream needs.
+    const briefSeed = crypto.randomUUID()
+    const brief = interview && round
+      ? compileInterviewBrief({
+        roleTitle: setup?.roleTitle ?? '',
+        company: setup?.company ?? '',
+        jobDescription: setup?.jobDescription ?? '',
+        field: setup?.field ?? DEFAULT_FIELD,
+        round,
+        cvText: await readCvText(auth.userId),
+        customQuestions: setup?.customQuestions ?? [],
+        // Resolved on the SERVER from the stored slider, or from the role title
+        // when the slider was never touched (rule 11's habit, even though a
+        // difficulty is not something anybody could pay to change).
+        difficulty: setup?.difficulty ?? DEFAULT_DIFFICULTY,
+        seed: briefSeed,
+      })
+      : null
+    if (interview && round) {
+      // Refuse BEFORE creating a session row. The hold itself is keyed on the
+      // session id and cannot be taken until one exists, so this is the cheap
+      // read and the write below is the one that counts — the same two-step
+      // `openVoiceSession` uses for the daily quota.
+      const state = await interviewCreditState(auth.userId)
+      if (!nextLotToSpend(state.lots, { round }) || state.available <= 0) {
+        return NextResponse.json({
+          error: roundType(round).credits === 0
+            ? 'Your free screener has already been used.'
+            : 'You have no interview credits left.',
+          refusal: 'credits',
+        }, { status: 402 })
+      }
+    }
+
+    const opened = interview && round
+      ? await openInterviewVoiceSession({
+        userId: auth.userId, personaSlug: base.slug, provider, model: pipelineSessionModel(),
+        context: {
+          userName: persona.userName,
+          memorySummary: persona.memorySummary,
+          ...(brief ? { interviewBrief: brief } : {}),
+        },
+        durationMs: roundType(round).durationMs,
+      })
+      : await openVoiceSession({
+        userId: auth.userId, personaSlug: base.slug, provider, model: pipelineSessionModel(),
+        context: { userName: persona.userName, memorySummary: persona.memorySummary },
+      })
     if (!opened.ok) return NextResponse.json({ error: opened.message, refusal: opened.refusal, reason: opened.reason }, { status: opened.status })
     owned = opened
     persona = { ...base, ...opened.context }
+
+    if (interview && round) {
+      const held = await holdInterviewCredit({ userId: auth.userId, sessionId: opened.sessionId, round })
+      if (!held.ok) {
+        if (!opened.resumed) await abortVoiceStartupAttempt({ userId: auth.userId, sessionId: opened.sessionId, operationId: null })
+        return NextResponse.json(
+          { error: held.message, ...(held.reason === 'balance' ? { refusal: 'credits' } : {}) },
+          { status: held.reason === 'balance' ? 402 : 503 },
+        )
+      }
+    }
+
     sttOperationId = `stt:${crypto.randomUUID()}`
     const stt = await reserveVoiceOperation({
       userId: auth.userId, sessionId: opened.sessionId, personaSlug: base.slug,
@@ -150,7 +242,10 @@ export async function POST(request: Request): Promise<Response> {
       maxCostUsd: sttAllowance.maxCostUsd, resources: { sttAudioMs: sttAllowance.audioMs },
     })
     if (!stt.ok) {
-      if (!owned.resumed) await abortVoiceStartupAttempt({ userId: auth.userId, sessionId: owned.sessionId, operationId: null })
+      if (!owned.resumed) {
+        if (interview) await releaseInterviewCredit({ userId: auth.userId, sessionId: owned.sessionId })
+        await abortVoiceStartupAttempt({ userId: auth.userId, sessionId: owned.sessionId, operationId: null })
+      }
       return NextResponse.json({ error: stt.message, reason: stt.reason }, { status: stt.status })
     }
   }
@@ -193,6 +288,9 @@ export async function POST(request: Request): Promise<Response> {
     if (owned && sttOperationId) await abortVoiceStartupAttempt({
       userId: auth.userId, sessionId: owned.sessionId, operationId: sttOperationId,
     })
+    // A credential that was never issued is a rep that never happened. The
+    // credit goes straight back rather than waiting for the hold to time out.
+    if (owned && interview) await releaseInterviewCredit({ userId: auth.userId, sessionId: owned.sessionId })
     if (cause instanceof VoiceError) {
       // A missing key is our misconfiguration (500); a stubbed adapter is
       // unimplemented (501); anything else means the provider refused (502).

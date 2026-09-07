@@ -4,6 +4,12 @@
  *   npm run rep:audition                      # Tess, struggling player, 1 rep
  *   npm run rep:audition -- tess struggling 5
  *   npm run rep:audition -- nadia median 2
+ *   npm run rep:audition -- marcus-vance confidently_wrong 1 technical 4
+ *   npm run rep:audition -- aisha-rahman plain_speaker 1 deep_technical 3
+ *
+ * The fourth and fifth arguments are INTERVIEW ONLY and are the round and the
+ * difficulty (INTERVIEW-TECHNICAL-PLAN §9, T11). They default to the reference
+ * round and mid, which is what the harness auditioned before this plan.
  *
  * ── WHY THIS EXISTS ──────────────────────────────────────────────────────
  *
@@ -33,7 +39,8 @@
  *   · a turn she stays silent on is a turn with no request, exactly as the
  *     adapter enforces it (`ReplyState.silent`), so a rep that goes quiet here
  *     goes quiet for a customer
- *   · scene beats fire off the rep clock through `dueSceneBeat`
+ *   · scene beats fire off the rep clock through `dueSceneBeat`, and on the
+ *     interview arm the agenda beats that move her off a thread do too
  *   · her turns go through `StabilityMeter`, at HER verbosity ceiling
  *
  * ── WHAT IT IS NOT ───────────────────────────────────────────────────────
@@ -62,8 +69,17 @@ import { bandFor } from '../lib/warmth/bands'
 import { capToBudget } from '../lib/voice/elevenlabs/truncate'
 import { chatApiKey, completeChat, type ChatMessage } from '../lib/voice/chat'
 import { StabilityMeter, DEFAULT_VERBOSITY_MEDIAN } from '../lib/metrics/stability'
-import { dueSceneBeat, DATING_DURATION_MS, ARM_THRESHOLD } from '../lib/data/rep-rules'
+import { dueSceneBeat, DATING_DURATION_MS, ARM_THRESHOLD, INTERVIEW_THRESHOLD } from '../lib/data/rep-rules'
 import type { Persona, TranscriptTurn } from '../lib/voice/types'
+import { INTERVIEW_PLAYERS } from './interview-players'
+import { dueInterviewBeat, isGrounded } from '../lib/data/interview-agenda'
+import { REFERENCE_ROUND } from '../lib/warmth/interview/trajectory'
+import { isRoundTypeId, roundType, type RoundTypeId } from '../lib/data/interview-credits'
+import { toDifficultyLevel, type DifficultyLevel } from '../lib/data/interview-difficulty'
+import { probeLadderEnabled } from '../lib/data/interview-probes'
+import { opensOnDesignBrief } from '../lib/data/interview-briefs'
+import { compileInterviewBrief } from '../lib/personas/interview/brief'
+import { withInterviewBrief } from '../lib/personas/interview/overlay'
 
 const CHARACTER_MODEL = process.env.PIPELINE_LLM_MODEL?.trim() || 'gpt-4.1-mini'
 /** The player is a fixture, not a character. A cheaper model is correct here. */
@@ -71,8 +87,15 @@ const PLAYER_MODEL = process.env.AUDITION_PLAYER_MODEL?.trim() || 'gpt-4.1-mini'
 
 /** Roughly a three-minute rep. The real cap is the clock, not a turn count. */
 const MAX_TURNS = 16
+/**
+ * An interview is longer and its exchanges are longer (§6: ~22 of them over
+ * twenty minutes). Auditioning one at sixteen three-minute turns would report a
+ * character who never got past her second question.
+ */
+const INTERVIEW_MAX_TURNS = 22
 /** Seconds a turn takes, for the transcript timings the fast scorer reads. */
 const SECONDS_PER_EXCHANGE = 11
+const INTERVIEW_SECONDS_PER_EXCHANGE = 55
 
 /**
  * Who is at the microphone.
@@ -123,6 +146,9 @@ interface RepResult {
   cappedTurns: number
   /** Turns she had nothing to say on. See `mayStaySilentFor`. */
   silentTurns: number
+  /** Beats that pushed her sideways, and beats that pushed her down (§6.4). */
+  agendaBeats: number
+  probeBeats: number
 }
 
 function words(text: string): number {
@@ -158,27 +184,94 @@ async function say(
   return completion.text
 }
 
+/**
+ * The setup an interview audition runs against.
+ *
+ * The harness has no user and therefore no `interview_setups` row, so the brief
+ * is a FIXTURE — and it is the same `compileInterviewBrief` the token route
+ * calls, not a hand-written approximation of it. That distinction is the whole
+ * point of the harness: a bench that assembles its own prompt is auditioning a
+ * character the product does not ship (`INTERVIEW-PLAN.md` §14 is the note, and
+ * it was written about the agenda beats being absent here for a week).
+ *
+ * `software` because that is the one field with probe domains and design briefs
+ * authored (§7.2), and the whole reason T11 exists is to hear them out loud.
+ */
+const AUDITION_ROLE = 'Senior Backend Engineer'
+const AUDITION_FIELD = 'software' as const
+const AUDITION_CV = [
+  'Backend engineer, six years.',
+  'Most recently on a payments team: a service that took card authorisations, wrote them to Postgres and'
+  + ' published events for downstream reconciliation. Owned the retry path after a provider outage.',
+  'Before that, a customer messaging product — a chat feature with WebSockets, presence, and a read-receipt'
+  + ' system that had to survive people going offline on trains.',
+  'Comfortable with Postgres, Redis, Go and TypeScript. Has been on call.',
+].join('\n')
+
+interface AuditionOptions {
+  round: RoundTypeId
+  difficulty: DifficultyLevel
+}
+
 async function runRep(
   persona: Persona,
   playerBrief: string,
   index: number,
   key: string,
+  options: AuditionOptions,
 ): Promise<RepResult | null> {
+  // THE BRIEF THE TOKEN ROUTE WOULD HAVE COMPILED, on the interview arm.
+  //
+  // Without it the harness auditions an interviewer who has been given no
+  // field, no CV, no probe domains and no design problem — which is a
+  // character the product does not ship, and is exactly how the agenda beats
+  // went un-auditioned for a week. `withInterviewBrief` is a no-op on the
+  // dating arm, so Tess compiles the byte-identical prompt she always did.
+  const interviewBrief = persona.track === 'interview'
+    ? compileInterviewBrief({
+      roleTitle: AUDITION_ROLE,
+      company: '',
+      jobDescription: '',
+      field: AUDITION_FIELD,
+      round: options.round,
+      cvText: AUDITION_CV,
+      customQuestions: [],
+      difficulty: options.difficulty,
+      // Per rep, so a five-rep run of a design round hears more than one
+      // problem — which is the only way to notice that one of them is thin.
+      seed: `audition-${index}-${Date.now()}`,
+    })
+    : ''
+  const briefed = withInterviewBrief(persona, { interviewBrief })
   // The exact prompt the token route mints, mood roll included.
-  const instructions = compileInstructions(persona, { canEndScene: false })
+  const instructions = compileInstructions(briefed, { canEndScene: false })
+
+  const probes = persona.track === 'interview'
+    && probeLadderEnabled({ round: options.round, field: AUDITION_FIELD })
+  /** She poses the authored design problem on her first turn (§4.3, §6.7). */
+  const posesBrief = probes && opensOnDesignBrief({ round: options.round, field: AUDITION_FIELD })
 
   let clock = 0
   const session = new WarmthSession({
-    persona,
+    persona: briefed,
     trajectory: persona.trajectory,
     scorer: null,
     nowSeconds: () => clock,
+    // §6.7. Her first turn on a design round poses a sixty-word problem and
+    // every interview band tops out at thirty-four; without this the harness
+    // would report a brief truncated to a sentence and a half as her writing
+    // one.
+    ...(posesBrief ? { openingTurnKind: 'brief' as const } : {}),
   })
 
   const meter = new StabilityMeter({
     // Hers, not the roster's. A character with her own band table is allowed a
     // longer median and must not be scored as broken for using it.
     verbosityMedian: persona.verbosityMedian ?? DEFAULT_VERBOSITY_MEDIAN,
+    // And an interviewer asks a question on nearly every turn on purpose. The
+    // first audition of one reported 1.34 breaks per five minutes, all of them
+    // this rule, on a rep where nothing was wrong.
+    questionsAreTheJob: persona.track === 'interview',
   })
 
   const history: ChatMessage[] = []
@@ -188,13 +281,33 @@ async function runRep(
   const breakDetail: string[] = []
   let peak = session.engine.warmth
   let beatsFired = 0
+  /** Agenda beats fired — the ones that move her off a thread. */
+  let agendaFired = 0
+  /** Probe beats fired — the ones that take her down rather than sideways. */
+  let probeFired = 0
+  /** The last beat of any kind, in harness seconds. See `dueInterviewBeat`. */
+  let lastBeatAt: number | null = null
+  /** Every user turn so far, for the grounded gate. */
+  const transcript: TranscriptTurn[] = []
   /** Turns the reply ceiling actually trimmed. High is not a fault; it is the
    *  gap between what she wants to say and what she is allowed. */
   let capped = 0
   /** Turns she said nothing at all. */
   let silent = 0
 
-  for (let turn = 0; turn < MAX_TURNS; turn += 1) {
+  const maxTurns = persona.track === 'interview' ? INTERVIEW_MAX_TURNS : MAX_TURNS
+  const secondsPerExchange = persona.track === 'interview'
+    ? INTERVIEW_SECONDS_PER_EXCHANGE
+    : SECONDS_PER_EXCHANGE
+  // Scene beats fire on a FRACTION of the rep, so the denominator has to be the
+  // rep this character actually runs. Against `DATING_DURATION_MS` a
+  // twenty-minute interview fires every beat in its first three minutes.
+  const repLengthMs = persona.track === 'interview'
+    ? maxTurns * (secondsPerExchange + 3) * 1000
+    : DATING_DURATION_MS
+  const auditionRound = options.round
+
+  for (let turn = 0; turn < maxTurns; turn += 1) {
     // ── his turn ────────────────────────────────────────────────────────
     const playerMessages: ChatMessage[] = [
       { role: 'system', content: playerBrief },
@@ -214,7 +327,7 @@ async function runRep(
     const userText = await say(PLAYER_MODEL, playerMessages, 0.9, key)
     if (!userText) return null
 
-    clock += SECONDS_PER_EXCHANGE
+    clock += secondsPerExchange
     const userTurn: TranscriptTurn = {
       speaker: 'user',
       text: userText,
@@ -222,6 +335,7 @@ async function runRep(
       t_end: clock,
     }
     session.onUserTurn(userTurn)
+    transcript.push(userTurn)
     meter.observeUser()
     history.push({ role: 'user', content: userText })
 
@@ -265,14 +379,45 @@ async function runRep(
     const replyCap = session.replyWordCap
 
     // ── what the room does to her, on its own clock ─────────────────────
+    const elapsedFraction = (clock * 1000) / repLengthMs
     const beat = dueSceneBeat({
       beats: persona.sceneBeats,
-      elapsedFraction: (clock * 1000) / DATING_DURATION_MS,
+      elapsedFraction,
       fired: beatsFired,
     })
     if (beat) {
       beatsFired += 1
       steer.push({ role: 'system', content: beat.direction })
+    } else if (persona.track === 'interview') {
+      // THE SAME BEATS THE LIVE REP FIRES.
+      //
+      // The harness was firing scene beats and not agenda beats, so it was
+      // auditioning a character the product does not ship — and the first
+      // audition after the agenda fix showed nothing, because the fix was not
+      // in the code path being auditioned. A harness that drives a different
+      // pipeline from the one customers are on is a harness that goes green
+      // while the thing they use has drifted.
+      //
+      // The probe ladder joined it on the same rule: one arbitrator, both
+      // clocks, at most one direction per turn (`dueInterviewBeat`).
+      const due = dueInterviewBeat({
+        elapsedFraction,
+        round: auditionRound,
+        difficulty: options.difficulty,
+        agendaFired,
+        probeFired,
+        ladder: probes,
+        grounded: isGrounded(transcript),
+        msSinceLastBeat: lastBeatAt === null
+          ? Number.POSITIVE_INFINITY
+          : (clock - lastBeatAt) * 1000,
+      })
+      if (due) {
+        lastBeatAt = clock
+        if (due.kind === 'agenda') agendaFired += 1
+        else probeFired += 1
+        steer.push({ role: 'system', content: due.beat.direction })
+      }
     }
 
     // ── her turn ────────────────────────────────────────────────────────
@@ -318,7 +463,11 @@ async function runRep(
     index,
     finalWarmth: session.engine.warmth,
     peakWarmth: peak,
-    armed: peak >= ARM_THRESHOLD,
+    // The bar this character is actually judged against. An interviewer never
+    // "arms" — a callback is decided afterwards by the grade, not in the room —
+    // so on that track this reads "cleared the impression the callback turns
+    // on" (`INTERVIEW_THRESHOLD`), which is the number the result screen shows.
+    armed: peak >= (persona.track === 'interview' ? INTERVIEW_THRESHOLD : ARM_THRESHOLD),
     bands,
     agentTurns,
     medianAgentWords: median(agentTurns.map(words)),
@@ -328,25 +477,46 @@ async function runRep(
     distinctDirectives: directives.size,
     cappedTurns: capped,
     silentTurns: silent,
+    agendaBeats: agendaFired,
+    probeBeats: probeFired,
   }
 }
 
 async function main(): Promise<void> {
   await loadEnvLocal()
 
-  const [slugArg, playerArg, countArg] = process.argv.slice(2)
+  const [slugArg, playerArg, countArg, roundArg, difficultyArg] = process.argv.slice(2)
   const slug = slugArg ?? 'tess'
   const player = playerArg ?? 'struggling'
   const reps = Number(countArg ?? 1)
+  // INTERVIEW ONLY, and both default to what the harness auditioned before
+  // this plan: the reference round `interviewTrajectory` leaves untouched, and
+  // mid. A bad round name is refused rather than silently clamped — a run that
+  // says "technical" and quietly auditions a recruiter screen is worse than no
+  // run, because its transcript looks like evidence.
+  if (roundArg !== undefined && !isRoundTypeId(roundArg)) {
+    console.error(`No round "${roundArg}". One of: screener, recruiter, technical, deep_technical, final.`)
+    process.exit(1)
+  }
+  const round: RoundTypeId = isRoundTypeId(roundArg) ? roundArg : REFERENCE_ROUND
+  const difficulty = toDifficultyLevel(difficultyArg === undefined ? 3 : Number(difficultyArg))
 
   const persona = getPersonaEverAuthored(slug)
   if (!persona) {
     console.error(`No persona "${slug}".`)
     process.exit(1)
   }
-  const brief = PLAYERS[player]
+  // B10. An interviewer auditioned against "a nervous man in a bookshop"
+  // produces a transcript that proves nothing about whether she interviews
+  // well. The dating archetypes are unchanged and live where they always did;
+  // the interview ones are a separate file so tuning one arm cannot edit the
+  // other's fixtures.
+  const roster = persona.track === 'interview'
+    ? { ...INTERVIEW_PLAYERS }
+    : { ...PLAYERS }
+  const brief = roster[player]
   if (!brief) {
-    console.error(`No player "${player}". One of: ${Object.keys(PLAYERS).join(', ')}`)
+    console.error(`No player "${player}" for the ${persona.track} track. One of: ${Object.keys(roster).join(', ')}`)
     process.exit(1)
   }
 
@@ -358,14 +528,19 @@ async function main(): Promise<void> {
 
   console.log(
     `\nAuditioning ${persona.name} (rung ${persona.level}) against a ${player} player.`
-      + `\nCharacter: ${CHARACTER_MODEL} · player: ${PLAYER_MODEL} · ${reps} rep(s) of ${MAX_TURNS} turns.`
+      + `\nCharacter: ${CHARACTER_MODEL} · player: ${PLAYER_MODEL} · ${reps} rep(s) of `
+      + `${persona.track === 'interview' ? INTERVIEW_MAX_TURNS : MAX_TURNS} turns.`
+      + (persona.track === 'interview'
+        ? `\nRound: ${roundType(round).label} · ${roundType(round).shape} · difficulty ${difficulty}`
+          + ` · field ${AUDITION_FIELD}`
+        : '')
       + `\nThis is the prompt, not the voice — see the note at the top of this file.\n`,
   )
 
   const results: RepResult[] = []
   for (let i = 1; i <= reps; i += 1) {
     console.log(`── rep ${i} ─────────────────────────────────────────────────────`)
-    const result = await runRep(persona, brief, i, key.key)
+    const result = await runRep(persona, brief, i, key.key, { round, difficulty })
     if (!result) {
       console.error('  rep aborted.')
       continue
@@ -377,7 +552,8 @@ async function main(): Promise<void> {
         + ` · ${result.breaks} breaks / ${result.drifts} drifts`
         + ` · ${result.distinctDirectives} distinct directions`
         + ` · ${result.cappedTurns}/${result.agentTurns.length} capped`
-        + `${result.silentTurns ? ` · ${result.silentTurns} silent` : ''}\n`,
+        + `${result.silentTurns ? ` · ${result.silentTurns} silent` : ''}`
+        + `${persona.track === 'interview' ? ` · ${result.agendaBeats} moved / ${result.probeBeats} probed` : ''}\n`,
     )
     for (const detail of result.breakDetail) console.log(`     ${detail}`)
   }
@@ -388,7 +564,15 @@ async function main(): Promise<void> {
   }
 
   // The M0 gate is breaks per five minutes; these reps are about three.
-  const minutes = (results.length * MAX_TURNS * (SECONDS_PER_EXCHANGE + 3)) / 60
+  // The rate has to be per five minutes of the rep that ran, not of a rep this
+  // character never has. Reported against the dating gate either way, and the
+  // gate is a dating number — an interview rung is auditioned against itself
+  // over time rather than against < 0.5.
+  const turnsPerRep = persona.track === 'interview' ? INTERVIEW_MAX_TURNS : MAX_TURNS
+  const perExchange = persona.track === 'interview'
+    ? INTERVIEW_SECONDS_PER_EXCHANGE
+    : SECONDS_PER_EXCHANGE
+  const minutes = (results.length * turnsPerRep * (perExchange + 3)) / 60
   const totalBreaks = results.reduce((sum, result) => sum + result.breaks, 0)
   console.log('══ summary ══════════════════════════════════════════════════════')
   console.log(`  reps                 ${results.length}`)

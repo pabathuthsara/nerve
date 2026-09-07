@@ -168,7 +168,7 @@ export function TermsDocument() {
         </p>
       </Clause>
 
-      <Clause n="07" title="Plans, payment and cancellation">
+      <Clause n="07" title="Plans, payment, interview credits and cancellation">
         <p>
           There is a free plan, and there are paid plans that add voice reps. The free plan
           includes one voice rep when you create your account, and after that it includes
@@ -199,6 +199,26 @@ export function TermsDocument() {
           your access open until the end of the period you have already paid for; it deletes
           nothing, and the account returns to the free plan with your history, your streak and
           your field log intact. Ask us within fourteen days of a charge and we will refund it.
+        </p>
+        <p>
+          <strong>Interview credits.</strong> Practice interviews are not part of the daily rep
+          allowance; each one costs a credit. Credits reach your account three ways, and two of
+          them behave differently from the third. <strong>Credits you buy outright never
+          expire.</strong> They stay in the account for as long as the account exists, they are
+          not affected by cancelling a subscription, and they carry over between subscriptions.
+          <strong>Credits included with a paid plan are part of the month they were issued in
+          and do not roll over</strong> — unspent ones lapse at the end of that billing period,
+          and any that are still unspent are removed if the subscription ends. Every account
+          also gets one free five-minute interview, once, which behaves like an included credit
+          and can only be used on the five-minute round.
+        </p>
+        <p>
+          A credit is spent when an interview produces a scorecard, not when it starts. If an
+          interview ends because something failed on our side, the credit goes back
+          automatically. Credits have no cash value, cannot be transferred between accounts and
+          cannot be exchanged for money outside the refund terms below. Refunding a purchase of
+          credits removes the unused credits it bought; credits you have already spent are not
+          taken back.
         </p>
         <p>
           If a price changes, it changes for you at your next renewal and only after we have
@@ -567,6 +587,7 @@ export function RefundDocument() {
           <strong>Ask us within fourteen days of a charge and we will refund it.</strong> One
           email to {SUPPORT_EMAIL} is enough. You do not have to explain why, and we do not
           require you to have used the product a certain amount or to answer questions first.
+          This covers a subscription charge and a purchase of interview credits alike.
         </p>
         <p>
           Refunds go back to the card that was charged, and normally appear within five to
@@ -580,7 +601,30 @@ export function RefundDocument() {
         </p>
       </Clause>
 
-      <Clause n="04" title="Nothing is shipped">
+      <Clause n="04" title="Interview credits">
+        <p>
+          Practice interviews cost a credit each. <strong>Credits you buy outright never
+          expire</strong> — they stay in the account for as long as the account exists, they
+          survive cancelling a subscription, and nothing removes them but spending them.
+          <strong>Credits included with a paid plan are part of that month and do not roll
+          over</strong>: unspent ones lapse at the end of the billing period they were issued
+          in, and any still unspent are removed when the subscription ends. Every account also
+          gets one free five-minute interview, once.
+        </p>
+        <p>
+          A credit is spent when an interview produces a scorecard, not when it starts. If an
+          interview ends because something failed on our side, the credit comes back on its
+          own and you do not need to ask.
+        </p>
+        <p>
+          The fourteen-day refund in clause 03 covers a purchase of credits exactly as it covers a
+          subscription charge. Refunding a purchase removes the unused credits it bought;
+          credits you have already spent on interviews are not taken back. Credits have no
+          cash value and cannot be transferred between accounts.
+        </p>
+      </Clause>
+
+      <Clause n="05" title="Nothing is shipped">
         <p>
           Nerve is a digital service. There is no physical product, so there is nothing to
           return, no shipping and no restocking fee. &ldquo;Return&rdquo; here means
@@ -588,7 +632,7 @@ export function RefundDocument() {
         </p>
       </Clause>
 
-      <Clause n="05" title="Who charges you">
+      <Clause n="06" title="Who charges you">
         <p>
           Payment is handled by our merchant of record, who is the seller of record for the
           transaction and who collects and remits any VAT or sales tax due where you live.
@@ -597,7 +641,7 @@ export function RefundDocument() {
         </p>
       </Clause>
 
-      <Clause n="06" title="Price changes">
+      <Clause n="07" title="Price changes">
         <p>
           If a price changes, it changes for you at your next renewal and only after we have
           told you by email first. If you subscribed at a launch price, you keep it for as
@@ -605,7 +649,7 @@ export function RefundDocument() {
         </p>
       </Clause>
 
-      <Clause n="07" title="Asking">
+      <Clause n="08" title="Asking">
         <p>
           Everything above happens by writing to <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>,
           except cancelling, which you can do yourself in two taps and which is the faster

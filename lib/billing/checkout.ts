@@ -18,9 +18,9 @@ import 'server-only'
  * 1 September — and the replacement should cost an adapter. It is two POSTs.
  */
 
-import { apiBase, apiVersionDate, whopPlanIdFor } from './plans'
+import { apiBase, apiVersionDate, whopPlanIdFor, whopPlanIdForPack } from './plans'
 import type { Plan } from '@/lib/data/types'
-import type { BillingPeriod } from '@/lib/site/plans'
+import type { BillingPeriod, PackId } from '@/lib/site/plans'
 
 /**
  * Where a relative `purchase_url` is anchored.
@@ -191,4 +191,71 @@ export async function createCheckout(request: CheckoutRequest): Promise<Checkout
 export function absoluteCheckoutUrl(purchaseUrl: string): string {
   if (/^https?:\/\//i.test(purchaseUrl)) return purchaseUrl
   return `${CHECKOUT_ORIGIN}${purchaseUrl.startsWith('/') ? '' : '/'}${purchaseUrl}`
+}
+
+/**
+ * Opening a checkout for an interview pack (INTERVIEW-PLAN D3).
+ *
+ * The same two POSTs as a subscription, against a one-time plan instead of a
+ * renewing one, and the same one job that matters: `metadata.user_id`. Whop
+ * copies checkout metadata onto the payment, and the payment is what
+ * `credit-rules.ts` grants against — so a pack checkout created without it is a
+ * real charge that puts no credits anywhere and can only be fixed by hand.
+ *
+ * **The idempotency key carries a timestamp, and this one differs from the
+ * subscription path on purpose.** A subscription is keyed `user:plan` because
+ * somebody may only have one of them and a double-clicked button must not open
+ * two. A pack is a thing you can buy twice — the second $29 next month is a
+ * second purchase, not a duplicate — and a stable key would hand back the first
+ * checkout's URL forever. Keyed by the minute: a double-click inside the same
+ * minute is one checkout, and a deliberate second purchase is its own.
+ */
+export async function createPackCheckout(request: {
+  userId: string
+  pack: PackId
+  successUrl?: string
+}): Promise<CheckoutResult> {
+  const apiKey = process.env.WHOP_API_KEY
+  if (!apiKey) return { ok: false, message: 'Checkout is not configured.' }
+
+  let planId: string
+  try {
+    planId = whopPlanIdForPack(request.pack)
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : 'No plan for that pack.' }
+  }
+
+  const body: Record<string, unknown> = {
+    plan_id: planId,
+    metadata: { user_id: request.userId, pack: request.pack },
+  }
+  if (request.successUrl) body['redirect_url'] = request.successUrl
+
+  try {
+    const response = await fetch(`${apiBase()}/checkout_configurations`, {
+      method: 'POST',
+      headers: {
+        ...headers(apiKey),
+        'idempotency-key': `${request.userId}:pack:${request.pack}:${Math.floor(Date.now() / 60_000)}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      console.error(`[billing] pack checkout failed: ${response.status} ${await response.text()}`)
+      return { ok: false, message: 'Could not open checkout. Try again in a moment.' }
+    }
+
+    const data = (await response.json()) as Record<string, unknown>
+    const purchaseUrl = data['purchase_url']
+    if (typeof purchaseUrl !== 'string' || !purchaseUrl) {
+      console.error('[billing] pack checkout response carried no purchase_url', Object.keys(data))
+      return { ok: false, message: 'Could not open checkout. Try again in a moment.' }
+    }
+
+    return { ok: true, url: absoluteCheckoutUrl(purchaseUrl) }
+  } catch (error) {
+    console.error('[billing] pack checkout request threw', error)
+    return { ok: false, message: 'Could not reach the payment provider.' }
+  }
 }

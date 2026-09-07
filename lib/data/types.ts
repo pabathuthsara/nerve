@@ -39,6 +39,29 @@ export interface UserState {
   rank: Rank
   repsRemainingToday: number
   /**
+   * Interview credits available (`INTERVIEW-PLAN.md` §5.3).
+   *
+   * A **different meter**, and the chrome has to know which track it is on
+   * before it can tell somebody what they have left. A rep resets at midnight
+   * and a credit does not; showing "9 reps left" to somebody on the interview
+   * track is the pill lying on every screen, which is the exact objection
+   * `RepsRemaining` already documents about a countdown on a plan with no voice.
+   *
+   * Read through the owner's own SELECT policy on `interview_credit_entries`.
+   * Nobody can write it (rule 11) — this is a read of a balance, not the
+   * balance itself.
+   */
+  interviewCredits: number
+  /**
+   * How many of those are the free screener (§5.6).
+   *
+   * Counted apart because it is not interchangeable: a screener credit buys the
+   * five-minute screener round and nothing else. The setup screen reads it to
+   * decide whether to OFFER that round — the picker used to filter it out on
+   * `credits > 0`, so a granted screener could never be spent.
+   */
+  interviewScreenerCredits: number
+  /**
    * What today is worth — the plan's number, plus the sign-up rep if it is
    * still unspent.
    *
@@ -297,6 +320,40 @@ export interface Scorecard {
    * advice the user cannot act on.
    */
   focus: string[]
+  /**
+   * Whether the answers were right (INTERVIEW-TECHNICAL-PLAN §8.5).
+   *
+   * **Null on every dating rep and on every interview that never probed.** The
+   * scorecard renders nothing at all for a null rather than a zero: "we did not
+   * measure this" and "you got everything wrong" are two different statements
+   * and only one of them is true.
+   */
+  accuracy: ScorecardAccuracy | null
+}
+
+/**
+ * The two numbers and the corrections between them.
+ *
+ * The valuable sentence this product can say is *you handled that well and you
+ * were wrong*, so the shape keeps composure and correctness apart all the way
+ * to the screen rather than folding them into one verdict.
+ */
+export interface ScorecardAccuracy {
+  score: number
+  scored: number
+  asked: number
+  correct: number
+  incomplete: number
+  wrong: number
+  /** One line each. What they said, and what is true. Never a lesson (§10.7). */
+  notes: {
+    index: number
+    verdict: 'INCOMPLETE' | 'WRONG'
+    question: string
+    quote: string
+    correction: string
+  }[]
+  reading: string | null
 }
 
 export interface TranscriptTurn {
@@ -375,6 +432,10 @@ export interface FieldStats {
   } | null
 }
 
+import type { InterviewFieldId } from './interview-fields'
+import type { RoundTypeId } from './interview-credits'
+import type { DifficultyLevel } from './interview-difficulty'
+
 export interface Interviewer {
   id: string
   name: string
@@ -395,6 +456,33 @@ export interface InterviewSetup {
   cvUploadedAt: string | null
   customQuestions: string[]
   complete: boolean
+  /** The authored field this role sits in (§5.9). Feeds the compiled prompt. */
+  field: InterviewFieldId
+  /** Which round this setup runs. Decides length and the wind-down (§5.7). */
+  round: RoundTypeId
+  /**
+   * The question on screen (§5.11). Off by default, and the setup says why.
+   *
+   * A caption and never a prompt: it shows what the interviewer ASKED, and may
+   * never gain a suggested answer, a hint or a structure reminder.
+   */
+  captions: boolean
+  /** How much CV text was kept, so the screen can say so rather than truncate silently. */
+  cvTextChars: number | null
+  /** Why extraction failed, in a sentence the screen can show. */
+  cvError: string | null
+  /** The interviewer this run last chose. */
+  interviewerId: string | null
+  /**
+   * The hardness slider as the user set it, or null for "match my title" (§5.2).
+   *
+   * The FORM needs the raw choice rather than the resolved level, because the
+   * control has a sixth position — a resolved 4 cannot say whether somebody
+   * picked Senior or whether their title did.
+   */
+  difficultyChoice: DifficultyLevel | null
+  /** What the next interview actually runs at, choice or derivation. */
+  difficulty: DifficultyLevel
 }
 
 /**

@@ -13,7 +13,16 @@ import { TRIAL_DAYS, planById, repsLine } from '@/lib/site/plans'
 
 interface OpenProps { open: boolean; onClose: () => void }
 
-export function EndRepModal({ open, onClose, onEnd }: OpenProps & { onEnd: () => void }) { return <Modal open={open} onClose={onClose} title="End this rep?"><div className="sheet-stack"><p>It counts as an attempt.</p><Button variant="danger" fullWidth onClick={onEnd}>End rep</Button><Button fullWidth onClick={onClose}>Keep going</Button></div></Modal> }
+/**
+ * Ending early, and what it costs.
+ *
+ * "It counts as an attempt" is true on both tracks and is only half the story
+ * on one of them: an interview is bought out of a credit balance and a rep the
+ * user ends is not refunded (`interviewCreditable`). Somebody deciding whether
+ * to walk out at minute fourteen of twenty is deciding about money, and a
+ * dialog that does not say so is one they will feel misled by afterwards.
+ */
+export function EndRepModal({ open, onClose, onEnd, interview = false }: OpenProps & { onEnd: () => void; interview?: boolean }) { return <Modal open={open} onClose={onClose} title={interview ? 'Leave the interview?' : 'End this rep?'}><div className="sheet-stack"><p>{interview ? 'It is graded on what happened up to now, and the credit is spent either way.' : 'It counts as an attempt.'}</p><Button variant="danger" fullWidth onClick={onEnd}>{interview ? 'Leave' : 'End rep'}</Button><Button fullWidth onClick={onClose}>Keep going</Button></div></Modal> }
 
 /**
  * The upgrade moment (§14, docs/PAYMENTS-NEW-INTEGRATION.md §5.2).
@@ -76,7 +85,25 @@ export function PaywallSheet({
   )
 }
 
-export function HowItWorksSheet({ open, onClose }: OpenProps) { return <Sheet open={open} onClose={onClose} title="How a rep works"><div className="how-list">{['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end whether you get her number.'].map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet> }
+/**
+ * What a rep is, in four lines.
+ *
+ * Track-aware, because the dating four are wrong on an interview in every
+ * particular: it is not three minutes, there is no number, and what the meter
+ * reads is an impression rather than how she feels about you. It was reachable
+ * from the interview brief screen with all four of those on it.
+ */
+export function HowItWorksSheet({ open, onClose, interview = false, minutes }: OpenProps & { interview?: boolean; minutes?: number }) {
+  const steps = interview
+    ? [
+      'Talk out loud, like the real thing.',
+      `You have ${minutes ?? 20} minutes, and it runs the full length.`,
+      'Her form shows the impression you are making.',
+      'The callback is decided by the grade afterwards, and is worth zero points.',
+    ]
+    : ['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end whether you get her number.']
+  return <Sheet open={open} onClose={onClose} title={interview ? 'How an interview works' : 'How a rep works'}><div className="how-list">{steps.map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet>
+}
 
 /**
  * The unlock moment (§12). Fires once ever, off a row in `unlocks`.
@@ -101,7 +128,7 @@ export function LevelUnlockedSheet({ open, onClose, unlock }: OpenProps & { unlo
   return <Sheet open={open} onClose={onClose} title={copy.title}><div className="sheet-stack"><Mark name={mark} size={34} current /><p>{copy.body}</p>{copy.names.length ? <div className="mini-personas">{copy.names.map((name) => <span key={name}>{name}</span>)}</div> : null}<Link className="arena-button arena-button--primary arena-button--full" href={href}>{copy.action}</Link><Button variant="ghost" fullWidth onClick={onClose}>Not now</Button></div></Sheet>
 }
 
-export function TrainingWheelsOffModal({ open, onClose }: OpenProps) { return <Modal open={open} onClose={onClose} title="Read her, not the meter"><div className="sheet-stack"><Radio size={34} strokeWidth={1.5} className="volt" /><p>From here, no numbers. Read the way her form moves, along with her timing and tone.</p><Button fullWidth onClick={onClose}>Understood</Button></div></Modal> }
+export function TrainingWheelsOffModal({ open, onClose, interview = false }: OpenProps & { interview?: boolean }) { return <Modal open={open} onClose={onClose} title={interview ? 'Read the room, not the meter' : 'Read her, not the meter'}><div className="sheet-stack"><Radio size={34} strokeWidth={1.5} className="volt" /><p>{interview ? 'From here, no numbers. Notice when she stops following up — that is the signal, and most candidates talk straight past it.' : 'From here, no numbers. Read the way her form moves, along with her timing and tone.'}</p><Button fullWidth onClick={onClose}>Understood</Button></div></Modal> }
 
 export function FirstWinSheet({ open, onClose }: OpenProps) { return <Sheet open={open} onClose={onClose} title="That&apos;s the loop"><div className="sheet-stack"><Check size={34} strokeWidth={1.5} className="volt" /><p>Do it again tomorrow. One completed rep keeps the streak alive.</p><Button fullWidth onClick={onClose}>Got it</Button></div></Sheet> }
 
@@ -156,7 +183,19 @@ export function FirstLossSheet({ open, onClose }: OpenProps) {
  * emotional beat; explaining the rules over the top of it would flatten the one
  * moment the scorecard has.
  */
-export function ScorecardExplainerSheet({ open, onClose }: OpenProps) {
+/**
+ * What the number means.
+ *
+ * The interview branch has to make a distinction the dating one does not: §07
+ * still says the outcome is worth zero, AND from `INTERVIEW-TECHNICAL-PLAN.md`
+ * §3 the answers themselves are now scored. Those are two different claims and
+ * a sheet that ran them together would read as a contradiction — so it says
+ * both, in that order, and says what happens when the grader is unsure.
+ */
+export function ScorecardExplainerSheet({ open, onClose, interview = false }: OpenProps & { interview?: boolean }) {
+  if (interview) {
+    return <Sheet open={open} onClose={onClose} title="How this is scored"><div className="sheet-stack"><Trophy size={34} strokeWidth={1.5} className="volt" /><p><strong>Whether they would call you back is worth nothing.</strong> It is recorded, and it contributes zero points.</p><p>What is scored is how you answered: whether the answers had a shape, whether there was evidence in them, whether you answered the question you were actually asked, whether you noticed how it was landing, how you held up, and what you asked back.</p><p><strong>On a technical round, whether you were right is scored too</strong> — separately, so the card can say you handled it well and you were wrong. Anything ambiguous is left unscored rather than guessed at.</p><p className="muted">A clean interview that ends in a no can score 92. A sloppy one that got a warm goodbye scores 54. That is on purpose — you own the process, and nobody owns the result.</p><Button fullWidth onClick={onClose}>Understood</Button></div></Sheet>
+  }
   return <Sheet open={open} onClose={onClose} title="How this is scored"><div className="sheet-stack"><Trophy size={34} strokeWidth={1.5} className="volt" /><p><strong>Whether she gave you her number is worth nothing.</strong> It is recorded, and it contributes zero points.</p><p>What is scored is how you played: how much of the talking was yours, whether you asked real questions, whether you used what she gave you, whether you read her, and how you left.</p><p className="muted">A clean rep that ends in rejection can score 92. A sloppy one that got lucky scores 54. That is on purpose — you own the process, and nobody owns the result.</p><Button fullWidth onClick={onClose}>Understood</Button></div></Sheet>
 }
 

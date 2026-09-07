@@ -10,6 +10,12 @@ import { focusPlan } from '@/lib/data/focus'
 import { MemoryLine } from './memory-line'
 import { DATING_DURATION_MS, useRepSession, type LiveRepConfig, type SpeakingState } from '@/lib/data/rep'
 import { WRAP_UP_MS } from '@/lib/data/rep-rules'
+import { interviewDurationMs, interviewWrapUpMs } from '@/lib/data/interview-rules'
+import { DEFAULT_ROUND, ROUND_SHAPE_LABEL, roundType, type RoundTypeId } from '@/lib/data/interview-credits'
+import { DEFAULT_FIELD, type InterviewFieldId } from '@/lib/data/interview-fields'
+import { DEFAULT_DIFFICULTY, difficultySpec, type DifficultyLevel } from '@/lib/data/interview-difficulty'
+import { probeLadderEnabled } from '@/lib/data/interview-probes'
+import { INTERVIEW_BAND_LABEL } from '@/lib/warmth/interview/bands'
 import type { Band } from '@/lib/data/types'
 import { TOP_TIER } from '@/lib/data/progression'
 import { Button, Skeleton } from '@/components/ui'
@@ -30,6 +36,44 @@ import { sceneId } from '@/lib/voice/types'
 interface RepScreenProps {
   personaId: string
   interview?: boolean
+  /**
+   * Which round this interview is (§5.7). Resolved on the server from
+   * `interview_setups`; ignored entirely on the dating arm.
+   */
+  round?: RoundTypeId
+  /**
+   * The candidate's field and how hard the questions are (§5, §7.2).
+   *
+   * Both resolved on the server from `interview_setups`, for the same reason
+   * the round is, and both ignored entirely on the dating arm. The field
+   * decides whether the probe ladder has anything authored to climb; the
+   * difficulty decides how hard to pitch it, and nothing about her mood.
+   */
+  field?: InterviewFieldId
+  difficulty?: DifficultyLevel
+  /**
+   * The question caption (§5.11). **Off by default**, and the setup screen
+   * recommends it stays off — a real interview has no captions and practising
+   * without them is the point.
+   */
+  captions?: boolean
+  /**
+   * Credits that can pay for THIS round. Read on the server (§5.6).
+   *
+   * Round-aware, not the account total: a screener credit only buys the
+   * five-minute screener, so an account holding one and nothing else has a
+   * balance of one and can start no paid round. Gating on the total sent that
+   * rep to the microphone to be refused by the token route.
+   */
+  credits?: number
+  /**
+   * Why the balance is zero, when the account is not actually empty.
+   *
+   * "You have no interview credits" is the wrong sentence for somebody holding
+   * a free screener and looking at a recruiter screen. The page knows which of
+   * the two it is; this is how it says so.
+   */
+  creditNote?: string
   query?: Record<string, string | undefined>
   /**
    * Everything the transport needs, resolved on the server. Null when this
@@ -39,7 +83,14 @@ interface RepScreenProps {
   live?: LiveRepConfig | null
 }
 
-export function RepBriefScreen({ personaId, interview = false }: RepScreenProps) {
+export function RepBriefScreen({
+  personaId,
+  interview = false,
+  round = DEFAULT_ROUND,
+  field = DEFAULT_FIELD,
+  difficulty = DEFAULT_DIFFICULTY,
+  credits = 0,
+}: RepScreenProps) {
   const router = useRouter()
   const { data: persona, loading: personaLoading } = usePersona(personaId)
   const { data: interviewers, loading: interviewersLoading } = useInterviewers()
@@ -91,7 +142,12 @@ export function RepBriefScreen({ personaId, interview = false }: RepScreenProps)
 
   const enter = () => {
     if (!online || subject?.locked) return
-    if ((user?.repsRemainingToday ?? 1) === 0) { setPaywall(true); return }
+    // Two meters, two refusals (§5.2). An interview is bought out of a credit
+    // balance and a dating rep out of a daily rate, and asking the wrong one
+    // refuses a paying customer for having used their three dating reps.
+    // A round nobody can pay for is refused HERE, in a sentence, rather than at
+    // the microphone as a 402 dressed up as a lost connection.
+    if (interview ? credits <= 0 : (user?.repsRemainingToday ?? 1) === 0) { setPaywall(true); return }
     if (level === TOP_TIER && !trainingOff) { setTrainingOff(true); return }
     // §12, B10. The explanation goes BEFORE the browser dialog, because a
     // prompt nobody understands gets dismissed and a dismissal is permanent on
@@ -105,7 +161,19 @@ export function RepBriefScreen({ personaId, interview = false }: RepScreenProps)
   if (loading) return <main className="brief-page"><div className="brief-shell"><Skeleton width={96} height={96} style={{ borderRadius: '50%' }} /><Skeleton width={160} height={34} /><Skeleton height={180} /></div></main>
   if (!subject) return <BriefGate title="Rep not found" description="That training partner is not available." href={interview ? '/interview/interviewers' : '/roster'} />
   if (subject.locked) return <BriefGate title={`${subject.name} is locked`} description={interview ? 'Reach level 4 to unlock this interviewer.' : persona?.unlockRequirement ?? 'Keep training to unlock this rep.'} href={interview ? '/interview/interviewers' : '/roster'} locked />
-  const setting = interview ? `${interviewer?.styleLabel ?? 'Interviewer'} · ${interviewer?.gender ?? ''}` : persona?.setting ?? ''
+  // §4.4. The shape, and — on a round that probes — how hard the questions are.
+  // A round that changes what the interview IS cannot be a quiet dropdown
+  // default, and this is the last screen before the microphone opens.
+  const setting = interview
+    ? [
+      interviewer?.styleLabel ?? 'Interviewer',
+      roundType(round).label,
+      ROUND_SHAPE_LABEL[roundType(round).shape],
+      ...(probeLadderEnabled({ round, field })
+        ? [`${difficultySpec(difficulty).label} questions`]
+        : []),
+    ].join(' · ')
+    : persona?.setting ?? ''
   const hook = interview ? interviewer?.blurb ?? '' : persona?.hook ?? ''
   // The script, read once and unhurried, BEFORE the microphone opens. §05's
   // objection is to interruption, and this is the surface where coaching has
@@ -113,14 +181,24 @@ export function RepBriefScreen({ personaId, interview = false }: RepScreenProps)
   // the live rail is `aria-hidden`.
   const briefScript = interview ? null : guidedScriptFor(personaId)
   const back = interview ? '/interview/interviewers' : `/roster/${personaId}`
-  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}><Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link><section className="brief-shell"><FluidPersona name={subject.name} personaId={subject.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={132} /><h1 className="display-lg">{subject.name}</h1><span className="label">{setting}</span><p className="brief-hook">{hook}</p>{!interview && progress && progress.attempts > 0 ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span> : null}{!interview ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} /> : null}<RuleBlock interview={interview} />{!interview ? <MissionNote mission={mission} /> : null}{briefScript ? <GuidedBrief script={briefScript} /> : null}{!interview ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}{!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}<Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button>{/* The way out of the microphone, offered at the exact moment somebody
+  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}><Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link><section className="brief-shell"><FluidPersona name={subject.name} personaId={subject.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={132} /><h1 className="display-lg">{subject.name}</h1><span className="label">{setting}</span><p className="brief-hook">{hook}</p>{!interview && progress && progress.attempts > 0 ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span> : null}{!interview ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} /> : null}<RuleBlock interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} />{!interview ? <MissionNote mission={mission} /> : null}{briefScript ? <GuidedBrief script={briefScript} /> : null}{!interview ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}{!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}<Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button>{/* The way out of the microphone, offered at the exact moment somebody
     is deciding whether to grant it (P1). Same character, no permission,
     no quota — and it is a link rather than a modal because a person
     hesitating here should not have to answer another question. */}
-{!interview ? <Link className="arena-button arena-button--ghost arena-button--full" href={`/text/${personaId}`}>Not ready to talk? Type instead</Link> : null}<Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={interview ? null : personaId} /><TrainingWheelsOffModal open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /><MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} /></main>
+{!interview ? <Link className="arena-button arena-button--ghost arena-button--full" href={`/text/${personaId}`}>Not ready to talk? Type instead</Link> : null}<Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={interview ? null : personaId} /><TrainingWheelsOffModal interview={interview} open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /><MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} /></main>
 }
 
-export function RepLiveScreen({ personaId, interview = false, live = null }: RepScreenProps) {
+export function RepLiveScreen({
+  personaId,
+  interview = false,
+  live = null,
+  round = DEFAULT_ROUND,
+  field = DEFAULT_FIELD,
+  difficulty = DEFAULT_DIFFICULTY,
+  captions: captionsEnabled = false,
+  credits = 0,
+  creditNote,
+}: RepScreenProps) {
   const router = useRouter()
   const { data: persona, loading: personaLoading } = usePersona(personaId)
   const { data: interviewers, loading: interviewersLoading } = useInterviewers()
@@ -129,9 +207,22 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
   const interviewer = interviewers.find((item) => item.id === personaId)
   const subject = interview ? interviewer : persona
   const level = subject?.level ?? 1
-  // Two minutes, and she leaves when they run out (§05).
-  const durationMs = interview ? 480_000 : DATING_DURATION_MS
-  const session = useRepSession(personaId, { durationMs, trainingWheels: level < 4, interview, config: live })
+  // A6. **Length is a property of the round** (§5.7), and this was a hardcoded
+  // `480_000` sitting beside an `INTERVIEW_DURATION_MS` it could already
+  // disagree with. The dating number is untouched and still comes from
+  // `rep-rules.ts`.
+  const durationMs = interview ? interviewDurationMs(round) : DATING_DURATION_MS
+  const session = useRepSession(personaId, {
+    durationMs,
+    trainingWheels: level < 4,
+    interview,
+    config: live,
+    ...(interview ? { round, field, difficulty } : {}),
+    // A3/A4, and ONLY here. A twenty-minute rep on a paid item reconnects and
+    // stops its clock while the room is empty; a three-minute dating rep runs
+    // exactly the code it ran yesterday.
+    ...(interview ? { reconnect: true } : {}),
+  })
   const [endOpen, setEndOpen] = useState(false)
   const [chromeDim, setChromeDim] = useState(false)
   const [caption, setCaption] = useState(true)
@@ -142,7 +233,15 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
   const { start, pause, resume, outcome, sessionId } = session
 
   const loading = userLoading || (interview ? interviewersLoading : personaLoading)
-  const blockedByReps = !userLoading && (user?.repsRemainingToday ?? 0) <= 0
+  // TWO DIFFERENT METERS, AND THEY ARE NOT INTERCHANGEABLE (§5.2, §5.3).
+  //
+  // A dating rep is bought out of a daily rate that resets at midnight. An
+  // interview is bought out of a credit balance that does not — so asking
+  // `repsRemainingToday` about an interview would refuse a paying customer
+  // because they had used their three dating reps, and telling them it resets
+  // tonight would be a lie about a midnight that changes nothing.
+  const blockedByReps = !userLoading && !interview && (user?.repsRemainingToday ?? 0) <= 0
+  const blockedByCredits = interview && credits <= 0
   /**
    * The rep no longer opens the instant loading finishes.
    *
@@ -152,7 +251,7 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
    * the count, which also means the first thing they hear is not silence with
    * a person in it. See `useRepProduction`.
    */
-  const repReady = !loading && !!subject && !subject.locked && !blockedByReps && online && !!live
+  const repReady = !loading && !!subject && !subject.locked && !blockedByReps && !blockedByCredits && online && !!live
   // The one thing §05 rule 6 allows on this screen besides the timer and the
   // waveform. Read here, drawn as a single static line.
   const { data: liveFocus } = useLatestFocus()
@@ -165,7 +264,8 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
     ready: repReady,
     onGo: start,
     ended: Boolean(session.outcome),
-    wrapping: !session.outcome && session.status === 'live' && session.msRemaining <= WRAP_UP_MS,
+    wrapping: !session.outcome && session.status === 'live'
+      && session.msRemaining <= (interview ? interviewWrapUpMs(round) : WRAP_UP_MS),
     // `sceneId()` is the codebase's own answer to "which scene is this":
     // the authored bed when there is one, the reverb's scene otherwise. The
     // `bed: null` on eight of nine personas was the switch for the
@@ -242,6 +342,20 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
     document.addEventListener('visibilitychange', visibility)
     return () => { clearResumeTimer(); document.removeEventListener('visibilitychange', visibility) }
   }, [micLost, online, pause, resume])
+  /**
+   * Leave a rep that never became one.
+   *
+   * The effect below navigates on an OUTCOME, which only exists after a rep
+   * that actually ran. A mint that failed has none — so every "End" on a
+   * pre-connection modal needs to end the rep AND say where to go, or it is a
+   * button that appears to do nothing. It did.
+   */
+  const leave = () => {
+    navigatedRef.current = true
+    session.end()
+    router.push(interview ? '/interview' : '/train')
+  }
+
   useEffect(() => {
     if (!outcome || navigatedRef.current) return
     setEndOpen(false)
@@ -258,6 +372,27 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
     return () => window.clearTimeout(timer)
   }, [outcome, router, session.safety.distress, sessionId])
 
+  /**
+   * THE SERVER SAID NO, AND SAID WHY.
+   *
+   * A whole screen rather than a modal over a live rep, because there is no
+   * live rep behind it — the refusal happened at the token route, before a
+   * microphone opened. It used to arrive as `ConnectionLostModal`: a Retry that
+   * refused three more times and an End button that did nothing at all.
+   *
+   * The sentence is the ROUTE'S, not this screen's. Only the server knows
+   * whether this was credits, the daily quota or the spend ceiling, and each
+   * one sends somebody somewhere different.
+   */
+  if (session.error === 'refused') {
+    return <BriefGate
+      title={interview ? 'This interview cannot start' : 'This rep cannot start'}
+      description={session.refusal ?? 'This rep cannot start right now.'}
+      href={interview ? '/interview' : '/train'}
+      locked
+    />
+  }
+
   if (loading) return <main className="rep-live"><span className="label rep-connecting">Preparing rep</span></main>
   if (!subject) return <BriefGate title="Rep not found" description="That training partner is not available." href={interview ? '/interview/interviewers' : '/roster'} />
   if (subject.locked) return <BriefGate title={`${subject.name} is locked`} description="This rep has not unlocked yet." href={interview ? '/interview/interviewers' : '/roster'} locked />
@@ -268,6 +403,12 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
     return user?.voiceLocked
       ? <BriefGate title="Voice is on Pro" description="Your streak, your field log and text mode all stay open. Voice reps come with Pro." href="/profile/subscription" />
       : <BriefGate title="No reps left today" description="Your daily reps reset tonight." href="/profile/subscription" />
+  }
+  // A third refusal, and a third screen. An interview credit does not come back
+  // at midnight and is not part of any plan, so neither of the two above is
+  // true of it — and a surface that explains what it costs beats a dead end.
+  if (blockedByCredits) {
+    return <BriefGate title={creditNote ? 'Not this round' : 'No interview credits'} description={creditNote ?? 'Interviews are bought as credits rather than by the day. They do not expire once you have paid for them.'} href="/interview" />
   }
   if (!live) return <BriefGate title={interview ? 'Interview reps are not open yet' : `${subject.name} is not ready`} description={interview ? 'The interview track opens once its interviewers are written.' : 'This character has no session configured yet.'} href={interview ? '/interview' : '/roster'} />
   if (!online) return <BriefGate title="You're offline" description="Reconnect before starting or resuming this rep." href={interview ? '/interview' : '/train'} />
@@ -286,8 +427,12 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
   // Thirty seconds out — the same instant she is told to wind down. Gone once
   // the clock reads zero, because at that point she is finishing, not being
   // hurried.
+  // The interview's closing beat is a QUESTION put to the candidate, and it
+  // fires on its own proportional constant — thirty seconds is not enough time
+  // to answer "do you have any questions for me?" (B7).
+  const wrapAt = interview ? interviewWrapUpMs(round) : WRAP_UP_MS
   const wrapCue = !session.outcome && session.status === 'live'
-    && session.msRemaining > 0 && session.msRemaining <= WRAP_UP_MS
+    && session.msRemaining > 0 && session.msRemaining <= wrapAt
   // Which step he is on. Advances on completed exchanges — his turn AND her
   // reply — so a rail that is meant to teach following an answer can never
   // point at one that has not arrived. The wind-down owns the close outright
@@ -312,7 +457,15 @@ export function RepLiveScreen({ personaId, interview = false, live = null }: Rep
   const unheard = !session.outcome && session.status === 'live'
     && !session.heardUser && silentFor >= SILENCE_NUDGE_MS
   const visualWarmth = session.outcome?.won ? 100 : loss ? 0 : session.warmth
-  return <main className={`rep-live${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}${session.outcome ? ' rep-live--over' : ''}${production.arming ? ' rep-live--arming' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label="End rep" disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{production.count !== null ? <div className="rep-arm" role="status" aria-live="assertive"><span className="rep-arm__count data" key={production.count}>{production.count}</span><span className="rep-arm__label label">{subject.name} is about to speak</span></div> : null}{interview && session.question ? <p className="interview-question">{session.question}</p> : null}<section className="rep-center">{caption && subject ? <div className="rep-caption"><strong>{subject.name}</strong><span>{interview ? interviewer?.styleLabel : persona?.settingShort}</span></div> : null}<div className="orb-stage"><FluidPersona name={subject.name} personaId={subject.id} warmth={visualWarmth} announceWarmth speaking={loss ? 'thinking' : session.speaking} userLevel={session.userLevel} personaLevel={session.personaLevel} status={session.status === 'connecting' ? 'connecting' : 'live'} interactive fill /></div>{connecting && !production.arming ? <span className="label rep-connecting">Connecting · she can’t hear you yet</span> : null}{!connecting && level < 4 && !session.outcome ? <div className="band-readout"><span className="label" style={{ color: bandCss(session.band) }}>{displayBand}</span>{session.trainingWheels ? <strong className="data"><small>Warmth</small>{session.warmth}<i>/ {session.threshold}</i></strong> : null}</div> : null}{!connecting && !session.outcome && !production.arming ? (guidedStep ? <GuidedLine step={guidedStep} /> : <MissionLine mission={liveMission} />) : null}{wrapCue ? <span className="wrap-cue label">30 seconds · land the conversation</span> : null}{session.outcome?.won && session.outcome.phoneNumber ? <PhoneNumberCard number={session.outcome.phoneNumber} /> : null}{loss ? <p className="exit-line">“{session.outcome?.exitLine}”</p> : null}{unheard ? <p className="silence-nudge" role="status"><MicOff size={15} strokeWidth={1.5} /> We can&apos;t hear you. Check your microphone and input device.</p> : null}<div className="mic-status" aria-live="polite">{statusLine}</div><div className="sr-only" aria-live="polite">{wrapCue ? 'Thirty seconds left. Land the conversation.' : bandAnnouncement(session.band, interview)}</div></section>{interview ? <span className="question-count data">Q{session.questionIndex} / {session.questionTotal}</span> : null}{resumeCount ? <div className="resume-count data">{resumeCount}</div> : null}<EndRepModal open={endOpen} onClose={() => setEndOpen(false)} onEnd={() => { setEndOpen(false); session.end() }} /><MicLostModal open={micLost} onResume={() => { setMicLost(false); resume() }} onEnd={() => { setMicLost(false); session.end() }} /><MicBlockedSheet open={micBlocked} onClose={() => { setMicBlocked(false); session.end() }} onRetry={() => { setMicBlocked(false); session.retry() }} /><ConnectionLostModal open={session.error === 'connection'} attempt={session.retryAttempt} onRetry={session.retry} onEnd={session.end} /><DistressModal open={session.safety.distress} onClose={() => { navigatedRef.current = true; router.push('/train') }} /></main>
+  return <main className={`rep-live${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}${session.outcome ? ' rep-live--over' : ''}${production.arming ? ' rep-live--arming' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label={interview ? 'Leave interview' : 'End rep'} disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{production.count !== null ? <div className="rep-arm" role="status" aria-live="assertive"><span className="rep-arm__count data" key={production.count}>{production.count}</span><span className="rep-arm__label label">{subject.name} is about to speak</span></div> : null}{interview && captionsEnabled && session.question ? <p className="interview-question">{session.question}</p> : null}<section className="rep-center">{caption && subject ? <div className="rep-caption"><strong>{subject.name}</strong><span>{interview ? interviewer?.styleLabel : persona?.settingShort}</span></div> : null}<div className="orb-stage"><FluidPersona name={subject.name} personaId={subject.id} warmth={visualWarmth} announceWarmth speaking={loss ? 'thinking' : session.speaking} userLevel={session.userLevel} personaLevel={session.personaLevel} status={session.status === 'connecting' ? 'connecting' : 'live'} interactive fill /></div>{connecting && !production.arming ? <span className="label rep-connecting">Connecting · she can’t hear you yet</span> : null}{!connecting && level < 4 && !session.outcome ? <div className="band-readout"><span className="label" style={{ color: bandCss(session.band) }}>{displayBand}</span>{session.trainingWheels ? <strong className="data"><small>Warmth</small>{session.warmth}<i>/ {session.threshold}</i></strong> : null}</div> : null}{!connecting && !session.outcome && !production.arming ? (guidedStep ? <GuidedLine step={guidedStep} /> : <MissionLine mission={liveMission} />) : null}{wrapCue ? <span className="wrap-cue label">30 seconds · land the conversation</span> : null}{session.outcome?.won && session.outcome.phoneNumber ? <PhoneNumberCard number={session.outcome.phoneNumber} /> : null}{loss ? <p className="exit-line">“{session.outcome?.exitLine}”</p> : null}{unheard ? <p className="silence-nudge" role="status"><MicOff size={15} strokeWidth={1.5} /> We can&apos;t hear you. Check your microphone and input device.</p> : null}<div className="mic-status" aria-live="polite">{statusLine}</div><div className="sr-only" aria-live="polite">{wrapCue ? 'Thirty seconds left. Land the conversation.' : bandAnnouncement(session.band, interview)}</div></section>{interview ? <span className="question-count data">Q{session.questionIndex} / {session.questionTotal}</span> : null}{resumeCount ? <div className="resume-count data">{resumeCount}</div> : null}{/* The back arrow reaches this too, including on a rep that never started.
+      `session.error` is only ever set by a failed start, so it is the exact
+      test for "there is no rep here to finish" — and on that path ending has
+      to navigate, because there will be no outcome to navigate on. */}
+<EndRepModal interview={interview} open={endOpen} onClose={() => setEndOpen(false)} onEnd={() => { setEndOpen(false); if (session.error) leave(); else session.end() }} /><MicLostModal open={micLost} onResume={() => { setMicLost(false); resume() }} onEnd={() => { setMicLost(false); session.end() }} /><MicBlockedSheet open={micBlocked} onClose={() => { setMicBlocked(false); leave() }} onRetry={() => { setMicBlocked(false); session.retry() }} />{/* `session.end()` finishes the rep; it does not navigate, and on a rep
+      that never connected there is no outcome for the effect above to
+      navigate ON. So leaving is said explicitly here — this modal's End
+      button did nothing at all until it was. */}
+<ConnectionLostModal open={session.error === 'connection'} attempt={session.retryAttempt} onRetry={session.retry} onEnd={leave} /><DistressModal open={session.safety.distress} onClose={() => { navigatedRef.current = true; router.push('/train') }} /></main>
 }
 
 function BriefGate({ title, description, href, locked = false }: { title: string; description: string; href: string; locked?: boolean }) {
@@ -351,7 +504,9 @@ function InputMeter({ level }: { level: number }) {
 }
 
 function bandCss(band: Band) { return `var(--band-${band.toLowerCase()})` }
-function interviewBand(band: Band) { return ({ CLOSED: 'SKEPTICAL', GUARDED: 'NEUTRAL', OPEN: 'INTERESTED', ENGAGED: 'IMPRESSED', INVESTED: 'CONVINCED' } as const)[band] }
+// The relabel lives in `lib/warmth/interview/bands.ts` beside the table it
+// names, so a band cannot appear with no word for it.
+function interviewBand(band: Band) { return INTERVIEW_BAND_LABEL[band] }
 function bandAnnouncement(band: Band, interview: boolean) { if (interview) return `Their impression is ${interviewBand(band).toLowerCase()}.`; return ({ CLOSED: "She's closed off.", GUARDED: "She's guarded.", OPEN: "She's opening up.", ENGAGED: "She's engaged.", INVESTED: "She's invested." } as const)[band] }
 
 /**

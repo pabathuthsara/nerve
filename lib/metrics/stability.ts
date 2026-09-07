@@ -274,6 +274,26 @@ export interface StabilityStats {
 export interface StabilityMeterOptions extends BreakDetectionOptions {
   /** See `DEFAULT_VERBOSITY_MEDIAN`. Omitted keeps the roster default. */
   verbosityMedian?: number
+  /**
+   * ASKING A QUESTION EVERY TURN IS THE JOB, ON ONE TRACK.
+   *
+   * `question-every-turn` is a dating rule and a correct one: a stranger in a
+   * shop who asks something every turn is interrogating, and round 6 reached a
+   * question on 83% of turns. An INTERVIEWER asks a question on nearly every
+   * turn, because that is what an interview is — so the same detector reports
+   * her doing her job as a frame break.
+   *
+   * Measured rather than argued: the first audition of Dan Whitfield against
+   * the one-word candidate came back at 1.34 breaks per five minutes against a
+   * gate of 0.5, and every one of them was this rule. Nothing about that rep
+   * was wrong.
+   *
+   * The same escape hatch `verbosityMedian` already has, for the same reason —
+   * a character measured against another track's ceiling is reported broken for
+   * the thing that makes her good. Omitted is the dating default and every
+   * dating character keeps it.
+   */
+  questionsAreTheJob?: boolean
 }
 
 export class StabilityMeter {
@@ -330,7 +350,11 @@ export class StabilityMeter {
     this.addWindowRule(
       hits,
       'question-every-turn',
-      consecutiveQuestions || questionShare > 0.5,
+      // Off entirely for a character whose whole function is to ask. It is not
+      // relaxed to a higher threshold, because there is no share of questions
+      // that would be suspicious coming from an interviewer — what would be
+      // suspicious is her stopping, and that is the impression meter's job.
+      !this.options.questionsAreTheJob && (consecutiveQuestions || questionShare > 0.5),
       text,
       at,
       consecutiveQuestions

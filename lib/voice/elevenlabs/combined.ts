@@ -22,6 +22,7 @@
  * is deliberately spending anyway, in every band but the two warmest.
  */
 import { getPersona } from '@/lib/personas'
+import { withInterviewBrief } from '@/lib/personas/interview/overlay'
 import { DEFAULT_CALIBRATION, type Calibration } from '../types'
 import { priceChatUsage } from '../rates'
 import { resolvePipelineConfig, ttsModelSpec, type PipelineEnv } from './config'
@@ -30,8 +31,8 @@ import { LlmClient } from './llm'
 import { handleLlmRequest, handleTtsRequest, type PersonaOverlay } from './server'
 import { parseAlignment } from './tts'
 import { capToBudget, spokenWordCount } from './truncate'
-import { UNSTEERED_WORD_CAP, wordCapFor } from '@/lib/warmth/bands'
-import { MAX_TURN_TTS_CHARACTERS, type TurnEvent, type TurnRequest } from './turn-protocol'
+import { wordCapFor } from '@/lib/warmth/bands'
+import { MAX_REQUESTED_WORD_CAP, MAX_TURN_TTS_CHARACTERS, type TurnEvent, type TurnRequest } from './turn-protocol'
 import { proxiedRequestId } from '../request-id'
 import { seededRandom } from '../seed'
 
@@ -103,7 +104,7 @@ export async function parseTurnRequest(request: Request): Promise<TurnRequest | 
       // stays absent, so `createCombinedTurn` can tell "no ceiling supplied"
       // from "a ceiling of one" and fall back to the warmth-derived number.
       ...(typeof body.wordCap === 'number' && Number.isFinite(body.wordCap)
-        ? { wordCap: Math.round(Math.max(1, Math.min(UNSTEERED_WORD_CAP, body.wordCap))) }
+        ? { wordCap: Math.round(Math.max(1, Math.min(MAX_REQUESTED_WORD_CAP, body.wordCap))) }
         : {}),
     }
   } catch { return null } finally { reader.releaseLock() }
@@ -141,7 +142,10 @@ export function createCombinedTurn(
   requestSignal.addEventListener('abort', abortFromRequest, { once: true })
   if (requestSignal.aborted) abortFromRequest()
   const deadline = setTimeout(() => abort.abort(new Error('Turn deadline exceeded.')), TURN_TIMEOUT_MS)
-  const persona = { ...getPersona(input.personaId)!, ...context }
+  // The interview brief joins the CONTRACT, which is the cached prefix (C5).
+  // `withInterviewBrief` is a no-op without one, so a dating turn compiles the
+  // byte-identical prompt A0 pins.
+  const persona = withInterviewBrief({ ...getPersona(input.personaId)!, ...context }, context)
   const compiled = new ElevenLabsPersonaCompiler(resolvePipelineConfig(process.env as PipelineEnv))
     .compile(persona, context.calibration ?? DEFAULT_CALIBRATION, { rng: seededRandom(input.sessionId) })
   const delivery = deliveryFor(persona, compiled, input.warmth)

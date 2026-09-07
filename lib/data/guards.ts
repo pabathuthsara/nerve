@@ -101,15 +101,23 @@ export async function enforceFrontendGuard(path: string): Promise<GuardedProfile
    */
   if (ageRoute) return (profile as GuardedProfile | null) ?? null
 
-  // The interview track is screens and fixtures: no interviewer characters, no
-  // CV bucket, nothing writing `interview_setups`. Finishing it is M4-and-after
-  // by §17's own ordering, and until then the nav already hides it — the track
-  // switcher needs two unlocked tracks and every profile has one.
-  //
-  // What the nav could not do is stop somebody typing the URL, which opened a
-  // door onto fixtures. `unlocked_tracks` was already the right gate; this is
-  // what makes it real rather than cosmetic, and it is what will let the track
-  // ship to a subset of accounts later without any of this changing.
+  /**
+   * The interview track's gate, and it is now open (INTERVIEW-PLAN E1).
+   *
+   * This was written when the track was screens over fixtures and the point was
+   * to stop somebody typing the URL into a demo. **The guard itself has not
+   * changed and did not need to** — it was the right gate all along, which is
+   * what E1 says. What changed is the other side of it: a credit landing adds
+   * `interview` to `unlocked_tracks` (the trigger in
+   * `20260907041000_interview_track_on_credit.sql`), and every account is
+   * granted the free five-minute screener at sign-up, so every account has the
+   * second entry.
+   *
+   * It stays because the column is still the authority and still has to be:
+   * `db:interview -- --close` shuts the track on one account, and an account
+   * created before the trigger existed would have one entry until a credit
+   * arrives.
+   */
   if (path === '/interview' || path.startsWith('/interview/')) {
     const tracks = profile?.unlocked_tracks ?? []
     if (!tracks.includes('interview')) redirect('/train')

@@ -89,6 +89,17 @@ export interface BillingEvent {
   providerCustomerId: string | null
   /** The membership (`mem_…`). The subscription, in Whop's noun. */
   providerSubscriptionId: string | null
+  /**
+   * The payment (`pay_…`) this event is about, when it is about one.
+   *
+   * The idempotency key for everything money causes — see
+   * `lib/billing/credit-rules.ts`, which grants one interview credit per
+   * payment because Whop mints one payment per period and replays the same id
+   * on every retry. Present on `payment.*` (where `data` IS the payment) and on
+   * `refund.created` / `dispute.created` (where it hangs off `data.payment`);
+   * null on membership and invoice events, which describe no charge.
+   */
+  paymentId: string | null
   /** The purchased `plan_…`, resolved to a plan by `lib/billing/plans.ts`. */
   planId: string | null
   /**
@@ -301,6 +312,9 @@ export function toBillingEvent(payload: unknown, receivedAt: number): BillingEve
     providerSubscriptionId:
       idOf(subject['membership']) ?? stringOf(subject['membership_id'])
       ?? (type.startsWith('membership.') ? stringOf(data['id']) : null),
+    // `data.payment` on a refund or a dispute; `data` itself on a payment event.
+    paymentId:
+      idOf(data['payment']) ?? (type.startsWith('payment.') ? stringOf(data['id']) : null),
     planId:
       idOf(subject['plan']) ?? stringOf(subject['plan_id'])
       ?? idOf(data['plan']) ?? stringOf(data['plan_id']) ?? idOf(data['current_plan']),

@@ -27,6 +27,18 @@ export interface PersonaContext {
   memorySummary?: string
   /** Absent when the name step was skipped. */
   userName?: string
+  /**
+   * The interview brief — the role, the round, the field, the JD and the CV
+   * (C5). Absent on every dating rep, and on an interview whose account has
+   * filled nothing in.
+   *
+   * Resolved ONCE, when the session is opened, and stored on
+   * `voice_sessions.context` so every turn of the rep reads the identical
+   * string. That is what keeps it inside the cached system-prompt prefix: a
+   * brief that changed per turn would be a prefix that changed per turn, and
+   * the 72.5% cache hit would go with it.
+   */
+  interviewBrief?: string
 }
 
 /**

@@ -16,6 +16,16 @@ interface ScoringCall {
   messages: { role: 'system' | 'user'; content: string }[]
   maxOutputTokens: number
   timeoutMs: number
+  /**
+   * The reservation's id on this session, when the default is not free.
+   *
+   * A bound grade reserves under the literal `'grade'`, which is right while a
+   * rep produces exactly one graded call. The interview arm's accuracy pass is
+   * a SECOND call on the same session and the same budget bucket (§8.2), and it
+   * would otherwise settle the first one's reservation on top of itself. It
+   * passes `'grade-accuracy'`; nothing else passes anything.
+   */
+  operationId?: string
 }
 
 interface Completion {
@@ -47,7 +57,8 @@ export async function runScoringCall(options: ScoringCall): Promise<
   if (!estimate) {
     return { response: NextResponse.json({ error: 'scoring model has no configured tariff' }, { status: 503 }) }
   }
-  const operationId = boundSession && kind === 'grade' ? 'grade' : crypto.randomUUID()
+  const operationId = options.operationId
+    ?? (boundSession && kind === 'grade' ? 'grade' : crypto.randomUUID())
   if (boundSession) {
     const allowed = await maySpend(userId, kind, {
       sessionId: boundSession, operationId, kind, model,

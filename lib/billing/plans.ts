@@ -22,7 +22,7 @@
  */
 
 import type { Plan } from '@/lib/data/types'
-import { OFFERS, type BillingPeriod } from '@/lib/site/plans'
+import { INTERVIEW_PACKS, OFFERS, type BillingPeriod, type PackId } from '@/lib/site/plans'
 
 /**
  * Env var per OFFER, not per plan.
@@ -280,5 +280,86 @@ export function whopPlanIdFor(
   if (!id) {
     throw new Error(`${entry.variable} is not set, so there is no plan to sell for ${plan} ${period}.`)
   }
+  return id
+}
+
+/* ------------------------------------------------------------------ *
+ * Interview packs
+ * ------------------------------------------------------------------ */
+
+/**
+ * The same doctrine as `PLAN_ENV`, one level sideways.
+ *
+ * A pack is a ONE-TIME vendor plan under the same product, and its id is
+ * injected rather than hardcoded for exactly the reason a subscription plan's
+ * is: the sandbox mints different ids, and a hardcoded one means the staging
+ * deploy silently sells nothing. Derived from `INTERVIEW_PACKS` so a pack
+ * authored there and forgotten here cannot exist.
+ *
+ * **An unrecognised plan grants nothing**, which is what `planForWhopPlan`
+ * already does for subscriptions and matters more here: the failure mode of
+ * guessing is free interviews for anyone who finds a checkout link.
+ */
+const PACK_ENV: readonly { pack: PackId; variable: string }[] =
+  INTERVIEW_PACKS.map((pack) => ({ pack: pack.id, variable: pack.env }))
+
+export type PackMap = Readonly<Record<string, PackId>>
+
+/** Builds the vendor-plan-id → pack map from an environment. */
+export function packMap(env: Record<string, string | undefined>): PackMap {
+  const map: Record<string, PackId> = {}
+  for (const { pack, variable } of PACK_ENV) {
+    const id = env[variable]?.trim()
+    if (id) map[id] = pack
+  }
+  return map
+}
+
+/** The pack a `plan_…` buys, or null when the id is not one of ours. */
+export function packForWhopPlan(whopPlanId: string | null, map: PackMap): PackId | null {
+  if (!whopPlanId) return null
+  return map[whopPlanId] ?? null
+}
+
+export function configuredPackMap(): PackMap {
+  return packMap(process.env as Record<string, string | undefined>)
+}
+
+/**
+ * Can a pack be bought right now?
+ *
+ * Separate from `checkoutConfigured` on purpose, and the separation is the
+ * point: subscriptions and packs are sold from different screens, and a
+ * deployment missing `WHOP_PACK_FIVE` should hide the interview buy buttons
+ * without taking the subscription page down with it. Both are true or false
+ * together in a correctly configured deployment; when they disagree, the one
+ * that disagrees is the one that goes quiet.
+ *
+ * Every pack is required rather than any, for the same reason every offer is:
+ * a screen showing three prices where one of them errors is a support ticket
+ * disguised as a feature.
+ */
+export function packsConfigured(
+  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+): boolean {
+  if (!checkoutConfigured(env)) return false
+  return PACK_ENV.every(({ variable }) => !!env[variable]?.trim())
+}
+
+/**
+ * The vendor plan id to send a buyer of `pack` to.
+ *
+ * Throws rather than returning null, like `whopPlanIdFor`: this runs when
+ * somebody has clicked buy, and a checkout that silently does nothing is worse
+ * than an error naming the variable that is missing.
+ */
+export function whopPlanIdForPack(
+  pack: PackId,
+  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+): string {
+  const entry = PACK_ENV.find((row) => row.pack === pack)
+  if (!entry) throw new Error(`${pack} is not a pack that is sold.`)
+  const id = env[entry.variable]?.trim()
+  if (!id) throw new Error(`${entry.variable} is not set, so there is no plan to sell for ${pack}.`)
   return id
 }

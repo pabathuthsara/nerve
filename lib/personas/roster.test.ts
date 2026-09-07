@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PERSONAS, RETIRED_PERSONAS, getPersona, getPersonaEverAuthored } from './index'
+import { DATING_PERSONAS, RETIRED_PERSONAS, getPersona, getPersonaEverAuthored } from './index'
 import { PRESENTATION, presentationFor } from './presentation'
 import { tess } from './tess'
 import { nadia } from './nadia'
@@ -9,7 +9,17 @@ import { ARM_THRESHOLD, KEEP_THRESHOLD } from '@/lib/data/rep-rules'
 import { TOP_TIER, uiLevel } from '@/lib/data/progression'
 import { FOCUS_PLANS } from '@/lib/data/focus'
 
-const ROSTER = Object.values(PERSONAS)
+// THE DATING ROSTER, not `PERSONAS`.
+//
+// Every assertion in this file is about the four-rung dating ladder — that it
+// is contiguous, that each rung stands on its own tier, that Tess is the one
+// authored to be won. Since the interview track landed, `PERSONAS` also holds
+// four interviewers on rungs 1 to 4, and reading them here would say the ladder
+// has eight characters on four rungs, which is true and is not what this file
+// is asking. `DATING_PERSONAS` is the same object it always read.
+//
+// The interview roster has its own equivalent: `interview/roster.test.ts`.
+const ROSTER = Object.values(DATING_PERSONAS)
 
 describe('the ladder', () => {
   it('is contiguous, one character per rung', () => {

@@ -13,6 +13,7 @@ import { FOCUS_OPTIONS } from '@/components/screens/onboarding-screens'
 // until 30 August, which is how these copies went stale while the footer and
 // the legal pages moved.
 import { SUPPORT_EMAIL } from '@/components/site/site-chrome'
+import { PeriodTabs } from '@/components/site/plan-board'
 import type { FocusArea } from '@/lib/data/focus'
 import { planWaitlistFlag } from '@/lib/data/ui-flags'
 import { dayCount } from '@/lib/data/rank'
@@ -21,7 +22,7 @@ import { FluidPersona } from '@/components/fluid-persona'
 import { recordLabel, type RepRecord } from '@/lib/data/records'
 import {
   BILLING_NOTE, CHECKOUT_NOTE, CHECKOUT_UNCONFIGURED_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE,
-  offerFor, offersFor, periodLabel, monthlyEquivalent, repsLine,
+  chargeLine, interviewsLine, offerFor, offersFor, periodLabel, monthlyEquivalent, repsLine,
   type BillingPeriod, type PublicPlan,
 } from '@/lib/site/plans'
 import { cancelSubscription, startCheckout } from '@/app/profile/subscription/actions'
@@ -456,10 +457,12 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
     <section className="plan-section">
       <div className="plan-section__head">
         <span className="label">Compare plans</span>
-        {/* Monthly is the default because it is the better deal, and a toggle
-            that opens on the dearer effective rate is one that hopes you do
-            not do the arithmetic. */}
-        <PeriodToggle value={period} onChange={setPeriod} />
+        {/* Monthly is the default because it is the better deal, and a control
+            that opens on the dearer effective rate is one that hopes you do not
+            do the arithmetic. The SAME component the public pricing page uses —
+            two controls doing one job is how the two surfaces come to disagree
+            about what is on sale. */}
+        <PeriodTabs value={period} onChange={setPeriod} />
       </div>
       <div className="plan-grid">
         {PUBLIC_PLANS.map((plan) => (
@@ -469,6 +472,7 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
             current={current}
             checkoutOpen={checkoutOpen}
             period={period}
+            recommended={plan.id === recommendedPlan(current)}
             busy={busy === plan.id}
             waitlisted={waitlisted.includes(plan.id as 'pro' | 'elite')}
             trialAvailable={subscription === null}
@@ -602,26 +606,26 @@ function CurrentPlan({ user, loading, subscription, onCancel, busy }: {
  * chosen segment, which is the "current position" use the design system
  * reserves it for.
  */
-function PeriodToggle({ value, onChange }: { value: BillingPeriod; onChange: (next: BillingPeriod) => void }) {
-  return <div className="period-toggle" role="group" aria-label="Billing period">
-    {(['weekly', 'monthly'] as const).map((option) => (
-      <button
-        key={option}
-        type="button"
-        className={`period-toggle__option${value === option ? ' is-current' : ''}`}
-        aria-pressed={value === option}
-        onClick={() => onChange(option)}
-      >
-        {option === 'weekly' ? 'Weekly' : 'Monthly'}
-      </button>
-    ))}
-  </div>
+/**
+ * The next step up from the plan somebody is on.
+ *
+ * Derived from the authored order rather than hardcoded to `pro`, so a fourth
+ * tier does not silently leave the recommendation pointing at the wrong card.
+ * Returns null on the top plan, where there is nothing to recommend and no card
+ * should take the accent.
+ */
+function recommendedPlan(current: Plan): Plan | null {
+  const ladder = PUBLIC_PLANS.map((entry) => entry.id)
+  const next = ladder[ladder.indexOf(current) + 1]
+  return next ?? null
 }
 
-function PlanCard({ plan, current, checkoutOpen, period, busy = false, waitlisted = false, trialAvailable = false, onBuy, onNotify }: {
+function PlanCard({ plan, current, checkoutOpen, period, recommended = false, busy = false, waitlisted = false, trialAvailable = false, onBuy, onNotify }: {
   plan: PublicPlan
   current: Plan
   checkoutOpen: boolean
+  /** The one card allowed to carry volt: the next step up from today's plan. */
+  recommended?: boolean
   /** Which period the board is showing. A plan not sold on it falls back. */
   period: BillingPeriod
   busy?: boolean
@@ -648,7 +652,16 @@ function PlanCard({ plan, current, checkoutOpen, period, busy = false, waitliste
     if (active) return <Button variant="secondary" fullWidth disabled>Current plan</Button>
     if (plan.id === 'free') return <Button variant="secondary" fullWidth disabled>Included</Button>
     if (checkoutOpen && offer) {
-      return <Button fullWidth loading={busy} onClick={() => onBuy?.(offer.period)}>
+      /**
+       * ONE VOLT PER SCREEN (Arena).
+       *
+       * Both upgrade buttons were primary, so a free account saw two volt
+       * actions side by side and the accent stopped meaning "the thing to do
+       * next". The recommended step gets it — the cheapest plan above the one
+       * they are on — and the tier beyond that is secondary. It is still one
+       * tap away; it just stops shouting over the step that is actually next.
+       */
+      return <Button variant={recommended ? 'primary' : 'secondary'} fullWidth loading={busy} onClick={() => onBuy?.(offer.period)}>
         {offersTrial ? `Start ${TRIAL_DAYS} days free` : `Switch to ${plan.name}`}
       </Button>
     }
@@ -658,15 +671,25 @@ function PlanCard({ plan, current, checkoutOpen, period, busy = false, waitliste
 
   return <Card className={`plan-card${active ? ' plan-card--current' : ''}`}>
     <div className="plan-card__head">
-      <div>{active ? <Chip tone="volt">Current</Chip> : <span className="label">Plan</span>}<h2 className="display-md">{plan.name}</h2></div>
+      <div>
+        {active
+          ? <Chip tone="volt">Current</Chip>
+          : recommended ? <Chip>Recommended</Chip> : <span className="label">Plan</span>}
+        <h2 className="display-md">{plan.name}</h2>
+      </div>
       <span className="data">{offer ? `${offer.price} ${periodLabel(offer.period)}` : '$0'}</span>
     </div>
+    {/* What the card is charged, in a sentence, before the feature list. The
+        trial is a property of the OFFER — weekly has none — and §14's failure
+        is somebody learning the terms of a charge from their statement. */}
+    {offer ? <p className="plan-card__equiv mute">{offersTrial ? chargeLine(offer) : `${offer.price} every ${offer.period === 'weekly' ? 'week' : 'month'}. Cancel any time.`}</p> : null}
     <Stat label="Voice reps" value={repsLine(plan)} />
+    <Stat label="Practice interviews" value={interviewsLine(plan.id)} />
     {/* The effective monthly rate, stated rather than left to be discovered on
         a statement. Weekly costs more per month than monthly does, and a ladder
         that hides that is the trick this one is trying not to be. */}
     {offer?.period === 'weekly'
-      ? <p className="plan-card__equiv mute">About ${monthlyEquivalent(offer).toFixed(0)} a month. No trial, and nothing is kept on file after you stop.</p>
+      ? <p className="plan-card__equiv mute">About ${monthlyEquivalent(offer).toFixed(0)} a month. Nothing is kept on file after you stop.</p>
       : null}
     <ul>{plan.features.map((feature) => <li key={feature}><Check size={15} strokeWidth={1.5} /> {feature}</li>)}</ul>
     {action}

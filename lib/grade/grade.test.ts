@@ -12,6 +12,7 @@ import {
   clampSubScores,
   weakestTwo,
   composeScorecard,
+  judgementMeanOf,
 } from './index'
 import type { DeterministicMetrics, MetricBand } from './metrics'
 import type { TranscriptTurn } from '@/lib/voice/types'
@@ -343,6 +344,75 @@ describe('composite', () => {
     expect(withMemory.memoryLine).toBe('Still looking for the blue one.')
     expect(without.memoryLine).toBeNull()
     expect(withMemory.composite).toBe(without.composite)
+  })
+
+  /* ---------------------------------------------------------------- *
+   * The seventh dimension (INTERVIEW-TECHNICAL-PLAN §8.4)
+   * ---------------------------------------------------------------- */
+
+  const accuracy = {
+    score: 40, scored: 5, asked: 6, correct: 2, incomplete: 0, wrong: 3,
+    notes: [], reading: 'Of the 5 things you were asked about, 3 were wrong.',
+  }
+
+  /**
+   * **THE DATING BRANCH REACHES THE IDENTICAL ARITHMETIC.** This is the one
+   * place this plan touches shared judgement and it branches rather than
+   * edits: no accuracy layer means the mean of the six, byte for byte.
+   */
+  it('is the six when there is no accuracy layer, which is every dating rep', () => {
+    const bare = composeScorecard({
+      transcript: GOOD, sessionSeconds: 30, judgement, outcome: 'neutral', model: 'test',
+    })
+    const explicitlyNone = composeScorecard({
+      transcript: GOOD, sessionSeconds: 30, judgement, outcome: 'neutral', model: 'test',
+      accuracy: null,
+    })
+    expect(bare.composite).toBe(explicitlyNone.composite)
+    expect(bare).not.toHaveProperty('accuracy')
+    expect(judgementMeanOf(judgement.scores)).toBe((80 + 70 + 60 + 40 + 90 + 50) / 6)
+  })
+
+  it('is the six when the grader abstained on everything', () => {
+    // Null is not zero. An interview where nothing could be judged has no
+    // accuracy reading, and folding a zero into the mean would be the false
+    // accusation §3.4 refuses, delivered by arithmetic instead of by a model.
+    const abstained = { ...accuracy, score: null }
+    expect(judgementMeanOf(judgement.scores, abstained))
+      .toBe(judgementMeanOf(judgement.scores))
+  })
+
+  it('is the seven when the round actually probed', () => {
+    const card = composeScorecard({
+      transcript: GOOD, sessionSeconds: 30, judgement, outcome: 'neutral', model: 'test',
+      accuracy,
+    })
+    const mean = (80 + 70 + 60 + 40 + 90 + 50 + 40) / 7
+    expect(card.composite).toBe(Math.round(card.deterministicScore * 0.6 + mean * 0.4))
+    expect(card.accuracy?.score).toBe(40)
+  })
+
+  /**
+   * §3.3. Accuracy is one dimension among seven and is not a multiplier or a
+   * gate. Knowing everything and explaining none of it still scores badly,
+   * because six of the seven are about the explaining.
+   */
+  it('never lets accuracy decide the composite on its own', () => {
+    const rambled = { ...judgement, scores: { opening: 20, curiosity: 20, listening: 20, signalReading: 20, composure: 20, close: 20 } }
+    const perfect = composeScorecard({
+      transcript: GOOD, sessionSeconds: 30, judgement: rambled, outcome: 'neutral', model: 'test',
+      accuracy: { ...accuracy, score: 100, wrong: 0, correct: 5 },
+    })
+    expect(perfect.composite).toBeLessThan(60)
+  })
+
+  it('keeps the focus plan on the six, so nothing points at a library card that does not exist', () => {
+    const card = composeScorecard({
+      transcript: GOOD, sessionSeconds: 30, judgement, outcome: 'neutral', model: 'test',
+      accuracy,
+    })
+    expect(card.focus).toEqual(['signalReading', 'close'])
+    expect(card.focus).not.toContain('technicalAccuracy')
   })
 
   it('rejects a judgement layer missing a sub-score', () => {

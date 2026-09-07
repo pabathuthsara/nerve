@@ -23,10 +23,14 @@ change, which was the point of building them against a seam.
       letters off `weekly_reviews`.
 - [x] The rank rail reads `profiles.rank`, mirrored by `syncLevel` from the same
       qualifying counts the unlocks use.
-- [ ] The interview track is still fixtures — `useInterviewers` and
-      `useInterviewSetup` are mocks and nothing writes `interview_setups`. The
-      route now redirects unless `unlocked_tracks` says otherwise, so nobody
-      reaches it by accident.
+- [x] The interview track reads real data (7 Sep). `useInterviewers` reads
+      `personas` filtered to the other track, `useInterviewSetup` reads
+      `interview_setups`, the three setup steps persist through Server Actions,
+      the CV genuinely uploads to the private bucket and is genuinely read, and
+      `useInterviewProgress` reads this preparation run's trend.
+      **`lib/data/mock/` is deleted** rather than left beside the real thing —
+      it held nothing else. The route still redirects unless `unlocked_tracks`
+      says otherwise, which is E1 and deliberately last.
 - [x] Four characters, one per rung and the ladder contiguous, seeded with
       their presentation copy — §06 authors eight and five are retired rather
       than deleted, unpublished by `npm run db:seed` so their old sessions stay
@@ -106,9 +110,17 @@ change, which was the point of building them against a seam.
 
 ## Still open
 
-- [ ] The interview track (M4) in full: interviewers, interview metrics and the
-      question index. `interview_setups` and a private `cv` bucket now exist for
-      the role, JD, questions and CV; nothing writes them yet.
+- [x] The interview track's DOOR (7 Sep, E1). `unlocked_tracks` gains
+      `interview` the moment a credit lands — a trigger on
+      `interview_credit_entries` rather than a line in the webhook, because
+      four separate paths issue credits and a rule at the table is true of all
+      four. Every account is granted the free five-minute screener at sign-up,
+      so every account has the second entry and the track switcher is in the
+      chrome for everybody. The guard in `lib/data/guards.ts` is **unchanged**
+      — it was always the right gate — and `db:interview -- --close` still
+      shuts one account. Real money moves too (D3): three one-time packs, and
+      credits granted per billing period on Pro and Elite. See
+      `INTERVIEW-PLAN.md` §15.
 - [ ] Standalone speech-to-text for the onboarding mic echo. The analyser is
       real; the transcript line under it is scripted.
 - [ ] Pause is advisory. It stops the UI affordances, not the microphone —

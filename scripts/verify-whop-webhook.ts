@@ -49,9 +49,77 @@ async function hmacBase64(secret: string, message: string): Promise<string> {
   return btoa(binary)
 }
 
+/**
+ * Prints the most recent REAL delivery of an event type, verbatim.
+ *
+ *   npm run whop:probe -- --capture payment.succeeded
+ *
+ * ── WHY THIS IS PART OF THE WEBHOOK SCRIPT ──────────────────────────────
+ *
+ * Rule 14, and `lib/billing/events.ts` is the scar: Whop's OpenAPI spec
+ * documents `membership.*` with nested objects and it sends flat ids, and
+ * building from the spec alone put a paying customer on Pro with no charge
+ * date. The fix was to pin what Whop actually sent — which meant somebody
+ * finding the payload by hand, once, after the damage.
+ *
+ * Whop stores the request body of every delivery for a fortnight. So this is
+ * the one command that turns "read one real payload before trusting the
+ * schema" from a discipline into a step: run it, paste the result into
+ * `events.test.ts`, and the next integration starts from the wire rather than
+ * from the documentation.
+ *
+ * It is what INTERVIEW-PLAN D2 asks for on the day the first pack is really
+ * bought. Trim the payment-instrument icons before pinning; nothing reads them.
+ */
+async function capture(event: string): Promise<void> {
+  const key = process.env['WHOP_API_KEY']?.trim()
+  const account = process.env['WHOP_ACCOUNT_ID']?.trim()
+  const base = (process.env['WHOP_API_BASE']?.trim() || 'https://api.whop.com/api/v1').replace(/\/+$/, '')
+  const version = process.env['WHOP_API_VERSION_DATE']?.trim()
+  if (!key || !account) {
+    console.error('Need WHOP_API_KEY and WHOP_ACCOUNT_ID to read deliveries.\n')
+    process.exit(1)
+  }
+
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${key}`,
+    ...(version ? { 'api-version-date': version } : {}),
+  }
+
+  const hooks = await fetch(`${base}/webhooks?account_id=${encodeURIComponent(account)}&first=10`, { headers })
+  const { data: list = [] } = (await hooks.json()) as { data?: { id: string; url: string }[] }
+  if (list.length === 0) {
+    console.error('No webhooks on this account.\n')
+    process.exit(1)
+  }
+
+  for (const hook of list) {
+    const response = await fetch(
+      `${base}/webhooks/${encodeURIComponent(hook.id)}/deliveries?first=50`,
+      { headers },
+    )
+    if (!response.ok) continue
+    const { data: deliveries = [] } = (await response.json()) as {
+      data?: { event: string | null; sent_at: string; request_body: unknown; response_code: number }[]
+    }
+    const match = deliveries.find((delivery) => delivery.event === event)
+    if (!match) continue
+    console.log(`\n${event} — ${hook.id}, sent ${match.sent_at}, answered ${match.response_code}\n`)
+    console.log(JSON.stringify(match.request_body, null, 2))
+    console.log('\nPin it in lib/billing/events.test.ts, trimmed of fields nothing reads.\n')
+    return
+  }
+
+  console.error(`\nNo delivery of ${event} in the last 50 on any webhook.\n`)
+  process.exit(1)
+}
+
 async function main(): Promise<void> {
   const { loadEnvLocal } = await import('./env')
   await loadEnvLocal()
+
+  const captureEvent = argValue('--capture')
+  if (captureEvent) return capture(captureEvent)
 
   const target = (argValue('--url') ?? 'http://localhost:3000').replace(/\/+$/, '')
   const secret = process.env['WHOP_WEBHOOK_SECRET']?.trim() ?? ''
@@ -111,6 +179,44 @@ async function main(): Promise<void> {
     },
   })
 
+  /**
+   * A pack purchase that belongs to nobody (INTERVIEW-PLAN D3).
+   *
+   * The plan id is the REAL one from the environment, so this proves the thing
+   * a fixture cannot: that the deployed route resolves `WHOP_PACK_FIVE` through
+   * `configuredPackMap()` and takes the pack branch rather than the
+   * subscription one. The user is all zeroes, so it resolves to no account and
+   * writes nothing — safe to fire at production, like the membership above.
+   *
+   * The shape is the captured `payment.succeeded` of 2 September with the plan
+   * swapped: `data` IS the payment, the membership hangs off it, and the plan
+   * is a nested object with its own metadata. See `events.test.ts`.
+   *
+   * **It carries no `metadata.user_id` at all**, unlike the membership probe
+   * above, and that is the difference between a safe probe and a destructive
+   * one. An all-zero UUID is a valid id that resolves to a real code path and
+   * then fails on the foreign key — which now, correctly, asks Whop to
+   * redeliver. No metadata means `resolveUserId` finds nobody and the route
+   * declines to credit anyone, which is the thing this probe is asserting.
+   */
+  const packPurchase = () => JSON.stringify({
+    id: 'msg_probe_pack',
+    type: 'payment.succeeded',
+    api_version: 'v1',
+    timestamp: new Date().toISOString(),
+    account_id: account,
+    data: {
+      id: 'pay_probe',
+      status: 'paid',
+      billing_reason: 'one_time',
+      membership: { id: 'mem_probe_pack', status: 'completed' },
+      plan: { id: process.env['WHOP_PACK_FIVE']?.trim() ?? 'plan_probe_pack', metadata: { nerve_pack: 'pack5' } },
+      product: { id: 'prod_probe' },
+      user: { id: 'user_probe' },
+      total: '29.0',
+    },
+  })
+
   const body = membership()
 
   console.log('a delivery that should be accepted')
@@ -141,6 +247,16 @@ async function main(): Promise<void> {
   const unknown = await deliver(JSON.stringify({ ...JSON.parse(body), type: 'chat.message.created' }))
   check(unknown.status === 200 && /ignored/.test(unknown.text),
     `an event type we do not act on (${unknown.status} ${unknown.text})`)
+
+  console.log('\na pack purchase, through the real plan id')
+  const pack = await deliver(packPurchase())
+  check(pack.status === 200, `a one-time pack payment is accepted (${pack.status} ${pack.text})`)
+  // `handled: false` is the CORRECT answer here and the point of the probe:
+  // the route recognised the pack, went looking for the account the all-zero
+  // metadata names, found none, and declined to credit anybody. A `handled:
+  // true` would mean it had credited a user id that does not exist.
+  check(/handled":false/.test(pack.text.replace(/\s/g, '')),
+    'and credits nobody, because the buyer resolves to no account')
 
   console.log('\na signed but broken body')
   const malformed = await deliver('{not json')

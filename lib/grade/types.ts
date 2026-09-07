@@ -28,6 +28,49 @@ export const SUB_SCORE_KEYS: readonly (keyof SubScores)[] = [
   'close',
 ]
 
+/**
+ * THE SEVENTH DIMENSION (INTERVIEW-TECHNICAL-PLAN §8.4).
+ *
+ * Nullable, and populated only on an interview rep that actually probed. Null
+ * is load-bearing in two places: a behavioural round has no accuracy score and
+ * its composite is the existing six, and an interview where the grader
+ * abstained on everything has no reading either — which is not the same as a
+ * bad one.
+ *
+ * It is deliberately NOT a member of `SubScores`. That interface is the six
+ * §07 dimensions, every one of them non-null, and it is read by
+ * `clampSubScores`, `weakestTwo`, the `scores` insert and the focus plan — a
+ * seventh required member would put "technical accuracy" in a dating rep's
+ * focus and in the library's card targets, neither of which has anything to say
+ * about it.
+ */
+export interface AccuracyLayer {
+  /** 0-100, or null when nothing could be judged. */
+  score: number | null
+  /** How many probe answers the verdict counted. The denominator, stated. */
+  scored: number
+  /** How many probes were put to them at all. */
+  asked: number
+  correct: number
+  incomplete: number
+  wrong: number
+  /**
+   * One line per answer that was not right: what they said, and what is true.
+   *
+   * **Not a lesson** (§10.7). Nerve is a gym, not a course, and a course is a
+   * different product with different obligations.
+   */
+  notes: {
+    index: number
+    verdict: 'INCOMPLETE' | 'WRONG'
+    question: string
+    quote: string
+    correction: string
+  }[]
+  /** The one sentence that separates the two numbers (§8.5). */
+  reading: string | null
+}
+
 export interface JudgementLayer {
   scores: SubScores
   /** One per sub-score, quoting the transcript. Grounding, not decoration. */
@@ -72,6 +115,15 @@ export interface Scorecard {
    * nothing to the composite.
    */
   memoryLine: string | null
+  /**
+   * Whether the answers were actually right (§8).
+   *
+   * **Absent on every dating rep and on every behavioural interview round**, and
+   * absent is what keeps the composite where it was: `composeScorecard` reads
+   * the six when this is missing or its `score` is null, which is the identical
+   * arithmetic `dating-arm.test.ts` pins.
+   */
+  accuracy?: AccuracyLayer | null
 }
 
 export const DETERMINISTIC_WEIGHT = 0.6

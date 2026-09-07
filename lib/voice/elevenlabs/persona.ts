@@ -177,13 +177,43 @@ export const EXPRESSION_TAG: Record<Persona['personality']['expression'], string
  * the model softens its voice softens with it.
  */
 export function stabilityFor(persona: Persona): number {
+  if (persona.track === 'interview') return INTERVIEW_STABILITY
   // Expression, not warmth. A flat character must stay flat at every point on
   // the meter; under OpenAI the voice softens as the model softens and there is
   // nothing to be done about it, which is the argument §04 makes for this arm.
   return STABILITY_BY_EXPRESSION[persona.personality.expression]
 }
 
-const STABILITY_BY_EXPRESSION: Record<Persona['personality']['expression'], number> = {
+/**
+ * One value, for every interviewer, and the reason is the whole point of the
+ * dial rather than an exception to it.
+ *
+ * On the dating arm stability is a WEAPON: `STABILITY_BY_EXPRESSION` runs to
+ * 0.9 because a cold stranger who warms up on her own is a broken exposure
+ * exercise, and forcing the voice flat is how she is stopped. Nothing on the
+ * interview arm needs that. An interviewer is not withholding warmth as a
+ * difficulty mechanic — she is a professional doing a job, and even the cold
+ * one is a person being cold rather than a synthesiser losing prosody. Elena's
+ * hardness is authored in her contract and in what she asks; it must not be
+ * rendered by flattening her voice, because a flattened voice does not read as
+ * a severe interviewer, it reads as a robot.
+ *
+ * 0.5 is v3's documented "Natural". The three documented points are 0.0
+ * (Creative), 0.5 and 1.0 (Robust); intermediate values could not be told apart
+ * from run-to-run variance in a listening test on 7 September — the model is
+ * nondeterministic, and the same request twice differed by 13% in encoded
+ * length — so authoring on a point the vendor actually names beats authoring on
+ * a decimal nobody can hear.
+ *
+ * **This is deliberately NOT overridable by `ELEVENLABS_STABILITY`.** That
+ * variable is the dating arm's listening-pass dial and it is currently 0.85 in
+ * production, which is what shipped Aisha's first real rep at near-flat and is
+ * the defect this fixes. A global dial that silently retunes a second track is
+ * the same shape of bug as the shared band table in `PERSONA-AUDIT.md`.
+ */
+export const INTERVIEW_STABILITY = 0.5
+
+export const STABILITY_BY_EXPRESSION: Record<Persona['personality']['expression'], number> = {
   flat: 0.9,
   dry: 0.75,
   earnest: 0.55,
@@ -192,7 +222,17 @@ const STABILITY_BY_EXPRESSION: Record<Persona['personality']['expression'], numb
 
 /** Delivery may lean with interest, but the cast voice and expression never
  *  change. Stability remains the authored (or explicitly auditioned) baseline.
- *  Three small pace bands avoid a different voice setting on every meter tick. */
+ *  Three small pace bands avoid a different voice setting on every meter tick.
+ *
+ *  **`speed` IS INERT ON `eleven_v3_conversational`, WHICH IS WHAT SHIPS.**
+ *  Measured 7 September on Aisha's voice, one line, the full range: 0.7 gave
+ *  3.84s and 1.2 gave 3.76s — a 2% spread, inside the model's own run-to-run
+ *  variance. The same test on `eleven_flash_v2_5` gave 5.25s and 2.97s, a
+ *  1.77x spread, so the parameter works and v3 simply drops it. The pace band
+ *  below is therefore computed, sent, and discarded by the vendor on every
+ *  turn. It is left in place because it is correct for Flash and costs
+ *  nothing, but DO NOT TUNE AGAINST IT while v3 is the shipping model — a
+ *  listening pass on these numbers is a listening pass on nothing. */
 export function deliveryFor(
   persona: Persona,
   compiled: Pick<ElevenLabsPipelineConfig, 'tts' | 'delivery_tags'>,
@@ -300,11 +340,18 @@ export class ElevenLabsPersonaCompiler implements PersonaCompiler<ElevenLabsPipe
   }
 
   /** Persona first, environment override second — the env dials exist to be
-   *  turned during a listening pass, so they win when explicitly set. */
+   *  turned during a listening pass, so they win when explicitly set.
+   *
+   *  The one exception is an interviewer's stability, which the env may not
+   *  touch. See `INTERVIEW_STABILITY`. A dating persona reaches the identical
+   *  expression it reached before this branch existed, which A0 pins. */
   private voiceSettings(persona: Persona): VoiceSettings {
     const env = this.config.tts.settings
+    const interview = persona.track === 'interview'
     return {
-      stability: Number.isFinite(env.stability) ? env.stability : stabilityFor(persona),
+      stability: !interview && Number.isFinite(env.stability)
+        ? env.stability
+        : stabilityFor(persona),
       similarity_boost: env.similarity_boost,
       speed: Number.isFinite(env.speed)
         ? clamp(env.speed, 0.7, 1.2)

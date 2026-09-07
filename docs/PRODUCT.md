@@ -8,7 +8,7 @@ five screens do not each invent their own answer.
 | Track | Status | What a rep is | Win condition |
 |---|---|---|---|
 | **Dating** | Built. The product. | Three minutes against one of four characters | Her number, offered by her at the end when the meter earned it |
-| **Interview** | Screens built, engine shared, characters unwritten (M4) | Eight minutes against an interviewer you configure | A callback, decided by the grade rather than in the room |
+| **Interview** | **Built, sold and open.** Four authored interviewers, the judgement arm, the setup, the CV, the probe ladder, the difficulty slider and technical accuracy landed 7 Sep, and so did the money: three one-time packs ($9 / $29 / $59), one interview credit a month on Pro and four on Elite, and a free five-minute screener granted to every account at sign-up — which is what opens `unlocked_tracks` and puts the switcher in the chrome | Five to twenty-five minutes, depending on the round you pick, against an interviewer you configure. A technical round tests what you know as well as what you did | A callback, decided by the grade rather than in the room — and worth zero points either way (§07). **Whether your answers were right is scored separately, and is not a win condition** |
 | **English** | Later. Not started. | — | — |
 
 One warmth engine, one scoring system, one transcript shape across all three.
@@ -55,6 +55,39 @@ adding the interview track is characters and a setup flow, not a second engine.
   92. The scorecard grades process — talk ratio, question rate, open/closed,
   filler control, longest monologue, response latency, plus the judgement layer
   — and the win is a story, not a grade (§07).
+
+## On the interview track, the product also tests what you know
+
+**This is a change to what Nerve claims to be, made on 7 September, and it is
+one track wide.** Until then the product scored only how you handled the room:
+six dimensions, all of them about delivery, with the rubric saying in as many
+words *"do not penalise a candidate for not knowing something"*. That makes a
+gym for how you handle an interview, which is a real product and is not the one
+somebody buys a technical round for. The reason is commercial and was stated
+plainly: **that is what people are paying for — to know if they know.**
+
+So a technical or system design round adds a **seventh scored dimension**,
+`technical_accuracy`, and four things bound it:
+
+- **The interviewer never mentions it.** She does not correct, hint, or say how
+  it is going. Rule 8 and §05 are unchanged; the number is computed after the
+  rep and shown on the scorecard, and nowhere else.
+- **Outcome is still worth zero.** Whether she seemed convinced contributes
+  nothing, on this track more than any other — "did you get the job" is what
+  every competitor in the category scores.
+- **Not knowing is still not a character flaw.** Saying "I do not know" plainly
+  still scores well on composure and is excluded from accuracy entirely. The
+  card can say *you handled that well and you were wrong*, which is the most
+  useful sentence this product can say to somebody.
+- **It abstains rather than guesses.** A grader that must pick between right and
+  wrong on an ambiguous answer will invent confidence, and being told you were
+  wrong when you were right costs more than any soft process score. An
+  abstention is excluded from the denominator, and a round where everything
+  abstained scores **null** — not zero.
+
+**The dating arm has no accuracy dimension and never will.** Its composite is
+the same six it has always been, pinned by
+`lib/characterization/dating-arm.test.ts`.
 
 ## Text mode is the same character without the microphone
 
