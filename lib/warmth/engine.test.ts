@@ -963,7 +963,7 @@ describe('bandFor', () => {
     // to forbid it, so the bare word no longer separates the two bands.
     expect(bandDirective(19.5)).toContain('Four or five words')
     expect(bandDirective(19.5)).not.toContain('You may volunteer')
-    expect(bandDirective(19.5)).toContain('do not volunteer anything')
+    expect(bandDirective(19.5)).toContain('do not volunteer')
   })
 })
 

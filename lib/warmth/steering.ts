@@ -80,9 +80,28 @@ export interface SteeringContext extends DirectiveContext {
    * Warmth says how much she likes him. This says how much he is giving, and
    * without it the two came apart entirely: at warmth 41 she answered three
    * consecutive one-word turns with self-disclosure, a question and more
-   * self-disclosure. Null on the opening turn, where the gates are tightest.
+   * self-disclosure.
+   *
+   * Three states, and they are not interchangeable — see `invitedThisTurn`.
+   * A shape is an ordinary turn. `null` means he has not spoken at all, so
+   * there is nothing to be invited by. `undefined` means the CALLER has no
+   * reciprocity signal to give (the text arm, the adapter's fallback), which is
+   * not the same claim and must not be read as one.
    */
   his?: UserTurnShape | null
+  /**
+   * This is her reply to his FIRST turn of the rep.
+   *
+   * Carried beside `his` rather than inside it, for the reason
+   * `WarmthSession.lastUserAskedDirectly` is: `UserTurnShape` is Tier 0 and
+   * every dating gate reads it exactly as it always has (rule 19).
+   *
+   * It exists because his opener is deliberately exempt from `deadEnd` — "Hey
+   * there." must not cost him warmth and must not be answered with silence — and
+   * the invitation gate below was reading that exemption as though he had
+   * offered her something. He had said hello. See `invitedThisTurn`.
+   */
+  firstExchange?: boolean
 }
 
 /**
@@ -135,7 +154,8 @@ export function composeSteering(context: SteeringContext): string {
   // which this file's header is an argument against, so on a dead end the
   // invitation simply does not go.
   //
-  // A DEAD END, AND NOTHING ELSE. This used to be `mayVolunteerFor`, which
+  // WHAT HE HAS OFFERED, AND NOTHING ELSE — a dead end, or a hello he has not
+  // followed yet (`invitedThisTurn`). This used to be `mayVolunteerFor`, which
   // carried a warmth floor of ENGAGED — so the invitation and the gates were
   // vetoed twenty points above the band that composed the invitation, and above
   // the `unlocksAt` every persona author had chosen. Nadia's four gates open at
@@ -143,7 +163,7 @@ export function composeSteering(context: SteeringContext): string {
   // four open below 35 and could never use one. Whether she is warm enough is
   // the band's decision and the gate's own, and this line is not allowed a
   // third opinion. See `lib/warmth/reciprocity.ts`.
-  const invited = !(context.his?.deadEnd ?? false)
+  const invited = invitedThisTurn(context)
   return assemble([
     // Her own band table when she has one, the shared one otherwise. The band
     // still owns reply length either way — see `BandDirectives`.
@@ -165,6 +185,57 @@ export function composeSteering(context: SteeringContext): string {
     // third answer nobody asked for.
     standing && invited ? gateClauses(context.persona, context.warmth) : [],
   ])
+}
+
+/**
+ * Whether she may be handed a permission to DRIVE this turn.
+ *
+ * The invitations — the band's own "You may volunteer one small thing", and the
+ * gates under it — are permissions to do something unprompted. Handing one to
+ * somebody who has offered nothing is the failure this whole layer exists to
+ * stop, and there are two ways to have offered nothing.
+ *
+ * **A dead end**, which is what this used to test and all it used to test.
+ *
+ * **HIS OPENING TURN**, which it did not, and that is the hole. `deadEnd` is
+ * deliberately false on his first turn however short it is (`scoreFast`), so
+ * that "Hey there." costs him no warmth and is never answered with silence —
+ * and this gate read that exemption as evidence that he had given her
+ * something. He had said hello. Measured on 8 September: Tess, rung 1, the free
+ * sign-up rep, replying to a two-word hello with the band's invitation, a
+ * disclosure gate and a flirt gate all open at once, and duly volunteering two
+ * facts nobody asked for on the first line of the product — "Machine's got
+ * nineteen minutes left. I'm deep into Tana French."
+ *
+ * The exemption stays where it is; it is right for the meter and right for the
+ * silence gate. What changes is that it stops being read as an offer here.
+ *
+ * `undefined` is NOT `null`. A caller with no reciprocity signal at all — the
+ * text arm, and the adapter's own fallback — has made no claim about what he
+ * did, and must keep the behaviour it has always had. Only an explicit `null`
+ * says he has not spoken.
+ *
+ * This is not a warmth opinion and must never become one: whether she is warm
+ * enough is the band's decision and the gate's own `unlocksAt`. See the block
+ * comment in `composeSteering` for the day this file had a third opinion.
+ */
+function invitedThisTurn(context: SteeringContext): boolean {
+  if (context.his === undefined) return true
+  if (context.his === null) return false
+  if (context.his.deadEnd) return false
+  // ON HIS OPENING TURN, ASK FOR THE OFFER DIRECTLY.
+  //
+  // Everywhere else `!deadEnd` is good evidence that he gave her something.
+  // On his first turn it is not evidence of anything, because the exemption
+  // put it there — so this turn alone tests what the exemption is standing in
+  // for. The same two terms `mayAskFor` uses, and no third one.
+  //
+  // A substantive opener still counts. "I came in looking for something for my
+  // brother, he only reads crime." is a real offer and she may answer it as
+  // one; "Hey there." is a hello and she may not treat it as an invitation to
+  // volunteer, disclose and flirt.
+  if (context.firstExchange) return context.his.askedQuestion || context.his.disclosed
+  return true
 }
 
 /**

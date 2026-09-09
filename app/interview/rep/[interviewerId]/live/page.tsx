@@ -7,7 +7,7 @@ import { getPersona } from '@/lib/personas'
 import { resolveProviderId } from '@/lib/voice'
 import { DEFAULT_CALIBRATION } from '@/lib/voice/types'
 import { readInterviewSetup } from '@/lib/db/interview'
-import { hasScreenerCredit, roundType, SCREENER_ROUND, spendableFor } from '@/lib/data/interview-credits'
+import { creditRefusal, hasScreenerCredit, openingRound, roundType, spendableFor } from '@/lib/data/interview-credits'
 import { DEFAULT_FIELD } from '@/lib/data/interview-fields'
 import { DEFAULT_DIFFICULTY } from '@/lib/data/interview-difficulty'
 import { interviewTrajectory } from '@/lib/warmth/interview/trajectory'
@@ -60,7 +60,10 @@ export default async function InterviewLivePage({ params }: { params: Promise<{ 
     interviewCreditState(user.id),
   ])
 
-  const round = roundType(setup?.round)
+  const screener = hasScreenerCredit(credits.lots)
+  // A saved setup always wins; this only decides what a null one means, and
+  // `recruiter` meant the free credit on every account could not be spent (B1).
+  const round = roundType(setup?.round ?? openingRound(screener))
 
   const live: LiveRepConfig | null = interviewer
     ? {
@@ -97,12 +100,11 @@ export default async function InterviewLivePage({ params }: { params: Promise<{ 
       captions={setup?.captions ?? false}
       // The same round-aware number the brief gates on. See the note there.
       credits={spendable}
+      cost={round.credits}
       // The honest sentence when the account is not empty but this round is
-      // unaffordable — a free screener against a paid round, which is the exact
-      // shape the dev grant produces and the one that reached the microphone.
-      creditNote={spendable === 0 && hasScreenerCredit(credits.lots) && roundType(setup?.round).id !== SCREENER_ROUND
-        ? 'Your free screener only pays for the five-minute screener round. Pick that one on your setup, or add credits for the longer rounds.'
-        : undefined}
+      // unaffordable — a free screener against a paid round, or a balance short
+      // of a longer one. One function, three surfaces.
+      creditNote={creditRefusal({ spendable, round: round.id, hasScreener: screener }) ?? undefined}
     />
   )
 }

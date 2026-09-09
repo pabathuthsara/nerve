@@ -27,6 +27,7 @@ import {
   fetchFieldStats,
   fetchLifetimeStats,
   fetchPendingMilestone,
+  fetchCreditHistory,
   fetchPlanWaitlist,
   fetchPendingUnlock,
   fetchPersona,
@@ -52,6 +53,7 @@ import {
   fetchWeeklyReviews,
 } from './queries'
 import type { RepRecord } from './records'
+import type { CreditEntry } from './credit-history'
 import { interviewProgress, type InterviewProgress } from './interview-progress'
 import type {
   LibraryCard,
@@ -163,6 +165,7 @@ const NO_SESSIONS: SessionSummary[] = []
 const NO_TURNS: TranscriptTurn[] = []
 const NO_PROGRESS: PersonaProgress[] = []
 const NO_WAITLIST: string[] = []
+const NO_CREDIT_HISTORY: CreditEntry[] = []
 /** The empty run. Stable, for the same reason every array here is. */
 const EMPTY_INTERVIEW_PROGRESS: InterviewProgress = interviewProgress([])
 const NO_LOG: FieldLogEntry[] = []
@@ -300,6 +303,18 @@ export function usePlanWaitlist(): Loadable<string[]> {
  */
 export function useSubscription(): Loadable<SubscriptionState | null> {
   return useAsync(fetchSubscription, null, [])
+}
+
+/**
+ * Where the interview credits went.
+ *
+ * Its own hook rather than a field on `useUserState`, because it is drawn
+ * behind a disclosure and most sessions never open it — putting it on the state
+ * every signed-in screen loads would make every screen pay for a list nobody
+ * asked to see.
+ */
+export function useCreditHistory(): Loadable<CreditEntry[]> {
+  return useAsync(fetchCreditHistory, NO_CREDIT_HISTORY, [])
 }
 
 export function usePersonaProgress(personaId?: string): Loadable<PersonaProgress[] | PersonaProgress | null> {

@@ -130,6 +130,25 @@ export interface PlanOffer {
   billingDays: number
   /** Free days before the first charge. **Zero means no trial at all.** */
   trialDays: number
+  /**
+   * Interview credits this offer grants **per billing period** (LAUNCH-GAP C2).
+   *
+   * ── WHY THIS IS ON THE OFFER AND NOT ON THE PLAN ─────────────────────
+   *
+   * It was `PLAN_INTERVIEW_CREDITS[plan]`, and credits are granted on
+   * `payment.succeeded` — "one payment, one period, one grant". A weekly Pro
+   * produces a payment every seven days, so it granted about 4.35 credits a
+   * month while every surface printed *"1 / month"*. Weekly Pro at ~$30 a month
+   * effective was out-granting Elite at $49 — 4.35 against 4 — and telling the
+   * buyer it granted a quarter as many. An under-promise nobody wanted and an
+   * over-delivery nobody was funding.
+   *
+   * Weekly grants none. The week is the cheap, no-commitment door for **voice
+   * reps**, which is what it was designed to be; interviews on it are bought as
+   * packs, which is also the higher-margin thing to sell. Monthly Pro keeps its
+   * one and Elite its four, so nothing about the plans anybody is on moves.
+   */
+  interviewCredits: number
   /** The environment variable holding this offer's vendor plan id. */
   env: string
 }
@@ -143,6 +162,8 @@ export const OFFERS: readonly PlanOffer[] = [
     billingDays: 7,
     // No trial. See the note above — this is the point of the weekly offer.
     trialDays: 0,
+    // None, deliberately (C2). A weekly grant is a grant every seven days.
+    interviewCredits: 0,
     env: 'WHOP_PLAN_PRO_WEEKLY',
   },
   {
@@ -152,6 +173,7 @@ export const OFFERS: readonly PlanOffer[] = [
     priceUsd: 19,
     billingDays: 30,
     trialDays: TRIAL_DAYS,
+    interviewCredits: 2,
     env: 'WHOP_PLAN_PRO',
   },
   {
@@ -161,6 +183,7 @@ export const OFFERS: readonly PlanOffer[] = [
     priceUsd: 49,
     billingDays: 30,
     trialDays: TRIAL_DAYS,
+    interviewCredits: 6,
     env: 'WHOP_PLAN_ELITE',
   },
 ]
@@ -180,8 +203,70 @@ export function isSoldOn(plan: Plan, period: BillingPeriod): boolean {
   return offerFor(plan, period) !== undefined
 }
 
+/**
+ * The plans a board should draw on this tab (LAUNCH-GAP A3).
+ *
+ * ── THE BUG THIS EXISTS FOR ──────────────────────────────────────────────
+ *
+ * Elite is monthly only, and both boards fell back to its monthly offer on the
+ * weekly tab rather than dropping it. The reasoning was sound as far as it went
+ * — a plan that vanishes when you press a tab reads as a bug — and it stopped
+ * being sound the moment the fallback carried a **different trial story** than
+ * the tab it was sitting under. `/pricing`'s weekly tab printed *"Billed every
+ * week, no trial and no commitment — the week is the trial"* directly above an
+ * Elite card reading *"7 days free, then $49 every month"*. In-app it was worse:
+ * `PlanCard` never rendered the "Monthly only" chip that `PlanColumn` did, so
+ * `$49 / month` simply sat beside a $7 weekly Pro with nothing saying why.
+ *
+ * The page contradicting itself about when money moves, on the surface §14 has a
+ * merchant-of-record reviewer reading.
+ *
+ * So a period shows what is sold on it, and `periodAsideFor` says in one line
+ * where the rest went. Free is always on the board: it is not sold on anything,
+ * and it is the column the other two are compared against.
+ */
+export function plansOn(period: BillingPeriod): readonly PublicPlan[] {
+  return PUBLIC_PLANS.filter((plan) => plan.id === 'free' || isSoldOn(plan.id, period))
+}
+
+/**
+ * The sentence under a board that is not showing every plan.
+ *
+ * Null when the tab shows everything, which is the monthly tab today. Named
+ * rather than counted — "some plans are monthly only" is a sentence that makes
+ * a reader go looking.
+ */
+export function periodAsideFor(period: BillingPeriod): string | null {
+  const missing = PUBLIC_PLANS.filter((plan) => plan.id !== 'free' && !isSoldOn(plan.id, period))
+  if (missing.length === 0) return null
+  const names = missing.map((plan) => plan.name)
+  const list = names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  const other: BillingPeriod = period === 'weekly' ? 'monthly' : 'weekly'
+  return `${list} ${names.length === 1 ? 'is' : 'are'} sold by the ${periodNoun(other)} — switch to ${periodTabLabel(other)} to see ${names.length === 1 ? 'it' : 'them'}.`
+}
+
 /** The periods anything is sold on, in the order the tabs show them. */
 export const BILLING_PERIODS: readonly BillingPeriod[] = ['weekly', 'monthly']
+
+/**
+ * A period read back out of stored JSON (E3).
+ *
+ * `subscriptions.last_event` carries the period a subscription was bought on,
+ * resolved by the webhook because the vendor-plan-id map lives in `WHOP_PLAN_*`
+ * and the subscription screen runs in a browser. Two places touch that blob —
+ * `lib/billing/apply.ts` writes it, `lib/data/queries.ts` reads it — and they
+ * were about to hold one guard each.
+ *
+ * Null is a real answer, not a failure: every row written before this field
+ * existed has no period, and a row written by a build selling a third one would
+ * carry a word this build does not know. Both mean "we cannot honestly quote a
+ * price", which is a thing the screen knows how to draw.
+ */
+export function readBillingPeriod(value: unknown): BillingPeriod | null {
+  return BILLING_PERIODS.includes(value as BillingPeriod) ? (value as BillingPeriod) : null
+}
 
 /** How a period is written wherever a price is quoted. */
 export function periodLabel(period: BillingPeriod): string {
@@ -340,7 +425,13 @@ export const PUBLIC_PLANS: readonly PublicPlan[] = [
       // A real plan difference since Phase D, and the only one besides volume.
       // Stated as a number because "included" is what a page says when it does
       // not want to say how many.
-      'One practice interview a month, on top of the reps',
+      //
+      // IN CREDITS, NOT IN INTERVIEWS, and that is the whole point of the line
+      // (9 September). It said "one practice interview a month" while the grant
+      // was one credit and a technical round cost two, so the card promised a
+      // round the account could not start. Two credits is one full round of any
+      // kind, and the sentence says the unit it is actually denominated in.
+      'Two interview credits a month — one full round of any kind, on top of the reps',
       // Deliberately does not promise a trial: the weekly offer has none, and
       // this list is printed under both periods. The trial is stated on the
       // offer itself, where it is true.
@@ -357,7 +448,7 @@ export const PUBLIC_PLANS: readonly PublicPlan[] = [
     features: [
       'Six voice reps a day',
       'Two sittings a day, or one long one',
-      'Four practice interviews a month',
+      'Six interview credits a month — three full rounds, or six screens',
       'Everything in Pro — again, nothing is held back',
     ],
     open: true,
@@ -386,7 +477,22 @@ export function hasVoice(plan: Plan): boolean {
  * wrong thing to tell somebody whose plan has no voice in it at all.
  */
 export function repsLine(plan: PublicPlan): string {
-  return plan.repsPerDay === 0 ? 'None' : `${plan.repsPerDay} / day`
+  return repsPerDayLine(plan.repsPerDay)
+}
+
+/**
+ * The same sentence, from a bare number (E3).
+ *
+ * `/profile/subscription` needs it because the card marked CURRENT PLAN should
+ * print what the account is actually GRANTED — `entitlements.reps_per_day` —
+ * and the authored plan number everywhere else. The two are normally equal and
+ * a hand-set entitlement or an in-flight plan change makes them differ, at
+ * which point the header and the card below it print two numbers for one thing.
+ * One formatter, so the reconciled line cannot be worded differently from the
+ * authored one.
+ */
+export function repsPerDayLine(repsPerDay: number): string {
+  return repsPerDay === 0 ? 'None' : `${repsPerDay} / day`
 }
 
 /**
@@ -421,9 +527,87 @@ export const TRIAL_NOTE =
  * price is easy; raising one is not.
  *
  * It no longer says checkout is closed, because it is not.
+ *
+ * ── S3: THIS IS ALSO THE FALLBACK ────────────────────────────────────────
+ *
+ * The audit's point was that this promise was a footnote doing nothing: it
+ * committed us to something without ever asking anybody to act. Giving it a
+ * cap turns it into the one urgency device this product can run honestly —
+ * see `checkoutNoteFor`, which is what the two pricing surfaces actually
+ * print. This bare sentence is what they fall back to when the count cannot be
+ * read, because a number we could not check is exactly the thing §14 says not
+ * to publish.
  */
 export const CHECKOUT_NOTE =
   'This is the launch price and founding members keep it — if it goes up later, it does not go up for you.'
+
+/**
+ * ── THE FOUNDING ALLOCATION (S3) ─────────────────────────────────────────
+ *
+ * How many accounts keep $19 for as long as they stay subscribed. After them,
+ * Pro is `PRO_STANDARD_PRICE`.
+ *
+ * Every clause of that is a promise we can keep with what we already have, and
+ * that is the whole reason it is the urgency device rather than a discount:
+ *
+ *   It is scarcity we can HONOUR. The number is counted off `profiles`, not
+ *   asserted. `lib/db/founding.ts` is the count and it is the only source; a
+ *   "3 places left" that nobody counts is a compliance risk on the page a
+ *   merchant-of-record reviewer opens, not a taste question.
+ *
+ *   It costs nothing today and raises ARPU on every later cohort, which is the
+ *   opposite of a percentage off — see the audit's S1, and rule: discounting a
+ *   METERED product recruits the cohort that uses it hardest.
+ *
+ *   Nothing resets. There is no countdown, no struck-through price we never
+ *   charged, and the allocation only ever runs down.
+ *
+ * **The raise itself is a plan at the provider, not a constant here.** When the
+ * places are gone, `npm run whop:verify` warns that Pro is still selling at the
+ * founding price, and creating the $29 plan is a deliberate act. This file may
+ * describe the future price; it must never quietly charge it.
+ */
+export const FOUNDING_ACCOUNTS = 200
+
+/** What Pro costs once the founding allocation is spent. */
+export const PRO_STANDARD_PRICE = '$29'
+
+/**
+ * How many founding places are left, from a count of accounts.
+ *
+ * Clamped at both ends: never negative, never more than the allocation. A count
+ * this cannot read is the caller's `null`, not a zero — see `checkoutNoteFor`.
+ */
+export function foundingPlacesLeft(accounts: number): number {
+  if (!Number.isFinite(accounts)) return FOUNDING_ACCOUNTS
+  return Math.max(0, Math.min(FOUNDING_ACCOUNTS, FOUNDING_ACCOUNTS - Math.floor(accounts)))
+}
+
+/**
+ * The sentence under a price board, in the one state it is actually in.
+ *
+ * Three of them, hand-authored (§02 rule 12) rather than assembled, because the
+ * middle one is a claim about money and the last one is a claim about money we
+ * have not yet raised:
+ *
+ *   `null`   the count could not be read. Publish no number at all. A figure
+ *            we did not verify is worse than no figure, and this is the only
+ *            state where that can happen.
+ *   `> 0`    the offer is live. Names the cap, the next price, and how many
+ *            places are actually left.
+ *   `0`      the allocation is spent. It says the price is MOVING rather than
+ *            that it has moved, because the plan at the provider is a separate,
+ *            deliberate act — and until it exists we are charging less than we
+ *            said we would, which is the safe direction to be wrong in.
+ */
+export function checkoutNoteFor(placesLeft: number | null): string {
+  const pro = offerFor('pro', 'monthly')?.price ?? '$19'
+  if (placesLeft === null) return CHECKOUT_NOTE
+  if (placesLeft <= 0) {
+    return `The ${FOUNDING_ACCOUNTS} founding places are taken and Pro is moving to ${PRO_STANDARD_PRICE}. Founding members keep ${pro} — it does not go up for them.`
+  }
+  return `Pro is ${pro} for the first ${FOUNDING_ACCOUNTS} accounts and ${PRO_STANDARD_PRICE} after that — ${placesLeft} founding place${placesLeft === 1 ? '' : 's'} left. Founding members keep ${pro}: if it goes up later, it does not go up for you.`
+}
 
 /** Shown in place of a buy button when no merchant of record is configured. */
 export const CHECKOUT_UNCONFIGURED_NOTE =
@@ -473,32 +657,70 @@ export interface InterviewPack {
   env: string
 }
 
+/**
+ * ── WHY THE PACKS COUNT CREDITS AND NOT INTERVIEWS (LAUNCH-GAP B3) ───────
+ *
+ * They were "One interview / Five interviews / Twelve interviews", which was
+ * exact while every paid round cost one credit. Rounds are priced by what they
+ * cost to run now — a recruiter screen is one, every longer round two — so a
+ * pack is a balance and somewhere between half as many interviews and all of
+ * them, depending on what you spend it on. Selling it as five interviews would
+ * be advertising a number the product cannot honour, which is the failure this
+ * whole file exists to prevent.
+ *
+ * The prices are unchanged. What each card now does is say what a round costs
+ * beside what a pack contains, so the reader can do the one sum that matters
+ * without being asked to guess at it.
+ *
+ * ── WHY THE COUNTS DOUBLED, 9 SEPTEMBER ──────────────────────────────────
+ *
+ * They were 1 / 5 / 12, and 1 was a trap. A credit bought a recruiter screen
+ * and nothing else, so somebody who had just used the free five-minute screener,
+ * wanted a real technical round, and paid us nine dollars was answered by
+ * `creditRefusal` with *"a technical costs 2 credits and there is one in the
+ * account"* — the first paid purchase in the product met by a request to buy
+ * again, and the only thing it did buy was a ten-minute version of the free
+ * thing they had just had. Pro had the same shape one rung up: $19 a month
+ * bought one screen and could not reach a technical at all, while its card
+ * promised "one practice interview a month".
+ *
+ * So the entry pack buys any round in the product, and the counts above it
+ * scale with it. **The prices did not move and deliberately did not.** A price
+ * on a public page is very hard to raise again — `FOUNDING_NOTE` already
+ * commits us on the plans — and this dial can be turned back down for a later
+ * cohort without breaking a promise to anybody. Unit cost is not what is being
+ * recovered here either way: a round costs between $0.18 and $0.41 to run, so
+ * the $59 pack spent entirely on twenty-five-minute rounds is $4.10 of COGS.
+ *
+ * The volume ladder survives the change: $4.50 a credit, then $3.63, then
+ * $2.95.
+ */
 export const INTERVIEW_PACKS: readonly InterviewPack[] = [
   {
     id: 'single',
-    name: 'One interview',
+    name: 'Two credits',
     price: '$9',
     priceUsd: 9,
-    credits: 1,
-    tagline: 'One full round, graded. For the interview on Thursday.',
+    credits: 2,
+    tagline: 'One full round of any kind, graded. For the call on Thursday.',
     env: 'WHOP_PACK_SINGLE',
   },
   {
     id: 'pack5',
-    name: 'Five interviews',
+    name: 'Eight credits',
     price: '$29',
     priceUsd: 29,
-    credits: 5,
-    tagline: 'A week of preparation: the same role, four rounds and a retry.',
+    credits: 8,
+    tagline: 'A week of preparation: a technical, a final, a deep technical and a screen.',
     env: 'WHOP_PACK_FIVE',
   },
   {
     id: 'pack12',
-    name: 'Twelve interviews',
+    name: 'Twenty credits',
     price: '$59',
     priceUsd: 59,
-    credits: 12,
-    tagline: 'A whole job hunt. Every round type, more than once each.',
+    credits: 20,
+    tagline: 'A whole job hunt. Every round type, several times each.',
     env: 'WHOP_PACK_TWELVE',
   },
 ]
@@ -508,9 +730,21 @@ export function packById(id: string): InterviewPack | undefined {
 }
 
 /** What one credit costs on this pack, for the comparison the page must show. */
-export function perInterview(pack: InterviewPack): number {
+export function perCredit(pack: InterviewPack): number {
   return pack.priceUsd / pack.credits
 }
+
+/**
+ * What a round costs, in the words a pricing surface uses.
+ *
+ * Printed beside the packs because B3 made "five credits" ambiguous on its own:
+ * a reader has to know that a recruiter screen is one and a deep technical is
+ * three before "$5.80 a credit" means anything. Derived from the authored round
+ * table rather than restated, so a repriced round moves the pricing page with
+ * it.
+ */
+export const ROUND_COST_NOTE =
+  'A ten-minute recruiter screen is one credit; every longer round — technical, deep technical, final — is two.'
 
 /**
  * How many interview credits a subscription hands out each billing period
@@ -526,8 +760,13 @@ export function perInterview(pack: InterviewPack): number {
  */
 export const PLAN_INTERVIEW_CREDITS: Readonly<Record<Plan, number>> = {
   free: 0,
-  pro: 1,
-  elite: 4,
+  // Two and six, not one and four (9 September). One credit could not buy a
+  // technical round at all, so Pro's single monthly interview was a recruiter
+  // screen or nothing — the shortest round in the product, on the plan that is
+  // meant to read as the whole thing. Two buys any round there is, and Elite's
+  // six buys three of them.
+  pro: 2,
+  elite: 6,
 }
 
 /**
@@ -543,6 +782,31 @@ export function creditsLine(plan: Plan): string {
 }
 
 /**
+ * What an OFFER grants each time it bills (LAUNCH-GAP C2).
+ *
+ * The authority for the grant, and the only thing `credit-rules.ts` should ask.
+ * `PLAN_INTERVIEW_CREDITS` is kept as the plan-level headline — what the
+ * comparison matrix means by "a month" — and `plans.test.ts` asserts the two
+ * agree on every monthly offer, so they cannot drift.
+ */
+export function offerInterviewCredits(offer: PlanOffer): number {
+  return offer.interviewCredits
+}
+
+/**
+ * The grant for a plan bought on a period, for the code that only knows those.
+ *
+ * Falls back to the plan-level number when the period is unknown — a webhook
+ * whose plan id maps to a plan but not to an offer is the fail-soft case, and
+ * granting the headline is the answer that matches what the buyer was shown.
+ */
+export function interviewCreditsFor(plan: Plan, period?: BillingPeriod | null): number {
+  if (plan === 'free') return 0
+  const offer = period ? offerFor(plan, period) : undefined
+  return offer ? offer.interviewCredits : PLAN_INTERVIEW_CREDITS[plan]
+}
+
+/**
  * Interview credits as a plan CARD writes it, which is a different question.
  *
  * A card meter is not asking "how many a month"; it is asking "what do I get".
@@ -555,10 +819,18 @@ export function creditsLine(plan: Plan): string {
  * Both read `PLAN_INTERVIEW_CREDITS`, so they can differ in framing and never
  * in the number.
  */
-export function interviewsLine(plan: Plan): string {
-  const credits = PLAN_INTERVIEW_CREDITS[plan]
-  if (credits === 0) return '1 free'
-  return `${credits} / month`
+export function interviewsLine(plan: Plan, period?: BillingPeriod | null): string {
+  if (plan === 'free') return '1 free'
+  const offer = period ? offerFor(plan, period) : undefined
+  const credits = offer ? offer.interviewCredits : PLAN_INTERVIEW_CREDITS[plan]
+  /**
+   * A paid plan whose offer grants none says where they come from instead of
+   * printing a zero (C2). Weekly Pro is the case: it is the cheap door for
+   * voice reps, and "None" on a $7 card reads as something withheld rather than
+   * as something sold separately — which it is, at $9.
+   */
+  if (credits === 0) return 'Sold separately'
+  return `${credits} / ${periodNoun(offer?.period ?? 'monthly')}`
 }
 
 /**

@@ -5,11 +5,15 @@ import {
   ROUND_TYPES,
   SCREENER_ROUND,
   SPEND_ORDER,
+  canAfford,
   creditBalance,
+  creditCost,
   expired,
   isRoundTypeId,
   hasScreenerCredit,
   nextLotToSpend,
+  openingRound,
+  planSpend,
   roundProbes,
   roundType,
   spendableFor,
@@ -120,16 +124,62 @@ describe('rounds', () => {
     expect(ROUND_TYPES.map((round) => [round.id, round.durationMs / 60_000, round.credits])).toEqual([
       ['screener', 5, 0],
       ['recruiter', 10, 1],
-      ['technical', 20, 1],
-      ['deep_technical', 25, 1],
-      ['final', 20, 1],
+      ['technical', 20, 2],
+      ['deep_technical', 25, 2],
+      ['final', 20, 2],
     ])
   })
 
-  it('gives the free screener no credit cost and every paid round exactly one', () => {
-    for (const round of ROUND_TYPES) {
-      expect([round.id, round.credits]).toEqual([round.id, round.id === SCREENER_ROUND ? 0 : 1])
+  /**
+   * LAUNCH-GAP B3, AND WHAT SURVIVED OF IT ON 9 SEPTEMBER.
+   *
+   * B3's finding was that every paid round costing one credit meant a rational
+   * buyer never spent one on the recruiter screen — the cheapest, friendliest
+   * and most convertible round there is. The fix was a ladder, and the ladder
+   * was authored off MINUTES: 1 / 2 / 3 / 2.
+   *
+   * Minutes turned out to be the wrong axis. Costed off `voice_operations`, a
+   * deep technical runs at ~$0.41 against a technical's ~$0.34 — 1.2x the cost
+   * at 1.5x the price — because her airtime is what scales and an interviewer
+   * talks less of a long round, not more. So the ladder is 1 / 2 / 2 / 2 now.
+   *
+   * The property that has to hold is NOT "longer costs more". It is the one
+   * B3 actually needed: **the screen is strictly cheaper than every round that
+   * competes with it**, so it stays worth buying. Above that line the three
+   * long rounds are priced together on purpose, so they are chosen on fit
+   * rather than on price — which is the only basis on which they differ.
+   */
+  it('keeps the screen strictly cheaper than every round it competes with', () => {
+    const paid = ROUND_TYPES.filter((round) => round.id !== SCREENER_ROUND)
+    const screen = roundType('recruiter')
+    for (const round of paid) {
+      expect(round.credits, round.id).toBeGreaterThanOrEqual(1)
+      if (round.durationMs > screen.durationMs) {
+        expect(round.credits, round.id).toBeGreaterThan(screen.credits)
+      }
     }
+    // And nothing above the screen is priced apart from its peers: a spread
+    // there is the cost-plus reasoning this table has already got wrong once.
+    const long = paid.filter((round) => round.durationMs > screen.durationMs)
+    expect(new Set(long.map((round) => round.credits)).size).toBe(1)
+    expect(roundType(SCREENER_ROUND).credits).toBe(0)
+  })
+
+  it('reads the cost off the table rather than letting a screen invent one', () => {
+    expect(creditCost('deep_technical')).toBe(2)
+    expect(creditCost('recruiter')).toBe(1)
+    expect(creditCost(SCREENER_ROUND)).toBe(0)
+    // An unknown id resolves to the default round, never to free.
+    expect(creditCost('nonsense')).toBe(creditCost(DEFAULT_ROUND))
+  })
+
+  it('affords a round only when the balance covers its whole cost', () => {
+    expect(canAfford(1, 'recruiter')).toBe(true)
+    expect(canAfford(1, 'technical')).toBe(false)
+    expect(canAfford(2, 'technical')).toBe(true)
+    expect(canAfford(2, 'deep_technical')).toBe(true)
+    expect(canAfford(1, 'deep_technical')).toBe(false)
+    expect(canAfford(0, SCREENER_ROUND)).toBe(true)
   })
 
   it('resolves an unknown or missing id to the default rather than throwing', () => {
@@ -230,13 +280,14 @@ describe('spendableFor', () => {
   })
 
   it('agrees with the spender on every round', () => {
-    // The gate and `nextLotToSpend` have to answer the same question, because
+    // The gate and the spender have to answer the same question, because
     // disagreeing is the entire bug: one of them decides whether the button
-    // works and the other decides whether the rep runs.
+    // works and the other decides whether the rep runs. Since B3 the question
+    // is "can this cover the whole cost", not "is there anything at all".
     for (const round of ROUND_TYPES) {
       for (const lots of [[screener], [purchase], [screener, purchase], []]) {
-        const canSpend = nextLotToSpend(lots, { round: round.id }) !== null
-        expect(spendableFor(lots, { round: round.id }) > 0, `${round.id}/${lots.length}`).toBe(canSpend)
+        const canSpend = planSpend(lots, { round: round.id }) !== null
+        expect(canAfford(spendableFor(lots, { round: round.id }), round.id), `${round.id}/${lots.length}`).toBe(canSpend)
       }
     }
   })
@@ -255,6 +306,70 @@ describe('spendableFor', () => {
   it('ignores an expired lot', () => {
     const dead: CreditLot = { source: 'grant', remaining: 5, expiresAt: '2020-01-01T00:00:00Z' }
     expect(spendableFor([dead], { round: 'recruiter' })).toBe(0)
+  })
+
+  /**
+   * LAUNCH-GAP B3. A three-credit round can need two lots, and the ledger has
+   * to be able to say which — `nextLotToSpend` answered "one lot, one credit"
+   * and could not.
+   */
+  it('draws a multi-credit round across lots, expiring first, all or nothing', () => {
+    const grant: CreditLot = { source: 'grant', remaining: 1, expiresAt: '2026-10-01T00:00:00Z' }
+    const paid: CreditLot = { source: 'purchase', remaining: 5, expiresAt: null }
+
+    // Two credits, one from the grant that dies first and one from the pack.
+    expect(planSpend([grant, paid], { round: 'deep_technical', now: NOW }))
+      .toEqual([{ source: 'grant', amount: 1 }, { source: 'purchase', amount: 1 }])
+
+    // One credit takes only from the expiring lot.
+    expect(planSpend([grant, paid], { round: 'recruiter', now: NOW }))
+      .toEqual([{ source: 'grant', amount: 1 }])
+
+    // The free round costs nothing at all and needs no lot.
+    expect(planSpend([], { round: SCREENER_ROUND, now: NOW })).toEqual([])
+  })
+
+  /**
+   * The ladder has moved once already — 1/2/3/2 on 8 September, 1/2/2/2 on the
+   * 9th when the rounds were costed properly — and no round charges three today.
+   * `cost` is asserted directly so the arithmetic that a three-credit round
+   * would need keeps its coverage rather than quietly rotting until the next
+   * time somebody reprices the table.
+   */
+  it('draws any cost across lots, not only the ones the table charges today', () => {
+    const grant: CreditLot = { source: 'grant', remaining: 1, expiresAt: '2026-10-01T00:00:00Z' }
+    const paid: CreditLot = { source: 'purchase', remaining: 5, expiresAt: null }
+    expect(planSpend([grant, paid], { round: 'deep_technical', cost: 3, now: NOW }))
+      .toEqual([{ source: 'grant', amount: 1 }, { source: 'purchase', amount: 2 }])
+    expect(planSpend([grant], { round: 'deep_technical', cost: 3, now: NOW })).toBeNull()
+  })
+
+  it('refuses rather than part-spending when the lots cannot cover the round', () => {
+    // A partial spend takes somebody's credits and gives them no interview,
+    // which is the one outcome worse than refusing on the brief.
+    const one: CreditLot = { source: 'purchase', remaining: 1, expiresAt: null }
+    expect(planSpend([one], { round: 'deep_technical', now: NOW })).toBeNull()
+    expect(planSpend([one], { round: 'technical', now: NOW })).toBeNull()
+    expect(planSpend([one], { round: 'recruiter', now: NOW })).toEqual([{ source: 'purchase', amount: 1 }])
+    expect(planSpend([], { round: 'recruiter', now: NOW })).toBeNull()
+  })
+
+  it('never lets a screener credit pay for a round it cannot buy, however big the spend', () => {
+    const free: CreditLot = { source: 'screener', remaining: 4, expiresAt: null }
+    expect(planSpend([free], { round: 'technical', now: NOW })).toBeNull()
+    expect(planSpend([free], { round: SCREENER_ROUND, now: NOW })).toEqual([])
+  })
+
+  /**
+   * LAUNCH-GAP B1. Every account holds a free screener and `DEFAULT_ROUND` is
+   * `recruiter`, so the setup opened on a round the free credit cannot buy and
+   * the one giveaway on every account failed at the moment of redemption.
+   */
+  it('opens on the round the free screener can actually pay for', () => {
+    expect(openingRound(true)).toBe(SCREENER_ROUND)
+    expect(openingRound(false)).toBe(DEFAULT_ROUND)
+    // And what it opens on is always affordable with what the account holds.
+    expect(canAfford(spendableFor([screener], { round: openingRound(true) }), openingRound(true))).toBe(true)
   })
 
   it('knows whether the free screener is worth offering', () => {

@@ -120,6 +120,40 @@ describe('a subscription grant', () => {
     })
   })
 
+  /**
+   * LAUNCH-GAP C2. The grant is a property of the OFFER, not of the plan.
+   *
+   * A weekly Pro produces a `payment.succeeded` every seven days, so granting
+   * `PLAN_INTERVIEW_CREDITS.pro` on each of them handed out about 4.35 credits
+   * a month against Elite's four, at 60% of Elite's price — while every
+   * surface printed "1 / month". Both halves were wrong at once: an
+   * over-delivery nobody was funding and an under-promise nobody wanted.
+   */
+  it('grants nothing on a weekly payment, because weekly grants none', () => {
+    expect(creditEffectFor(event('payment.succeeded', payment()), {
+      plan: 'pro',
+      period: 'weekly',
+      periodEnd: '2026-09-14T10:00:00.000Z',
+    })).toBeNull()
+  })
+
+  it('grants the monthly allotment when the period says monthly', () => {
+    expect(creditEffectFor(event('payment.succeeded', payment()), {
+      plan: 'pro',
+      period: 'monthly',
+      periodEnd: '2026-10-07T10:00:00.000Z',
+    })).toMatchObject({ kind: 'grant', credits: PLAN_INTERVIEW_CREDITS.pro })
+  })
+
+  it('grants the plan headline when the payload names no period', () => {
+    // The fail-soft case: a plan id that maps to a plan but not to an offer.
+    // Granting the number the buyer was shown beats granting nothing.
+    expect(creditEffectFor(event('payment.succeeded', payment()), {
+      plan: 'pro',
+      periodEnd: '2026-10-07T10:00:00.000Z',
+    })).toMatchObject({ credits: PLAN_INTERVIEW_CREDITS.pro })
+  })
+
   it('grants Elite four', () => {
     expect(
       creditEffectFor(event('payment.succeeded', payment()), { plan: 'elite', periodEnd: '2099-01-01T00:00:00.000Z' }),

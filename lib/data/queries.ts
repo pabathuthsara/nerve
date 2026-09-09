@@ -37,7 +37,9 @@ import { toScorecard, type StoredMetricScore, type StoredWarmthEvent } from './s
 import { RANKS, type Rank } from './rank'
 import { INTERVIEWERS, interviewerStyleFor } from '@/lib/personas/interview'
 import { INTERVIEW_SETUP_COLUMNS, setupFromRow, type SetupRow } from '@/lib/db/interview-shape'
-import { DEFAULT_ROUND } from './interview-credits'
+import { DEFAULT_ROUND, SPEND_ORDER, type CreditSource } from './interview-credits'
+import { isCreditEntryKind, type CreditEntry } from './credit-history'
+import { readBillingPeriod, type BillingPeriod } from '@/lib/site/plans'
 import {
   DIMENSION_COLUMN,
   INTERVIEW_DIMENSIONS,
@@ -922,8 +924,24 @@ export async function fetchSubscription(): Promise<SubscriptionState | null> {
     status: data.status,
     currentPeriodEnd: data.current_period_end,
     cancelAtPeriodEnd: data.cancel_at_period_end,
+    period: periodFrom(data.last_event),
     manageUrl: manageUrlFrom(data.last_event),
   }
+}
+
+/**
+ * The period this subscription was bought on, off the stored event blob (E3).
+ *
+ * Resolved server-side by the webhook, because the vendor-plan-id map lives in
+ * `WHOP_PLAN_*` and this function runs in a browser. Read defensively and
+ * checked against the union for the same reason `manageUrlFrom` validates its
+ * URL: this value came from a vendor payload by way of a JSON column, and the
+ * honest answer to an unrecognised one is "we do not know" — which the
+ * subscription screen already draws.
+ */
+function periodFrom(lastEvent: unknown): BillingPeriod | null {
+  if (typeof lastEvent !== 'object' || lastEvent === null || Array.isArray(lastEvent)) return null
+  return readBillingPeriod((lastEvent as Record<string, unknown>)['period'])
 }
 
 /**
@@ -939,9 +957,53 @@ function manageUrlFrom(lastEvent: unknown): string | null {
   return typeof value === 'string' && /^https:\/\//i.test(value) ? value : null
 }
 
+/** Whether a stored lot source is one this build issues. */
+function isCreditSource(value: unknown): value is CreditSource {
+  return typeof value === 'string' && SPEND_ORDER.includes(value as CreditSource)
+}
+
 function isSubscriptionStatus(value: string): value is SubscriptionState['status'] {
   return value === 'trialing' || value === 'active' || value === 'past_due'
     || value === 'canceled' || value === 'incomplete'
+}
+
+/**
+ * The credit ledger, as a list of events (Part 6, "usage history for credits").
+ *
+ * Read under RLS from the browser: `interview_credit_entries` grants read-own
+ * and has no write policy at all, so this is a look at a table the user cannot
+ * touch (rule 11). Newest first, and capped — the card that draws it is a
+ * disclosure on a subscription screen, not an accounting export. The full
+ * ledger is in `export_my_data()` for anyone who wants every row.
+ *
+ * A row whose `kind` or `source` this build does not recognise is dropped
+ * rather than drawn, on the same doctrine as `fetchSubscription`: it was
+ * written by a version of this app that no longer exists, and a history is
+ * allowed to be shorter than the ledger. It must never be *wrong*, which is why
+ * nothing here adds the amounts up — the balance is the RPC's answer, and this
+ * list is a second, subtly different sum waiting to happen if it were not.
+ */
+export async function fetchCreditHistory(limit = 12): Promise<CreditEntry[]> {
+  const supabase = supabaseBrowser()
+  const user = await currentUser()
+  if (!user) return []
+
+  const { data } = await supabase
+    .from('interview_credit_entries')
+    .select('id, kind, source, amount, created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  return (data ?? [])
+    .filter((row) => isCreditEntryKind(row.kind) && isCreditSource(row.source) && row.amount !== 0)
+    .map((row) => ({
+      id: row.id,
+      kind: row.kind as CreditEntry['kind'],
+      source: row.source as CreditEntry['source'],
+      amount: row.amount,
+      at: row.created_at,
+    }))
 }
 
 export async function fetchPlanWaitlist(): Promise<string[]> {
@@ -1187,18 +1249,49 @@ export const PROGRESS_WINDOW = 30
  */
 export async function fetchProgress(): Promise<ProgressPoint[]> {
   const supabase = supabaseBrowser()
-  const { data } = await supabase
-    .from('scores')
-    .select('session_id, graded_at, composite, opening, curiosity, listening, signal_reading, composure, close, metric_scores')
-    .order('graded_at', { ascending: false })
-    .limit(PROGRESS_WINDOW)
 
+  /**
+   * ── DATING SESSIONS ONLY, AND THIS IS A CORRECTION ───────────────────
+   *
+   * `/progress` is the dating arm's trend screen: it is titled "Six
+   * sub-scores", it labels them `Opening / Curiosity / Signal reading /
+   * Close`, and it draws a warmth line. It read `scores` unfiltered.
+   *
+   * Every interview also writes a `scores` row — into the SAME six columns, on
+   * purpose (`DIMENSION_COLUMN`), because the numbers are one-out-of-a-hundred
+   * in a fixed slot and a second table would only be a second place for the
+   * composite to live. So an interview's **structure** score was being drawn on
+   * the Opening line and its **specificity** on Curiosity, and a candidate who
+   * did four interviews watched their dating trends move without doing a
+   * dating rep. Two different measurements averaged into one line.
+   *
+   * The interview arm has its own trend and always did — `useInterviewProgress`
+   * reads `sessions.track = 'interview'` and `ReadinessPanel` draws it in this
+   * arm's own words. This is the other half of that filter.
+   *
+   * Sessions first, because the track lives there and `scores` has no column
+   * for it. The window is doubled on the session side and then closed on the
+   * score side: an ungraded session is a real and common row, and taking
+   * exactly twenty sessions would quietly return fewer than twenty points.
+   */
   const { data: sessions } = await supabase
     .from('sessions')
     .select('id, persona_slug')
-    .in('id', (data ?? []).map((row) => row.session_id))
+    .eq('track', 'dating')
+    .order('started_at', { ascending: false })
+    .limit(PROGRESS_WINDOW * 2)
 
-  const slugById = new Map((sessions ?? []).map((row) => [row.id, row.persona_slug]))
+  const rows = sessions ?? []
+  if (rows.length === 0) return []
+
+  const { data } = await supabase
+    .from('scores')
+    .select('session_id, graded_at, composite, opening, curiosity, listening, signal_reading, composure, close, metric_scores')
+    .in('session_id', rows.map((row) => row.id))
+    .order('graded_at', { ascending: false })
+    .limit(PROGRESS_WINDOW)
+
+  const slugById = new Map(rows.map((row) => [row.id, row.persona_slug]))
 
   return (data ?? [])
     .map((row) => toProgressPoint(row as ProgressRow, slugById.get(row.session_id) ?? ''))

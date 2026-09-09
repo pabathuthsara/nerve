@@ -167,6 +167,138 @@ export function spendableFor(
   return Math.max(0, total - Math.max(0, options.holds ?? 0))
 }
 
+/**
+ * THE SPEND, ACROSS AS MANY LOTS AS IT TAKES (§5.7, LAUNCH-GAP B3).
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────
+ *
+ * Until 8 September every paid round cost exactly one credit, so `nextLotToSpend`
+ * — one lot, one credit — was the whole spender. A deep technical is twenty-five
+ * minutes against a recruiter screen's ten and was earning the same revenue, so
+ * a rational buyer never spent a credit on the cheapest, friendliest and most
+ * convertible round in the product. A round costs more than one credit now,
+ * which means a spend can be **two credits drawn from two lots**, and the ledger
+ * has to be able to say which. The arithmetic is deliberately written for an
+ * arbitrary cost rather than for two: the ladder has already moved once.
+ *
+ * The ordering is unchanged and is still the whole point: expiring first, within
+ * a source soonest-expiry first, screener last and only for the round it buys.
+ * This walks that same order and takes what it needs from each lot in turn.
+ *
+ * **All or nothing.** Null when the lots cannot cover the cost — a partial spend
+ * would take somebody's credits and give them no interview, which is the one
+ * outcome worse than refusing on the brief.
+ */
+export interface CreditDraw {
+  source: CreditSource
+  /** Credits taken from this source. Always at least one. */
+  amount: number
+}
+
+export function planSpend(
+  lots: readonly CreditLot[],
+  options: { round: RoundTypeId; cost?: number; now?: Date },
+): CreditDraw[] | null {
+  const now = options.now ?? new Date()
+  let owed = Math.max(0, options.cost ?? creditCost(options.round))
+  if (owed === 0) return []
+
+  const draws: CreditDraw[] = []
+  for (const source of SPEND_ORDER) {
+    // The screener buys the screener round and nothing else. It is a sample of
+    // the product, not a discount on it.
+    if (source === 'screener' && options.round !== SCREENER_ROUND) continue
+    const candidates = lots
+      .filter((lot) => lot.source === source && lot.remaining > 0 && !expired(lot, now))
+      .sort((a, b) => expiryRank(a) - expiryRank(b))
+    for (const lot of candidates) {
+      if (owed === 0) break
+      const take = Math.min(owed, lot.remaining)
+      owed -= take
+      const existing = draws.find((draw) => draw.source === source)
+      if (existing) existing.amount += take
+      else draws.push({ source, amount: take })
+    }
+    if (owed === 0) break
+  }
+
+  return owed === 0 ? draws : null
+}
+
+/** What this round costs, from the one authored table. */
+export function creditCost(round: string | null | undefined): number {
+  return roundType(round).credits
+}
+
+/**
+ * Can this balance start this round?
+ *
+ * The gate every screen asks, so that no screen invents its own arithmetic. It
+ * was `spendable > 0` in three places, which was right while every round cost
+ * one and is a rep sent to the microphone to be refused now that they do not.
+ */
+export function canAfford(spendable: number, round: string | null | undefined): boolean {
+  return spendable >= creditCost(round)
+}
+
+/**
+ * The round a setup opens on (LAUNCH-GAP B1).
+ *
+ * ── THE BUG THIS EXISTS FOR ──────────────────────────────────────────────
+ *
+ * Every account is granted one `screener` credit at sign-up, and a screener
+ * credit buys the five-minute Screener round and nothing else. `DEFAULT_ROUND`
+ * is `recruiter`, so a brand-new account walked the whole setup, arrived at
+ * `/interview`, and read *"a recruiter screen costs one credit, and there are
+ * none in the account"* — while the pill in the chrome said **1 credit**, which
+ * is the account total. Two numbers on one screen disagreeing, at the exact
+ * moment the landing page's promise of a free interview should have been paying
+ * off. The one giveaway on every account in the database failed silently at the
+ * moment of redemption.
+ *
+ * So the opening round is the one the account can actually pay for. It is a
+ * default and never a lock: the picker still offers every round, and a saved
+ * setup always wins over this.
+ */
+export function openingRound(hasScreener: boolean): RoundTypeId {
+  return hasScreener ? SCREENER_ROUND : DEFAULT_ROUND
+}
+
+/**
+ * Why this balance cannot open this round, in a sentence a person can act on.
+ *
+ * Null when it can. One function because three surfaces say it — the interview
+ * home, the brief and the live page — and they were three hand-written strings,
+ * two of which only knew about the screener case. Since B3 there is a second
+ * shape they all have to handle: an account with two credits looking at a
+ * three-credit deep technical is not empty, and "you have no interview credits"
+ * would be plainly false.
+ */
+export function creditRefusal(input: {
+  /** What can pay for this round, holds already taken off. */
+  spendable: number
+  round: string | null | undefined
+  /** Whether the account is holding the free five-minute screener. */
+  hasScreener: boolean
+}): string | null {
+  const spec = roundType(input.round)
+  if (input.spendable >= spec.credits) return null
+
+  if (spec.credits === 0) return 'Your free screener has already been used.'
+
+  if (input.hasScreener && input.spendable === 0) {
+    return 'Your free screener only pays for the five-minute screener round. Pick that one on your setup, or add credits for the longer rounds.'
+  }
+
+  if (spec.credits === 1) {
+    return `A ${spec.label.toLowerCase()} costs one credit, and there are none in the account.`
+  }
+
+  return input.spendable === 0
+    ? `A ${spec.label.toLowerCase()} costs ${spec.credits} credits, and there are none in the account.`
+    : `A ${spec.label.toLowerCase()} costs ${spec.credits} credits and there ${input.spendable === 1 ? 'is one' : `are ${input.spendable}`} in the account. Add credits, or pick a shorter round on your setup.`
+}
+
 /** Does this account hold the free screener? Decides whether to offer it. */
 export function hasScreenerCredit(lots: readonly CreditLot[], now: Date = new Date()): boolean {
   return lots.some((lot) => lot.source === 'screener' && lot.remaining > 0 && !expired(lot, now))
@@ -286,7 +418,7 @@ export const ROUND_TYPES: readonly RoundType[] = [
       + ' Expect to be asked how things work, not only what you built.',
     durationMs: 1_200_000,
     questions: 6,
-    credits: 1,
+    credits: 2,
     nextSteps: true,
     // Their own work is the RAW MATERIAL, not the subject: she opens on a
     // project, mines it for a hook and tests the fundamental underneath it.
@@ -301,7 +433,23 @@ export const ROUND_TYPES: readonly RoundType[] = [
       + ' Not about your CV.',
     durationMs: 1_500_000,
     questions: 5,
-    credits: 1,
+    // TWO, NOT THREE, AND THE REASON IS MEASURED (9 September).
+    //
+    // The ladder was authored off MINUTES — ten, twenty, twenty-five, twenty —
+    // on the assumption that a longer round costs proportionally more to run.
+    // It does not. Costed component by component off `voice_operations`, a
+    // deep technical runs at ~$0.41 against a technical's ~$0.34: it is 1.2x
+    // the cost and was 1.5x the price. What actually scales is her airtime,
+    // and an interviewer talks LESS of a long round, not more.
+    //
+    // Three credits also put the product's best round out of reach of the
+    // entry pack and of Pro entirely, which is the opposite of what a ladder
+    // is for. The screener stays at one, so B3's finding — nobody spends a
+    // credit on the cheapest, friendliest, most convertible round when
+    // everything costs the same — is untouched: the screen is still half
+    // price, and the three long rounds are now chosen on FIT rather than on
+    // price, which is the only basis on which they differ.
+    credits: 2,
     nextSteps: true,
     // A DIFFERENT INTERVIEW, and it needs saying clearly: the candidate's own
     // projects do not come up at all. The old description — "one problem, taken
@@ -318,7 +466,7 @@ export const ROUND_TYPES: readonly RoundType[] = [
     description: 'Twenty minutes of behavioural questions and the ones you ask back.',
     durationMs: 1_200_000,
     questions: 6,
-    credits: 1,
+    credits: 2,
     nextSteps: true,
     // Behavioural by definition, plus the questions they ask back.
     shape: 'behavioural',

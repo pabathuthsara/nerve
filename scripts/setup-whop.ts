@@ -29,7 +29,7 @@
  * be minted from here — see the handover note at the bottom of the output.
  */
 
-import { INTERVIEW_PACKS, OFFERS, PUBLIC_PLANS, TRIAL_DAYS, planById } from '@/lib/site/plans'
+import { INTERVIEW_PACKS, OFFERS, PUBLIC_PLANS, ROUND_COST_NOTE, TRIAL_DAYS, planById } from '@/lib/site/plans'
 import { apiBase, apiVersionDate, isLiveBase } from '@/lib/billing/plans'
 
 /**
@@ -534,7 +534,12 @@ async function main(): Promise<void> {
       account_id: accountId,
       ...(productId ? { product_id: productId } : {}),
       title: `Nerve — ${pack.name}`,
-      description: `${pack.credits} full interview${pack.credits === 1 ? '' : 's'}, graded. `
+      // CREDITS, NOT INTERVIEWS, and this is the receipt (LAUNCH-GAP D18).
+      // It read "N full interviews, graded", which was exact only while every
+      // round cost one credit. `ROUND_COST_NOTE` is the sentence the site
+      // shows and it is read here so the two cannot say different things to
+      // the same buyer on the same purchase.
+      description: `${pack.credits} interview credits, graded. ${ROUND_COST_NOTE} `
         + 'Bought outright: these never expire and stay in the account if a subscription is cancelled.',
       plan_type: 'one_time',
       currency: 'usd',
@@ -552,7 +557,7 @@ async function main(): Promise<void> {
       return meta?.['nerve_pack'] === pack.id
     })
 
-    console.log(`\n  ${pack.name} — ${pack.price} for ${pack.credits} interview${pack.credits === 1 ? '' : 's'}`)
+    console.log(`\n  ${pack.name} — ${pack.price} for ${pack.credits} credit${pack.credits === 1 ? '' : 's'}`)
 
     if (found) {
       const id = found['id'] as string

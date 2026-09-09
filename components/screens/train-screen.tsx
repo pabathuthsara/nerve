@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, ChevronRight, Mic, RotateCcw, X } from 'lucide-react'
+import { Check, ChevronRight, Headphones, Mic, RotateCcw, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useBaseline, useFieldToday, useLatestFocus, useLifetimeStats, usePersonaProgress, usePersonas, useSessionHistory, useUserState, useWeeklyReview } from '@/lib/data'
 import type { LifetimeStats, PersonaProgress, SessionSummary, UserState } from '@/lib/data/types'
@@ -45,6 +45,45 @@ function FinishSetup() {
     <Link className="finish-setup" href="/onboarding/mic">
       <Mic size={18} strokeWidth={1.5} />
       <span><strong>Finish setup</strong><small>Check your microphone, then meet your first character</small></span>
+      <ChevronRight size={18} strokeWidth={1.5} />
+    </Link>
+  )
+}
+
+/**
+ * The free interview nobody was told about (LAUNCH-GAP D4).
+ *
+ * ── WHY THIS ROW EXISTS ──────────────────────────────────────────────────
+ *
+ * There are two free samples in the product and they never met. The dating arm
+ * has the one-off sign-up voice rep; the interview arm has a five-minute
+ * screener granted to every account at sign-up (`handle_new_user`). Nothing
+ * anywhere told a dating-track user the second one existed. The track switcher
+ * appears in the chrome because every account now has both tracks unlocked, but
+ * it is a bare segmented control with no offer attached to it — so an unspent
+ * screener is a customer who has not seen half of what was built, and a
+ * giveaway worth $9 that silently fails to be redeemed.
+ *
+ * ── AND WHY IT IS ONE QUIET ROW, AFTER THE FIRST GRADED REP ──────────────
+ *
+ * `RETENTION-AUDIT.md` §4 rules out nagging, and a second offer in front of
+ * somebody who has not yet done the first thing is noise. It waits for one
+ * graded rep, it disappears the moment the screener is spent, and it is drawn
+ * in the same shape as `FinishSetup` — a door held open, not a screen asking
+ * again. No volt: this screen already spends its accent on **Start rep**.
+ */
+function ScreenerOffer({ user, sessions }: { user: UserState; sessions: SessionSummary[] }) {
+  // Unspent, and only worth mentioning to somebody who is not already on the
+  // interview track — where the whole screen is about it.
+  if ((user.interviewScreenerCredits ?? 0) <= 0) return null
+  if (!user.unlockedTracks.includes('interview')) return null
+  // One graded rep first. Before that, the offer competes with the thing this
+  // screen exists to get them to do.
+  if (!sessions.some((session) => session.track !== 'interview' && session.compositeScore !== null)) return null
+  return (
+    <Link className="finish-setup" href="/interview">
+      <Headphones size={18} strokeWidth={1.5} />
+      <span><strong>You also have a free practice interview</strong><small>Five minutes against a real interviewer, graded. It is already in the account.</small></span>
       <ChevronRight size={18} strokeWidth={1.5} />
     </Link>
   )
@@ -105,6 +144,9 @@ function TrainContent() {
             {userLoading || !user ? <><Skeleton width={108} height={32} /><Skeleton width={108} height={20} /></> : <><RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} locked={user.voiceLocked} /><StreakCounter days={user.streakDays} /></>}
           </div>
           {user && !user.onboardingComplete ? <FinishSetup /> : null}
+          {/* D4. The cheapest cross-sell in the product, and it was not being
+              made at all — see the note on `ScreenerOffer`. */}
+          {user ? <ScreenerOffer user={user} sessions={sessions} /> : null}
           {/* R15 first, then R14, and never both: somebody back after a
               fortnight does not also need to be told their streak is at risk
               tonight — it is already gone, and saying so twice is the guilt

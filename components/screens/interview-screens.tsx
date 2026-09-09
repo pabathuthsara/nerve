@@ -43,13 +43,8 @@ import {
 import { CVReplaceSheet } from '@/components/modals'
 import { useProduct } from '@/components/product-provider'
 import { FluidPersona } from '@/components/fluid-persona'
-import { removeCv, saveInterviewSetup, setInterviewCaptions, startPackCheckout, uploadCv } from '@/app/interview/actions'
-import {
-  CREDIT_EXPIRY_NOTE,
-  INTERVIEW_PACKS,
-  perInterview,
-  type InterviewPack,
-} from '@/lib/site/plans'
+import { removeCv, saveInterviewSetup, uploadCv } from '@/app/interview/actions'
+import { CreditsPanel } from '@/components/interview/credits'
 import {
   DEFAULT_FIELD,
   interviewField,
@@ -57,9 +52,15 @@ import {
   type InterviewFieldId,
 } from '@/lib/data/interview-fields'
 import { fieldHasProbes } from '@/lib/data/interview-probes'
-import { ROUND_SHAPE_LABEL, ROUND_TYPES, roundType, type RoundTypeId } from '@/lib/data/interview-credits'
 import {
-  DEFAULT_DIFFICULTY,
+  ROUND_SHAPE_LABEL,
+  ROUND_TYPES,
+  creditRefusal,
+  openingRound,
+  roundType,
+  type RoundTypeId,
+} from '@/lib/data/interview-credits'
+import {
   DIFFICULTY_LEVELS,
   difficultyFromRoleTitle,
   difficultySpec,
@@ -75,15 +76,42 @@ export type InterviewRoute =
   | '/interview/setup/cv'
   | '/interview/setup/questions'
   | '/interview/interviewers'
+  | '/interview/start'
 
 export function InterviewScreen({ route, packsOpen = false }: { route: InterviewRoute; packsOpen?: boolean }) {
   if (route === '/interview/setup/role') return <RoleSetup />
   if (route === '/interview/setup/cv') return <CvSetup />
   if (route === '/interview/setup/questions') return <QuestionsSetup />
   if (route === '/interview/interviewers') return <InterviewerPicker />
+  if (route === '/interview/start') return <RunSetup packsOpen={packsOpen} />
   return <InterviewHome packsOpen={packsOpen} />
 }
 
+/**
+ * The interview home (LAUNCH-GAP A1, B1, B6).
+ *
+ * ── WHAT MOVED, AND WHY ──────────────────────────────────────────────────
+ *
+ * The hero used to be the only thing that could start a rep, and the two dials
+ * anybody actually wants to change per interview — the round and the question
+ * difficulty — were buried inside step one of a wizard you run once. Cold start
+ * to microphone was eight screens.
+ *
+ * So the *profile* (role, company, job description, field, CV, custom questions)
+ * is set once and edited from here, and the *run* (interviewer → round and
+ * difficulty → brief) is three screens every time. This screen's primary action
+ * is now the interviewer picker, which is where a run begins.
+ *
+ * ── AND WHY THE SIDEBAR IS ORDERED THE WAY IT IS ─────────────────────────
+ *
+ * B6. `.train-grid` is single column until the desktop breakpoint and the hero
+ * is a full `100dvh`, so on a phone — which is where the traffic comes from —
+ * the entire sidebar sat a screen-height below the fold as six undifferentiated
+ * cards, with the captions toggle drawn at the same weight as the balance. It
+ * is ordered by what somebody actually does now: credits, setup, readiness, last
+ * interview. **The captions toggle is gone from here entirely** — it is a
+ * per-interview decision and it lives on the run setup, beside the round.
+ */
 function InterviewHome({ packsOpen }: { packsOpen: boolean }) {
   const { selectedInterviewerId } = useProduct()
   const { data: setup, loading: setupLoading } = useInterviewSetup()
@@ -103,203 +131,47 @@ function InterviewHome({ packsOpen }: { packsOpen: boolean }) {
   const interviewer = interviewers.find((item) => item.id === (selectedInterviewerId ?? setup?.interviewerId))
     ?? interviewers[0]
   const last = sessions.find((session) => session.track === 'interview')
-  const round = roundType(setup?.round)
   const { data: user } = useUserState()
+  const screenerCredits = user?.interviewScreenerCredits ?? 0
+  /**
+   * The round this account would run next.
+   *
+   * B1: a null setup used to mean `recruiter`, which costs a credit — so a
+   * brand-new account holding nothing but the free screener read "there are
+   * none in the account" while the pill in the chrome said **1 credit**. The
+   * opening round is the one the free credit can actually buy.
+   */
+  const round = roundType(setup?.round ?? openingRound(screenerCredits > 0))
   /**
    * WHAT CAN PAY FOR *THIS* ROUND, computed the same way the brief computes it.
    *
    * A screener credit only ever buys the five-minute screener, so the account's
-   * total is the wrong number to gate on: one free screener and a recruiter
-   * round selected is a balance of 1 that cannot start anything. The brief
-   * already refuses it in a sentence — this is what stops somebody being sent
-   * there to read it.
+   * total is the wrong number to gate on. And since B3 the gate is "does this
+   * cover the whole cost", not "is there anything at all" — a technical is two
+   * credits and a balance of one cannot start one.
    */
-  const screenerCredits = user?.interviewScreenerCredits ?? 0
   const spendable = round.credits === 0
     ? user?.interviewCredits ?? 0
     : Math.max(0, (user?.interviewCredits ?? 0) - screenerCredits)
-  return <AppShell title="Interview"><div className="train-grid interview-home"><section>{loading ? <Skeleton height={520} /> : setup?.complete && interviewer ? <article className="interview-hero"><div className="interview-hero__top"><span className="label">Next simulation</span><Chip tone="volt">{round.label}</Chip></div><div className="interview-role"><span className="label">Role</span><h1 className="display-xl">{setup.roleTitle}</h1><p>{setup.company}</p></div><div className="interviewer-strip"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} size={72} /><div><strong>{interviewer.name}</strong><span className="label">{interviewer.styleLabel}</span></div></div>{spendable > 0
-      ? <Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href={`/interview/rep/${interviewer.id}/brief`}>Start interview</Link>
-      : <OutOfCredits round={round} hasScreener={screenerCredits > 0} />}</article> : <SetupPrompt />}</section><aside className="side-stack"><Card className="interview-stats"><Stat label="Role" value={setup?.roleTitle || 'Not set'} /><Stat label="Round" value={`${round.label} · ${round.durationMs / 60_000} min`} detail={ROUND_SHAPE_LABEL[round.shape]} />{/* The second axis, shown where the round is (§5.1). It only exists on a
-        round that probes, and on one that does not, printing "Mid" beside a
-        recruiter screen would name a dial that changes nothing. */}
-{round.probeShare > 0 ? <Stat label="Question difficulty" value={difficultySpec(setup?.difficulty ?? DEFAULT_DIFFICULTY).label} detail={difficultySpec(setup?.difficulty ?? DEFAULT_DIFFICULTY).tests} /> : null}<Stat label="Interviewer" value={interviewer?.name ?? 'Not set'} /><Stat label="Questions added" value={setup?.customQuestions.length ?? 0} /></Card><Link className="arena-button arena-button--secondary arena-button--full" href="/interview/setup/role">Edit setup</Link><CaptionSetting enabled={setup?.captions ?? false} /><CreditsPanel credits={user?.interviewCredits ?? 0} screener={screenerCredits} packsOpen={packsOpen} /><ReadinessPanel />{last ? <Card><span className="label">Last interview</span><div className="interview-last"><span><strong>{last.personaName}</strong><small>{last.compositeScore === null ? 'Not graded' : 'Graded'}</small></span><span className="data">{last.compositeScore ?? '—'}</span></div></Card> : null}</aside></div></AppShell>
-}
+  const refusal = creditRefusal({ spendable, round: round.id, hasScreener: screenerCredits > 0 })
+  /**
+   * The hero quotes the ACCOUNT total, not the spendable one, and the refusal
+   * underneath says why it is not enough.
+   *
+   * B1's bug was two numbers on one screen disagreeing — the pill said "1
+   * credit" and the hero said there were none. Printing the round-aware figure
+   * here would have kept that disagreement and merely moved it: the pill, the
+   * credits card and this line would all be right and all say different things.
+   * One number, and one sentence explaining what it cannot buy.
+   */
 
-/**
- * What is in the balance, and what it costs to fill it (INTERVIEW-PLAN D3, E1).
- *
- * ── WHY THE TWO EXPIRY RULES ARE ON THIS CARD ────────────────────────────
- *
- * §5.5 splits credits in two: bought ones never expire and survive a
- * cancellation, granted ones die with the month that handed them out. That is a
- * sentence a disputing customer quotes, so it is stated where the money is
- * spent as well as in the terms — `CREDIT_EXPIRY_NOTE` is the one string, read
- * by this card, `/pricing` and `RefundDocument`, so the three cannot drift.
- *
- * ── AND WHY THE BUTTONS ARE SECONDARY ────────────────────────────────────
- *
- * Volt appears once per screen. On this screen it is **Start interview**, which
- * is the thing somebody came here to do. A buy button drawn in volt beside it
- * would make the account's own money the loudest object on a training screen,
- * which is the shape §14 says a merchant-of-record reviewer reads badly and the
- * shape `RETENTION-AUDIT.md` §4 refuses anyway.
- */
-function CreditsPanel({ credits, screener, packsOpen }: { credits: number; screener: number; packsOpen: boolean }) {
-  const paid = Math.max(0, credits - screener)
-  return (
-    <Card className="interview-credits">
-      <span className="label">Interview credits</span>
-      <JustBought />
-      <div className="interview-last">
-        <span><strong>Available</strong>{screener > 0 ? <small>including one free screener</small> : null}</span>
-        <span className="data">{credits}</span>
-      </div>
-      {paid === 0 && screener > 0
-        ? <p className="label mute">The free screener pays for the five-minute round and nothing else. The longer rounds need a credit.</p>
-        : null}
-      {/* Hidden rather than broken when the deployment cannot open a checkout.
-          `packsOpen` is `packsConfigured()`, read on the server — a buy button
-          that errors on somebody trying to give us money is worse than no
-          button, and rule 15 guarantees a window where this is false: a Vercel
-          variable added after a build started is not in that build. */}
-      {packsOpen
-        ? <PackButtons />
-        : <p className="label mute">Interview credits are not on sale from this deployment yet.</p>}
-      <p className="label mute">{CREDIT_EXPIRY_NOTE}</p>
-    </Card>
-  )
-}
-
-/**
- * The seconds between paying and the credits appearing.
- *
- * The buyer comes back from Whop's checkout to `/interview?bought=1` while the
- * `payment.succeeded` webhook is still in flight — usually under a second, and
- * occasionally longer if Whop is retrying. Without this, somebody who has just
- * paid $29 lands on a screen showing the balance they had before, which reads
- * as a failed purchase and is the exact moment a support ticket or a chargeback
- * gets written.
- *
- * It says what is true rather than pretending to know: the payment went
- * through, the credits are moments away, and here is the button that looks
- * again. One deliberate action beats a poll that might never resolve, and
- * §02's no-spinners rule is about exactly this kind of indefinite wait.
- *
- * **A full navigation, not `router.refresh()`.** The balance comes from
- * `useUserState`, which is `useAsync(fetchUserState, null, [])` — a browser
- * fetch on an empty dependency array. Refreshing the server tree re-renders
- * around it and leaves the number exactly where it was, so the button would
- * have looked like it did nothing on the one screen where that reads as a lost
- * payment. Going to `/interview` without the query drops the banner too, so a
- * balance that has arrived stops being announced.
- *
- * Read off `window.location` rather than `useSearchParams`, which would need a
- * Suspense boundary around a card that is not the reason this page renders.
- */
-function JustBought() {
-  const [bought, setBought] = useState(false)
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    setBought(new URLSearchParams(window.location.search).get('bought') === '1')
-  }, [])
-  if (!bought) return null
-  return (
-    <div className="credits-bought" role="status">
-      <strong>Payment received.</strong>
-      <p>Credits usually land within a few seconds of the receipt.</p>
-      <button type="button" className="arena-button arena-button--secondary" onClick={() => { window.location.href = '/interview' }}>
-        Check again
-      </button>
-    </div>
-  )
-}
-
-/**
- * The three packs, from the one authored record.
- *
- * Never a hardcoded price. `lib/site/plans.ts` is what `/pricing` prints, what
- * `npm run whop:setup` creates the plans at and what `npm run whop:verify`
- * asserts against the provider — so a price changed there moves the page, the
- * vendor and the preflight together. Two numbers for one product is the failure
- * that file exists to prevent (§14).
- */
-function PackButtons() {
-  const [pending, setPending] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <>
-      <ul className="pack-list">
-        {INTERVIEW_PACKS.map((pack) => (
-          <li key={pack.id}>
-            <button
-              type="button"
-              className="arena-button arena-button--secondary arena-button--full"
-              disabled={pending !== null}
-              onClick={() => {
-                setError(null)
-                setPending(pack.id)
-                void startPackCheckout(pack.id).then((result) => {
-                  if (result.ok && result.url) {
-                    // A full navigation rather than a router push: the checkout
-                    // is the provider's own page on their own origin.
-                    window.location.href = result.url
-                    return
-                  }
-                  setPending(null)
-                  setError(result.message ?? 'Could not open checkout.')
-                })
-              }}
-            >
-              <span>{pack.name}</span>
-              <span className="data">{pending === pack.id ? 'Opening…' : pack.price}</span>
-            </button>
-            <span className="label mute">{packRate(pack)}</span>
-          </li>
-        ))}
-      </ul>
-      {error ? <p className="label" role="status">{error}</p> : null}
-    </>
-  )
-}
-
-/**
- * What one interview costs on this pack.
- *
- * Printed because it is the honest comparison and because the ladder only makes
- * sense with it: $59 is a bigger number than $9 and a much smaller one per
- * interview, and a page that shows only the totals is asking somebody to do
- * arithmetic to find the offer.
- */
-function packRate(pack: InterviewPack): string {
-  if (pack.credits === 1) return 'One round, graded'
-  return `$${perInterview(pack).toFixed(2)} an interview`
-}
-
-/**
- * The balance is empty and the round costs a credit.
- *
- * **This is E1's "not a dead end".** The Start button used to be here
- * unconditionally, and clicking it reached the brief, which refused in a
- * sentence — a screen whose only job was to say no. The refusal on the brief
- * stays, because a client must never be the thing that decides whether a rep
- * may open (rule 11), but nobody should have to walk into it to find out.
- */
-function OutOfCredits({ round, hasScreener }: { round: ReturnType<typeof roundType>; hasScreener: boolean }) {
-  return (
-    <div className="interview-empty">
-      <p>
-        {hasScreener
-          ? `Your free screener pays for the five-minute round. A ${round.label.toLowerCase()} needs a credit.`
-          : `A ${round.label.toLowerCase()} costs one credit, and there are none in the account.`}
-      </p>
-      <p className="label mute">
-        {hasScreener
-          ? 'Switch the round to Screener on your setup to use it, or add credits below.'
-          : 'Add credits below, or switch to a shorter round on your setup.'}
-      </p>
-    </div>
-  )
+  return <AppShell title="Interview"><div className="train-grid interview-home"><section>{loading ? <Skeleton height={520} /> : setup?.complete && interviewer ? <article className="interview-hero"><div className="interview-hero__top"><span className="label">Next interview</span><span className="interview-hero__meta"><Chip tone="volt">{round.label}</Chip><span className="label">{round.credits === 0 ? 'Free' : `${round.credits} credit${round.credits === 1 ? '' : 's'}`} · {user?.interviewCredits ?? 0} in the account</span></span></div><div className="interview-role"><span className="label">Role</span><h1 className="display-xl">{setup.roleTitle}</h1><p>{setup.company}</p></div><div className="interviewer-strip"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} size={72} /><div><strong>{interviewer.name}</strong><span className="label">{interviewer.styleLabel}</span></div></div>{/* A RUN STARTS AT THE INTERVIEWER (A1). It used to start at a Start
+      button over whatever was last saved, with the picker bolted on after a
+      three-step wizard — so the two dials worth changing per interview were
+      the two hardest to reach. Interviewer → setup → go, every time. */}
+<Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href="/interview/interviewers">Start an interview</Link>{refusal ? <p className="interview-hero__note label mute">{refusal}</p> : null}</article> : <SetupPrompt />}</section><aside className="side-stack">{/* B6: ordered by what somebody does, because on a phone this whole rail
+      is a screen-height below a full-height hero. */}
+<CreditsPanel credits={user?.interviewCredits ?? 0} screener={screenerCredits} packsOpen={packsOpen} /><Card className="interview-stats"><Stat label="Role" value={setup?.roleTitle || 'Not set'} /><Stat label="Company" value={setup?.company || 'Not set'} /><Stat label="Field" value={interviewField(setup?.field ?? DEFAULT_FIELD).label} /><Stat label="CV" value={setup?.cvFileName || 'Not added'} /><Stat label="Questions added" value={setup?.customQuestions.length ?? 0} /></Card><Link className="arena-button arena-button--secondary arena-button--full" href="/interview/setup/role">Edit your profile</Link><ReadinessPanel />{last ? <Card><span className="label">Last interview</span><div className="interview-last"><span><strong>{last.personaName}</strong><small>{last.compositeScore === null ? 'Not graded' : 'Graded'}</small></span><span className="data">{last.compositeScore ?? '—'}</span></div></Card> : null}</aside></div></AppShell>
 }
 
 /**
@@ -331,46 +203,54 @@ function ReadinessPanel() {
 }
 
 /**
- * The captions setting (§5.11).
+ * The first run's profile prompt.
  *
- * **Off by default, and the copy says why.** A real interview has no captions
- * and practising without them is the point — but somebody who needs them needs
- * them, and that is the strongest of the three reasons this is a setting rather
- * than a decision. It is a caption and never a prompt: it shows what the
- * interviewer asked and can never carry a hint (C6).
+ * It says three inputs and names them, and since A1 that is true: the
+ * interviewer moved to the front of a RUN and is no longer a fourth screen
+ * hiding behind a full progress bar (B4). What is collected here is the
+ * standing profile — the things about the job that do not change between
+ * interviews — and it is asked once.
  */
-function CaptionSetting({ enabled }: { enabled: boolean }) {
-  const [on, setOn] = useState(enabled)
-  const [, start] = useTransition()
-  useEffect(() => { setOn(enabled) }, [enabled])
-  return (
-    <Card className="interview-captions">
-      {/* The same switch every other setting in the product uses (§02's
-          optimistic write): the toggle moves now and the round trip catches
-          up. A control that waits reads as broken. */}
-      <div className="setting-row">
-        <div><strong>Show the question on screen</strong></div>
-        <button
-          className="toggle"
-          role="switch"
-          aria-label="Show the question on screen"
-          aria-checked={on}
-          onClick={() => {
-            const next = !on
-            setOn(next)
-            start(() => { void setInterviewCaptions(next) })
-          }}
-        ><i /></button>
-      </div>
-      <p className="label mute">Off by default. A real interview has no captions, and getting used to holding the question in your head is most of what this is for.</p>
-    </Card>
-  )
+function SetupPrompt() { return <article className="setup-prompt"><span className="label">Three quick inputs, once</span><h1 className="display-xl">Tell us about the job</h1><p>Give the interviewer enough context to make the questions specific. You are asked this once — the round and the difficulty are picked per interview.</p><div className="setup-progress">{SETUP_STEPS.map((item, index) => <span key={item}><i>{index + 1}</i>{item}</span>)}</div><Link className="arena-button arena-button--primary arena-button--lg" href="/interview/setup/role">Set up your profile</Link></article> }
+
+/**
+ * The steps of the profile wizard, in one place.
+ *
+ * ── THE BUG THIS FIXES (LAUNCH-GAP B4) ───────────────────────────────────
+ *
+ * `SetupLayout` rendered `0X / 03` over `value={step / 3 * 100}` and there were
+ * four screens: role, CV, questions, then the interviewer picker. The bar
+ * filled, the counter read 03/03, and a fourth screen appeared — while
+ * `SetupPrompt` reinforced it with "Three quick inputs · Role · CV ·
+ * Questions".
+ *
+ * It falls out of A1 for free: the interviewer is the first screen of a RUN
+ * now, not the last screen of the profile, so the wizard genuinely is three.
+ * Counted from this list rather than from a literal, so a fourth step cannot
+ * appear without the counter moving with it.
+ */
+const SETUP_STEPS = ['Role', 'CV', 'Questions'] as const
+
+function SetupLayout({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
+  const total = SETUP_STEPS.length
+  return <AppShell title="Interview setup"><div className="setup-page"><div className="setup-kicker"><span className="label">Your profile</span><span className="data">{String(step).padStart(2, '0')} / {String(total).padStart(2, '0')}</span></div><ProgressBar value={step / total * 100} /><h1 className="display-lg">{title}</h1>{children}</div></AppShell>
 }
 
-function SetupPrompt() { return <article className="setup-prompt"><span className="label">Three quick inputs</span><h1 className="display-xl">Set up your interview</h1><p>Give the interviewer enough context to make the questions specific.</p><div className="setup-progress">{['Role', 'CV', 'Questions'].map((item, index) => <span key={item}><i>{index + 1}</i>{item}</span>)}</div><Link className="arena-button arena-button--primary arena-button--lg" href="/interview/setup/role">Start setup</Link></article> }
-
-function SetupLayout({ step, title, children }: { step: number; title: string; children: React.ReactNode }) { return <AppShell title="Interview setup"><div className="setup-page"><div className="setup-kicker"><span className="label">Interview setup</span><span className="data">0{step} / 03</span></div><ProgressBar value={step / 3 * 100} /><h1 className="display-lg">{title}</h1>{children}</div></AppShell> }
-
+/**
+ * Step one of the PROFILE: the job (LAUNCH-GAP A1).
+ *
+ * ── WHAT LEFT THIS SCREEN ────────────────────────────────────────────────
+ *
+ * The round and the question difficulty. They were here, inside step one of a
+ * wizard you run once, which made the two dials anybody actually wants to
+ * change per interview the two hardest to reach — the only route back to them
+ * was a secondary *Edit setup* button that re-entered the whole three-step
+ * flow. They live on `/interview/start` now, between the interviewer and the
+ * brief, where they are answered once per run.
+ *
+ * What stays is what does not change between interviews: the role, the company,
+ * the field and the job description.
+ */
 function RoleSetup() {
   const router = useRouter()
   const { data: setup, loading } = useInterviewSetup()
@@ -378,16 +258,6 @@ function RoleSetup() {
   const [company, setCompany] = useState('')
   const [description, setDescription] = useState('')
   const [field, setField] = useState<InterviewFieldId>(DEFAULT_FIELD)
-  const [round, setRound] = useState<RoundTypeId>('recruiter')
-  /**
-   * The hardness slider (§5.2). `null` is "match my title", which is the state
-   * every account starts in and a state the control can go back to — it is not
-   * a synonym for level 3, and treating it as one would freeze somebody's
-   * questions at mid after they had told us they were interviewing for staff.
-   */
-  const [difficulty, setDifficulty] = useState<DifficultyLevel | null>(null)
-  const { data: user } = useUserState()
-  const hasScreener = (user?.interviewScreenerCredits ?? 0) > 0
   const [saving, start] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
@@ -399,8 +269,6 @@ function RoleSetup() {
     setCompany(setup.company)
     setDescription(setup.jobDescription)
     setField(setup.field)
-    setRound(setup.round)
-    setDifficulty(setup.difficultyChoice)
   }, [setup])
 
   const submit = (event: React.FormEvent) => {
@@ -413,7 +281,7 @@ function RoleSetup() {
       const chosen = selectableFields.length > 1
         ? field
         : selectableFields[0]?.id ?? DEFAULT_FIELD
-      void saveInterviewSetup({ roleTitle: role, company, jobDescription: description, field: chosen, round, difficulty })
+      void saveInterviewSetup({ roleTitle: role, company, jobDescription: description, field: chosen })
         .then((result) => {
           if (result.ok) router.push('/interview/setup/cv')
           else setError(result.message)
@@ -422,10 +290,6 @@ function RoleSetup() {
   }
 
   if (loading) return <SetupLayout step={1} title="What are you walking into?"><Skeleton height={420} /></SetupLayout>
-
-  const spec = roundType(round)
-  const derived = difficultyFromRoleTitle(role)
-  const effective = difficulty ?? derived
 
   return (
     <SetupLayout step={1} title="What are you walking into?">
@@ -462,67 +326,16 @@ function RoleSetup() {
             </div>
           )}
 
-        {/* THE SHAPE IS ON THE OPTION, NOT ONLY IN THE HINT (§4.4).
-            Two of the first four interview reps ever run went out on
-            `recruiter` because it is `DEFAULT_ROUND` and nothing on this screen
-            said "this one does not test fundamentals". A round that changes
-            what the interview IS cannot be a quiet dropdown default. */}
-        {/* THE SCREENER IS OFFERED ONLY WHEN THERE IS ONE TO SPEND (§5.6).
-            It used to be filtered out on `credits > 0` — which is the round the
-            screener credit exists to pay for — so a granted screener was
-            unspendable and an account holding one and nothing else could pick
-            only rounds it could not afford. That is what produced a 402 at the
-            microphone dressed up as "Connection lost". */}
-        <Select
-          label="Round"
-          value={round}
-          onChange={setRound}
-          options={ROUND_TYPES.filter((option) => option.credits > 0 || hasScreener).map((option) => ({
-            value: option.id,
-            label: option.label,
-            meta: ROUND_SHAPE_LABEL[option.shape],
-            trailing: option.credits === 0 ? 'Free' : `${option.durationMs / 60_000} min`,
-          }))}
-          hint={spec.credits === 0
-            ? `${spec.description} Your free screener pays for this one.`
-            : spec.description}
-        />
-
-        {/* THE SECOND AXIS (§5.1). The interviewer decides her temperament;
-            this decides how hard the questions are, and the two are orthogonal
-            on purpose — a nervous candidate practising hard questions with a
-            friendly interviewer is a legitimate and probably common thing to
-            want. Shown only on rounds that actually probe, because on a
-            recruiter screen it would be a control that changes nothing. */}
-        {spec.probeShare > 0 ? (
-          <Select
-            label="Question difficulty"
-            value={difficulty === null ? 'auto' : (String(difficulty) as 'auto' | `${DifficultyLevel}`)}
-            onChange={(next) => setDifficulty(next === 'auto' ? null : toDifficultyLevel(Number(next)))}
-            options={[
-              {
-                value: 'auto' as const,
-                label: 'Match my role title',
-                meta: `${difficultySpec(derived).label} — ${difficultySpec(derived).tests.toLowerCase()}`,
-              },
-              ...DIFFICULTY_LEVELS.map((option) => ({
-                value: String(option.level) as `${DifficultyLevel}`,
-                label: option.label,
-                meta: option.tests,
-                trailing: String(option.level),
-              })),
-            ]}
-            hint={<><span className="difficulty-example">&ldquo;{difficultySpec(effective).example}&rdquo;</span> It changes the questions, never how patient she is.</>}
-          />
-        ) : (
-          <p className="field__hint setup-note">A {spec.label.toLowerCase()} does not test fundamentals, so there is nothing to set a difficulty for. Pick a technical round to get that dial.</p>
-        )}
-
         <div className="textarea-tools">
           <Textarea label="Job description" rows={8} value={description} onChange={(event) => setDescription(event.target.value.slice(0, JOB_DESCRIPTION_LIMIT))} hint="The more you paste, the sharper the questions." />
           <button type="button" onClick={() => navigator.clipboard.readText().then(setDescription)} className="paste-action">Paste</button>
           <span className="char-count data">{description.length} / {JOB_DESCRIPTION_LIMIT}</span>
         </div>
+
+        {/* The round and the difficulty are per-interview, and this says where
+            they went rather than leaving somebody hunting for a dial that used
+            to be on this screen. */}
+        <p className="field__hint setup-note">Which round you run and how hard the questions are is picked per interview, on the screen after you choose your interviewer.</p>
 
         {error ? <p className="field__error">{error}</p> : null}
         <Button size="lg" fullWidth disabled={!role.trim() || saving}>{saving ? 'Saving' : 'Continue'}</Button>
@@ -672,21 +485,224 @@ function QuestionsSetup() {
   return <SetupLayout step={3} title="What should they ask?"><div className="question-editor">{questions.length === 0 ? <p className="question-empty">No custom questions yet. Your interviewer will still use the role brief.</p> : null}{questions.map((question, index) => <div className="question-row" key={`${question}-${index}`}><GripVertical size={17} strokeWidth={1.5} /><input aria-label={`Custom question ${index + 1}`} value={question} onChange={(event) => setQuestions((items) => items.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /><button aria-label="Delete question" onClick={() => setQuestions((items) => items.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={17} strokeWidth={1.5} /></button></div>)}{adding ? <input className="question-add-input" aria-label="New custom question" autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') commit(); if (event.key === 'Escape') { setDraft(''); setAdding(false) } }} placeholder="Type a question, then press Enter" /> : <Button variant="secondary" onClick={() => setAdding(true)}><Plus size={17} strokeWidth={1.5} /> Add question</Button>}<div className="suggested-questions"><span className="label">Suggested</span>{suggestions.map((suggestion) => <button key={suggestion} onClick={() => { if (!questions.includes(suggestion)) setQuestions((items) => [...items, suggestion]) }}><Plus size={14} strokeWidth={1.5} /> {suggestion}</button>)}</div>{error ? <p className="field__error">{error}</p> : null}<Button size="lg" fullWidth disabled={saving} onClick={finish}>{saving ? 'Saving' : 'Finish setup'}</Button></div></SetupLayout>
 }
 
-export function InterviewerPicker() {
+export function InterviewerPicker({ inRun = true }: { inRun?: boolean }) {
   const router = useRouter()
   const { selectedInterviewerId, setSelectedInterviewerId } = useProduct()
   const { data: interviewers, loading } = useInterviewers()
+  /**
+   * Picking somebody moves the run FORWARD (LAUNCH-GAP B5).
+   *
+   * It used to `router.push('/interview')` — somebody who had just decided who
+   * they wanted to face was put back on a dashboard and asked to find the Start
+   * button, and mid-flow they were dropped out of the flow entirely. The picker
+   * is the first screen of a run now, so the next screen is the run's own setup.
+   *
+   * `inRun` is false only when this is reached as the track's `/roster`, where
+   * somebody is browsing rather than starting: there the choice is remembered
+   * and nothing navigates.
+   */
   const choose = (id: string) => {
     setSelectedInterviewerId(id)
     // Stored as well as held in the provider, so the choice survives a device.
     void saveInterviewSetup({ interviewerSlug: id })
-    router.push('/interview')
+    if (inRun) router.push('/interview/start')
   }
-  return <AppShell title="Interviewers">{/* TWO DIALS, AND THIS SCREEN IS ONLY ONE OF THEM (§5.1).
+  return <AppShell title={inRun ? 'Interviewers' : 'Roster'}>{/* TWO DIALS, AND THIS SCREEN IS ONLY ONE OF THEM (§5.1).
       It used to say "Style changes the questions", which was true when the
       interviewer was the only dial and is now the exact confusion the two-axis
       design exists to avoid: she decides how warm, how patient and how hard to
-      please, and the difficulty slider on the setup decides how hard the
+      please, and the difficulty slider on the run setup decides how hard the
       questions are. Saying so here is what makes the other control legible. */}
-<div className="screen-heading"><span className="label">Choose the pressure</span><h1 className="display-lg">Your interviewer</h1><p>Who is in the room: how warm they are, how patient, how hard to please. How hard the <em>questions</em> are is a separate dial on your setup. All four are open — pick the one you are actually walking into.</p></div>{!loading && interviewers.length === 0 ? <EmptyState mark="state-roster" title="No interviewers yet" description="The next interviewer is being prepared." /> : <div className="interviewer-grid">{loading ? Array.from({ length: 4 }, (_, index) => <Skeleton key={index} height={300} />) : interviewers.map((interviewer) => <button key={interviewer.id} className={`interviewer-card${selectedInterviewerId === interviewer.id ? ' selected' : ''}`} aria-pressed={selectedInterviewerId === interviewer.id} onClick={() => choose(interviewer.id)}><div className="interviewer-portrait"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} fill /></div><div><Chip tone="volt">{interviewer.styleLabel}</Chip><h2 className="display-md">{interviewer.name}</h2><p>{interviewer.blurb}</p></div><span className="select-line"><Check size={15} strokeWidth={1.5} /> {selectedInterviewerId === interviewer.id ? 'Selected' : 'Select'}</span></button>)}</div>}</AppShell>
+<div className="screen-heading"><span className="label">{inRun ? 'Step one of two' : 'Choose the pressure'}</span><h1 className="display-lg">Your interviewer</h1><p>Who is in the room: how warm they are, how patient, how hard to please. How hard the <em>questions</em> are is the next screen. All four are open — pick the one you are actually walking into.</p></div>{!loading && interviewers.length === 0 ? <EmptyState mark="state-roster" title="No interviewers yet" description="The next interviewer is being prepared." /> : <div className="interviewer-grid">{loading ? Array.from({ length: 4 }, (_, index) => <Skeleton key={index} height={300} />) : interviewers.map((interviewer) => <button key={interviewer.id} className={`interviewer-card${selectedInterviewerId === interviewer.id ? ' selected' : ''}`} aria-pressed={selectedInterviewerId === interviewer.id} onClick={() => choose(interviewer.id)}><div className="interviewer-portrait"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} fill /></div><div><Chip tone="volt">{interviewer.styleLabel}</Chip><h2 className="display-md">{interviewer.name}</h2><p>{interviewer.blurb}</p></div><span className="select-line"><Check size={15} strokeWidth={1.5} /> {selectedInterviewerId === interviewer.id ? (inRun ? 'Selected' : 'Your interviewer') : 'Select'}</span></button>)}</div>}</AppShell>
+}
+
+/**
+ * The per-run setup (LAUNCH-GAP A1, B4, B6).
+ *
+ * ── WHY THIS SCREEN EXISTS ───────────────────────────────────────────────
+ *
+ * Setup used to be one three-step wizard you run once, with the round and the
+ * question difficulty buried inside step one of it — so the two dials worth
+ * changing per interview were the two hardest to reach, and the only route back
+ * was a secondary *Edit setup* button that re-entered the whole flow.
+ *
+ * The split is: a **profile** (role, company, job description, field, CV,
+ * custom questions) set once and edited from the home screen, and a **run**
+ * (this screen) that carries round, question difficulty, captions and the CV,
+ * and then starts. Interviewer → this → go, every time.
+ *
+ * The captions toggle came here from the home sidebar for the same reason (B6):
+ * it is a per-interview decision, and on a phone it was sitting in a rail of six
+ * equal-weight cards below the fold, drawn at the same importance as the credit
+ * balance.
+ */
+function RunSetup({ packsOpen }: { packsOpen: boolean }) {
+  const router = useRouter()
+  const { selectedInterviewerId } = useProduct()
+  const { data: setup, loading: setupLoading } = useInterviewSetup()
+  const { data: interviewers, loading: interviewersLoading } = useInterviewers()
+  const { data: user } = useUserState()
+  const [round, setRound] = useState<RoundTypeId | null>(null)
+  /**
+   * The hardness slider (§5.2). `null` is "match my title", which is the state
+   * every account starts in and a state the control can go back to — it is not
+   * a synonym for level 3, and treating it as one would freeze somebody's
+   * questions at mid after they had told us they were interviewing for staff.
+   */
+  const [difficulty, setDifficulty] = useState<DifficultyLevel | null>(null)
+  const [captions, setCaptions] = useState(false)
+  const [saving, start] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+
+  const screenerCredits = user?.interviewScreenerCredits ?? 0
+  const hasScreener = screenerCredits > 0
+
+  useEffect(() => {
+    if (!setup) return
+    // B1. A stored round wins; a null one opens on what the free credit buys.
+    setRound(setup.round ?? openingRound(hasScreener))
+    setDifficulty(setup.difficultyChoice)
+    setCaptions(setup.captions)
+  }, [setup, hasScreener])
+
+  const loading = setupLoading || interviewersLoading
+  const interviewer = interviewers.find((item) => item.id === (selectedInterviewerId ?? setup?.interviewerId))
+    ?? interviewers[0]
+  const chosenRound = round ?? openingRound(hasScreener)
+  const spec = roundType(chosenRound)
+  const derived = difficultyFromRoleTitle(setup?.roleTitle ?? '')
+  const effective = difficulty ?? derived
+
+  // The same round-aware arithmetic the brief and the home screen do. A screener
+  // credit only buys the screener round, and since B3 a round can cost more
+  // than one, so this is "does the balance cover the whole cost".
+  const spendable = spec.credits === 0
+    ? user?.interviewCredits ?? 0
+    : Math.max(0, (user?.interviewCredits ?? 0) - screenerCredits)
+  const refusal = creditRefusal({ spendable, round: chosenRound, hasScreener })
+
+  const go = () => {
+    if (!interviewer) return
+    setError(null)
+    start(() => {
+      void saveInterviewSetup({ round: chosenRound, difficulty, captions })
+        .then((result) => {
+          if (result.ok) router.push(`/interview/rep/${interviewer.id}/brief`)
+          else setError(result.message)
+        })
+    })
+  }
+
+  if (loading) return <AppShell title="Interview setup"><div className="setup-page"><Skeleton height={480} /></div></AppShell>
+  if (!interviewer) {
+    return <AppShell title="Interview setup"><div className="setup-page"><EmptyState mark="state-roster" title="No interviewers yet" description="The next interviewer is being prepared." /></div></AppShell>
+  }
+  if (!setup?.complete) {
+    return <AppShell title="Interview setup"><div className="setup-page"><EmptyState mark="state-roster" title="Tell us about the job first" description="The interviewer needs the role before there is a round to set up." action={<Link className="arena-button arena-button--primary" href="/interview/setup/role">Set up your profile</Link>} /></div></AppShell>
+  }
+
+  return (
+    <AppShell title="Interview setup">
+      <div className="setup-page">
+        <div className="setup-kicker"><span className="label">Step two of two</span><span className="data">{spec.credits === 0 ? 'Free' : `${spec.credits} credit${spec.credits === 1 ? '' : 's'}`}</span></div>
+        <h1 className="display-lg">Set up this interview</h1>
+
+        <div className="run-setup__who">
+          <FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} size={56} />
+          <div><strong>{interviewer.name}</strong><span className="label">{interviewer.styleLabel} · {setup.roleTitle}</span></div>
+          <Link className="text-action" href="/interview/interviewers">Change</Link>
+        </div>
+
+        <div className="setup-form">
+          {/* THE SHAPE IS ON THE OPTION, NOT ONLY IN THE HINT (§4.4).
+              Two of the first four interview reps ever run went out on
+              `recruiter` because it was the default and nothing said "this one
+              does not test fundamentals". A round that changes what the
+              interview IS cannot be a quiet dropdown default.
+              THE SCREENER IS OFFERED ONLY WHEN THERE IS ONE TO SPEND (§5.6). */}
+          <Select
+            label="Round"
+            value={chosenRound}
+            onChange={setRound}
+            options={ROUND_TYPES.filter((option) => option.credits > 0 || hasScreener).map((option) => ({
+              value: option.id,
+              label: option.label,
+              meta: ROUND_SHAPE_LABEL[option.shape],
+              // B3: the price is on the option, because it is no longer the
+              // same on all of them and picking blind is how somebody spends
+              // two credits meaning to spend one.
+              // Length first on every option, price second — the free one
+              // included, so the five read as one column rather than four and
+              // an exception.
+              trailing: `${option.durationMs / 60_000} min · ${option.credits === 0 ? 'Free' : `${option.credits} credit${option.credits === 1 ? '' : 's'}`}`,
+            }))}
+            hint={spec.credits === 0
+              ? `${spec.description} Your free screener pays for this one.`
+              : spec.description}
+          />
+
+          {/* THE SECOND AXIS (§5.1). The interviewer decides her temperament;
+              this decides how hard the questions are, and the two are orthogonal
+              on purpose — a nervous candidate practising hard questions with a
+              friendly interviewer is a legitimate and probably common thing to
+              want. Shown only on rounds that actually probe, because on a
+              recruiter screen it would be a control that changes nothing. */}
+          {spec.probeShare > 0 ? (
+            <Select
+              label="Question difficulty"
+              value={difficulty === null ? 'auto' : (String(difficulty) as 'auto' | `${DifficultyLevel}`)}
+              onChange={(next) => setDifficulty(next === 'auto' ? null : toDifficultyLevel(Number(next)))}
+              options={[
+                {
+                  value: 'auto' as const,
+                  label: 'Match my role title',
+                  meta: `${difficultySpec(derived).label} — ${difficultySpec(derived).tests.toLowerCase()}`,
+                },
+                ...DIFFICULTY_LEVELS.map((option) => ({
+                  value: String(option.level) as `${DifficultyLevel}`,
+                  label: option.label,
+                  meta: option.tests,
+                  trailing: String(option.level),
+                })),
+              ]}
+              hint={<><span className="difficulty-example">&ldquo;{difficultySpec(effective).example}&rdquo;</span> It changes the questions, never how patient she is.</>}
+            />
+          ) : (
+            <p className="field__hint setup-note">A {spec.label.toLowerCase()} does not test fundamentals, so there is nothing to set a difficulty for. Pick a technical round to get that dial.</p>
+          )}
+
+          {/* Per-interview, which is why it is here rather than in a sidebar
+              card on the home screen (B6). Off by default and the copy says
+              why: a real interview has no captions. */}
+          <div className="setting-row">
+            <div><strong>Show the question on screen</strong><span>Off by default. A real interview has no captions, and getting used to holding the question in your head is most of what this is for.</span></div>
+            <button
+              className="toggle"
+              role="switch"
+              aria-label="Show the question on screen"
+              aria-checked={captions}
+              onClick={() => setCaptions((value) => !value)}
+            ><i /></button>
+          </div>
+
+          <div className="run-setup__cv">
+            <span className="label">CV</span>
+            <span>{setup.cvFileName || 'Not added'}</span>
+            <Link className="text-action" href="/interview/setup/cv">{setup.cvFileName ? 'Replace' : 'Add one'}</Link>
+          </div>
+
+          {error ? <p className="field__error">{error}</p> : null}
+
+          {refusal
+            ? (
+              <div className="run-setup__blocked">
+                <p>{refusal}</p>
+                <CreditsPanel credits={user?.interviewCredits ?? 0} screener={screenerCredits} packsOpen={packsOpen} returnTo="/interview/start" heading="Add credits" />
+              </div>
+            )
+            : <Button size="lg" fullWidth disabled={saving} onClick={go}>{saving ? 'Saving' : 'Start interview'}</Button>}
+        </div>
+      </div>
+    </AppShell>
+  )
 }

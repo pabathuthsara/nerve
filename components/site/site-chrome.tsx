@@ -23,6 +23,10 @@ import type { ReactNode } from 'react'
 /** Every public route, in the order the footer lists them. */
 export const SITE_LINKS = {
   howItWorks: '/how-it-works',
+  // D3. The paid-traffic destination for interview intent. It shares the
+  // landing page's own components rather than restating them, so the ad and
+  // the page it lands on cannot come to describe different products.
+  interviews: '/interviews',
   pricing: '/pricing',
   terms: '/legal/terms',
   privacy: '/legal/privacy',
@@ -54,6 +58,7 @@ export function SiteHeader({ cta = 'Start training' }: { cta?: string }) {
             than being handed a second copy, which is what a screen reader would
             otherwise read out twice. */}
         <nav className="site-header__nav" aria-label="Site">
+          <Link href={SITE_LINKS.interviews}>Interviews</Link>
           <Link href={SITE_LINKS.howItWorks} className="site-header__wide-link">How it works</Link>
           <Link href={SITE_LINKS.pricing}>Pricing</Link>
         </nav>
@@ -83,6 +88,7 @@ export function SiteFooter() {
           <div>
             <span className="label">Product</span>
             <Link href={SITE_LINKS.howItWorks}>How it works</Link>
+            <Link href={SITE_LINKS.interviews}>Practice interviews</Link>
             <Link href={SITE_LINKS.pricing}>Pricing</Link>
             <Link href="/signup">Start training</Link>
             <Link href="/login">Log in</Link>

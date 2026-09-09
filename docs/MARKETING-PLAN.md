@@ -175,9 +175,16 @@ customers, not at a thousand.
 
 ### 4.4a · There is now a $9 door, and it is not a plan — **7 September**
 
-`INTERVIEW-PLAN.md` D3 shipped: **one interview for $9**, five for $29, twelve
-for $59, bought outright and never expiring. It answers most of §4.4 without
-paying any of §4.4's price.
+`INTERVIEW-PLAN.md` D3 shipped: **a $9 door**, then $29 and $59, bought outright
+and never expiring. It answers most of §4.4 without paying any of §4.4's price.
+
+**What each price buys has moved twice since and the prices have not.** They were
+one, five and twelve *interviews*; then the same numbers of *credits* once rounds
+were priced by length (`LAUNCH-GAP.md` B3); and since 9 September they are
+**2 / 8 / 20 credits**, which is one full round of any kind at $9 and ten of them
+at $59 (`LAUNCH-GAP.md` D18). Quote the price here and the round cost from
+`ROUND_COST_NOTE`; never quote a number of interviews, which is the thing this
+file got wrong first.
 
 **None of the blast radius above applies**, and that is the point. A pack is a
 balance rather than an entitlement, so there is no fourth `Plan` value, no
@@ -233,6 +240,38 @@ that build). Related: `CRON_SECRET` on GitHub Actions, without which R6's
 Sunday letter and streak-at-risk email are built and silent.
 
 ---
+
+## 4b · The interview landing page, added 8 September
+
+`/interviews` exists. It is the paid-traffic destination for interview intent
+and it did not exist when this plan was written — the home page's hero is
+"Three minutes. One stranger. No script." and the interview track appeared as
+section six of nine, headed "The second track", with nothing about it in the
+nav. Anyone arriving on an interview-prep intent had to scroll past the entire
+dating argument to find out we do it.
+
+That matters to this document more than to any other, because interview prep is
+**the easier US ad buy, the higher intent, and the one that ends in a $9–$59
+credit purchase rather than a $19 subscription**. An ad pointed at `/` was
+asking a click that came for interviews to read a dating page first.
+
+- The page renders the landing page's own `InterviewTrack` and `ScoringLaw`
+  components rather than restating them, so the ad and the page it lands on
+  cannot come to describe different products.
+- It is in the sitemap at priority 0.9 and in the header and footer nav.
+- It says nothing §16 or rule 12 forbids: no "get hired", no success rate, no
+  testimonial. Its "what it is not" section is the positioning asset — several
+  tools in this category feed the candidate answers on a second screen, and
+  saying plainly that this is the opposite is an argument for charging *more*.
+
+**Use it as the ad destination for any interview creative.** The dating
+creative still points at `/`.
+
+Two other things from the same pass change what the ad money lands on: the
+pack cards on `/pricing` now end in a buy button (they ended in nothing), and
+the free five-minute interview on every account was **unreachable on the default
+path** until 8 September — a giveaway that silently failed at redemption, which
+is worth more this week than any coupon. Both are in `LAUNCH-GAP.md` §3b.
 
 ## 5 · Where the $340 goes
 

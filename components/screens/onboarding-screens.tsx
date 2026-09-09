@@ -247,6 +247,7 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
             ? <FocusStep
                 value={focusArea}
                 firstRep={firstRep}
+                track={track}
                 onChoose={(value) => { setFocusArea(value); commit(() => saveOnboardingChoice({ focusArea: value }), step, step + 1) }}
               />
             : null}
@@ -257,9 +258,9 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
               />
             : null}
           {route === '/onboarding/mic'
-            ? <MicStep firstRep={firstRep} onDone={() => goTo(step + 1)} />
+            ? <MicStep firstRep={firstRep} track={track} onDone={() => goTo(step + 1)} />
             : null}
-          {route === '/onboarding/ready' ? <ReadyStep firstRep={firstRep} name={displayName} /> : null}
+          {route === '/onboarding/ready' ? <ReadyStep firstRep={firstRep} name={displayName} track={track} /> : null}
         </div>
       </div>
     </main>
@@ -388,18 +389,22 @@ function TrackStep({ value, onChoose }: { value: Track | null; onChoose: (value:
   useEffect(() => { if (waitlisted) heading.current?.focus() }, [waitlisted])
 
   /**
-   * Interview is M4. Recording the demand is the honest version of a track
-   * that does not exist yet; switching them to it would not be, and neither
-   * was the screen this replaces — it printed "Demand recorded" over a
-   * `setTimeout` and wrote nothing at all.
+   * English is still M-something. Recording the demand is the honest version of
+   * a track that does not exist yet; switching them to it would not be.
    *
-   * The write is awaited here, unlike every other answer on the run. The
-   * screen it opens makes a claim about it, and a claim should not go up
-   * before the thing it describes has happened.
+   * **Interview is no longer one of these** (LAUNCH-GAP D1). It was a waitlist
+   * because the track was screens over fixtures; it shipped on 7 September, and
+   * every account is granted a free five-minute screener at sign-up, so the
+   * honest answer to "job interviews" is now the interview track rather than a
+   * note that we counted the ask.
+   *
+   * The write is awaited here, unlike every other answer on the run. The screen
+   * it opens makes a claim about it, and a claim should not go up before the
+   * thing it describes has happened.
    */
-  const askForInterview = () => {
+  const askForEnglish = () => {
     setRecording(true)
-    void recordTrackWaitlist('interview')
+    void recordTrackWaitlist('english')
       .then(() => { setRecording(false); setWaitlisted(true) })
       .catch(() => { setRecording(false); setWaitlisted(true) })
   }
@@ -408,8 +413,8 @@ function TrackStep({ value, onChoose }: { value: Track | null; onChoose: (value:
     return (
       <div className="onboarding-state">
         <span className="label volt">Noted</span>
-        <h1 className="display-lg" ref={heading} tabIndex={-1} data-step-heading>Interview training opens soon.</h1>
-        <p>We count who asks, and you have been counted. Dating reps are already live if you want to start building the same conversational control.</p>
+        <h1 className="display-lg" ref={heading} tabIndex={-1} data-step-heading>English practice opens soon.</h1>
+        <p>We count who asks, and you have been counted. Both other tracks are live if you want to start building the same conversational control.</p>
         <Button fullWidth size="lg" onClick={() => onChoose('dating')}>Try a dating rep meanwhile</Button>
         <Button fullWidth variant="ghost" onClick={() => setWaitlisted(false)}>Choose something else</Button>
       </div>
@@ -429,14 +434,17 @@ function TrackStep({ value, onChoose }: { value: Track | null; onChoose: (value:
         selected={value === 'dating'}
         onClick={() => onChoose('dating')}
       />
+      {/* D1. This answer is now honoured: the run ends on `/interview` when it
+          is chosen, rather than at `/train` with a dating persona and a warmth
+          meter in front of somebody who said they came for interviews. */}
       <Option
         label="Job interviews"
-        sub="Behavioural, technical, panel"
+        sub="Behavioural, technical, panel — with one free five-minute round"
         mark="kind-technique"
-        busy={recording}
-        onClick={askForInterview}
+        selected={value === 'interview'}
+        onClick={() => onChoose('interview')}
       />
-      <Option label="Speaking English more naturally" sub="Coming soon" mark="dim-listening" disabled aside={<Chip>Soon</Chip>} />
+      <Option label="Speaking English more naturally" sub="Coming soon" mark="dim-listening" busy={recording} aside={<Chip>Soon</Chip>} onClick={askForEnglish} />
     </Question>
   )
 }
@@ -461,17 +469,27 @@ export { FOCUS_OPTIONS }
  * care, and it costs one prop: the orb was already being rendered on the step
  * after this one.
  */
-function FocusStep({ value, firstRep, onChoose }: { value: FocusArea | null; firstRep: FirstRepCandidate | null; onChoose: (value: FocusArea) => void }) {
+function FocusStep({ value, firstRep, track, onChoose }: { value: FocusArea | null; firstRep: FirstRepCandidate | null; track: Track | null; onChoose: (value: FocusArea) => void }) {
+  /**
+   * D1's edge. Every account has both tracks now, and somebody who has just
+   * answered "job interviews" being asked about flirting with no explanation
+   * reads as the run having forgotten what they said one screen ago. The
+   * answer is still worth collecting — it steers the dating reps they also
+   * have — so the question stays and says which half it is about.
+   */
+  const interview = track === 'interview'
   return (
     <Question
       eyebrow="Step two"
-      title="What's the hard part?"
-      sub="This one earns its keep: it picks who you meet first, your first challenge out in the world, and the technique on your brief."
+      title={interview ? 'And on the dating reps?' : "What's the hard part?"}
+      sub={interview
+        ? 'Your account has both tracks. This one is only about the dating side — it picks who you meet there and your first challenge out in the world. Interviews are set up separately, on the next screen but one.'
+        : 'This one earns its keep: it picks who you meet first, your first challenge out in the world, and the technique on your brief.'}
     >
       {FOCUS_OPTIONS.map((option) => (
         <Option key={option.value} label={option.label} mark={focusMark(option.value) ?? undefined} selected={value === option.value} onClick={() => onChoose(option.value)} />
       ))}
-      {value && firstRep ? (
+      {value && firstRep && !interview ? (
         <p className="focus-preview" aria-live="polite">
           <FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={18} size={42} />
           <span><span className="label">First up</span> {firstRep.name} — {firstRep.setting.toLowerCase()}</span>
@@ -585,7 +603,7 @@ function Option({ label, sub, mark, aside, disabled = false, selected = false, b
 type MicState = 'request' | 'requesting' | 'waiting' | 'denied' | 'testing' | 'confirmed'
 interface AudioDevice { deviceId: string; label: string }
 
-function MicStep({ firstRep, onDone }: { firstRep: FirstRepCandidate | null; onDone: () => void }) {
+function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | null; track: Track | null; onDone: () => void }) {
   const router = useRouter()
   const [state, setState] = useState<MicState>('request')
   const [skipping, setSkipping] = useState(false)
@@ -649,7 +667,9 @@ function MicStep({ firstRep, onDone }: { firstRep: FirstRepCandidate | null; onD
     setSkipping(true)
     stop()
     await deferOnboarding()
-    router.push('/train')
+    // D1. Looking around means looking around the track they came for, not the
+    // other one — the same reason the run's last screen honours the answer.
+    router.push(track === 'interview' ? '/interview' : '/train')
   }
 
   const request = async () => {
@@ -867,7 +887,7 @@ function DevicePicker({ devices, value, onChange }: { devices: AudioDevice[]; va
  * screen where somebody is already waiting to start and disagreed with the
  * focus answer's own promise about who they would meet.
  */
-function ReadyStep({ firstRep, name }: { firstRep: FirstRepCandidate | null; name: string | null }) {
+function ReadyStep({ firstRep, name, track }: { firstRep: FirstRepCandidate | null; name: string | null; track: Track | null }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [starting, setStarting] = useState(false)
@@ -879,6 +899,35 @@ function ReadyStep({ firstRep, name }: { firstRep: FirstRepCandidate | null; nam
     setStarting(true)
     await finishOnboarding()
     router.push(href)
+  }
+
+  /**
+   * ── D1: THE RUN ENDS WHERE THEY SAID THEY WERE GOING ────────────────────
+   *
+   * `/onboarding/track` asks dating or interview and writes `active_track`, and
+   * the run then ended at `/train` in every case — where `AppShell`'s pathname
+   * effect immediately set the track back to `dating`, because that is where
+   * they had landed. So somebody who signed up to practise interviews was shown
+   * a dating persona, a warmth meter and a field challenge, and had to find the
+   * track switcher themselves. The one question onboarding asks about intent
+   * was overwritten within a second of being answered.
+   *
+   * An interview cannot open on a first rep the way a dating one can — it needs
+   * a role, a CV and a round first — so the end of the run for that track is
+   * the interview home, which is where that setup begins. The free screener is
+   * named, because it is the thing that makes the next screen worth opening.
+   */
+  if (track === 'interview') {
+    return (
+      <section className="brief-shell">
+        <Mark name="kind-technique" size={44} current />
+        <h1 className="display-lg" tabIndex={-1} data-step-heading>You&apos;re set up.</h1>
+        <p className="brief-hook">Next: the role you are interviewing for, your CV, and who you want in the room. Your first five-minute round is free.</p>
+        <Button size="lg" fullWidth loading={starting} onClick={() => void start('/interview')}>
+          {name ? `Set up your interview, ${name}` : 'Set up your interview'}
+        </Button>
+      </section>
+    )
   }
 
   /**
@@ -920,16 +969,33 @@ function ReadyStep({ firstRep, name }: { firstRep: FirstRepCandidate | null; nam
  * twenty-five — and `It ends: When they've heard enough`, which is not how it
  * ends. It ends on the clock, like everything else here, and saying otherwise
  * makes a candidate answer as though they can be dismissed early.
+ *
+ * ── E1: THE GOAL ROW NAMED THE ONE THING WORTH ZERO ──────────────────────
+ *
+ * It read `Goal · Get her number` on the dating arm and `Goal · Answer well
+ * enough to be called back` on the interview one. Rule 2 is the product —
+ * **outcome is never scored** — and the landing page argues exactly that:
+ * "whether she gave you a number, agreed to anything, or walked away
+ * contributes exactly zero". This block is the last thing read before the
+ * microphone opens, so it was not a copy inconsistency: it was an instruction,
+ * at the moment of highest attention, to play for the result. Close and Signal
+ * reading are the two dimensions that collapse when somebody does that, so the
+ * screen was priming the failure and the grader was then scoring it.
+ *
+ * Both rows now name a MANNER rather than a result. The mechanic is untouched —
+ * she still decides at the end, and the interview still ends on the clock — and
+ * neither `lib/data/mission.ts` nor `lib/data/guided.ts` is edited, because both
+ * are Tier 0 under rule 19 and neither is where this sentence lived.
  */
 export function RuleBlock({ interview, minutes }: { interview: boolean; minutes?: number }) {
   const rows = interview
-    ? [['Time', `${minutes ?? 20}:00`], ['Goal', 'Answer well enough to be called back'], ['It ends', 'When time runs out']]
-    : [['Time', '3:00'], ['Goal', 'Get her number'], ['She leaves', 'When time runs out']]
+    ? [['Time', `${minutes ?? 20}:00`], ['Goal', 'Answer like the person they should call back'], ['It ends', 'When time runs out']]
+    : [['Time', '3:00'], ['Goal', 'Have a conversation worth having'], ['She leaves', 'When time runs out']]
   return <div className="rule-block">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
 }
 
 export function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return <Sheet open={open} onClose={onClose} title="How a rep works"><div className="how-list">{['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end whether you get her number.'].map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet>
+  return <Sheet open={open} onClose={onClose} title="How a rep works"><div className="how-list">{['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end. Nothing she decides is scored.'].map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet>
 }
 
 export type { OnboardingRoute }

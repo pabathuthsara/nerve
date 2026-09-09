@@ -35,9 +35,11 @@ import 'server-only'
 import { supabaseAdmin } from './admin'
 import {
   creditBalance,
-  nextLotToSpend,
+  creditCost,
+  planSpend,
   roundType,
   type CreditBalance,
+  type CreditDraw,
   type CreditLot,
   type CreditSource,
   type RoundTypeId,
@@ -106,11 +108,23 @@ export type HoldResult =
   | { ok: false; message: string; reason: 'balance' | 'error' }
 
 /**
- * Promise one credit to a rep that is connecting.
+ * Promise this round's credits to a rep that is connecting.
  *
  * **Idempotent on the session id**, which is the whole reason the hold is a
  * table keyed on it: a reload, a reconnect and a double-fired effect all reach
- * this, and two connects for one rep must never spend two credits.
+ * this, and two connects for one rep must never spend twice.
+ *
+ * **It is the round's cost, not one** (LAUNCH-GAP B3). A deep technical is three
+ * credits and can be covered by an expiring grant plus two purchased ones, so
+ * the hold carries an amount and `planSpend` decides whether the lots can cover
+ * it at all. All or nothing: a partial hold would take somebody's credits and
+ * give them no interview.
+ *
+ * The hold's `source` is the FIRST source the plan draws from, which is what the
+ * balance groups its held column by. The definitive per-source split is computed
+ * again at settle time from the ledger as it then stands — see
+ * `settleInterviewCredit`, and the module note on why every row carries its own
+ * lot's expiry.
  */
 export async function holdInterviewCredit(input: {
   userId: string
@@ -118,6 +132,7 @@ export async function holdInterviewCredit(input: {
   round: RoundTypeId
 }): Promise<HoldResult> {
   const admin = supabaseAdmin()
+  const cost = creditCost(input.round)
   try {
     const { data: existing } = await admin
       .from('interview_credit_holds')
@@ -133,37 +148,51 @@ export async function holdInterviewCredit(input: {
     }
 
     const state = await interviewCreditState(input.userId)
-    if (state.available <= 0) {
-      return { ok: false, reason: 'balance', message: 'You have no interview credits left.' }
+    if (state.available < cost) {
+      return { ok: false, reason: 'balance', message: shortfall(input.round) }
     }
-    const lot = nextLotToSpend(state.lots, { round: input.round })
-    if (!lot) {
-      return {
-        ok: false,
-        reason: 'balance',
-        message: roundType(input.round).credits === 0
-          ? 'Your free screener has already been used.'
-          : 'You have no interview credits left.',
-      }
+    const draws = planSpend(state.lots, { round: input.round, cost })
+    if (!draws) {
+      return { ok: false, reason: 'balance', message: shortfall(input.round) }
     }
+    // The free round draws no lot at all, so there is nothing to attribute the
+    // hold to and nothing to spend. It is still recorded, because the hold is
+    // also what stops one screener credit opening two five-minute rounds.
+    const source: CreditSource = draws[0]?.source ?? 'screener'
 
     const { error } = await admin.from('interview_credit_holds').insert({
       session_id: input.sessionId,
       user_id: input.userId,
-      source: lot.source,
+      source,
       round: input.round,
+      amount: Math.max(1, cost),
       expires_at: new Date(Date.now() + HOLD_TTL_MS).toISOString(),
     })
     // A unique violation is another connect winning the race, which is the
     // idempotent case rather than a failure.
     if (error) {
-      if (error.code === '23505') return { ok: true, source: lot.source, alreadyHeld: true }
+      if (error.code === '23505') return { ok: true, source, alreadyHeld: true }
       return { ok: false, reason: 'error', message: 'We could not start this interview.' }
     }
-    return { ok: true, source: lot.source, alreadyHeld: false }
+    return { ok: true, source, alreadyHeld: false }
   } catch {
     return { ok: false, reason: 'error', message: 'We could not start this interview.' }
   }
+}
+
+/**
+ * Why the balance cannot open this round, in a sentence somebody can act on.
+ *
+ * Since B3 "you have no credits" is often false and always unhelpful: an
+ * account with two credits looking at a deep technical has plenty and still
+ * cannot start it. The number is what the user needs.
+ */
+function shortfall(round: RoundTypeId): string {
+  const spec = roundType(round)
+  if (spec.credits === 0) return 'Your free screener has already been used.'
+  return spec.credits === 1
+    ? 'You have no interview credits left.'
+    : `A ${spec.label.toLowerCase()} costs ${spec.credits} credits, and there are not that many in the account.`
 }
 
 export interface CreditWriteResult {
@@ -187,7 +216,7 @@ export async function settleInterviewCredit(input: {
   try {
     const { data: hold } = await admin
       .from('interview_credit_holds')
-      .select('source, state')
+      .select('source, state, round, amount')
       .eq('session_id', input.sessionId)
       .eq('user_id', input.userId)
       .maybeSingle()
@@ -195,27 +224,77 @@ export async function settleInterviewCredit(input: {
     if (!hold || !isSource(hold.source)) return { ok: true, changed: false }
     if (hold.state !== 'held') return { ok: true, changed: false }
 
-    const { error } = await admin.from('interview_credit_entries').insert({
-      user_id: input.userId,
-      kind: 'spend',
-      source: hold.source,
-      amount: -1,
-      expires_at: await lotExpiryFor(input.userId, hold.source),
-      session_id: input.sessionId,
-      reference: `spend:${input.sessionId}`,
-    })
-    if (error && error.code !== '23505') return { ok: false, changed: false }
+    const owed = Math.max(0, hold.amount ?? 1)
+    /**
+     * A free round settles nothing but the hold (B3).
+     *
+     * The screener costs no credit, so there is no ledger row to write — and a
+     * `-0` spend would put a transaction that did not happen in a user's own
+     * ledger, which is the same objection `releaseInterviewCredit` makes.
+     */
+    if (owed === 0) {
+      await closeHold(input.sessionId)
+      return { ok: true, changed: false }
+    }
 
-    await admin
-      .from('interview_credit_holds')
-      .update({ state: 'settled', settled_at: new Date().toISOString() })
-      .eq('session_id', input.sessionId)
-      .eq('state', 'held')
+    /**
+     * The split, decided against the ledger as it stands NOW.
+     *
+     * Not against the hold: a multi-credit round can draw from two lots, and
+     * between the connect and the scorecard a grant may have expired or a pack
+     * may have landed. Recomputing keeps the module's invariant — every row
+     * carries the expiry of the lot it belongs to — true at settle time rather
+     * than at connect time.
+     *
+     * The fallback is the hold's own source for the whole amount. It is reached
+     * when the lots no longer cover the round (an expiry mid-rep), and taking
+     * the credit anyway is right: the interview ran.
+     */
+    const state = await interviewCreditState(input.userId)
+    const draws: CreditDraw[] = planSpend(state.lots, { round: readRound(hold.round), cost: owed })
+      ?? [{ source: hold.source, amount: owed }]
 
-    return { ok: true, changed: !error }
+    let wrote = false
+    let failed = false
+    for (const draw of draws) {
+      const { error } = await admin.from('interview_credit_entries').insert({
+        user_id: input.userId,
+        kind: 'spend',
+        source: draw.source,
+        amount: -draw.amount,
+        expires_at: await lotExpiryFor(input.userId, draw.source),
+        session_id: input.sessionId,
+        // One reference per source, so a two-lot spend is two rows and a replay
+        // still collides on the unique index for both of them.
+        reference: `spend:${input.sessionId}:${draw.source}`,
+      })
+      if (error) {
+        if (error.code !== '23505') failed = true
+      } else {
+        wrote = true
+      }
+    }
+    if (failed) return { ok: false, changed: wrote }
+
+    await closeHold(input.sessionId)
+    return { ok: true, changed: wrote }
   } catch {
     return { ok: false, changed: false }
   }
+}
+
+/** The hold is paid for, whatever the ledger did. */
+async function closeHold(sessionId: string): Promise<void> {
+  await supabaseAdmin()
+    .from('interview_credit_holds')
+    .update({ state: 'settled', settled_at: new Date().toISOString() })
+    .eq('session_id', sessionId)
+    .eq('state', 'held')
+}
+
+/** The round a hold was taken for. Anything unrecognised resolves to the default. */
+function readRound(value: unknown): RoundTypeId {
+  return roundType(typeof value === 'string' ? value : null).id
 }
 
 /**
@@ -244,12 +323,18 @@ export async function releaseInterviewCredit(input: {
 }
 
 /**
- * A credit already spent, given back.
+ * The credits already spent on a rep, given back.
  *
  * The A2 case: an interview that ended for a reason other than the clock or the
  * user. The reference makes a double refund impossible, and the expiry is the
  * one the spend carried — a refunded grant does not come back to life past its
  * period boundary, which is the only reading of §5.5 that is not a loophole.
+ *
+ * **Every spend row, not one** (LAUNCH-GAP B3). A three-credit round can settle
+ * as two rows against two sources, and this read was `.maybeSingle()` — which
+ * errors outright on two rows and would otherwise have refunded one credit of
+ * three. Each spend is mirrored by a refund of the same size against the same
+ * source, so the balance ends exactly where it started.
  */
 export async function refundInterviewCredit(input: {
   userId: string
@@ -258,32 +343,43 @@ export async function refundInterviewCredit(input: {
 }): Promise<CreditWriteResult> {
   const admin = supabaseAdmin()
   try {
-    const { data: spend } = await admin
+    const { data: spends } = await admin
       .from('interview_credit_entries')
-      .select('source, expires_at')
+      .select('source, amount, expires_at')
       .eq('user_id', input.userId)
       .eq('session_id', input.sessionId)
       .eq('kind', 'spend')
-      .maybeSingle()
+
+    const rows = (spends ?? []).filter((row) => isSource(row.source) && row.amount < 0)
 
     // Never spent: the hold is what has to go, and releasing it is the whole
     // refund. Callers reach here on both shapes and should not have to know.
-    if (!spend || !isSource(spend.source)) {
+    if (rows.length === 0) {
       return releaseInterviewCredit({ userId: input.userId, sessionId: input.sessionId })
     }
 
-    const { error } = await admin.from('interview_credit_entries').insert({
-      user_id: input.userId,
-      kind: 'refund',
-      source: spend.source,
-      amount: 1,
-      expires_at: spend.expires_at,
-      session_id: input.sessionId,
-      reference: `refund:${input.sessionId}`,
-      metadata: { reason: input.reason },
-    })
-    if (error && error.code !== '23505') return { ok: false, changed: false }
-    return { ok: true, changed: !error }
+    let wrote = false
+    let failed = false
+    for (const row of rows) {
+      const { error } = await admin.from('interview_credit_entries').insert({
+        user_id: input.userId,
+        kind: 'refund',
+        source: row.source,
+        amount: Math.abs(row.amount),
+        expires_at: row.expires_at,
+        session_id: input.sessionId,
+        // One per source, mirroring the spend, so a replay collides on both.
+        reference: `refund:${input.sessionId}:${row.source}`,
+        metadata: { reason: input.reason },
+      })
+      if (error) {
+        if (error.code !== '23505') failed = true
+      } else {
+        wrote = true
+      }
+    }
+    if (failed) return { ok: false, changed: wrote }
+    return { ok: true, changed: wrote }
   } catch {
     return { ok: false, changed: false }
   }

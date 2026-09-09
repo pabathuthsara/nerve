@@ -52,6 +52,37 @@
  * is not a maximum. Both numbers moved down, and the ceiling is the smaller
  * change of the two — the target is what she actually obeys.
  *
+ * ## A SENTENCE IS A REGISTER, AND ASKING FOR ONE PRODUCED PROSE
+ *
+ * The caps above worked. Measured across 30 dating reps of 5–8 September, 309
+ * agent turns: median 8 words, and on her first three turns median 7. Nothing
+ * was over the ceiling. She still did not sound like a stranger, and the
+ * complaint was not that she said too much — it was that she talked like a
+ * book.
+ *
+ * Four bands used to open with "One sentence, N words". That is a specification
+ * for a WELL-FORMED sentence, and a text model given a tight word budget and an
+ * instruction to produce a sentence writes an epigram, because an epigram is
+ * what fits: "More crime than true, but close enough to satisfy.", "Quiet
+ * people, strange motives, and the odd twist." — a balanced clause and a
+ * tricolon, both inside the cap, neither one a thing a person says while
+ * waiting for a dryer.
+ *
+ * People answer strangers in FRAGMENTS. "Laundry." "Waiting on a machine."
+ * No band ever asked for one, so no band ever got one: 6% of her opening turns
+ * were two words or fewer.
+ *
+ * So the cold bands ask for a fragment and the warm ones for one sentence, and
+ * the NUMBERS ARE UNTOUCHED — `typicalWords` and `maxWords` are byte for byte
+ * what they were, because the caps were never the defect and `wordCapFor` is
+ * read by the pipeline.
+ *
+ * The second half is the sentence COUNT. "One sentence" was already stated at
+ * four bands and disobeyed on 43% of opening turns and 55% overall, so the
+ * clause was paying the register cost without buying the brevity. It is "never
+ * two" now: a ceiling stated as a prohibition, which is the same lesson as
+ * `maxWords` one paragraph up.
+ *
  * ## PERMISSION IS NOT LENGTH, AND IT IS RATIONED SEPARATELY
  *
  * The warm bands used to carry their invitations inside the directive itself —
@@ -137,7 +168,7 @@ export const BANDS: readonly BandSpec[] = [
     typicalWords: 3,
     maxWords: 6,
     directive:
-      'Three or four words. Six at the very most. You want this over. Do not ask anything, and do not soften it.',
+      'Three or four words. Six at the very most. Not a full sentence. You want this over. Do not ask anything, and do not soften it.',
   },
   {
     band: 'CLOSED',
@@ -146,7 +177,7 @@ export const BANDS: readonly BandSpec[] = [
     typicalWords: 4,
     maxWords: 8,
     directive:
-      'Four or five words. Eight at the very most. Answer, then stop. Do not ask him anything, do not volunteer anything, and do not warm it up.',
+      'Four or five words. Eight at the very most. Not a full sentence. Answer, then stop. Do not ask him anything, do not volunteer, do not warm it up.',
   },
   {
     band: 'GUARDED',
@@ -155,7 +186,7 @@ export const BANDS: readonly BandSpec[] = [
     typicalWords: 6,
     maxWords: 10,
     directive:
-      'One sentence, six or seven words. Ten at the very most. Answer only what he asked. Do not ask him anything back.',
+      'Six or seven words. Ten at the very most. A fragment or one plain sentence, never two. Answer only what he asked. Do not ask him anything back.',
   },
   {
     band: 'OPEN',
@@ -164,7 +195,7 @@ export const BANDS: readonly BandSpec[] = [
     typicalWords: 7,
     maxWords: 12,
     directive:
-      'One sentence, seven or eight words. Twelve at the very most. Do not ask a question this turn unless he asked you one first.',
+      'Seven or eight words. Twelve at the very most. One sentence, never two. Do not ask a question this turn unless he asked you one first.',
     permission: 'You may volunteer one small thing.',
   },
   {
@@ -174,7 +205,7 @@ export const BANDS: readonly BandSpec[] = [
     typicalWords: 8,
     maxWords: 14,
     directive:
-      'One sentence, eight or nine words. Fourteen at the very most. No filler, no reassurance, never "take your time" or "no rush".',
+      'Eight or nine words. Fourteen at the very most. One sentence, never two. No filler, no reassurance, never "take your time" or "no rush".',
     permission: 'Ask about him, tease him, swap names.',
   },
   {
@@ -184,7 +215,7 @@ export const BANDS: readonly BandSpec[] = [
     typicalWords: 9,
     maxWords: 15,
     directive:
-      'Nine or ten words. Fifteen at the very most. No filler, never "take your time".',
+      'Nine or ten words. Fifteen at the very most. Two short sentences at the most. No filler, never "take your time".',
     permission: 'Start a topic or bring back something he said. Open to a concrete plan.',
   },
 ]

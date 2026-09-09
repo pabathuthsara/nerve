@@ -2,12 +2,12 @@
 
 import Link from 'next/link'
 import { Check, ChevronRight, Download, FlaskConical, Headphones, LogOut, Mic, RotateCcw, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useFieldStats, useLifetimeStats, usePlanWaitlist, useRepRecords, useSessionHistory, useSubscription, useUserState } from '@/lib/data'
 import type { FieldStats, Plan, SessionSummary, SubscriptionState } from '@/lib/data/types'
 import { signOut } from '@/app/auth/actions'
 import { resetPerson } from '@/components/analytics'
-import { forgetAllMemory, markUiFlag, saveAudioPreferences, saveDisplayName, saveFocusArea, saveTrainingWheels } from '@/app/profile/actions'
+import { exportMyData, forgetAllMemory, markUiFlag, saveAudioPreferences, saveDisplayName, saveFocusArea, saveTrainingWheels } from '@/app/profile/actions'
 import { FOCUS_OPTIONS } from '@/components/screens/onboarding-screens'
 // The published address, from the one place that owns it. Spelled out here
 // until 30 August, which is how these copies went stale while the footer and
@@ -21,16 +21,18 @@ import { Mark, tierMark } from '@/components/marks'
 import { FluidPersona } from '@/components/fluid-persona'
 import { recordLabel, type RepRecord } from '@/lib/data/records'
 import {
-  BILLING_NOTE, CHECKOUT_NOTE, CHECKOUT_UNCONFIGURED_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE,
-  chargeLine, interviewsLine, offerFor, offersFor, periodLabel, monthlyEquivalent, repsLine,
+  BILLING_NOTE, CHECKOUT_UNCONFIGURED_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE, checkoutNoteFor,
+  chargeLine, interviewsLine, offerFor, periodAsideFor, periodLabel, plansOn,
+  monthlyEquivalent, repsLine, repsPerDayLine,
   type BillingPeriod, type PublicPlan,
 } from '@/lib/site/plans'
+import { CreditsPanel } from '@/components/interview/credits'
 import { cancelSubscription, startCheckout } from '@/app/profile/subscription/actions'
 import { forgetCurrentUser } from '@/lib/data/session'
 import { roomToneAvailable } from '@/lib/audio/scenes'
 import { setSoundEnabled, soundEnabled } from '@/lib/hooks/use-rep-production'
 import { AppShell } from '@/components/app-shell'
-import { Avatar, Button, Card, Chip, EmptyState, Input, Modal, Sheet, Skeleton, Stat, Tabs, useToast } from '@/components/ui'
+import { Avatar, Button, Card, Chip, EmptyState, Modal, Sheet, Skeleton, Stat, Tabs, useToast } from '@/components/ui'
 import { SessionRow } from './train-screen'
 import { SharedCards } from '@/components/share/shared-cards'
 import { ShareButton } from '@/components/share/share-button'
@@ -40,7 +42,9 @@ export type ProfileRoute = '/profile' | '/profile/history' | '/profile/settings'
 export function ProfileScreen({
   route,
   checkoutOpen = false,
+  packsOpen = false,
   testMode = false,
+  foundingPlacesLeft = null,
   bought = false,
 }: {
   route: ProfileRoute
@@ -50,14 +54,22 @@ export function ProfileScreen({
    * `BillingContext` in `components/route-view.tsx`.
    */
   checkoutOpen?: boolean
+  /**
+   * Whether an interview pack can be bought right now. Separate from
+   * `checkoutOpen` on purpose — a deployment missing one `WHOP_PACK_*` should
+   * hide the credit buttons and keep selling subscriptions (A4).
+   */
+  packsOpen?: boolean
   /** A purchase here takes no real money. The screen must say so. */
   testMode?: boolean
+  /** How many founding places are left, counted on the server (S3). */
+  foundingPlacesLeft?: number | null
   /** Back from a completed checkout. The provider appends `?bought=1`. */
   bought?: boolean
 }) {
   if (route === '/profile/history') return <HistoryScreen />
   if (route === '/profile/settings') return <SettingsScreen />
-  if (route === '/profile/subscription') return <SubscriptionScreen checkoutOpen={checkoutOpen} testMode={testMode} bought={bought} />
+  if (route === '/profile/subscription') return <SubscriptionScreen checkoutOpen={checkoutOpen} packsOpen={packsOpen} testMode={testMode} foundingPlacesLeft={foundingPlacesLeft} bought={bought} />
   return <ProfileHome />
 }
 
@@ -233,7 +245,39 @@ function SettingsScreen() {
   const [focus, setFocus] = useState<FocusArea | ''>('')
   const [micOpen, setMicOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleteText, setDeleteText] = useState('')
+  /**
+   * The export, wired (LAUNCH-GAP C4).
+   *
+   * `export_my_data()` has existed since M3 and the button was `disabled` —
+   * which is worse than an absent control, because it reads as broken software
+   * rather than as something that is coming, on the one §16 promise a user can
+   * verify on day one.
+   *
+   * The download is built here rather than served: a Server Action cannot set a
+   * `Content-Disposition`, so the action returns the JSON and the browser makes
+   * the file. The object URL is revoked immediately — a blob left attached to
+   * the document holds the whole export in memory for the life of the tab.
+   */
+  const [exporting, setExporting] = useState(false)
+  const runExport = () => {
+    setExporting(true)
+    void exportMyData()
+      .then((result) => {
+        if (!result.ok || !result.json) {
+          toast.push(result.message ?? 'That export did not finish.', 'red')
+          return
+        }
+        const url = URL.createObjectURL(new Blob([result.json], { type: 'application/json' }))
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `nerve-export-${new Date().toISOString().slice(0, 10)}.json`
+        link.click()
+        URL.revokeObjectURL(url)
+        toast.push('Your data is downloading.', 'volt')
+      })
+      .catch(() => toast.push('That export did not finish.', 'red'))
+      .finally(() => setExporting(false))
+  }
   // Confirmed rather than one-tap, unlike the per-character reset: clearing one
   // line is a small correction, clearing all of them is not recoverable by
   // running a single rep.
@@ -266,10 +310,20 @@ function SettingsScreen() {
     the first character, the first field challenge and the technique card on
     the brief, and until now it was set once in the first ninety seconds
     somebody ever spent here and then permanent. A preference, not an
-    entitlement, so it is the user's to change. */}<SettingRow label="What you're training for" detail="Steers who you meet, your field challenges, and the technique on your brief"><select className="setting-select" aria-label="What you're training for" value={focus} disabled={loading} onChange={(event) => { const next = event.target.value as FocusArea; if (!next) return; setFocus(next); save(saveFocusArea(next), 'Focus saved.') }}>{focus ? null : <option value="">Not set</option>}{FOCUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></SettingRow><ToggleRow label="Show warmth number during reps" detail="Removed automatically at Level 4" value={warmth} onChange={(next) => { setWarmth(next); save(saveTrainingWheels(next), next ? 'Warmth number on.' : 'Warmth number off.') }} /><ToggleRow label="Rep sounds" detail="The countdown, the thirty-second mark and the score reveal" value={sound} onChange={(next) => { setSound(next); setSoundEnabled(next); toast.push(next ? 'Rep sounds on.' : 'Rep sounds off.', 'volt') }} /><ToggleRow label="Room ambience" detail="Keep the scene present between turns" value={room && ambience} disabled={!room} onChange={(next) => { setAmbience(next); save(saveAudioPreferences({ ambience: next }), next ? 'Ambience on.' : 'Ambience off.') }} /></SettingsGroup><SettingsGroup label="Data"><SettingRow label="Character memory" detail="One line each, about the encounter — never about how you did"><Button size="sm" variant="secondary" disabled={forgetting} onClick={() => setForgetOpen(true)}><RotateCcw size={16} strokeWidth={1.5} /> Clear all</Button></SettingRow><div className="setting-row setting-row--stacked"><div><strong>Shared cards</strong><span>Every card you have published, and the link that kills it</span></div><SharedCards /></div><SettingRow label="Export my data" detail="Sessions, scores, and transcript"><Button size="sm" variant="secondary" disabled><Download size={16} strokeWidth={1.5} /> Export</Button></SettingRow><SettingRow label="Delete account" detail="Permanent and immediate"><Button size="sm" variant="danger" onClick={() => setDeleteOpen(true)}><Trash2 size={16} strokeWidth={1.5} /> Delete</Button></SettingRow></SettingsGroup>{/* §16.2 — the permanent signpost, in settings as well as on /legal/safety.
+    entitlement, so it is the user's to change. */}<SettingRow label="What you're training for" detail="Steers who you meet, your field challenges, and the technique on your brief"><select className="setting-select" aria-label="What you're training for" value={focus} disabled={loading} onChange={(event) => { const next = event.target.value as FocusArea; if (!next) return; setFocus(next); save(saveFocusArea(next), 'Focus saved.') }}>{focus ? null : <option value="">Not set</option>}{FOCUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></SettingRow><ToggleRow label="Show warmth number during reps" detail="Removed automatically at Level 4" value={warmth} onChange={(next) => { setWarmth(next); save(saveTrainingWheels(next), next ? 'Warmth number on.' : 'Warmth number off.') }} /><ToggleRow label="Rep sounds" detail="The countdown, the thirty-second mark and the score reveal" value={sound} onChange={(next) => { setSound(next); setSoundEnabled(next); toast.push(next ? 'Rep sounds on.' : 'Rep sounds off.', 'volt') }} /><ToggleRow label="Room ambience" detail="Keep the scene present between turns" value={room && ambience} disabled={!room} onChange={(next) => { setAmbience(next); save(saveAudioPreferences({ ambience: next }), next ? 'Ambience on.' : 'Ambience off.') }} /></SettingsGroup><SettingsGroup label="Data"><SettingRow label="Character memory" detail="One line each, about the encounter — never about how you did"><Button size="sm" variant="secondary" disabled={forgetting} onClick={() => setForgetOpen(true)}><RotateCcw size={16} strokeWidth={1.5} /> Clear all</Button></SettingRow><div className="setting-row setting-row--stacked"><div><strong>Shared cards</strong><span>Every card you have published, and the link that kills it</span></div><SharedCards /></div><SettingRow label="Export my data" detail="Everything we hold: reps, transcripts, scores, field log, interview setup and credits"><Button size="sm" variant="secondary" loading={exporting} onClick={runExport}><Download size={16} strokeWidth={1.5} /> Export</Button></SettingRow>{/* C4. It said "Permanent and immediate" over a modal whose only button was
+    disabled, under a field asking you to type DELETE. The detail line says
+    what actually happens now, and the sheet behind it is an email rather
+    than a control that does nothing. */}
+<SettingRow label="Delete account" detail="Handled by support, within a day"><Button size="sm" variant="danger" onClick={() => setDeleteOpen(true)}><Trash2 size={16} strokeWidth={1.5} /> Delete</Button></SettingRow></SettingsGroup>{/* §16.2 — the permanent signpost, in settings as well as on /legal/safety.
     Quiet, always there, and phrased so it never becomes a clinical claim of
     its own (§16.1): it says what this is not, and points at the people who do
-    the thing it is not. */}<SettingsGroup label="Safety"><div className="setting-row setting-row--stacked setting-row--note"><Mark name="bound-clinical" size={22} /><div><strong>Training, not care</strong><span>Nerve is confidence training. It is not therapy, treatment or clinical care, and it does not diagnose anything. If you are working with a clinician on social anxiety, keep working with them — this is not a substitute for that and is not offered as one.</span></div></div><SettingRow label="Acceptable use and safety"><Link href="/legal/safety" className="text-action">Read</Link></SettingRow><SettingRow label="Report a problem" detail="On the result screen of any rep" /></SettingsGroup><SettingsGroup label="About"><SettingRow label="Version" detail="1.0.0 · Arena" /><SettingRow label="Terms"><Link href="/legal/terms" className="text-action">Read</Link></SettingRow><SettingRow label="Privacy"><Link href="/legal/privacy" className="text-action">Read</Link></SettingRow><SettingRow label="Support" detail={SUPPORT_EMAIL}><a href={`mailto:${SUPPORT_EMAIL}`} className="text-action">Email</a></SettingRow></SettingsGroup></div><Sheet open={micOpen} onClose={() => setMicOpen(false)} title="Test microphone"><MicTest /></Sheet><Sheet open={forgetOpen} onClose={() => setForgetOpen(false)} title="Clear character memory"><div className="sheet-stack"><p>Every character forgets the line she was carrying, and the next rep opens cold.</p><p className="muted">This clears that line and nothing else. Your reps, transcripts, scores, streak and everything you have unlocked stay exactly where they are.</p><Button variant="danger" fullWidth disabled={forgetting} onClick={() => { setForgetting(true); setForgetOpen(false); void forgetAllMemory().then((result) => toast.push(result.ok ? 'Every character has forgotten.' : result.message ?? 'That did not clear.', result.ok ? 'volt' : 'red')).finally(() => setForgetting(false)) }}>Clear it</Button><Button variant="ghost" fullWidth onClick={() => setForgetOpen(false)}>Keep it</Button></div></Sheet><Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete account"><div className="sheet-stack"><div className="danger-list"><span>All session recordings and transcripts</span><span>Your scores, streaks, and progression</span><span>Your account and billing access</span></div><p className="muted">Deletion is handled by support until the account-deletion path is built. Email <a className="text-action" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> and it happens within a day.</p><Input label="Type DELETE to confirm" value={deleteText} onChange={(event) => setDeleteText(event.target.value)} /><Button variant="danger" fullWidth disabled>Delete everything</Button><Button variant="ghost" fullWidth onClick={() => setDeleteOpen(false)}>Keep my account</Button></div></Modal></AppShell>
+    the thing it is not. */}<SettingsGroup label="Safety"><div className="setting-row setting-row--stacked setting-row--note"><Mark name="bound-clinical" size={22} /><div><strong>Training, not care</strong><span>Nerve is confidence training. It is not therapy, treatment or clinical care, and it does not diagnose anything. If you are working with a clinician on social anxiety, keep working with them — this is not a substitute for that and is not offered as one.</span></div></div><SettingRow label="Acceptable use and safety"><Link href="/legal/safety" className="text-action">Read</Link></SettingRow><SettingRow label="Report a problem" detail="On the result screen of any rep" /></SettingsGroup><SettingsGroup label="About"><SettingRow label="Version" detail="1.0.0 · Arena" /><SettingRow label="Terms"><Link href="/legal/terms" className="text-action">Read</Link></SettingRow><SettingRow label="Privacy"><Link href="/legal/privacy" className="text-action">Read</Link></SettingRow><SettingRow label="Support" detail={SUPPORT_EMAIL}><a href={`mailto:${SUPPORT_EMAIL}`} className="text-action">Email</a></SettingRow></SettingsGroup></div><Sheet open={micOpen} onClose={() => setMicOpen(false)} title="Test microphone"><MicTest /></Sheet><Sheet open={forgetOpen} onClose={() => setForgetOpen(false)} title="Clear character memory"><div className="sheet-stack"><p>Every character forgets the line she was carrying, and the next rep opens cold.</p><p className="muted">This clears that line and nothing else. Your reps, transcripts, scores, streak and everything you have unlocked stay exactly where they are.</p><Button variant="danger" fullWidth disabled={forgetting} onClick={() => { setForgetting(true); setForgetOpen(false); void forgetAllMemory().then((result) => toast.push(result.ok ? 'Every character has forgotten.' : result.message ?? 'That did not clear.', result.ok ? 'volt' : 'red')).finally(() => setForgetting(false)) }}>Clear it</Button><Button variant="ghost" fullWidth onClick={() => setForgetOpen(false)}>Keep it</Button></div></Sheet>{/* C4. The confirm field and the disabled "Delete everything" button are
+    gone. They were a ritual in front of a control that could not act — and
+    a user who typed DELETE, pressed a dead button and read a mailto
+    underneath it has been told the software is broken, on the screen where
+    §16 makes its most serious promise. What is here now is the thing that
+    actually happens, and the way to start it. */}
+<Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete account"><div className="sheet-stack"><div className="danger-list"><span>All session recordings and transcripts</span><span>Your scores, streaks, and progression</span><span>Your CV, your interview setup and any unspent credits</span><span>Your account and billing access</span></div><p className="muted">Deletion is permanent and it is handled by a person, not a button — email us from the address on this account and it is done within a day. Export your data first if you want to keep any of it.</p><a className="arena-button arena-button--danger arena-button--full" href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Delete my account')}`}>Email {SUPPORT_EMAIL}</a><Button variant="ghost" fullWidth onClick={() => setDeleteOpen(false)}>Keep my account</Button></div></Modal></AppShell>
 }
 
 function SettingsGroup({ label, children }: { label: string; children: React.ReactNode }) { return <section><span className="label settings-label">{label}</span><div className="settings-card">{children}</div></section> }
@@ -368,7 +422,7 @@ function MicTest() {
  * notify-me list it had before checkout existed rather than showing a button
  * that errors — the demand is worth keeping either way.
  */
-function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: boolean; testMode: boolean; bought: boolean }) {
+function SubscriptionScreen({ checkoutOpen, packsOpen, testMode, foundingPlacesLeft, bought }: { checkoutOpen: boolean; packsOpen: boolean; testMode: boolean; foundingPlacesLeft: number | null; bought: boolean }) {
   const { data: user, loading } = useUserState()
   const { data: subscription, reload: reloadSubscription } = useSubscription()
   const current = user?.plan ?? 'free'
@@ -464,8 +518,16 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
             about what is on sale. */}
         <PeriodTabs value={period} onChange={setPeriod} />
       </div>
-      <div className="plan-grid">
-        {PUBLIC_PLANS.map((plan) => (
+      {/* A3. A plan not sold on this period is not drawn on it, and one line
+          says where it went. `PlanCard` used to fall back to the plan's other
+          offer and — unlike the public board — never drew the "Monthly only"
+          chip, so Elite simply showed `$49 / month` beside a $7 weekly Pro with
+          nothing saying why, under a note promising no trial. */}
+      {/* The column count follows the cards, for the same reason the public
+          board's does: a three-column grid holding two cards leaves a third of
+          the row empty, which reads as something that failed to load. */}
+      <div className="plan-grid" style={{ '--plan-columns': plansOn(period).length } as CSSProperties}>
+        {plansOn(period).map((plan) => (
           <PlanCard
             key={plan.id}
             plan={plan}
@@ -476,13 +538,47 @@ function SubscriptionScreen({ checkoutOpen, testMode, bought }: { checkoutOpen: 
             busy={busy === plan.id}
             waitlisted={waitlisted.includes(plan.id as 'pro' | 'elite')}
             trialAvailable={subscription === null}
+            /* E3. The period this account actually BOUGHT, on the card that is
+               actually theirs — never the tab. Keyed off the mirror's own plan
+               rather than off `current`, so during the seconds where the
+               webhook has not landed the card quotes nothing rather than
+               quoting the wrong subscription. */
+            boughtPeriod={subscription?.plan === plan.id ? subscription.period : null}
+            /* E3, second half. What this account is GRANTED, not what the plan
+               is authored to grant. Normally identical; a hand-set entitlement
+               or a plan change in flight makes them differ, and then the header
+               and this card print two different numbers for one thing. */
+            enforcedRepsPerDay={plan.id === current ? user?.repsPerDay ?? null : null}
             onBuy={plan.id === 'free' ? undefined : (bought) => void buy(plan.id as 'pro' | 'elite', bought)}
             onNotify={plan.id === 'free' ? undefined : () => setAsking(plan.id as 'pro' | 'elite')}
           />
         ))}
       </div>
+      {periodAsideFor(period) ? <p className="plan-section__aside label mute">{periodAsideFor(period)}</p> : null}
     </section>
-    <p className="billing-note">{checkoutOpen ? TRIAL_NOTE : CHECKOUT_UNCONFIGURED_NOTE} {CHECKOUT_NOTE} {BILLING_NOTE} <Link href="/pricing" className="text-action">Full comparison</Link></p>
+    {/* ── A4: THE CREDITS BLOCK ────────────────────────────────────────────
+        This screen is where people go when they want to give us money. It
+        showed the plan, the trial, the cancel button and a plan board whose
+        cards print "Practice interviews · 1 / month" — and then had no way to
+        buy one. The only place in the entire product where a credit could be
+        bought was a secondary button inside a sidebar card on `/interview`, a
+        screen you can only reach on the interview track. Arriving here with an
+        interview on Thursday and finding nothing to buy is a lost sale on the
+        page that raised the subject. */}
+    <section className="plan-section">
+      <div className="plan-section__head"><span className="label">Interview credits</span></div>
+      <CreditsPanel
+        credits={user?.interviewCredits ?? 0}
+        screener={user?.interviewScreenerCredits ?? 0}
+        packsOpen={packsOpen}
+        returnTo="/profile/subscription"
+        heading="Your balance"
+      />
+    </section>
+    {/* S3. The same sentence the public board carries, from the same function
+        and the same server count — two surfaces quoting one offer, which is
+        the rule `lib/site/plans.ts` exists to keep. */}
+    <p className="billing-note">{checkoutOpen ? TRIAL_NOTE : CHECKOUT_UNCONFIGURED_NOTE} {checkoutNoteFor(foundingPlacesLeft)} {BILLING_NOTE} <Link href="/pricing" className="text-action">Full comparison</Link></p>
     {/* Destructive from the user's side, so it asks — and the copy is the one
         that matters most on this screen: cancelling does not take anything away
         today. Somebody who believes it does will not cancel, they will charge
@@ -540,12 +636,29 @@ function CurrentPlan({ user, loading, subscription, onCancel, busy }: {
     if (subscription?.cancelAtPeriodEnd) {
       return periodEnd ? `Cancelled. Voice stays open until ${periodEnd}, then this drops to Free.` : 'Cancelled. Voice stays open until the end of the period you paid for.'
     }
+    /**
+     * Dunning, said out loud (Part 6, "failed-payment recovery").
+     *
+     * Whop retries a failed payment twelve times over three days and access is
+     * deliberately untouched throughout (`events.ts`), so the honest sentence
+     * is calm. What was missing was the way out: this screen stated the problem
+     * and offered no action, so the only route to a new card was an email from
+     * the provider that a person in this state has already ignored once. The
+     * button below is the fix; this line stops promising one when there is no
+     * `manageUrl` to point it at.
+     */
     if (subscription?.status === 'past_due') {
-      return 'A payment did not go through. Your access is untouched while the provider retries — update the card to be sure.'
+      return subscription.manageUrl
+        ? 'A payment did not go through. Your access is untouched while the provider retries — update the card to be sure.'
+        : 'A payment did not go through. Your access is untouched while the provider retries, and they will email you a link to update the card.'
     }
     if (periodEnd) return `Renews ${periodEnd}.`
     return 'No card on file. Nothing renews and nothing is charged.'
   })()
+
+  // Amber, not volt: a failed payment is a warning, and volt is the primary
+  // action (Arena). It is the only state on this card that takes a colour.
+  const dunning = subscription?.status === 'past_due'
 
   return <Card className="current-plan">
     <div>
@@ -556,7 +669,7 @@ function CurrentPlan({ user, loading, subscription, onCancel, busy }: {
           ? 'No voice reps'
           : <><span className="data">{user.repsPerDay}</span> voice rep{user.repsPerDay === 1 ? '' : 's'} per day</>}
       </p>
-      <span className="label mute">{detail}</span>
+      <span className={dunning ? 'label amber' : 'label mute'}>{detail}</span>
     </div>
     {/* The way out, one tap, on our own screen. §8 of the payments plan: a
         cancel that needs an email becomes a chargeback, and chargebacks are
@@ -566,13 +679,30 @@ function CurrentPlan({ user, loading, subscription, onCancel, busy }: {
 
         The card and the invoices still live at the provider, so the link beside
         it is the honest division of labour rather than a loose end. */}
+    {/* ── C5: THE INVOICE ROW ALWAYS RENDERS ─────────────────────────────
+        It was a "Card and invoices" text link that only existed when the
+        provider had returned a `manageUrl`, so on every account where it had
+        not, the screen said nothing at all about receipts — and "where is my
+        receipt" is the most common billing question there is. What it says
+        differs; that it is there does not. */}
     <div className="plan-actions">
+      {/* The way out of dunning. Above the cancel button because it is the
+          thing to do; a screen whose only action during a failed payment is
+          "Cancel" is a screen that recommends churn. */}
+      {dunning && subscription?.manageUrl
+        ? <a href={subscription.manageUrl} target="_blank" rel="noreferrer noopener" className="arena-button arena-button--secondary">Update card</a>
+        : null}
       {subscription && !subscription.cancelAtPeriodEnd
         ? <Button variant="secondary" loading={busy} onClick={onCancel}>Cancel</Button>
         : null}
-      {subscription?.manageUrl
-        ? <a href={subscription.manageUrl} target="_blank" rel="noreferrer noopener" className="text-action">Card and invoices</a>
-        : null}
+      {/* C5: this row always renders, and never twice. When the button above is
+          already pointing at the provider's page, this says where the invoices
+          are rather than linking to the same URL a second time. */}
+      {dunning && subscription?.manageUrl
+        ? <span className="label mute">Invoices are on that page too.</span>
+        : subscription?.manageUrl
+          ? <a href={subscription.manageUrl} target="_blank" rel="noreferrer noopener" className="text-action">Card and invoices</a>
+          : <span className="label mute">Receipts are emailed by our merchant of record when a payment clears.</span>}
     </div>
   </Card>
 }
@@ -620,7 +750,7 @@ function recommendedPlan(current: Plan): Plan | null {
   return next ?? null
 }
 
-function PlanCard({ plan, current, checkoutOpen, period, recommended = false, busy = false, waitlisted = false, trialAvailable = false, onBuy, onNotify }: {
+function PlanCard({ plan, current, checkoutOpen, period, boughtPeriod = null, enforcedRepsPerDay = null, recommended = false, busy = false, waitlisted = false, trialAvailable = false, onBuy, onNotify }: {
   plan: PublicPlan
   current: Plan
   checkoutOpen: boolean
@@ -628,6 +758,10 @@ function PlanCard({ plan, current, checkoutOpen, period, recommended = false, bu
   recommended?: boolean
   /** Which period the board is showing. A plan not sold on it falls back. */
   period: BillingPeriod
+  /** The period this account bought THIS plan on, when the mirror knows (E3). */
+  boughtPeriod?: BillingPeriod | null
+  /** `entitlements.reps_per_day`, on the current plan's card only (E3). */
+  enforcedRepsPerDay?: number | null
   busy?: boolean
   waitlisted?: boolean
   /** No subscription has ever existed on this account, so the trial is unused. */
@@ -637,14 +771,39 @@ function PlanCard({ plan, current, checkoutOpen, period, recommended = false, bu
 }) {
   const active = plan.id === current
   /**
-   * The offer this card is actually selling.
+   * The offer this card is selling, on the period the board is showing.
    *
-   * Elite is monthly only, so on the weekly tab it falls back to its monthly
-   * offer rather than disappearing — a plan that vanishes when you change a
-   * toggle reads as a bug, and the card says "/ month" either way so nobody is
-   * misled about what they are buying.
+   * ── A3: NO FALLBACK ──────────────────────────────────────────────────
+   *
+   * It was `offerFor(...) ?? offersFor(plan.id)[0]`, so Elite — which is
+   * monthly only — fell back to its monthly offer on the weekly tab. The public
+   * board at least drew a "Monthly only" chip; this card never did, so `$49 /
+   * month` sat beside a $7 weekly Pro with nothing saying why, under a note
+   * promising no trial and no commitment. `plansOn` filters the board instead
+   * and `periodAsideFor` says in one line where Elite went, so the tab and the
+   * cards agree about when money moves.
+   *
+   * ── E3: EXCEPT ON THE CARD THAT IS ALREADY YOURS ─────────────────────
+   *
+   * This resolved from `period` whatever card it was drawing, so an account on
+   * a monthly Pro trial that pressed **Weekly** read, on the card marked
+   * CURRENT PLAN: `$7 / week · $7 every week. Cancel any time. · About $30 a
+   * month.` None of that was their subscription, and the real one was sitting
+   * in `useSubscription()` two components away, unconsulted.
+   *
+   * A tab is a question about what is FOR SALE. The current plan is not for
+   * sale, so it answers a different question and quotes what was bought.
+   *
+   * When the mirror does not know the period — an account whose plan was set by
+   * hand, or a row written before the webhook recorded one — the card quotes
+   * NOTHING rather than falling back to the tab, which is the same mistake in a
+   * quieter voice. `CurrentPlan` directly above already states the real terms.
    */
-  const offer = offerFor(plan.id, period) ?? offersFor(plan.id)[0]
+  const offer = active
+    ? (boughtPeriod ? offerFor(plan.id, boughtPeriod) : undefined)
+    : offerFor(plan.id, period)
+  /** An active paid plan whose real price this screen cannot honestly name. */
+  const priceUnknown = active && plan.id !== 'free' && !offer
   // The trial is a property of the OFFER, not of the plan. Weekly has none.
   const offersTrial = trialAvailable && (offer?.trialDays ?? 0) > 0
 
@@ -661,9 +820,20 @@ function PlanCard({ plan, current, checkoutOpen, period, recommended = false, bu
        * they are on — and the tier beyond that is secondary. It is still one
        * tap away; it just stops shouting over the step that is actually next.
        */
-      return <Button variant={recommended ? 'primary' : 'secondary'} fullWidth loading={busy} onClick={() => onBuy?.(offer.period)}>
-        {offersTrial ? `Start ${TRIAL_DAYS} days free` : `Switch to ${plan.name}`}
-      </Button>
+      return <>
+        <Button variant={recommended ? 'primary' : 'secondary'} fullWidth loading={busy} onClick={() => onBuy?.(offer.period)}>
+          {offersTrial ? `Start ${TRIAL_DAYS} days free` : `Switch to ${plan.name}`}
+        </Button>
+        {/* ── C5: WHAT HAPPENS TO THE MONEY ────────────────────────────
+            "Switch to Elite" said nothing about what is charged today, what
+            becomes of the days already paid for, or when the new rate starts.
+            Every plan change on this screen ended in an unanswered question
+            about money — which is §14's failure mode arriving as silence
+            rather than as a wrong number. */}
+        {current !== 'free' && !offersTrial
+          ? <p className="plan-card__equiv mute">Switching starts {plan.name} straight away, at {offer.price} every {offer.period === 'weekly' ? 'week' : 'month'} from then on. Our merchant of record settles the rest of the period you are in and itemises it on the receipt.</p>
+          : null}
+      </>
     }
     if (waitlisted) return <Button variant="secondary" fullWidth onClick={onNotify}><Check size={15} strokeWidth={1.5} /> On the list</Button>
     return <Button fullWidth onClick={onNotify}>Notify me</Button>
@@ -677,14 +847,30 @@ function PlanCard({ plan, current, checkoutOpen, period, recommended = false, bu
           : recommended ? <Chip>Recommended</Chip> : <span className="label">Plan</span>}
         <h2 className="display-md">{plan.name}</h2>
       </div>
-      <span className="data">{offer ? `${offer.price} ${periodLabel(offer.period)}` : '$0'}</span>
+      {/* `$0` is Free's price and not a fallback. A paid plan we cannot price
+          (E3) prints nothing here — a zero on somebody's own subscription is a
+          worse sentence than the silence. */}
+      {offer
+        ? <span className="data">{`${offer.price} ${periodLabel(offer.period)}`}</span>
+        : plan.id === 'free' ? <span className="data">$0</span> : null}
     </div>
     {/* What the card is charged, in a sentence, before the feature list. The
         trial is a property of the OFFER — weekly has none — and §14's failure
         is somebody learning the terms of a charge from their statement. */}
-    {offer ? <p className="plan-card__equiv mute">{offersTrial ? chargeLine(offer) : `${offer.price} every ${offer.period === 'weekly' ? 'week' : 'month'}. Cancel any time.`}</p> : null}
-    <Stat label="Voice reps" value={repsLine(plan)} />
-    <Stat label="Practice interviews" value={interviewsLine(plan.id)} />
+    {offer
+      ? <p className="plan-card__equiv mute">{offersTrial ? chargeLine(offer) : `${offer.price} every ${offer.period === 'weekly' ? 'week' : 'month'}. Cancel any time.`}</p>
+      : priceUnknown
+        ? <p className="plan-card__equiv mute">What you pay and when it renews are on the card above.</p>
+        : null}
+    {/* E3. The current card says what this account is granted; every other card
+        says what its plan is authored to grant. They are the same number until
+        an entitlement is set by hand or a plan change is in flight, and those
+        are exactly the moments this screen was printing two of them. */}
+    <Stat label="Voice reps" value={enforcedRepsPerDay !== null ? repsPerDayLine(enforcedRepsPerDay) : repsLine(plan)} />
+    {/* The period matters here too: weekly Pro grants no credits and sells them
+        separately (C2). This said `1 / month` on the weekly tab while the
+        public board, which passes the period, said `Sold separately`. */}
+    <Stat label="Practice interviews" value={interviewsLine(plan.id, offer?.period ?? period)} />
     {/* The effective monthly rate, stated rather than left to be discovered on
         a statement. Weekly costs more per month than monthly does, and a ladder
         that hides that is the trick this one is trying not to be. */}

@@ -149,8 +149,17 @@ export async function saveAudioPreferences(input: {
   return updateProfile(patch)
 }
 
+/**
+ * Which half of the product this account is in (E2).
+ *
+ * Called by the chrome's track switcher, so that a cold load can start where
+ * the last one left off instead of on the `dating` default. `revalidate: false`
+ * for the reason in `updateProfile`'s note: the shell reads the track from the
+ * client provider, nothing server-rendered is behind the toggle, and a full
+ * layout revalidation on a nav tap is cost with nothing to show for it.
+ */
 export async function setActiveTrack(track: Track): Promise<SaveResult> {
-  return updateProfile({ active_track: track })
+  return updateProfile({ active_track: track }, { revalidate: false })
 }
 
 /**
@@ -410,4 +419,44 @@ export async function acknowledgeUnlock(
 
   await announceUnlock(user.id, kind, String(ref))
   return { ok: true }
+}
+
+/**
+ * Everything we hold about this account, as JSON (§16.7, LAUNCH-GAP C4).
+ *
+ * ── WHY THIS EXISTS AS AN ACTION AT ALL ──────────────────────────────────
+ *
+ * `export_my_data()` has been in the database since M3 and nothing was wired to
+ * it: Settings drew a **disabled** Download button, which is worse than an
+ * absent one — it reads as broken software rather than as a feature that is
+ * coming. It is also the one §16 promise a user can verify on day one, which is
+ * why B6 in `LAUNCH-GAP.md` had it above cosmetic.
+ *
+ * ── AND WHY THE RPC AND NOT A QUERY ──────────────────────────────────────
+ *
+ * The function is `security invoker` and takes no user parameter, so it sees
+ * exactly what the caller's own RLS policies allow and there is no id to get
+ * wrong. Called in the user's own client for the same reason: a service-role
+ * export would be a function that could hand one account another's history if
+ * it were ever passed the wrong id. It cannot be, because it is never passed
+ * one.
+ *
+ * Returns the JSON as a string rather than streaming a file. A Server Action
+ * cannot set a `Content-Disposition`, and the browser builds the download from
+ * this — see `SettingsScreen`.
+ */
+export async function exportMyData(): Promise<{ ok: boolean; json: string | null; message: string | null }> {
+  const user = await currentUser()
+  if (!user) return { ok: false, json: null, message: 'Sign in first — an export belongs to an account.' }
+
+  try {
+    const supabase = await supabaseServer()
+    const { data, error } = await supabase.rpc('export_my_data')
+    if (error || !data) {
+      return { ok: false, json: null, message: 'That export did not finish. Try it again in a moment.' }
+    }
+    return { ok: true, json: JSON.stringify(data, null, 2), message: null }
+  } catch {
+    return { ok: false, json: null, message: 'That export did not finish. Try it again in a moment.' }
+  }
 }

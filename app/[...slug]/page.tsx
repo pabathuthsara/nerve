@@ -1,10 +1,12 @@
-import { isAuthRoute, isBillingRoute, isOnboardingRoute, RouteView, type AuthContext } from '@/components/route-view'
+import { isAuthRoute, isBillingRoute, isOnboardingRoute, RouteView, type AuthContext, type BillingContext } from '@/components/route-view'
 import type { OnboardingContext } from '@/components/screens/onboarding-screens'
 import { enforceFrontendGuard, ONBOARDING_TRACK_FLAG, onboardingResumePath, type GuardedProfile } from '@/lib/data/guards'
 import { fetchFirstRepCandidates } from '@/lib/data/first-rep'
 import { uiLevel } from '@/lib/data/progression'
 import { currentUser } from '@/lib/db/server'
 import { checkoutConfigured, packsConfigured, takingRealPayments } from '@/lib/billing/plans'
+import { foundingAccountsTaken } from '@/lib/db/founding'
+import { foundingPlacesLeft } from '@/lib/site/plans'
 import type { FocusArea } from '@/lib/data/focus'
 import type { Track } from '@/lib/data/types'
 
@@ -61,6 +63,26 @@ async function onboardingContext(path: string, profile: GuardedProfile | null): 
   }
 }
 
+/**
+ * The three environment answers a money screen needs, plus the founding count.
+ *
+ * Async since S3: the founding allocation is a real count of accounts, not an
+ * assertion, so the one number the subscription screen publishes about scarcity
+ * is read on the server like every other fact a client component cannot know.
+ * `foundingAccountsTaken` memoises for a minute and answers `null` rather than
+ * throwing, so a slow database costs this route nothing it was not already
+ * paying.
+ */
+async function billingContext(): Promise<BillingContext> {
+  const accounts = await foundingAccountsTaken()
+  return {
+    checkoutOpen: checkoutConfigured(),
+    packsOpen: packsConfigured(),
+    testMode: !takingRealPayments(),
+    foundingPlacesLeft: accounts === null ? null : foundingPlacesLeft(accounts),
+  }
+}
+
 export default async function FrontendRoute({ params, searchParams }: { params: Promise<{ slug: string[] }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { slug } = await params
   const path = `/${slug.join('/')}`
@@ -73,7 +95,7 @@ export default async function FrontendRoute({ params, searchParams }: { params: 
       query={query}
       auth={isAuthRoute(path) ? await authContext(path) : undefined}
       onboarding={isOnboardingRoute(path) ? await onboardingContext(path, profile) : undefined}
-      billing={isBillingRoute(path) ? { checkoutOpen: checkoutConfigured(), packsOpen: packsConfigured(), testMode: !takingRealPayments() } : undefined}
+      billing={isBillingRoute(path) ? await billingContext() : undefined}
     />
   )
 }

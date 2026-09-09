@@ -35,22 +35,23 @@
 import Link from 'next/link'
 import { Check } from 'lucide-react'
 import { PlanBoard } from './plan-board'
+import { PackBuy } from './pack-buy'
 import { SiteSection, SITE_LINKS, SUPPORT_EMAIL } from './site-chrome'
 import {
-  BILLING_NOTE, CHECKOUT_NOTE, CREDIT_EXPIRY_NOTE, INTERVIEW_PACKS,
-  PLAN_INTERVIEW_CREDITS, PUBLIC_PLANS, SCREENER_NOTE, TRIAL_DAYS,
-  creditsLine, perInterview, repsLine,
+  BILLING_NOTE, CREDIT_EXPIRY_NOTE, INTERVIEW_PACKS, checkoutNoteFor,
+  PLAN_INTERVIEW_CREDITS, PUBLIC_PLANS, ROUND_COST_NOTE, SCREENER_NOTE, TRIAL_DAYS,
+  creditsLine, perCredit, repsLine,
 } from '@/lib/site/plans'
 
 /**
- * The pack with the lowest price per interview.
+ * The pack with the lowest price per credit.
  *
  * Derived rather than hardcoded, so it follows the prices instead of being a
  * marketing claim somebody has to remember to move. `plans.test.ts` asserts
- * the packs get cheaper per interview as they grow, which is what makes this
+ * the packs get cheaper per credit as they grow, which is what makes this
  * the last one.
  */
-const BEST_VALUE_PACK = [...INTERVIEW_PACKS].sort((a, b) => perInterview(a) - perInterview(b))[0]?.id
+const BEST_VALUE_PACK = [...INTERVIEW_PACKS].sort((a, b) => perCredit(a) - perCredit(b))[0]?.id
 
 const BILLING_FAQ = [
   {
@@ -83,7 +84,7 @@ const BILLING_FAQ = [
   },
   {
     q: 'How do practice interviews work, and why are they not in the daily allowance?',
-    a: 'An interview runs ten to twenty-five minutes against an interviewer who has read your CV and the job description, and it is graded on seven dimensions. A daily rep allowance cannot hold an item that long — three twenty-minute interviews a day would cost us more in voice than the subscription does — so interviews are sold as credits instead. Pro includes one a month and Elite four; you can also buy them outright, and every account gets one free five-minute screen to see what it is.',
+    a: 'An interview runs ten to twenty-five minutes against an interviewer who has read your CV and the job description, and it is graded on seven dimensions. A daily rep allowance cannot hold an item that long — three twenty-minute interviews a day would cost us more in voice than the subscription does — so interviews are sold as credits instead. A ten-minute recruiter screen is one credit and every longer round is two; Pro includes two credits a month and Elite six. You can also buy credits outright, and every account gets one free five-minute screen to see what it is.',
   },
   {
     q: 'Do interview credits expire?',
@@ -106,7 +107,9 @@ const BILLING_FAQ = [
  */
 const PLAN_MATRIX: { label: string; varies?: boolean; values: (boolean | string)[] }[] = [
   { label: 'Voice reps with a live character', varies: true, values: PUBLIC_PLANS.map((plan) => repsLine(plan)) },
-  { label: 'Practice interviews included each month', varies: true, values: PUBLIC_PLANS.map((plan) => creditsLine(plan.id)) },
+  // C2. Monthly billing, said out loud: a weekly Pro grants none, because a
+  // grant is a property of the offer and weekly pays every seven days.
+  { label: 'Interview credits included each month, on monthly billing', varies: true, values: PUBLIC_PLANS.map((plan) => creditsLine(plan.id)) },
   { label: 'The full scorecard — six dimensions, evidence, transcript', values: [true, true, true] },
   { label: 'Every character: tiers open on scores, never on price', values: [true, true, true] },
   { label: 'Every field challenge, at every tier', values: [true, true, true] },
@@ -117,7 +120,18 @@ const PLAN_MATRIX: { label: string; varies?: boolean; values: (boolean | string)
   { label: 'One free five-minute practice interview, once per account', values: [true, true, true] },
 ]
 
-export function PricingPage() {
+export function PricingPage({ signedIn = false, packsOpen = false, foundingPlacesLeft = null }: {
+  signedIn?: boolean
+  packsOpen?: boolean
+  /**
+   * How many founding places are left, counted on the server (S3).
+   *
+   * `null` when the count could not be read, which prints the promise without
+   * a number. A figure nobody verified is the thing §14 says not to put on this
+   * page — see `checkoutNoteFor`.
+   */
+  foundingPlacesLeft?: number | null
+}) {
   return (
     <>
       <section className="page-hero page-hero--wide">
@@ -133,7 +147,7 @@ export function PricingPage() {
       {/* The board owns the trial half of the footnote, because only it knows
           which period is on screen (`trialNoteFor`). What is passed in is the
           part that is true on every tab. */}
-      <PlanBoard note={CHECKOUT_NOTE} />
+      <PlanBoard note={checkoutNoteFor(foundingPlacesLeft)} />
 
       {/* ── INTERVIEW CREDITS (INTERVIEW-PLAN E2, §9) ──────────────────────
           The compliance dividend, and the reason this is not a footnote. Every
@@ -174,16 +188,22 @@ export function PricingPage() {
                 {/* The unit rate, on every card including the single, so the
                     three are comparable at a glance instead of by arithmetic. */}
                 <p className="pack-board__rate data">
-                  ${perInterview(pack).toFixed(2)} <span className="mute">per interview</span>
+                  ${perCredit(pack).toFixed(2)} <span className="mute">per credit</span>
                 </p>
                 <p>{pack.tagline}</p>
                 <p className="pack-board__keeps">
                   {pack.credits} credit{pack.credits === 1 ? '' : 's'} · never expires
                 </p>
+                {/* C1. Every other card on this page ends in a button; these
+                    three ended in nothing, on the highest-intent block here. */}
+                <PackBuy pack={pack} signedIn={signedIn} packsOpen={packsOpen} />
               </article>
             )
           })}
         </div>
+        {/* What a credit buys, because B3 made "five credits" ambiguous on its
+            own: a recruiter screen is one and a deep technical is three. */}
+        <p className="site-aside">{ROUND_COST_NOTE}</p>
         <p className="site-aside">{CREDIT_EXPIRY_NOTE}</p>
         <p className="site-aside">
           {SCREENER_NOTE} Pro includes {PLAN_INTERVIEW_CREDITS.pro} interview a month

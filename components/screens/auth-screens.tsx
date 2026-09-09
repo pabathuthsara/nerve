@@ -29,6 +29,7 @@ import { useRouter } from 'next/navigation'
 import { Button, DateOfBirth, Hairline, Input } from '@/components/ui'
 import { Mark } from '@/components/marks'
 import { checkAge, MIN_AGE } from '@/lib/safety/age'
+import { packById, type InterviewPack } from '@/lib/site/plans'
 import {
   devSignIn,
   resendConfirmation,
@@ -53,7 +54,7 @@ export interface AuthScreenProps {
 }
 
 export function AuthScreen({ route, query, recoverySession = false, devLoginEmail = null }: AuthScreenProps) {
-  return <main className="auth-page"><div className="auth-panel"><Link href="/" className="wordmark auth-wordmark">NERVE</Link>{route === '/login' ? <LoginForm devLoginEmail={devLoginEmail} /> : null}{route === '/signup' ? <SignupForm /> : null}{route === '/verify-email' ? <VerifyEmail email={query.email ?? ''} /> : null}{route === '/forgot-password' ? <ForgotPassword /> : null}{route === '/reset-password' ? <ResetPassword ready={recoverySession} /> : null}</div></main>
+  return <main className="auth-page"><div className="auth-panel"><Link href="/" className="wordmark auth-wordmark">NERVE</Link>{route === '/login' ? <LoginForm devLoginEmail={devLoginEmail} /> : null}{route === '/signup' ? <SignupForm pack={packById(query.pack ?? '') ?? null} /> : null}{route === '/verify-email' ? <VerifyEmail email={query.email ?? ''} /> : null}{route === '/forgot-password' ? <ForgotPassword /> : null}{route === '/reset-password' ? <ResetPassword ready={recoverySession} /> : null}</div></main>
 }
 
 /**
@@ -94,60 +95,159 @@ function DevDoor({ email }: { email: string }) {
  * somebody can land on cold, a back button that walks out of signup, and a
  * half-filled form to restore. A step is local state and a transition.
  *
- * Date of birth comes first. §16.4 requires the gate to run before the account
- * exists, and any order satisfies that on its own — nothing is created until
- * the final submit, where `checkAge` runs ahead of `auth.signUp`. Asking first
- * is a product decision on top of that rule: it makes the gate behave like a
- * gate, and it means somebody it turns away never typed a password first.
+ * ── THE ORDER, AND WHY IT CHANGED (LAUNCH-GAP D2) ────────────────────────
  *
- * There is one door now, and it collects the date before it collects
- * anything else. That used to be the harder half of §16.4: Google's button
- * had no fields on it, so an account created through it reached the product
- * with no date on file and had to be asked again at `/onboarding/age`. With
- * Google not offered, every new account answers here — and `/onboarding/age`
- * stays, because it is still the only thing that can ask an account created
- * before this gate shipped.
+ * Date of birth used to be step one. §16.4 requires the gate to run before the
+ * account exists, and **any order satisfies that on its own** — nothing is
+ * created until the final submit, where `checkAge` runs on the server ahead of
+ * `auth.signUp`, and it runs again here before this form will advance. So the
+ * ordering was never the rule; it was a product decision on top of it, argued
+ * as "it makes the gate behave like a gate".
+ *
+ * It measured the wrong cost. Clicking **Start training free** landed cold ad
+ * traffic on *"Your date of birth"* before email, before password, before
+ * anything was at stake — the most personal thing this product ever asks,
+ * asked first, of somebody who has invested nothing and has not yet decided to
+ * sign up at all. The copy was good and it was doing the work of persuading.
+ *
+ * Email and password first, the date on step two. The gate is unchanged, it
+ * still runs before the account, and `signUpWithPassword` still refuses without
+ * a valid date. What moved is which screen a stranger meets first.
+ *
+ * There is one door and it collects the date before the account is created.
+ * That used to be the harder half of §16.4: Google's button had no fields on
+ * it, so an account created through it reached the product with no date on file
+ * and had to be asked again at `/onboarding/age`. With Google not offered,
+ * every new account answers here — and `/onboarding/age` stays, because it is
+ * still the only thing that can ask an account created before this gate
+ * shipped.
  */
-function SignupForm() {
+function SignupForm({ pack }: { pack: InterviewPack | null }) {
   const router = useRouter()
-  const [step, setStep] = useState<'age' | 'account'>('age')
+  const [step, setStep] = useState<'account' | 'age'>('account')
   const [dateOfBirth, setDateOfBirth] = useState('')
-  return step === 'age'
-    ? <SignupAge value={dateOfBirth} onChange={setDateOfBirth} onDone={() => setStep('account')} />
-    : <SignupAccount dateOfBirth={dateOfBirth} onBack={() => setStep('age')} router={router} />
+  const [email, setEmail] = useState('')
+  // Not `setPassword` — that name is a Server Action imported at the top of
+  // this file, and shadowing it here would be a trap for the next edit.
+  const [password, setPasswordValue] = useState('')
+  return step === 'account'
+    ? (
+      <SignupAccount
+        pack={pack}
+        email={email}
+        onEmail={setEmail}
+        password={password}
+        onPassword={setPasswordValue}
+        onDone={() => setStep('age')}
+      />
+    )
+    : (
+      <SignupAge
+        value={dateOfBirth}
+        onChange={setDateOfBirth}
+        email={email}
+        password={password}
+        onBack={() => setStep('account')}
+        router={router}
+      />
+    )
 }
 
 /**
- * Step one. One question, one control, one button.
+ * Step one. The account itself — nothing is created by it.
  *
- * The button is never disabled. `checkAge` owns every refusal on this screen,
- * including the empty one — "Enter your date of birth to continue." — so a
- * tap always produces a sentence rather than a control that quietly ignores
- * you. It is the same function, with the same messages, that the server runs
- * on submit; this only saves somebody a round trip and a password.
+ * The submit is a local transition, not the Server Action: the account is not
+ * created until the date has been given and checked. Validating email and
+ * password here as well as on the server is what stops somebody walking to step
+ * two and being sent back for a typo they made a screen ago.
+ *
+ * `pack` is the purchase somebody arrived wanting (C1). Named rather than
+ * carried: a card on `/pricing` links here with `?pack=five`, and saying what
+ * they came for is the difference between an extra step and a lost thread.
  */
-function SignupAge({ value, onChange, onDone }: { value: string; onChange: (value: string) => void; onDone: () => void }) {
+function SignupAccount({ pack, email, onEmail, password, onPassword, onDone }: {
+  pack: InterviewPack | null
+  email: string
+  onEmail: (value: string) => void
+  password: string
+  onPassword: (value: string) => void
+  onDone: () => void
+}) {
+  const [show, setShow] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const submit = () => {
-    const verdict = checkAge(value, new Date())
-    if (!verdict.ok) { setMessage(verdict.message); return }
+  const strength = password.length === 0 ? 'Use at least 8 characters.' : password.length < 8 ? 'Keep going — 8 characters minimum.' : password.length < 12 ? 'Good enough. Longer is stronger.' : 'Strong.'
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!email.trim().includes('@')) { setMessage('That does not look like an email address.'); return }
+    if (password.length < 8) { setMessage('A password needs at least 8 characters.'); return }
     setMessage(null)
     onDone()
   }
-  return <><AuthSteps step={0} /><AuthHeading title="Your date of birth" /><p className="auth-intro">Nerve is {MIN_AGE}+. We ask once, and the date is the only thing we keep.</p><div className="auth-form">{message ? <FormError>{message}</FormError> : null}<DateOfBirth label="Date of birth" value={value} onChange={onChange} /><Button size="lg" fullWidth onClick={submit}>Continue</Button></div><AuthFoot>Already training? <Link href="/login" className="volt-link">Log in</Link></AuthFoot></>
+  return <>
+    <AuthSteps step={0} />
+    <AuthHeading title="Create your account" />
+    {pack
+      ? <p className="auth-intro">You are buying <strong>{pack.name.toLowerCase()}</strong> for {pack.price}. Create your account and the credits are bought from inside it.</p>
+      : <p className="auth-intro">Sign-up includes one voice rep and one five-minute practice interview. No card.</p>}
+    <form className="auth-form" onSubmit={submit}>
+      {message ? <FormError>{message}</FormError> : null}
+      <Input label="Email" type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={(event) => onEmail(event.target.value)} />
+      <PasswordField label="Password" name="password-draft" show={show} onToggle={() => setShow((value) => !value)} value={password} onChange={onPassword} hint={strength} autoComplete="new-password" />
+      <Button type="submit" size="lg" fullWidth>Continue</Button>
+    </form>
+    <AuthFoot>Already training? <Link href="/login" className="volt-link">Log in</Link></AuthFoot>
+  </>
 }
 
-/** Step two. The account itself, with the answer from step one riding along. */
-function SignupAccount({ dateOfBirth, onBack, router }: { dateOfBirth: string; onBack: () => void; router: ReturnType<typeof useRouter> }) {
+/**
+ * Step two, and the §16.4 gate. The account is created by this form.
+ *
+ * The button is never disabled. `checkAge` owns every refusal on this screen,
+ * including the empty one — "Enter your date of birth to continue." — so a tap
+ * always produces a sentence rather than a control that quietly ignores you. It
+ * is the same function, with the same messages, that the server runs on submit;
+ * this only saves somebody a round trip.
+ *
+ * The email and password ride along in hidden fields from step one, so the
+ * Server Action receives exactly what it always did and `signUpWithPassword` is
+ * untouched by D2.
+ */
+function SignupAge({ value, onChange, email, password, onBack, router }: {
+  value: string
+  onChange: (value: string) => void
+  email: string
+  password: string
+  onBack: () => void
+  router: ReturnType<typeof useRouter>
+}) {
   const [state, action, busy] = useActionState(signUpWithPassword, EMPTY)
-  const [show, setShow] = useState(false)
-  const [email, setEmail] = useState('')
-  const [password, setPasswordValue] = useState('')
+  const [message, setMessage] = useState<string | null>(null)
   // Confirmation is on: the account exists and the inbox is the next step.
   useEffect(() => { if (state.ok) router.push(`/verify-email?email=${encodeURIComponent(email)}`) }, [email, router, state.ok])
-  const strength = password.length === 0 ? 'Use at least 8 characters.' : password.length < 8 ? 'Keep going — 8 characters minimum.' : password.length < 12 ? 'Good enough. Longer is stronger.' : 'Strong.'
-  const error = state.message
-  return <><AuthSteps step={1} onBack={onBack} /><AuthHeading title="Create your account" /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><input type="hidden" name="date_of_birth" value={dateOfBirth} readOnly /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} value={password} onChange={setPasswordValue} hint={strength} autoComplete="new-password" /><Button type="submit" size="lg" fullWidth loading={busy}>Create account</Button></form><p className="auth-fine">By continuing, you agree to the <Link href="/legal/terms">terms</Link> and <Link href="/legal/privacy">privacy policy</Link>.</p></>
+  const error = message ?? state.message
+  return <>
+    <AuthSteps step={1} onBack={onBack} />
+    <AuthHeading title="Your date of birth" />
+    <p className="auth-intro">Nerve is {MIN_AGE}+. We ask once, and the date is the only thing we keep.</p>
+    <form
+      className="auth-form"
+      action={action}
+      onSubmit={(event) => {
+        const verdict = checkAge(value, new Date())
+        if (!verdict.ok) { event.preventDefault(); setMessage(verdict.message); return }
+        setMessage(null)
+      }}
+    >
+      {error ? <FormError>{error}</FormError> : null}
+      <TimezoneField />
+      <input type="hidden" name="email" value={email} readOnly />
+      <input type="hidden" name="password" value={password} readOnly />
+      <input type="hidden" name="date_of_birth" value={value} readOnly />
+      <DateOfBirth label="Date of birth" value={value} onChange={onChange} />
+      <Button type="submit" size="lg" fullWidth loading={busy}>Create account</Button>
+    </form>
+    <p className="auth-fine">By continuing, you agree to the <Link href="/legal/terms">terms</Link> and <Link href="/legal/privacy">privacy policy</Link>.</p>
+  </>
 }
 
 /**

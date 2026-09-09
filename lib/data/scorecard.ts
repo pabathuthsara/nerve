@@ -29,6 +29,7 @@ import {
 } from './interview-scorecard'
 
 import { uiWarmth } from './progression'
+import { DIMENSION_COLUMN, DIMENSION_LABEL, INTERVIEW_DIMENSIONS } from './interview-progress'
 
 /** What the stored `metric_scores` rows look like coming back from Postgres. */
 export interface StoredMetricScore {
@@ -196,6 +197,59 @@ export const SUB_SCORE_LABELS: Record<string, string> = {
   technicalAccuracy: 'Technical accuracy',
 }
 
+/**
+ * ── THE SAME SIX NUMBERS, IN THIS ARM'S WORDS ────────────────────────────
+ *
+ * The interview grader does NOT score opening, curiosity or a close. It scores
+ * **structure, specificity, listening, signal reading, composure and the
+ * questions asked back** (`lib/grade/interview/rubric.ts`), and
+ * `INTERVIEW_SUBSCORE_KEY` then renames them onto the `scores` columns the
+ * dating arm already had — one number out of a hundred in a fixed slot, so a
+ * second set of columns would only be a second place for the composite to be
+ * computed from.
+ *
+ * That rename was a storage decision and it leaked out of storage. The
+ * scorecard read the stored key and printed the DATING word for it, so a
+ * candidate who was scored on whether their answer had a shape read
+ * **"Opening 71"**, and one scored on evidence read **"Curiosity 64"**. The
+ * numbers were right and every label on the judged half was describing the
+ * other product.
+ *
+ * **Derived, never re-authored.** `DIMENSION_LABEL` is the interview arm's own
+ * naming and `/interview`'s readiness panel already prints it; a third hand-
+ * written list here would be a third thing to keep in step. This inverts
+ * `DIMENSION_COLUMN` instead, so a renamed dimension moves both screens at once
+ * — and `scorecard.test.ts` walks the real unions rather than trusting it.
+ *
+ * The seventh is stated rather than derived because it has no dating
+ * counterpart to map from: it is a nullable second pass and never appears on a
+ * dating rep at all (§8.4).
+ */
+export const INTERVIEW_SUB_SCORE_LABELS: Record<string, string> = {
+  ...Object.fromEntries(
+    INTERVIEW_DIMENSIONS.map((dimension) => [
+      // `scores` spells it `signal_reading`; a sub-score key is `signalReading`.
+      DIMENSION_COLUMN[dimension].replace(/_(.)/g, (_, letter: string) => letter.toUpperCase()),
+      DIMENSION_LABEL[dimension],
+    ]),
+  ),
+  technicalAccuracy: SUB_SCORE_LABELS.technicalAccuracy ?? 'Technical accuracy',
+}
+
+/**
+ * What to call a sub-score on the track it was earned on.
+ *
+ * One lookup rather than a ternary at each of the places that print one — the
+ * scorecard, the trends and anything that comes after them — because the whole
+ * defect above was two surfaces disagreeing about what a stored key means.
+ * Falls through to the dating word for a key neither map knows, which is what
+ * an unrecognised row has always rendered as.
+ */
+export function subScoreLabel(key: string, interview: boolean): string {
+  if (interview) return INTERVIEW_SUB_SCORE_LABELS[key] ?? SUB_SCORE_LABELS[key] ?? key
+  return SUB_SCORE_LABELS[key] ?? key
+}
+
 function barPosition(value: number, axis: Axis): number {
   return Math.max(0, Math.min(100, (value / axis.max) * 100))
 }
@@ -313,7 +367,7 @@ export function toScorecard(input: {
   const subScores = (['opening', 'curiosity', 'listening', 'signalReading', 'composure', 'close'] as const)
     .map((key) => ({
       key: key as string,
-      label: SUB_SCORE_LABELS[key] ?? key,
+      label: subScoreLabel(key, interview),
       value: input.score[key === 'signalReading' ? 'signal_reading' : key],
     }))
     // THE SEVENTH SITS WITH THE OTHER SIX (§8.4).
@@ -326,7 +380,7 @@ export function toScorecard(input: {
     .concat(accuracy
       ? [{
         key: 'technicalAccuracy',
-        label: SUB_SCORE_LABELS.technicalAccuracy ?? 'Technical accuracy',
+        label: subScoreLabel('technicalAccuracy', interview),
         value: accuracy.score as number | null,
       }]
       : [])

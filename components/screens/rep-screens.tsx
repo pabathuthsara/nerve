@@ -67,6 +67,25 @@ interface RepScreenProps {
    */
   credits?: number
   /**
+   * What THIS round costs, in credits (LAUNCH-GAP B3).
+   *
+   * Rounds are priced by length now — a recruiter screen is one and a deep
+   * technical is three — so `credits <= 0` is no longer the gate. An account
+   * with two credits looking at a deep technical is not empty and still cannot
+   * start it, and gating on emptiness sends that rep to the microphone to be
+   * refused by the token route.
+   */
+  cost?: number
+  /**
+   * Whether this deployment can open a pack checkout (`packsConfigured()`).
+   *
+   * Read on the server and handed down, exactly as `/interview` does it: a buy
+   * button that errors on somebody trying to give us money is worse than one
+   * that admits it is not ready, and rule 15 guarantees a window where this is
+   * false.
+   */
+  packsOpen?: boolean
+  /**
    * Why the balance is zero, when the account is not actually empty.
    *
    * "You have no interview credits" is the wrong sentence for somebody holding
@@ -90,6 +109,9 @@ export function RepBriefScreen({
   field = DEFAULT_FIELD,
   difficulty = DEFAULT_DIFFICULTY,
   credits = 0,
+  cost = 1,
+  creditNote,
+  packsOpen = false,
 }: RepScreenProps) {
   const router = useRouter()
   const { data: persona, loading: personaLoading } = usePersona(personaId)
@@ -147,7 +169,7 @@ export function RepBriefScreen({
     // refuses a paying customer for having used their three dating reps.
     // A round nobody can pay for is refused HERE, in a sentence, rather than at
     // the microphone as a 402 dressed up as a lost connection.
-    if (interview ? credits <= 0 : (user?.repsRemainingToday ?? 1) === 0) { setPaywall(true); return }
+    if (interview ? credits < cost : (user?.repsRemainingToday ?? 1) === 0) { setPaywall(true); return }
     if (level === TOP_TIER && !trainingOff) { setTrainingOff(true); return }
     // §12, B10. The explanation goes BEFORE the browser dialog, because a
     // prompt nobody understands gets dismissed and a dismissal is permanent on
@@ -185,7 +207,7 @@ export function RepBriefScreen({
     is deciding whether to grant it (P1). Same character, no permission,
     no quota — and it is a link rather than a modal because a person
     hesitating here should not have to answer another question. */}
-{!interview ? <Link className="arena-button arena-button--ghost arena-button--full" href={`/text/${personaId}`}>Not ready to talk? Type instead</Link> : null}<Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={interview ? null : personaId} /><TrainingWheelsOffModal interview={interview} open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /><MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} /></main>
+{!interview ? <Link className="arena-button arena-button--ghost arena-button--full" href={`/text/${personaId}`}>Not ready to talk? Type instead</Link> : null}<Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={interview ? null : personaId} interview={interview} packsOpen={packsOpen} credits={credits} cost={cost} roundLabel={roundType(round).label} reason={interview ? creditNote : undefined} /><TrainingWheelsOffModal interview={interview} open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /><MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} /></main>
 }
 
 export function RepLiveScreen({
@@ -197,6 +219,7 @@ export function RepLiveScreen({
   difficulty = DEFAULT_DIFFICULTY,
   captions: captionsEnabled = false,
   credits = 0,
+  cost = 1,
   creditNote,
 }: RepScreenProps) {
   const router = useRouter()
@@ -241,7 +264,7 @@ export function RepLiveScreen({
   // because they had used their three dating reps, and telling them it resets
   // tonight would be a lie about a midnight that changes nothing.
   const blockedByReps = !userLoading && !interview && (user?.repsRemainingToday ?? 0) <= 0
-  const blockedByCredits = interview && credits <= 0
+  const blockedByCredits = interview && credits < cost
   /**
    * The rep no longer opens the instant loading finishes.
    *

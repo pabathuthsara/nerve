@@ -815,6 +815,10 @@ nothing to test.
   techniques; on an interview scorecard the mission told a candidate to open
   with something about the room. `scorecard.tryNext` carries interview prose
   instead (`lib/data/interview-scorecard.ts`).
+  **The rail was still offering the whole section, though — fixed 8 September.**
+  This pass took the library links off the scorecard and left `navItems` listing
+  `/library` under both tracks, so the conclusion reached the one surface that
+  linked *into* a card and not the one that advertised the section. See §15.
 - **Every metric note was dating prose**, including *"Questions stacked up
   faster than answers. It reads as an interview"* — on an interview.
 - **`RuleBlock` said `Time 8:00`**, a number no round has had since length
@@ -900,3 +904,73 @@ outcome that a rep which never started does not have.
 **The account that found this is still at zero paid credits.** Running a paid
 round needs `npm run db:interview -- <email>`; the screener round is now
 reachable without it.
+
+## 15 · Two things the second track was still borrowing — 8 September 2026
+
+Found by walking the interview arm rather than the money surfaces. Both are the
+same shape: **the interview track showing the dating product's furniture**, and
+in both cases the interview material already existed and was not being reached.
+
+### The judged half of the breakdown was labelled with dating dimensions
+
+An interview is graded on **structure, specificity, listening, signal reading,
+composure and the questions asked back** (§8, `lib/grade/interview/rubric.ts`).
+`INTERVIEW_SUBSCORE_KEY` then renames those onto the `scores` columns the dating
+arm already had — `structure → opening`, `specificity → curiosity` — because all
+six are one number out of a hundred in a fixed slot and a second set of columns
+would only be a second place for the composite to be computed from. §8.4 argues
+that and the argument still holds.
+
+**The rename was a storage decision and it leaked onto the screen.**
+`toScorecard` read the stored key and printed the DATING word for it, so a
+candidate scored on whether their answer had a shape read *"Opening 71"*, and
+one scored on evidence read *"Curiosity 64"*. Every number was right and every
+label on the judged half was describing the other product. Four of the six —
+Opening, Curiosity, Signal reading, Close — name something an interview is not
+scored on at all.
+
+`subScoreLabel(key, interview)` is the fix, and `INTERVIEW_SUB_SCORE_LABELS` is
+**derived rather than authored a second time**: `DIMENSION_LABEL` is already this
+arm's naming and `/interview`'s readiness panel already prints it, so a third
+hand-written list would be a third thing to keep in step. It inverts
+`DIMENSION_COLUMN`, and `interview-scorecard.test.ts` walks the real union — plus
+one assertion that no dating dimension can appear on an interview card, and one
+that the dating six are byte-for-byte what they were (rule 19).
+
+The measured half needed nothing: `INTERVIEW_METRIC_BANDS` has read *answer
+share · longest answer · fillers / min · thinking time · questions back* since
+§14, which is already the "how did they talk" half of the breakdown, and
+technical accuracy is already the "did they know it" half.
+
+### `/progress` was drawing interview scores as dating trends
+
+`fetchProgress` read `scores` unfiltered. Every interview writes a `scores` row
+into those same six columns, so an interview's **structure** score was being
+plotted on the Opening line and its **specificity** on Curiosity — a candidate
+who did four interviews watched their dating trends move without doing a dating
+rep, on a screen titled *"Six sub-scores"* beside a warmth chart. Two different
+measurements averaged into one line.
+
+It filters to `sessions.track = 'dating'` now. The interview arm has always had
+its own trend — `useInterviewProgress` reads the interview sessions and
+`ReadinessPanel` draws it in this arm's words — so this is the other half of a
+filter that was only ever applied on one side. Sessions are read first because
+the track lives there and `scores` has no column for it, and the session window
+is doubled before the score window closes it: an ungraded session is a common
+row, and taking exactly twenty sessions would quietly return fewer than twenty
+points.
+
+### And the library is dating-only
+
+§11 lists the library under both tracks, and `navItems` did. The argument was
+that the cards are about holding a conversation with somebody who is not helping
+you — which an interview is. **That argument does not survive reading the
+cards**: *"Open with the room, not with her"*, *"Use what she already gave
+you"*, *"Ask for something specific"*, and five sets of openers for a café, a
+gym, a platform, a party and a conference. There is no reading of an interview
+in which **Openers — gym** is guidance.
+
+The rail stops offering it. The route is untouched and the track switcher is two
+taps away, so nothing a dating user had is gone; what is fixed is a second track
+advertising the first one's material as its own. §11 is the drift here rather
+than the code — recorded in `LAUNCH-GAP.md` §4 as D17.

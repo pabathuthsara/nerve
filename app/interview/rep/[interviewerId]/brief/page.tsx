@@ -3,7 +3,8 @@ import { enforceFrontendGuard } from '@/lib/data/guards'
 import { currentUser } from '@/lib/db/server'
 import { readInterviewSetup } from '@/lib/db/interview'
 import { interviewCreditState } from '@/lib/db/credits'
-import { hasScreenerCredit, roundType, SCREENER_ROUND, spendableFor } from '@/lib/data/interview-credits'
+import { packsConfigured } from '@/lib/billing/plans'
+import { creditRefusal, hasScreenerCredit, openingRound, roundType, spendableFor } from '@/lib/data/interview-credits'
 import { DEFAULT_FIELD } from '@/lib/data/interview-fields'
 import { DEFAULT_DIFFICULTY } from '@/lib/data/interview-difficulty'
 
@@ -25,16 +26,22 @@ export default async function InterviewBriefPage({ params }: { params: Promise<{
     user ? interviewCreditState(user.id) : Promise.resolve(null),
   ])
 
-  const spendable = spendableFor(credits?.lots ?? [], {
-    round: roundType(setup?.round).id,
-    holds: credits?.held ?? 0,
-  })
+  const lots = credits?.lots ?? []
+  const screener = hasScreenerCredit(lots)
+  /**
+   * The round this rep is, and the one an account with nothing but the free
+   * screener opens on (LAUNCH-GAP B1). A saved setup always wins; this only
+   * decides what a null one means, and `recruiter` meant "the free credit on
+   * every account cannot be spent".
+   */
+  const round = setup?.round ? roundType(setup.round).id : openingRound(screener)
+  const spendable = spendableFor(lots, { round, holds: credits?.held ?? 0 })
 
   return (
     <RepBriefScreen
       personaId={interviewerId}
       interview
-      round={roundType(setup?.round).id}
+      round={round}
       // §4.4. The last screen before the microphone says what KIND of round
       // this is, not only whose name is on it — two of the first four interview
       // reps ever run went out on a behavioural round because nothing on the
@@ -47,12 +54,17 @@ export default async function InterviewBriefPage({ params }: { params: Promise<{
       // recruiter screen. Gating on the total let that rep reach the microphone
       // and be refused by the token route as "Connection lost".
       credits={spendable}
+      // What this round costs, so the screen compares like with like: since B3
+      // a technical is two credits and a balance of one is not enough.
+      cost={roundType(round).credits}
+      // B2: the paywall this brief opens is the interview track's single
+      // monetisation moment, and it sells packs rather than a subscription.
+      // Whether a checkout can be opened at all is an environment fact.
+      packsOpen={packsConfigured()}
       // The honest sentence when the account is not empty but this round is
-      // unaffordable — a free screener against a paid round, which is the exact
-      // shape the dev grant produces and the one that reached the microphone.
-      creditNote={spendable === 0 && hasScreenerCredit(credits?.lots ?? []) && roundType(setup?.round).id !== SCREENER_ROUND
-        ? 'Your free screener only pays for the five-minute screener round. Pick that one on your setup, or add credits for the longer rounds.'
-        : undefined}
+      // unaffordable — a free screener against a paid round, or a balance that
+      // is short of a longer round. One function, three surfaces.
+      creditNote={creditRefusal({ spendable, round, hasScreener: screener }) ?? undefined}
     />
   )
 }

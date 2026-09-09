@@ -24,16 +24,19 @@ import { useCountUp, useStagger } from '@/lib/hooks/use-staged-reveal'
 import { SoundKit } from '@/lib/audio/kit'
 import { soundEnabled } from '@/lib/hooks/use-rep-production'
 import { Mark, dimensionMark, tierMark } from '@/components/marks'
+import { PackOffer } from '@/components/interview/credits'
+import { creditsAreLow } from '@/lib/data/credit-history'
+import { ROUND_COST_NOTE } from '@/lib/site/plans'
 
 export type SessionView = 'result' | 'scorecard' | 'transcript'
 
-export function SessionScreen({ sessionId, view }: { sessionId: string; view: SessionView }) {
+export function SessionScreen({ sessionId, view, packsOpen = false }: { sessionId: string; view: SessionView; packsOpen?: boolean }) {
   const { data: session, loading } = useSession(sessionId)
   if (loading) return <SessionLoading view={view} />
   if (!session) return <AppShell title="Session"><EmptyState mark="state-session" title="Session not found" description="That session does not exist or is no longer available." action={<Link className="arena-button arena-button--primary" href="/profile/history">View history</Link>} /></AppShell>
   if (view === 'result') return <ResultScreen session={session} />
   if (view === 'transcript') return <TranscriptScreen session={session} />
-  return <ScorecardScreen session={session} />
+  return <ScorecardScreen session={session} packsOpen={packsOpen} />
 }
 
 function SessionLoading({ view }: { view: SessionView }) {
@@ -431,7 +434,7 @@ function LifetimeCounters({ stats }: { stats: LifetimeStats | null }) {
   return <p className="result-lifetime data">{line}</p>
 }
 
-function ScorecardScreen({ session }: { session: SessionSummary }) {
+function ScorecardScreen({ session, packsOpen }: { session: SessionSummary; packsOpen: boolean }) {
   const { data: scorecard, loading } = useScorecard(session.id)
   // V26. For the two moment cards only, and nothing on this screen waits on
   // it — `MomentTrack` renders nothing until there are two scored turns, so a
@@ -577,7 +580,37 @@ function ScorecardScreen({ session }: { session: SessionSummary }) {
     every metric, both moments, the transcript — is theirs either way. */}
 {user?.voiceLocked && session.track === 'dating'
   ? <Button onClick={() => setPaywall(true)}>Run it back</Button>
-  : <Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>}<Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link><Link className="arena-button arena-button--ghost" href={session.track === 'interview' ? '/interview/interviewers' : '/roster'}>{session.track === 'interview' ? 'Another interviewer' : 'Next persona'}</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div><ReportButton sessionId={session.id} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={session.track === 'dating' ? session.personaId : null} /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet interview={session.track === 'interview'} open={explainer} onClose={() => setExplainer(false)} /></AppShell>
+  : <Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>}<Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link><Link className="arena-button arena-button--ghost" href={session.track === 'interview' ? '/interview/interviewers' : '/roster'}>{session.track === 'interview' ? 'Another interviewer' : 'Next persona'}</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div>{session.track === 'interview' && creditsAreLow(user?.interviewCredits ?? 0) ? <LowCredits packsOpen={packsOpen} /> : null}<ReportButton sessionId={session.id} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={session.track === 'dating' ? session.personaId : null} /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet interview={session.track === 'interview'} open={explainer} onClose={() => setExplainer(false)} /></AppShell>
+}
+
+/**
+ * "One credit left", said once, at the only moment it is useful (S5).
+ *
+ * ── WHY HERE AND NOWHERE ELSE ────────────────────────────────────────────
+ *
+ * The second after a graded interview is the highest-intent second in the
+ * product: somebody has just seen what the thing is worth and is deciding
+ * whether to do it again. A low-balance line here is a service. The same line
+ * on the home screen, in the chrome, or before a rep would be an advertisement
+ * interrupting training, which `RETENTION-AUDIT.md` §4 refuses and §05 forbids
+ * outright anywhere near a live session.
+ *
+ * **Interview track only, and empty is not low.** `creditsAreLow` is false at
+ * zero on purpose — the brief's `creditRefusal` already owns that moment in its
+ * own words, and two sentences about one emptiness in two voices is worse than
+ * one. So this fires exactly once per balance, on the way down.
+ *
+ * Below the actions rather than above them. Run it back, the transcript and the
+ * next interviewer are what this screen is for; this is a fact about the
+ * account, and it does not get to stand in front of them.
+ */
+function LowCredits({ packsOpen }: { packsOpen: boolean }) {
+  return (
+    <Card className="credits-low">
+      <div><strong>One credit left.</strong><p className="label mute">{ROUND_COST_NOTE}</p></div>
+      <PackOffer packsOpen={packsOpen} compact />
+    </Card>
+  )
 }
 
 /**

@@ -17,6 +17,23 @@ const onboardingRoutes = new Set<OnboardingRoute>(['/onboarding/age', '/onboardi
 const sessionViews = new Set<SessionView>(['result', 'scorecard', 'transcript'])
 
 /**
+ * The interview track's screens.
+ *
+ * A set rather than a chain of `||`, because A1 added `/interview/start` — the
+ * per-run setup between the interviewer and the brief — and a five-way boolean
+ * that has to be edited in two places is how a route ends up rendering
+ * `NotFound` on a path that exists.
+ */
+const INTERVIEW_ROUTES = new Set<InterviewRoute>([
+  '/interview',
+  '/interview/setup/role',
+  '/interview/setup/cv',
+  '/interview/setup/questions',
+  '/interview/interviewers',
+  '/interview/start',
+])
+
+/**
  * The shape a signed-out render gets. The guard redirects before this can be
  * reached in practice; it exists so the route table stays synchronous and
  * never has to reason about a missing prop.
@@ -81,6 +98,15 @@ export interface BillingContext {
    * away believing they have paid for something. See `rehearsing()`.
    */
   testMode: boolean
+  /**
+   * How many founding places are left (S3), or null when it could not be read.
+   *
+   * A count of accounts rather than an assertion: the note under the plan board
+   * names a number, and a scarcity figure nobody counts is a compliance risk on
+   * a money surface rather than a taste question. Null prints the promise with
+   * no number in it.
+   */
+  foundingPlacesLeft: number | null
 }
 
 export function isBillingRoute(path: string): boolean {
@@ -95,7 +121,18 @@ export function isBillingRoute(path: string): boolean {
    * Vercel variable added after a build started is not in that build, so there
    * is always a window where the ids exist and the deployment cannot see them.
    */
-  return path === '/profile/subscription' || path === '/interview'
+  return path === '/profile/subscription'
+    || path === '/interview'
+    || path === '/interview/start'
+    /**
+     * The scorecard, since the low-balance line (S5).
+     *
+     * The second after a graded interview is the highest-intent moment in the
+     * product, and it is the one place a "one credit left" line is a service
+     * rather than an interruption. It needs the same environment answer every
+     * other buy button needs.
+     */
+    || path.startsWith('/session/')
 }
 
 /**
@@ -130,14 +167,14 @@ export function RouteView({ path, query = {}, auth, onboarding, billing }: { pat
      * query surviving a redirect, a copy-paste, or a link we did not build.
      */
     const bought = query['bought'] === '1' || !!query['checkout_id']
-    return <ProfileScreen route={path as ProfileRoute} checkoutOpen={billing?.checkoutOpen ?? false} testMode={billing?.testMode ?? false} bought={bought} />
+    return <ProfileScreen route={path as ProfileRoute} checkoutOpen={billing?.checkoutOpen ?? false} packsOpen={billing?.packsOpen ?? false} testMode={billing?.testMode ?? false} foundingPlacesLeft={billing?.foundingPlacesLeft ?? null} bought={bought} />
   }
   if (path.startsWith('/session/')) {
     const [, , sessionId = '', view = 'result'] = path.split('/')
     if (!sessionViews.has(view as SessionView)) return <NotFound />
-    return <SessionScreen sessionId={sessionId} view={view as SessionView} />
+    return <SessionScreen sessionId={sessionId} view={view as SessionView} packsOpen={billing?.packsOpen ?? false} />
   }
-  if (path === '/interview' || path === '/interview/setup/role' || path === '/interview/setup/cv' || path === '/interview/setup/questions' || path === '/interview/interviewers') {
+  if (INTERVIEW_ROUTES.has(path as InterviewRoute)) {
     return <InterviewScreen route={path as InterviewRoute} packsOpen={billing?.packsOpen ?? false} />
   }
   if (authRoutes.has(path as AuthRoute)) {

@@ -43,23 +43,23 @@
  */
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Check } from 'lucide-react'
 import { Mark, planMark } from '@/components/marks'
 import {
   BILLING_PERIODS,
   BEST_VALUE_PERIOD,
   PERIOD_NOTE,
-  PUBLIC_PLANS,
   TRIAL_DAYS,
   chargeLine,
   interviewsLine,
   monthlyEquivalent,
   offerFor,
-  offersFor,
+  periodAsideFor,
   periodLabel,
   periodSavings,
   periodTabLabel,
+  plansOn,
   trialNoteFor,
   repsLine,
   type BillingPeriod,
@@ -71,13 +71,28 @@ const LEAD: PublicPlan['id'] = 'pro'
 
 export function PlanBoard({ note }: { note: string }) {
   const [period, setPeriod] = useState<BillingPeriod>(BEST_VALUE_PERIOD)
+  /**
+   * A3's second half. Dropping Elite from the weekly tab left a three-column
+   * grid holding two cards and an empty third of the board — which reads as
+   * something that failed to load, on the page a merchant-of-record reviewer
+   * opens. The column count follows the cards.
+   */
+  const shown = plansOn(period)
   return (
     <div className="plan-board-wrap">
       <PeriodTabs value={period} onChange={setPeriod} />
       <p className="plan-board__period-note">{PERIOD_NOTE[period]}</p>
-      <section className="plan-board">
-        {PUBLIC_PLANS.map((plan) => <PlanColumn key={plan.id} plan={plan} period={period} />)}
+      {/* A3. The board shows what is sold on this tab and nothing else. Elite
+          used to fall back to its monthly offer on the weekly tab, so
+          "7 days free, then $49 every month" sat directly under a period note
+          reading "no trial and no commitment — the week is the trial". A chip
+          was not enough: the page was contradicting itself about when money
+          moves, on the one surface §14 has a merchant-of-record reviewer
+          reading. One line under the board says where the missing plan went. */}
+      <section className="plan-board" style={{ '--plan-columns': shown.length } as CSSProperties}>
+        {shown.map((plan) => <PlanColumn key={plan.id} plan={plan} period={period} />)}
       </section>
+      {periodAsideFor(period) ? <p className="plan-board__aside">{periodAsideFor(period)}</p> : null}
       {/* Inside the board rather than after it, so it sits on the board's own
           left edge and moves with it at every breakpoint — and the trial half
           of it is scoped to the period on screen, because a static footnote
@@ -134,25 +149,11 @@ export function PeriodTabs({ value, onChange }: { value: BillingPeriod; onChange
 
 function PlanColumn({ plan, period }: { plan: PublicPlan; period: BillingPeriod }) {
   /**
-   * The offer this column is selling.
-   *
-   * Elite is monthly only, so on the weekly tab it falls back to its monthly
-   * offer rather than vanishing — a plan that disappears when you press a tab
-   * reads as a bug, and the price beside it still says `/ month`, so nobody is
-   * misled about what they would be buying. The fallback is `offersFor(...)[0]`,
-   * which is cheapest-first and therefore deterministic.
+   * The offer this column is selling. Never a fallback — see A3 above: a plan
+   * this tab does not sell is not on this tab at all.
    */
-  const offer = plan.id === 'free' ? null : offerFor(plan.id, period) ?? offersFor(plan.id)[0]
+  const offer = plan.id === 'free' ? null : offerFor(plan.id, period) ?? null
   const lead = plan.id === LEAD
-  /**
-   * This plan is not sold on the period the board is showing.
-   *
-   * A chip on the name row rather than a sentence trailing the charge line:
-   * "Sold by the month only" set in muted prose after "7 days free, then $49
-   * every month" read as one continuous sentence, so the one fact that explains
-   * why this card disagrees with the tab was the least visible thing on it.
-   */
-  const fallback = offer && offer.period !== period
 
   return (
     <article className={`plan-board__card${lead ? ' plan-board__card--lead' : ''}`}>
@@ -162,7 +163,6 @@ function PlanColumn({ plan, period }: { plan: PublicPlan; period: BillingPeriod 
           <span className="label">{plan.name}</span>
         </span>
         {lead ? <span className="arena-chip">Most popular</span> : null}
-        {fallback && offer ? <span className="arena-chip">{offer.period === 'monthly' ? 'Monthly only' : 'Weekly only'}</span> : null}
       </div>
 
       <div className="plan-board__price">
@@ -195,7 +195,9 @@ function PlanColumn({ plan, period }: { plan: PublicPlan; period: BillingPeriod 
         </div>
         <div>
           <dt className="label">Interviews</dt>
-          <dd className="data">{interviewsLine(plan.id)}</dd>
+          {/* C2. What THIS offer grants, not what the plan grants on its best
+              period: weekly Pro pays every seven days and grants none. */}
+          <dd className="data">{interviewsLine(plan.id, offer?.period ?? period)}</dd>
         </div>
       </dl>
 

@@ -9,7 +9,11 @@ import type { PendingUnlock } from '@/lib/data/types'
 import { FIELD_TIER_COPY, LEVEL_COPY } from '@/lib/data/level-copy'
 import { detectBrowser, micRecovery, type Browser } from '@/lib/data/mic'
 import { DISTRESS_COPY, DISTRESS_RESOURCES } from '@/lib/safety/resources'
-import { TRIAL_DAYS, planById, repsLine } from '@/lib/site/plans'
+import {
+  CREDIT_EXPIRY_NOTE, ROUND_COST_NOTE, TRIAL_DAYS,
+  interviewsLine, planById, repsLine,
+} from '@/lib/site/plans'
+import { PackOffer } from '@/components/interview/credits'
 
 interface OpenProps { open: boolean; onClose: () => void }
 
@@ -27,7 +31,7 @@ export function EndRepModal({ open, onClose, onEnd, interview = false }: OpenPro
 /**
  * The upgrade moment (§14, docs/PAYMENTS-NEW-INTEGRATION.md §5.2).
  *
- * Two refusals arrive here and they are not the same screen.
+ * Three refusals arrive here and they are not the same screen.
  *
  * `locked` is an account with no voice on its plan at all. Nothing resets at
  * midnight for these people, so a countdown would be a lie and "maybe later"
@@ -39,6 +43,21 @@ export function EndRepModal({ open, onClose, onEnd, interview = false }: OpenPro
  * does reset, so it keeps the countdown and the softer framing — pushing Elite
  * at somebody who is already paying and already trained today is how a plan
  * limit turns into an advert.
+ *
+ * ── AND `interview` IS THE THIRD, WHICH WAS MISSING (LAUNCH-GAP B2) ──────
+ *
+ * The interview brief opened this sheet on `credits <= 0` and got the dating
+ * one: titled "Keep training", saying *"Your voice reps for today are done"*,
+ * printing Pro and Elite's **reps per day**, showing a countdown to a daily
+ * reset that does not apply to a credit balance, and pointing its primary
+ * action at `/profile/subscription` — a screen that did not sell credits at
+ * all. Every sentence in it was false on that arm, on the second track's single
+ * monetisation moment.
+ *
+ * The interview branch sells what the user actually needs: the packs, at their
+ * per-credit rate, with the expiry sentence and the round costs. Pro's monthly
+ * interview is a secondary line rather than the offer, because somebody who
+ * needs an interview tonight does not need a subscription.
  *
  * The plan names, prices and rep counts come from `lib/site/plans.ts` rather
  * than being written out here, for the reason that file exists: two copies of a
@@ -56,9 +75,66 @@ export function PaywallSheet({
   reason,
   locked = false,
   personaId = null,
-}: OpenProps & { reset?: string; reason?: string; locked?: boolean; personaId?: string | null }) {
+  interview = false,
+  packsOpen = false,
+  credits = 0,
+  cost = 1,
+  roundLabel,
+}: OpenProps & {
+  reset?: string
+  reason?: string
+  locked?: boolean
+  personaId?: string | null
+  /** The interview arm. A balance, not a daily rate — see the note above. */
+  interview?: boolean
+  /** Whether a pack checkout can be opened right now (`packsConfigured()`). */
+  packsOpen?: boolean
+  /** What can pay for this round. */
+  credits?: number
+  /** What this round costs. */
+  cost?: number
+  /** The round being refused, so the sheet can name it. */
+  roundLabel?: string
+}) {
   const pro = planById('pro')
   const elite = planById('elite')
+
+  if (interview) {
+    const round = (roundLabel ?? 'interview').toLowerCase()
+    /**
+     * "Not enough", never "none left" — because it is often not none.
+     *
+     * `credits` here is what can pay for THIS round, and a free screener buys
+     * only the five-minute one. So an account holding a screener and looking at
+     * a technical has a spendable zero and a balance of one, and a sheet reading
+     * *"there are none left"* over a chrome pill reading **1 credit** is B1's
+     * two-numbers-disagreeing bug, moved one screen along. `reason` is
+     * `creditRefusal`, which is the sentence that knows the difference.
+     */
+    return (
+      <Sheet open={open} onClose={onClose} title="Not enough credits">
+        <div className="sheet-stack">
+          <p>{reason ?? (credits > 0
+            ? `A ${round} costs ${cost} credits and there ${credits === 1 ? 'is one' : `are ${credits}`} in the account.`
+            : `A ${round} costs ${cost === 1 ? 'one credit' : `${cost} credits`}, and there are none left.`)}</p>
+          {/* Credits do not reset at midnight and never have — that is the
+              whole difference between the two meters (§5.3). No countdown. */}
+          <p className="label mute">{ROUND_COST_NOTE}</p>
+          <PackOffer packsOpen={packsOpen} />
+          <p className="label mute">{CREDIT_EXPIRY_NOTE}</p>
+          {/* Secondary, deliberately. Somebody who needs an interview tonight
+              needs a credit, not a subscription — but Pro does include one a
+              month and saying nothing about it would be leaving a real offer
+              off the one screen where it is relevant. */}
+          <Link className="arena-button arena-button--ghost arena-button--full" href="/profile/subscription">
+            {pro.name} includes {interviewsLine('pro', 'monthly').toLowerCase()} — see plans
+          </Link>
+          <Button variant="ghost" fullWidth onClick={onClose}>Maybe later</Button>
+        </div>
+      </Sheet>
+    )
+  }
+
   const body = reason ?? (locked
     ? 'Voice reps are part of Pro. Your streak, your field log and text mode stay exactly where they are.'
     : 'Your voice reps for today are done.')
@@ -101,7 +177,7 @@ export function HowItWorksSheet({ open, onClose, interview = false, minutes }: O
       'Her form shows the impression you are making.',
       'The callback is decided by the grade afterwards, and is worth zero points.',
     ]
-    : ['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end whether you get her number.']
+    : ['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end. Nothing she decides is scored.']
   return <Sheet open={open} onClose={onClose} title={interview ? 'How an interview works' : 'How a rep works'}><div className="how-list">{steps.map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet>
 }
 

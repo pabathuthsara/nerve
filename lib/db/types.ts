@@ -284,6 +284,7 @@ export type Database = {
       }
       interview_credit_holds: {
         Row: {
+          amount: number
           created_at: string
           expires_at: string
           round: string
@@ -294,6 +295,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          amount?: number
           created_at?: string
           expires_at: string
           round: string
@@ -304,6 +306,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          amount?: number
           created_at?: string
           expires_at?: string
           round?: string

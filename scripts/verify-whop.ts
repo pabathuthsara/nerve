@@ -32,7 +32,11 @@
  * it can charge nothing; it is refused outright on the live base.
  */
 
-import { INTERVIEW_PACKS, OFFERS, PUBLIC_PLANS, TRIAL_DAYS, planById } from '@/lib/site/plans'
+import {
+  FOUNDING_ACCOUNTS, INTERVIEW_PACKS, OFFERS, PRO_STANDARD_PRICE, PUBLIC_PLANS, TRIAL_DAYS,
+  foundingPlacesLeft, planById,
+} from '@/lib/site/plans'
+import { foundingAccountsTaken, forgetFoundingCount } from '@/lib/db/founding'
 import {
   apiBase,
   apiVersionDate,
@@ -322,6 +326,36 @@ async function main(): Promise<void> {
    * page that says $29 over a plan that takes $290 is the kind of thing that
    * ends an application.
    */
+  /**
+   * ── THE FOUNDING ALLOCATION (S3) ────────────────────────────────────────
+   *
+   * `/pricing` and `/profile/subscription` both publish a real, counted number:
+   * "Pro is $19 for the first 200 accounts and $29 after that — N founding
+   * places left." That is only honourable while somebody actually acts on it,
+   * and the acting is a plan at the provider, not a constant in this repo.
+   *
+   * So the preflight watches for the moment the allocation runs out and Pro is
+   * still selling at the founding price. A WARN rather than a FAIL, deliberately:
+   * charging LESS than advertised harms nobody and must never be the thing that
+   * blocks a deployment. It is a reminder that a promise has come due.
+   *
+   * The count is read live — `forgetFoundingCount` drops the page memo — and an
+   * unreadable one is reported as a note rather than guessed at.
+   */
+  console.log('\nfounding allocation')
+
+  forgetFoundingCount()
+  const accounts = await foundingAccountsTaken()
+  if (accounts === null) {
+    note('accounts could not be counted; the pricing pages will print the promise without a number')
+  } else {
+    const left = foundingPlacesLeft(accounts)
+    note(`${accounts} account(s) exist; ${left} of ${FOUNDING_ACCOUNTS} founding places left`)
+    const proMonthly = OFFERS.find((offer) => offer.plan === 'pro' && offer.period === 'monthly')
+    warn(left > 0 || proMonthly?.price === PRO_STANDARD_PRICE,
+      `the founding allocation is spent — Pro is still ${proMonthly?.price ?? '$19'} and the pages say it is moving to ${PRO_STANDARD_PRICE}`)
+  }
+
   console.log('\ninterview packs')
 
   for (const pack of INTERVIEW_PACKS) {

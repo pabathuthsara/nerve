@@ -27,6 +27,7 @@ import {
   ROUND_TYPES,
   SCREENER_ROUND,
   creditBalance,
+  creditCost,
   nextLotToSpend,
   type CreditLot,
 } from '@/lib/data/interview-credits'
@@ -209,6 +210,32 @@ async function main(): Promise<void> {
       session_id: spent.id, reference: `spend:${spent.id}`,
     })
     check(!!doubleSpend, 'and the same rep cannot be charged twice')
+
+    console.log('\na round that costs more than one credit holds more than one (B3)')
+    const heavy = await openSession('dan-whitfield')
+    await admin.from('interview_credit_holds').insert({
+      user_id: userId, session_id: heavy.id, source: 'purchase', round: 'deep_technical',
+      amount: creditCost('deep_technical'),
+      expires_at: new Date(Date.now() + 45 * 60_000).toISOString(),
+    })
+    const heavyHold = await balance()
+    // The balance counted holds with `count(*)` until 8 September, so a
+    // multi-credit round showed as one held and an account with one credit left
+    // could open a second one it could not pay for.
+    //
+    // EVERY NUMBER HERE COMES FROM `creditCost`. It was written against a
+    // three-credit deep technical with the 3 typed in beside a `creditCost`
+    // call, so repricing the round to two on 9 September broke the check that
+    // exists to prove the ledger can hold more than one — the one assertion in
+    // the harness whose whole job survives a reprice.
+    const heavyCost = creditCost('deep_technical')
+    check(heavyCost > 1, `a deep technical still costs more than one credit (${heavyCost})`)
+    check(heavyHold.held === heavyCost && heavyHold.available === plus(4) - heavyCost,
+      `a deep technical holds all ${heavyCost} of its credits, not one`)
+    await admin.from('interview_credit_holds')
+      .update({ state: 'released', settled_at: new Date().toISOString() })
+      .eq('session_id', heavy.id)
+    check((await balance()).held === 0, `and releasing it gives all ${heavyCost} back`)
 
     console.log('\nthe refund rule (A2)')
     check(interviewCreditable({ endedBy: 'error', heardUser: true }),

@@ -75,6 +75,40 @@ export function configuredPlanMap(): PlanMap {
   return planMap(process.env as Record<string, string | undefined>)
 }
 
+export type PeriodMap = Readonly<Record<string, BillingPeriod>>
+
+/**
+ * Which billing PERIOD a vendor plan id was sold on (LAUNCH-GAP C2).
+ *
+ * `planMap` deliberately throws the period away — an entitlement is the same
+ * three reps a day whether it was bought by the week or the month, which is why
+ * a period cost no `Plan` value. The interview grant is the one decision that
+ * does need it: credits are granted per payment, and a weekly Pro pays four and
+ * a third times as often as a monthly one. Without this the webhook granted the
+ * monthly number every seven days.
+ *
+ * Same shape and same fail-closed rule as `planMap`: an id no variable names
+ * maps to nothing, and the caller falls back to the plan-level headline rather
+ * than guessing a period.
+ */
+export function periodMap(env: Record<string, string | undefined>): PeriodMap {
+  const map: Record<string, BillingPeriod> = {}
+  for (const { period, variable } of PLAN_ENV) {
+    const id = env[variable]?.trim()
+    if (id) map[id] = period
+  }
+  return map
+}
+
+export function periodForWhopPlan(whopPlanId: string | null, map: PeriodMap): BillingPeriod | null {
+  if (!whopPlanId) return null
+  return map[whopPlanId] ?? null
+}
+
+export function configuredPeriodMap(): PeriodMap {
+  return periodMap(process.env as Record<string, string | undefined>)
+}
+
 /**
  * Which Whop the deployment is talking to.
  *

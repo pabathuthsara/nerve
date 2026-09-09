@@ -20,9 +20,15 @@ the real world and log the outcome.
    **`docs/INTERVIEW-PLAN.md` is the second track, and every phase of it has
    now shipped** — A, B and C on 7 September, C½ the same day, and **D (money)
    and E (the door) the same day again. Its §15 is what landed**: three
-   one-time packs at $9 / $29 / $59, one interview credit a month on Pro and
-   four on Elite, a free five-minute screener granted to every account at
-   sign-up, and a trigger that opens the track the moment any credit lands. Two
+   one-time packs at $9 / $29 / $59 carrying 2 / 8 / 20 credits, two interview
+   credits a month on Pro and six on Elite, a free five-minute screener granted
+   to every account at sign-up, and a trigger that opens the track the moment
+   any credit lands. **The prices are original; the credit counts doubled on
+   9 September** (`LAUNCH-GAP.md` D18) because one credit bought a recruiter
+   screen and nothing else — so a $9 first purchase was answered by
+   `creditRefusal` telling the buyer to buy again, and Pro's monthly credit
+   could not reach a technical round at all. Turn the credits dial, never the
+   price: a public price is very hard to raise again. Two
    things in §15 are worth knowing before touching money or the other track.
    **A card-backed trial emits a real `payment.succeeded` at $0** — read off a
    captured delivery rather than the specification — so the obvious credit
@@ -54,7 +60,21 @@ the real world and log the outcome.
    eight deterministic bands score correct interview behaviour at zero, which is
    sixty percent of the composite, so `lib/grade/interview/metrics.ts` is now
    the interview table and `scoreMetrics()` with no argument is still the dating
-   one. A field is authored in `interview-fields.ts` and **offered only once it
+   one.
+   **§15 is the same lesson a third time, and it is the one to internalise:
+   a rename done for STORAGE leaks onto the screen.** The interview grader
+   scores structure, specificity, listening, signal reading, composure and the
+   questions asked back; `INTERVIEW_SUBSCORE_KEY` renames those onto the dating
+   `scores` columns so no migration is needed — and the scorecard then printed
+   the DATING word for the stored key, so a candidate scored on whether their
+   answer had a shape read *"Opening 71"*. Every number right, every label the
+   other product. `subScoreLabel(key, interview)` is the fix and the interview
+   labels are **derived from `DIMENSION_LABEL`**, never authored twice. The same
+   walk found `/progress` plotting interview `structure` on the dating Opening
+   line (it filters to `sessions.track = 'dating'` now), and the library — five
+   sets of openers for a café, a gym and a party — being offered on the
+   interview rail (`LAUNCH-GAP.md` D17). **When a second track reuses a first
+   track's column, ask what the SCREEN then calls it.** A field is authored in `interview-fields.ts` and **offered only once it
    has probe domains**, which today means software alone.
    **The one thing §13.3 is emphatic about: none of it has been heard out
    loud.** The suite is green and §9's "Done when" is five claims about how a
@@ -84,6 +104,32 @@ the real world and log the outcome.
 3. **`docs/LAUNCH-GAP.md` is what is blocking launch.** Ten numbered blockers,
    the product-promise gaps, and nine pieces of spec drift that need a
    decision rather than a ticket.
+   **Its §3b is the 8 September experience audit, Parts 1–8 — all shipped**,
+   and it is the shortest description of what the product does now:
+   the interview track is a **profile** you set once and a **run**
+   (interviewer → `/interview/start` → brief) you set every time; rounds are
+   priced by length rather than flat, so packs are sold as **credits**; the
+   free five-minute screener is reachable on the default path for the first
+   time; and `/interviews` is a public page. **Part 5 landed the same day and
+   E1 is the one to read**: the brief's `GOAL` row named the outcome on both
+   arms — the one thing §07 says is worth zero, stated at the moment of highest
+   attention — so the screen was instructing people to play for the result and
+   the grader was then scoring it. Both rows name a manner now. **E2 is the
+   other one worth knowing about a second track**: `ProductProvider` never read
+   `profiles.active_track`, so every SHARED route (`/roster`, `/library`,
+   `/profile`) inherited the `dating` default and an interview account got the
+   other product on its second visit. The fix is `adoptTrack` and not
+   `setTrack`, because the URL is known on the first render and the profile a
+   fetch later — **the first answer wins, and a late one must never overrule
+   it.** Part 7 was declined almost entirely on S1's argument: **a percentage
+   off a metered product recruits the cohort that uses it hardest**, so there
+   is no annual offer, no bundle and no referral. What did ship is the founding
+   allocation — 200 accounts at $19, then $29 — and its one rule is that **the
+   number is counted, never asserted** (`lib/db/founding.ts`), because a
+   "places left" nobody counts is a compliance risk on the page a
+   merchant-of-record reviewer opens. The raise is a plan at the provider, so
+   `whop:verify` warns when the allocation is spent rather than the page
+   quietly flipping.
    **`docs/PAYMENTS-NEW-INTEGRATION.md` is how voice is sold**, and §11 of it
    is the record of what shipped on 31 August: free grants no voice reps, the
    one free rep happens once at sign-up, Pro is $19 and Elite $49 behind a
@@ -128,13 +174,13 @@ future sessions read those markers to decide what to do.
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint
-npm test              # vitest, 1942 assertions
+npm test              # vitest, 1995 assertions
 npm run build:check   # production build into .next-check, never .next
 npm run db:verify     # RLS from a second real account, 51 checks
 npm run db:rep        # the whole rep lifecycle, without a microphone
 npm run db:field      # the field loop: assign, accept, log, streak, milestones
 npm run db:spend      # the spend ceiling: rate limit, daily cap, both kill switches
-npm run db:credits    # the interview credit: hold, settle, release, refund, both expiry rules
+npm run db:credits    # the interview credit: hold, settle, release, refund, both expiry rules, multi-credit rounds
 npm run db:interview -- you@example.com   # open the interview track on an account, with credits
 npm run db:billing    # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
 npm run whop:setup       # creates the Whop product, plans and webhook (dry run without --apply)
@@ -255,6 +301,26 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    **Every route that spends money goes through `maySpend`** (`lib/db/spend.ts`)
    as well as `requireUser` — a session says who is asking, never how much they
    may spend. Adding a paid route means adding a bucket. `npm run db:spend`.
+   **An interview costs what its round costs, and that is not always one.**
+   A round costs **one credit or two** — the ten-minute recruiter screen is one,
+   every longer round (technical, deep technical, final) is two — so
+   `credits <= 0` is not the gate anywhere; `canAfford(spendable, round)` is.
+   **It was 1 / 2 / 3 / 2 for one day and the lesson is worth the sentence: the
+   ladder was authored off MINUTES, and minutes are not what an interview
+   costs.** Costed off `voice_operations`, a deep technical runs at ~$0.41
+   against a technical's ~$0.34 — 1.2x the cost at 1.5x the price — because TTS
+   is 60-67% of every rep and an interviewer talks *less* of a long round, not
+   more. Cost-plus was the wrong frame regardless: COGS is 3-4% of pack revenue.
+   What the ladder actually has to hold is that **the screen stays strictly
+   cheaper than every round it competes with** (`LAUNCH-GAP.md` B3), and that is
+   asserted as a property rather than as a copy of the table. Costing is
+   `INTERVIEW-PLAN.md` §6.1; the decision is `LAUNCH-GAP.md` D18. The ledger carries it: a hold has an
+   `amount`, `planSpend` draws a round across as many lots as it takes (all or
+   nothing), and a settle writes **one row per source**. Any screen that asks
+   "can this start" must ask `spendableFor` for that round and compare against
+   `creditCost`, and any sentence explaining a refusal comes from
+   `creditRefusal` — three surfaces said it in three hand-written strings and
+   two of them only knew about the screener case.
    The one endpoint that grants a plan is `app/api/webhooks/whop/route.ts`, on
    the service role. `lib/email/` sends the one message that goes out before a
    card is charged — the third of the three trial mitigations §14 asks for, and
@@ -283,8 +349,12 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     `industry_specific_software / other_general`, with no write of any kind in
     between.** Whop re-derives the classification from product content on a
     delay, so a preflight that passes right after a product write proves nothing
-    about an hour later. So: treat **every** write to the account *or its
-    products* as a write to the industry classification, send the classification
+    about an hour later. **On 8 September it was still
+    `ai_and_automation_software / ai_chatbot_software` the next day** — nothing
+    corrected it overnight and the only thing that noticed was the preflight. It
+    was restored, read back, a plan price was then written, and it was read back
+    **again** for exactly that reason. So: treat **every** write to the account
+    *or its products* as a write to the industry classification, send the classification
     alongside whatever else is being set where you can, **read it back with
     `npm run whop:verify` afterwards, every time** — that preflight is the only
     thing that has ever caught this — and **read it back again later**, before

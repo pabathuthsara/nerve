@@ -183,6 +183,7 @@ export class WarmthSession {
       posture: this.engine.posture,
       repairOpen: this.engine.repairOpen,
       his: this.lastUserShape,
+      firstExchange: this.firstExchange,
     })
     this.lastDirective = line
     this.turnsSinceSteer = 0
@@ -217,6 +218,7 @@ export class WarmthSession {
       posture: this.engine.posture,
       repairOpen: this.engine.repairOpen,
       his: this.lastUserShape,
+      firstExchange: this.firstExchange,
       ...this.openingBriefFlag,
     })
     this.turnsSinceSteer += 1
@@ -263,6 +265,7 @@ export class WarmthSession {
       posture: this.engine.posture,
       repairOpen: this.engine.repairOpen,
       his: this.lastUserShape,
+      firstExchange: this.firstExchange,
       includeStanding: false,
       ...this.openingBriefFlag,
     })
@@ -375,6 +378,21 @@ export class WarmthSession {
   /** The same fact, in the shape the steering context wants it. */
   private get openingBriefFlag(): { openingBrief?: true } {
     return this.openingTurnKind === 'brief' ? { openingBrief: true } : {}
+  }
+
+  /**
+   * She is answering his FIRST turn, so he has offered her nothing yet.
+   *
+   * Read by `invitedThisTurn`, which withholds the band's invitation and the
+   * gates for exactly this turn. His opener is exempt from `deadEnd` on purpose
+   * — a two-word hello must not cost him warmth — and that exemption was being
+   * read as an offer.
+   *
+   * `<= 1` rather than `=== 1` so it also covers the turn before he has spoken
+   * at all, where `lastUserShape` is still null and the answer is the same one.
+   */
+  private get firstExchange(): boolean {
+    return this.userTurnCount <= 1
   }
 
   /**

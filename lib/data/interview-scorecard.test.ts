@@ -3,7 +3,11 @@ import {
   INTERVIEW_AXES,
   INTERVIEW_FOCUS_INSTRUCTIONS,
 } from './interview-scorecard'
-import { SUB_SCORE_LABELS, toScorecard, type ScoreRow, type StoredMetricScore } from './scorecard'
+import {
+  INTERVIEW_SUB_SCORE_LABELS, SUB_SCORE_LABELS, subScoreLabel, toScorecard,
+  type ScoreRow, type StoredMetricScore,
+} from './scorecard'
+import { DIMENSION_COLUMN, DIMENSION_LABEL, INTERVIEW_DIMENSIONS } from './interview-progress'
 import { INTERVIEW_METRIC_BANDS } from '@/lib/grade/interview/metrics'
 import { SUB_SCORE_KEYS } from '@/lib/grade/types'
 
@@ -186,5 +190,78 @@ describe('toScorecard, by track', () => {
     // And a dating rep never has one at all.
     const dating = toScorecard({ sessionId: 's', score: row(), events: [] })
     expect(dating.accuracy).toBeNull()
+  })
+})
+
+/**
+ * ── THE BREAKDOWN IS IN THIS ARM'S WORDS ─────────────────────────────────
+ *
+ * The interview grader scores structure, specificity, listening, signal
+ * reading, composure and the questions asked back. Those are then RENAMED onto
+ * the `scores` columns the dating arm already had, which is a storage decision
+ * — and it leaked onto the screen: a candidate scored on whether their answer
+ * had a shape read "Opening 71", and one scored on evidence read
+ * "Curiosity 64". Every number was right and every word was the other product.
+ */
+describe('the judged half, labelled', () => {
+  it('derives its labels from the interview arm own naming, not a third list', () => {
+    for (const dimension of INTERVIEW_DIMENSIONS) {
+      const key = DIMENSION_COLUMN[dimension].replace(/_(.)/g, (_, letter: string) => letter.toUpperCase())
+      expect(INTERVIEW_SUB_SCORE_LABELS[key], dimension).toBe(DIMENSION_LABEL[dimension])
+    }
+  })
+
+  /** The one the snake/camel conversion exists for. */
+  it('carries signal_reading across as signalReading', () => {
+    expect(INTERVIEW_SUB_SCORE_LABELS.signalReading).toBe(DIMENSION_LABEL.signalReading)
+    expect(INTERVIEW_SUB_SCORE_LABELS.signal_reading).toBeUndefined()
+  })
+
+  it('has a word for every sub-score the grader returns, plus the seventh', () => {
+    for (const key of SUB_SCORE_KEYS) {
+      expect(INTERVIEW_SUB_SCORE_LABELS[key], key).toBeTruthy()
+    }
+    expect(INTERVIEW_SUB_SCORE_LABELS.technicalAccuracy).toBe(SUB_SCORE_LABELS.technicalAccuracy)
+  })
+
+  /**
+   * The assertion this file exists for. Four of the six dating words describe
+   * something an interview is not scored on at all.
+   */
+  it('never prints a dating dimension on an interview scorecard', () => {
+    const card = toScorecard({
+      sessionId: 's',
+      score: row({
+        technical_accuracy: 60,
+        accuracy: { score: 60, scored: 5, asked: 5, correct: 3, incomplete: 1, wrong: 1, notes: [], reading: 'Mostly right.' },
+      }),
+      events: [],
+      track: 'interview',
+    })
+    const labels = card.judgement?.subScores.map((entry) => entry.label) ?? []
+    expect(labels.length).toBeGreaterThan(0)
+    for (const dating of ['Opening', 'Curiosity', 'Signal reading', 'Close']) {
+      expect(labels, dating).not.toContain(dating)
+    }
+    // And it says what it actually measured.
+    expect(labels).toContain(DIMENSION_LABEL.structure)
+    expect(labels).toContain(DIMENSION_LABEL.specificity)
+    expect(labels).toContain(DIMENSION_LABEL.close)
+    expect(labels).toContain(SUB_SCORE_LABELS.technicalAccuracy)
+  })
+
+  /** Rule 19: the dating arm reads exactly what it read before. */
+  it('leaves the dating breakdown untouched', () => {
+    const card = toScorecard({ sessionId: 's', score: row(), events: [] })
+    const labels = card.judgement?.subScores.map((entry) => entry.label) ?? []
+    expect(labels).toEqual(['Opening', 'Curiosity', 'Listening', 'Signal reading', 'Composure', 'Close'])
+    for (const key of SUB_SCORE_KEYS) {
+      expect(subScoreLabel(key, false), key).toBe(SUB_SCORE_LABELS[key])
+    }
+  })
+
+  it('falls through to the dating word for a key neither map knows', () => {
+    expect(subScoreLabel('somethingNew', true)).toBe('somethingNew')
+    expect(subScoreLabel('somethingNew', false)).toBe('somethingNew')
   })
 })

@@ -847,6 +847,16 @@ correct on its next page load.
 
 ## 13 · Interview credits — a second meter, 7 September 2026
 
+> **The ladder and the pack sizes moved on 9 September and the prices did not.**
+> A round costs one credit (the ten-minute recruiter screen) or two (everything
+> longer); the packs carry **2 / 8 / 20** at the same $9 / $29 / $59; and the
+> monthly grant is **2 on Pro, 6 on Elite**. The costing that decided it is
+> `INTERVIEW-PLAN.md` §6.1 and the argument is `LAUNCH-GAP.md` D18 — in short, a
+> deep technical costs 1.2x a technical and was priced at 1.5x, and one credit
+> could not buy any round longer than the free screener. Everything below about
+> *how* the meter works is unchanged; only the numbers in `lib/site/plans.ts`
+> moved.
+
 `INTERVIEW-PLAN.md` Phases D and E shipped, and they add the first thing this
 document's model could not express: a **balance** alongside the daily rate.
 Everything in §5 stands unchanged — free is still `repsPerDay: 0`, Pro is still
@@ -869,14 +879,28 @@ period cost no migration. No new plan value, no CHECK constraint, no mark glyph.
 
 ### What is sold
 
+**Restated 8 September.** The prices did not move; what a credit buys did. See
+§14 below for why.
+
 | | Price | Contents | COGS at $0.55/interview |
 |---|---|---|---|
 | Free screener | **$0** | 1 × 5 min, once per account, granted at sign-up | ~14¢ |
-| One interview | **$9** | 1 × full round, graded | ~6% |
-| Five interviews | **$29** | 5 | ~9% |
-| Twelve interviews | **$59** | 12 | ~11% |
-| Pro $19/mo | — | **1 credit per billing period**, on top of 3 dating reps a day | — |
-| Elite $49/mo | — | **4 credits per billing period**, on top of 6 a day | — |
+| One credit | **$9** | 1 credit — a recruiter screen, graded | ~6% |
+| Five credits | **$29** | 5 credits | ~9% |
+| Twelve credits | **$59** | 12 credits | ~11% |
+| Pro **monthly** $19/mo | — | **1 credit a month**, on top of 3 dating reps a day | — |
+| Pro **weekly** $7/wk | — | **none** — interviews sold separately | — |
+| Elite $49/mo | — | **4 credits a month**, on top of 6 a day | — |
+
+And what a round costs, priced by the minutes it burns:
+
+| Round | Length | Credits |
+|---|---|---|
+| Screener | 5 min | **free** — the sign-up grant, and nothing else buys it |
+| Recruiter screen | 10 min | 1 |
+| Technical | 20 min | 2 |
+| Final round | 20 min | 2 |
+| Deep technical | 25 min | 3 |
 
 Authored in `lib/site/plans.ts` beside `OFFERS`, created at Whop by
 `npm run whop:setup -- --apply`, asserted by `npm run whop:verify`. The three
@@ -993,3 +1017,181 @@ three volts the page had before.
    because Phase D looked at it closely and left it alone: the interview grant
    computes its own expiry rather than trusting the stored date, so nothing in
    this section depends on it.
+
+---
+
+## 14 · What a round costs, and what a week grants — 8 September 2026
+
+Two money changes out of the 8 September experience audit
+(`LAUNCH-GAP.md` §3b). Neither moves a price a customer sees on a plan card.
+
+### B3 · Rounds are priced by length now
+
+Recruiter 10 min, Technical 20, Deep technical 25, Final 20 — and every one of
+them was `credits: 1`. A deep technical earned the same revenue for two and a
+half times the voice minutes, which is a margin problem on the round people
+pick most once they understand the product. It is also a **value-perception**
+problem in the other direction, and that one is worse: a rational buyer never
+spends a credit on a recruiter screen, so the cheapest, friendliest and most
+convertible round in the catalogue is the one the pricing discourages.
+
+    screener        5 min   free
+    recruiter      10 min   1
+    technical      20 min   2
+    final          20 min   2
+    deep technical 25 min   3
+
+**So the packs are sold as credits, not as interviews.** "Five interviews" was
+exact while every round cost one; it is now between two and five depending on
+what they buy, and advertising a number the product cannot honour is the failure
+`lib/site/plans.ts` exists to prevent. `ROUND_COST_NOTE` is the one string that
+says what a round costs, read by `/pricing`, `/interviews`, the credits card and
+the paywall — one sentence, four surfaces, the `CREDIT_EXPIRY_NOTE` pattern.
+
+**The ledger had to move with it, and this is the part that was not obvious.**
+The audit said the field was "already on `RoundType`", which is true and is not
+the work. A hold was one row per session and the balance counted holds with
+`count(*)`, so the schema could not express a three-credit round at all:
+
+- `20260908090000_interview_credit_hold_amount.sql` adds `amount` to
+  `interview_credit_holds`, **defaulting to 1** — which is what makes it safe on
+  a live table, because every hold already standing means exactly what it meant
+  before — and `interview_credit_balance` sums it instead of counting rows.
+  Counting rows would have let an account with one credit open a three-credit
+  round twice.
+- `planSpend` (`lib/data/interview-credits.ts`) replaces `nextLotToSpend` on the
+  spending path. A deep technical can draw one expiring grant and two purchased
+  credits; the ordering is unchanged and is still the whole point — expiring
+  first, soonest expiry within a source, screener last and only for the round it
+  buys. **All or nothing**: null when the lots cannot cover it, because a
+  partial spend takes somebody's credits and gives them no interview.
+- `settleInterviewCredit` writes **one ledger row per source**, recomputing the
+  split against the ledger as it stands at settle time rather than at connect
+  time. That is what keeps the module's invariant true — every row carries the
+  expiry of the lot it belongs to — when a grant expires mid-rep.
+- `refundInterviewCredit` was `.maybeSingle()` over the spend rows. That errors
+  outright on two rows and would otherwise have refunded one credit of three.
+
+`npm run db:credits` asserts the new shape against the real database: a deep
+technical holds all three of its credits and releasing gives all three back.
+
+### C2 · The interview grant belongs to the offer, not the plan
+
+Credits are granted on `payment.succeeded` — *one payment, one period, one
+grant*, which is §13's rule and is correct. Weekly Pro produces a payment every
+seven days. So it granted about **4.35 credits a month** while `interviewsLine`
+read `PLAN_INTERVIEW_CREDITS[plan]` and printed **"1 / month"** on both tabs.
+
+Weekly Pro at ~$30 a month effective was therefore out-granting Elite at $49 —
+4.35 against 4 — while telling the buyer it granted a quarter as many. An
+under-promise nobody wanted and an over-delivery nobody was funding.
+
+`PlanOffer` carries `interviewCredits` now: **weekly 0, monthly Pro 1, Elite 4**.
+The webhook resolves which offer was bought through `periodForWhopPlan`, built
+from the same `PLAN_ENV` table as `planMap` — `planMap` throws the period away
+deliberately, because an entitlement is the same three reps a day however it was
+bought, and the interview grant is the one decision that needs it back. An id no
+variable names maps to nothing and the caller falls back to the plan headline,
+which is the number the buyer was shown.
+
+The card says **"Sold separately"** rather than printing a zero: "None" on a $7
+card reads as something withheld rather than as something sold separately, which
+it is, at $9. Weekly stays the cheap no-commitment door for **voice reps**,
+which is what it was designed to be.
+
+`plans.test.ts` asserts the plan headline and the monthly offer agree, so the
+comparison matrix and the cards cannot drift; `credit-rules.test.ts` asserts a
+weekly payment grants nothing and an unknown period falls back.
+
+### Not changed
+
+No plan price, no pack price, no trial length, no `reps_per_day`. `whop:verify`
+needs no new plan and no new environment variable.
+
+## 15 · The founding allocation, and two live defects — 8 September 2026
+
+The second half of the 8 September audit (`LAUNCH-GAP.md` §3b, Parts 5–7). Three
+things here touch money.
+
+### The current plan quotes what was bought (E3)
+
+`/profile/subscription` resolved every card from the period **tab**, including
+the one marked CURRENT PLAN — so an account on a monthly Pro trial that pressed
+**Weekly** read `$7 / week · About $30 a month` about its own subscription. A
+billing screen printing a price the customer is not paying is §14's failure mode
+arriving as a number rather than as silence, and it is the one thing on that
+screen a disputing customer would screenshot.
+
+The mirror had no period and could not grow one cheaply: the vendor-plan-id map
+lives in `WHOP_PLAN_*`, and `fetchSubscription` runs in a browser. So
+`applySubscriptionEvent` resolves it with `periodForWhopPlan` at write time and
+stores it on the `last_event` blob it already owns — **no migration, no new
+column, and the env stays server-side.** `readBillingPeriod` in
+`lib/site/plans.ts` is the one reader, used by the writer and the reader of that
+blob so they cannot hold different guards.
+
+It obeys the rule the renewal date and the cancel flag next to it already obey:
+**an event may change it and may not forget it.** `invoice.past_due` names a
+user and no plan, so writing the absence through would blank the price on the
+subscription screen of the account whose card has just failed. And a period that
+is genuinely unknown — a plan set by `scripts/set-plan.ts`, a row written before
+this existed — draws **no price at all** rather than the tab's, because a
+fallback is the same mistake in a quieter voice.
+
+### The founding allocation (S3)
+
+`CHECKOUT_NOTE` has promised founding members a price since 31 August and asked
+nobody to act on it. It has a cap now: **`FOUNDING_ACCOUNTS` = 200,
+`PRO_STANDARD_PRICE` = $29**, and `checkoutNoteFor(placesLeft)` is the sentence
+both pricing surfaces print, from the same server count.
+
+This is the only urgency device the product runs, and the reason is S1's: the
+cost here is voice minutes, so a percentage off does not shave a fixed margin —
+it **recruits the cohort that redeems and then uses it hardest**. An allocation
+that runs down raises ARPU on every later cohort instead, and costs nothing
+today.
+
+Three things keep it honourable, and all three are enforced rather than
+remembered:
+
+- **The number is counted.** `lib/db/founding.ts` reads `profiles` with `head:
+  true` — a count comes back and no row does — memoised for a minute, `null` on
+  failure. `checkoutNoteFor(null)` publishes **no figure**, and `plans.test.ts`
+  asserts that string contains no digits.
+- **Nothing resets.** No countdown, no struck-through price we never charged.
+  `plans.test.ts` asserts the copy never mentions time.
+- **The raise is a plan at the provider, not a constant here.** `whop:verify`
+  warns the moment the allocation is spent while Pro still sells at $19, so a
+  promise coming due is something the preflight says out loud. Until that plan
+  exists we charge **less** than advertised, which is why the exhausted note
+  reads *moving to $29* rather than *is*.
+
+Deliberately **not** built the same day, and recorded as decisions rather than
+omissions: no annual offer (S4), no credits-plus-Pro bundle (S2), no referral in
+credits (S5). Adding annual is still one record in `OFFERS` and one environment
+variable when it is wanted — see the table in `docs/README.md`.
+
+### Two live defects the preflight found
+
+Neither was in the audit; both were found by `npm run whop:verify` and both are
+fixed.
+
+**The industry classification had drifted to `ai_and_automation_software /
+ai_chatbot_software`** — the exact value rule 12 records the 7 September `PATCH
+/products` producing. Restored to `personal_development /
+public_speaking_coaching`, read back with the preflight, and then read back a
+**second** time after the plan write below. That second read is the whole of
+rule 12: a write to a *product* is a write to the *account's* classification,
+on a delay, so a preflight that passes immediately after one proves nothing.
+
+**The "One interview" pack was live at $2.** Dropped there at 03:15 that morning
+for a checkout test — the account's only earnings were the $2.04 it took — and
+left, so `/pricing` advertised $9 over a $2 checkout. Restored to the authored
+$9; the existing purchase stands. The preflight already asserted this
+(`it charges what lib/site/plans.ts advertises`) and is the only reason it was
+found.
+
+### Not changed
+
+No plan price except the pack correction above, no trial length, no
+`reps_per_day`, no new environment variable and no new vendor plan.

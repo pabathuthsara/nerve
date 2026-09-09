@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OFFERS } from '@/lib/site/plans'
+import { OFFERS, offerFor } from '@/lib/site/plans'
 import {
   LIVE_API_BASE,
   SANDBOX_API_BASE,
@@ -7,6 +7,8 @@ import {
   billingEnvironmentRefusal,
   checkoutConfigured,
   isLiveBase,
+  periodForWhopPlan,
+  periodMap,
   planForWhopPlan,
   planMap,
   rehearsing,
@@ -249,5 +251,39 @@ describe('the sanctioned rehearsal on a production domain', () => {
     expect(checkoutConfigured(liveWithFlag)).toBe(true)
     expect(billingEnvironmentRefusal(liveWithFlag)).toBeNull()
     expect(takingRealPayments(liveWithFlag)).toBe(true)
+  })
+})
+
+
+describe('the vendor plan id names its period (LAUNCH-GAP C2)', () => {
+  it('maps every offer\'s id back to the period it was sold on', () => {
+    /**
+     * `planMap` deliberately throws the period away — an entitlement is the
+     * same three reps a day however it was bought, which is why a period cost
+     * no `Plan` value. The interview grant is the one decision that needs it:
+     * credits are granted per payment and a weekly Pro pays four and a third
+     * times as often as a monthly one, so without this the webhook granted the
+     * monthly number every seven days.
+     */
+    const env = Object.fromEntries(OFFERS.map((offer) => [offer.env, `plan_${offer.plan}_${offer.period}`]))
+    const map = periodMap(env)
+    for (const offer of OFFERS) {
+      expect(periodForWhopPlan(`plan_${offer.plan}_${offer.period}`, map), offer.env).toBe(offer.period)
+    }
+  })
+
+  it('names no period for an id no variable holds', () => {
+    // Fail closed, exactly as `planForWhopPlan` does: the caller falls back to
+    // the plan-level headline rather than guessing a period.
+    expect(periodForWhopPlan('plan_someone_elses', periodMap({}))).toBeNull()
+    expect(periodForWhopPlan(null, periodMap({}))).toBeNull()
+  })
+
+  it('agrees with the offer record it was built from', () => {
+    const env = Object.fromEntries(OFFERS.map((offer) => [offer.env, `plan_${offer.plan}_${offer.period}`]))
+    const map = periodMap(env)
+    const period = periodForWhopPlan('plan_pro_weekly', map)
+    expect(period).toBe('weekly')
+    expect(offerFor('pro', period!)?.interviewCredits).toBe(0)
   })
 })

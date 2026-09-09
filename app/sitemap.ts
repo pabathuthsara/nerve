@@ -10,6 +10,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     { url: siteUrl('/'), lastModified: now, changeFrequency: 'weekly', priority: 1 },
     { url: siteUrl('/how-it-works'), lastModified: now, changeFrequency: 'monthly', priority: 0.8 },
+    // D3. The paid-traffic destination for interview intent, so it is a page a
+    // crawler should find rather than an anchor halfway down the home page.
+    { url: siteUrl('/interviews'), lastModified: now, changeFrequency: 'monthly', priority: 0.9 },
     { url: siteUrl('/pricing'), lastModified: now, changeFrequency: 'monthly', priority: 0.8 },
     { url: siteUrl('/legal/terms'), lastModified: now, changeFrequency: 'yearly', priority: 0.3 },
     { url: siteUrl('/legal/privacy'), lastModified: now, changeFrequency: 'yearly', priority: 0.3 },

@@ -1173,3 +1173,130 @@ on one rep. The direction is unambiguous — median 14 → 8, three-sentence tur
 seconds by the billing fault above, and warmth never left GUARDED and OPEN, so
 the ENGAGED and INVESTED bands have still never been exercised by a live
 conversation. Neither `npm run rep:audition` nor a deployment has been run.
+
+---
+
+## 13. She was inside the cap and still talking like a book (8 September)
+
+§12 fixed the length. This is the register, and it is a different defect wearing
+the same complaint: *"they still speak full sentences even when just meeting,
+and they talk like literature reviews."*
+
+The reflex is to reach for the caps again. The caps were fine.
+
+### What the production rows actually say
+
+32 dating reps, 5–8 September, 309 agent turns, read out of `transcripts`:
+
+| | median | ≤ 2 words | 2+ sentences | 3+ sentences |
+|---|---|---|---|---|
+| her first turn (n=28) | 7w | 11% | 32% | 7% |
+| her first three (n=81) | 7w | 6% | 43% | 9% |
+| every turn (n=309) | 8w | 2% | 55% | 17% |
+
+Not one band ceiling was exceeded. §12's "median 14 → 8" held across 32 reps
+rather than the one it was measured on; its 9% three-sentence figure was one
+rep, and the steady state is 17%.
+
+So the thing being complained about was never length. It was this:
+
+> "More crime than true, but close enough to satisfy."
+> "Quiet people, strange motives, and the odd twist."
+> "Morning. Decidedly less quiet than I hoped."
+
+A balanced clause, a tricolon, and *decidedly*. All three inside the cap. None
+of them a thing a person says while waiting for a dryer.
+
+### Defect one — "One sentence, N words" is a specification for prose
+
+Four of the six directives opened with it. A text model handed a tight word
+budget **and** an instruction to produce a sentence writes an epigram, because
+an epigram is the only thing that fits both. The band was not asking her to be
+brief; it was asking her to be brief *and well-formed*, and well-formed is the
+whole tell.
+
+People answer strangers in **fragments**. "Laundry." "Waiting on a machine."
+No band ever asked for one, so no band ever produced one — 6% of her opening
+turns were two words or fewer.
+
+The cold bands now ask for a fragment, the warm ones for one sentence, and the
+sentence count is stated as a prohibition ("never two") rather than as a hope —
+"One sentence" was already written at four bands and disobeyed on 43% of
+opening turns, so it was paying the register cost without buying the brevity.
+Same lesson as `maxWords` in §12, one layer up.
+
+**`typicalWords` and `maxWords` are byte for byte what they were.** The caps
+were not the defect, and `wordCapFor` is read by the turn pipeline — moving a
+number there changes what customers hear. Only the prose moved.
+
+### Defect two — his hello was being read as an offer
+
+`scoreFast` exempts his opening turn from `deadEnd` on purpose: "Hey there."
+must not cost him warmth and must never be answered with silence. The
+invitation gate in `steering.ts` tested `!deadEnd` and nothing else, so it read
+that exemption as evidence he had given her something to work with.
+
+He had said hello. What Tess — rung 1, the free sign-up rep, the first line the
+product ever speaks — actually received on turn 1:
+
+```
+[One sentence, seven or eight words. … You may volunteer one small thing.
+ … Light. You may say something real about your life. You may flirt.]
+```
+
+Three permissions to drive, at maximum recency, in reply to two words. She duly
+performed them: *"Machine's got nineteen minutes left. I'm deep into Tana
+French."* — two volunteered facts nobody asked for.
+
+Note that `mayVolunteerFor` and `mayAskFor` both answer **false** here. The
+gates were right and the composed line disagreed with them, which is the §11
+failure reached from a third direction: the clause shipped because nothing
+asked the gate.
+
+`invitedThisTurn` now asks for the offer directly on that turn alone —
+`askedQuestion || disclosed`, the same two terms `mayAskFor` uses and no third
+one. A substantive opener is still a real offer and is still answered as one;
+a hello is not. Every later turn is untouched, and this is **not** a warmth
+opinion — §11's rule that this file gets no third opinion about warmth still
+holds.
+
+The flag rides `SteeringContext.firstExchange`, beside `his` rather than inside
+it, because `UserTurnShape` is Tier 0 and every dating gate reads it exactly as
+it always has (rule 19) — the same reason `lastUserAskedDirectly` sits beside it.
+
+### What landed
+
+- `lib/warmth/bands.ts` — six directives rewritten, six pairs of numbers
+  untouched. Header section "A SENTENCE IS A REGISTER".
+- `lib/warmth/steering.ts` — `invitedThisTurn`, and `SteeringContext.firstExchange`.
+  The doc comments on `his` said the opening turn was where the gates were
+  *tightest*; it was where they were loosest, and both now say what the code does.
+- `lib/warmth/session.ts` — `firstExchange`, from `userTurnCount <= 1`.
+- `lib/characterization/dating-arm.test.ts` — re-baselined **deliberately**: the
+  band digest, the steering-ladder digest and four pinned lines. Every clause
+  other than length is byte for byte what it was at every rung, which is the
+  check that this was surgical. A new case pins the hello.
+- `lib/warmth/voice-steering.test.ts` — the wiring, through a real session
+  rather than through `composeSteering` by hand.
+
+The interview arm composes through `composeInterviewSteering` and is untouched;
+it ignores the new field. The text arm and the adapter's fallback pass no `his`
+at all and keep the behaviour they had — `undefined` is not `null`, and
+`invitedThisTurn` is explicit about the difference.
+
+`npm run typecheck`, `npm run lint`, 1995 tests and `npm run build:check` all pass.
+
+### Owed
+
+**None of it has been heard.** This is a change to how she sounds, and the
+argument above is a reading of stored text. `npm run rep:audition -- tess
+neutral 1` and `-- maya neutral 1` are the instrument, they spend money, and
+the honest limit of §12 applies again: the ENGAGED and INVESTED bands are the
+two least exercised by live conversation and are the two where "never two"
+is most likely to read as clipped rather than as natural.
+
+Watch for the failure mode this change can cause rather than the one it fixed:
+a fragment directive at CLOSED and HOSTILE is one step from "What?", which is
+the exact thing the "What the cold bands are allowed to be" section of
+`bands.ts` was written to stop. Coldness is meant to withhold curiosity, not
+syllables.

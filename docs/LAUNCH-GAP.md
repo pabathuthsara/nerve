@@ -457,7 +457,7 @@ and the Magic Link template edit that finally enables the six-digit code path.
 never get the email, and the failure looks like a broken product rather than a
 rate limit.
 
-### B6 · Delete and export  ·  ~1 day  ·  `DB done`
+### B6 · Delete and export  ·  **export shipped 8 Sep** · `delete still owed`
 **Spec:** §16.7 — recordings are the user's: per-session delete, bulk delete,
 full export, hard purge on account deletion.
 **Built (database):** `export_my_data()` returns everything we hold about the
@@ -465,11 +465,33 @@ caller — profile, entitlement, streak, sessions, transcripts, scores, field
 logs, unlocks, ledger and safety events — running as the caller, so RLS decides
 what it can see. Proven from a second account: B's export contains none of A's
 rows.
-**Still missing (app):** the download button wired to the RPC, a bulk-delete
-control, and account deletion, which needs the admin API plus a storage sweep
-and therefore cannot be a SQL function.
-**Why it blocks:** it is the one promise in §16 that a user can check on day
-one, and "email support to delete your account" is not the promise.
+
+**Export shipped 8 September (audit C4).** `exportMyData()` in
+`app/profile/actions.ts` calls the RPC in the user's own client and returns the
+JSON; the browser builds the download, because a Server Action cannot set a
+`Content-Disposition`. **The RPC moved with it**: it promised "everything we
+hold" and stopped being true on 7 September, when `interview_setups` began
+holding the role, the job description, the custom questions and the extracted
+text of a CV — the most personal document this product stores — and
+`interview_credit_entries` began holding what an account bought and spent.
+Neither was in the bundle. `20260908091000_export_includes_interviews.sql` adds
+both plus the subscription mirror. That ordering was the point: an incomplete
+export nobody can run is a latent defect, and an incomplete export **with a
+Download button on it** is a false claim a user can verify on day one.
+
+**Delete is now honest rather than theatre.** It was a `disabled` "Delete
+everything" button under a *Type DELETE to confirm* field, over copy saying
+support handles it — a ritual in front of a control that could not act, which
+tells a user the software is broken on the screen where §16 makes its most
+serious promise. The field and the dead button are gone; what is there now is
+the list of what goes, the sentence that a person does it, and a `mailto` that
+opens with the subject filled in.
+
+**Still owed:** the account-deletion path itself (admin API plus a storage
+sweep, so it cannot be a SQL function) and a bulk-delete control.
+**Why it still blocks:** the export half is the promise a user checks on day
+one and that half is now real; "email support to delete your account" is still
+not the promise, but it is at least what the screen now says.
 
 ### B7 · Nothing is instrumented  ·  **code done 1 Sep** · `keys owed`
 **Spec:** §04 — PostHog for funnels and week-4 cohorts, Sentry for errors with
@@ -1483,6 +1505,362 @@ cannot be attributed by model.
 
 ---
 
+## 3b. The 8 September experience audit — Parts 1–8, all shipped
+
+A walk of `www.hellonerve.com` signed out and signed in, desktop and mobile,
+against the codebase. Twenty-three findings across five parts plus a
+subscription-product checklist, a pricing read and a launch order, **all closed
+on 8 September**. The read underneath them was one sentence: *the dating arm is
+ready and the interview arm sells nothing* — the free round it advertises was
+unreachable on the default path, the out-of-credits moment sold the wrong
+thing, and the three pack prices sat on a page with no way to buy them.
+
+Parts 1–4 shipped in the morning; **Part 5 (E1–E3), Part 6's remaining gaps and
+Part 7's one buildable strategy item shipped the same day**, along with two live
+provider defects the preflight found on the way through.
+
+Nothing here touched `lib/warmth/`, `lib/personas/`, `lib/grade/`, `lib/audio/`
+or any `PIPELINE_*` default. `lib/characterization/dating-arm.test.ts` was green
+on every commit (rule 19). E1 is the one change on this list both arms read, and
+it is deliberately symmetrical: the same rewrite on both rows, not a one-arm
+edit.
+
+### Part 1 — the four that were named
+
+| # | Was | Is |
+|---|---|---|
+| A1 | Setup was a three-step wizard with the interviewer bolted on *after* it, and round and difficulty buried in step one of a flow you run once. Cold start to microphone was eight screens | Split in two. A **profile** (role, company, job description, field, CV, questions) set once and edited from the home screen, and a **run** — interviewer → `/interview/start` → brief — every time. The two dials worth changing per interview are now the run's only questions |
+| A2 | `RepsRemaining` had four states and two were links. "3 reps left" and "2 credits" — the two pills anybody actually looks at — were inert `<span>`s | All four are links. Reps to `/profile/subscription`, credits to `/interview`. Same visual treatment; a target, not a new control |
+| A3 | Elite is monthly only and both boards **fell back** to its monthly offer on the weekly tab, so "7 days free, then $49 every month" sat under a period note reading "no trial and no commitment". In-app it was worse — `PlanCard` never drew the "Monthly only" chip `PlanColumn` did | `plansOn(period)` filters the board and `periodAsideFor` says in one line where Elite went. The column count follows the cards, so two plans do not leave a third of the board empty |
+| A4 | `/profile/subscription` printed "Practice interviews · 1 / month" on every card and sold no credits. The only place in the product to buy one was a sidebar button on `/interview` | A **Credits** block on the subscription screen: balance, round costs, the expiry sentence, the three packs. `components/interview/credits.tsx` is the shared component — it could not live in `interview-screens.tsx`, which `modals.tsx` already imports |
+
+### Part 2 — the interview track
+
+**B1 (blocker).** Every account is granted one `screener` credit at sign-up, a
+screener credit buys the five-minute round and nothing else, and
+`DEFAULT_ROUND` was `recruiter`. So a new account walked the whole setup and
+read *"a recruiter screen costs one credit, and there are none in the
+account"* — while the pill in the chrome said **1 credit**. Two numbers
+disagreeing on one screen, at the exact moment the landing page's promise of a
+free interview should have paid off. **The one giveaway on every account in the
+database failed silently at the moment of redemption.** `openingRound(hasScreener)`
+is the fix, and the hero now quotes the account total with one sentence saying
+what it cannot buy, so the pill, the card and the hero agree.
+
+**B2 (blocker).** The interview brief opened `PaywallSheet` on `credits <= 0`
+and got the **dating** one: titled "Keep training", saying *"Your voice reps for
+today are done"*, printing Pro and Elite's reps per day, counting down to a
+daily reset that does not apply to a balance, and pointing at a screen that sold
+no credits. Every sentence false, on the second track's single monetisation
+moment. There is an interview branch now — packs, per-credit rates, round costs,
+the expiry sentence, Pro as a secondary line — and the body is `creditRefusal`,
+so it never says "none left" to somebody holding a screener.
+
+**B3.** Recruiter 10 min, Technical 20, Deep technical 25, Final 20 — and all
+four were `credits: 1`. A rational buyer never spent a credit on the cheapest,
+friendliest, most convertible round in the product. **Priced by length now**
+(1 / 2 / 3 / 2), and the packs are sold as *credits* rather than as interviews,
+because five credits is between two and five interviews depending on what they
+buy. `ROUND_COST_NOTE` is the one string that says so, read by `/pricing`,
+`/interviews`, the credits card and the paywall.
+
+**The ladder that landed here was wrong within a day, and D18 is why.** It was
+authored off MINUTES, which is not what an interview costs; the costing that
+settled it is in `INTERVIEW-PLAN.md` §6.1 and the result is 1 / 2 / 2 / 2. What
+survives of B3 unchanged is the part that mattered: the screen is still strictly
+cheaper than every round it competes with, which is the only property the
+finding actually needed.
+
+**The ledger had to move with it, and the audit understated that.** A hold was
+one row and the balance counted holds with `count(*)`, so it could not express a
+three-credit round. `20260908090000_interview_credit_hold_amount.sql` adds
+`amount` (defaulting to 1, which is what makes it safe on a live table) and the
+balance sums it. `planSpend` replaces `nextLotToSpend` on the spending path: a
+deep technical can draw one expiring grant and two purchased credits, all or
+nothing, and settle writes **one ledger row per source** — so the module's
+invariant, that every row carries the expiry of the lot it belongs to, still
+holds. `refundInterviewCredit` was `.maybeSingle()` over the spend rows, which
+errors outright on two and would otherwise have refunded one credit of three.
+
+**B4.** `SetupLayout` rendered `0X / 03` over `value={step / 3 * 100}` and there
+were four screens. The bar filled, the counter read 03/03, and a fourth screen
+appeared. Falls out of A1 for free, and the count comes from `SETUP_STEPS` now
+rather than a literal.
+
+**B5.** `choose()` did `router.push('/interview')` — somebody who had just
+decided who they wanted to face was put back on a dashboard and asked to find
+the Start button. It pushes to the run's own setup now; `inRun={false}` keeps
+`/roster` a browse.
+
+**B6.** On a phone the hero fills the screen and the whole sidebar stacked
+underneath as six undifferentiated cards, with the captions toggle drawn at the
+same weight as the credit balance. Ordered by what somebody does — credits,
+profile, readiness, last interview — and **the captions toggle moved to the run
+setup**, where it belongs: it is a per-interview decision.
+
+### Part 3 — money
+
+**C1 (blocker).** The pack cards ended in nothing. No CTA on the highest-intent
+block on the site, while every other card on the page ends in a button —
+reading as unfinished next to the plan board above it, on the page a
+merchant-of-record reviewer opens. Signed in, the button opens a real checkout;
+signed out it goes to `/signup?pack=…` and the sign-up screen names what they
+came for. Carrying the intent all the way into an automatic checkout is still
+open and is a nice-to-have rather than part of this.
+
+**C2.** Credits are granted on `payment.succeeded` — one payment, one period,
+one grant — and weekly Pro pays every seven days. So it granted ~4.35 credits a
+month while every surface printed "1 / month": **weekly Pro out-granting Elite
+at 60% of the price, and under-promising it at the same time.** The grant is a
+property of the **offer** now (`PlanOffer.interviewCredits`), weekly grants
+none, and the card says "Sold separately" rather than printing a zero.
+`periodForWhopPlan` is how the webhook knows which offer was bought.
+
+**C3.** Measured at 375px: the cards stacked Free, Pro, Elite, and Free is the
+longest card on the board, so Pro's "Most popular" chip sat two screens down. A
+reader met a $0 plan, a wall of what it includes, and a **Start free** button
+before they ever saw a price — on the view the traffic actually arrives in. CSS
+`order` on the lead card below the breakpoint; the desktop three-across is
+unchanged.
+
+**C4.** See B6 above — export wired, delete made honest.
+
+**C5.** The invoice row rendered only when the provider had returned a
+`manageUrl`, so on every account where it had not the screen said nothing at all
+about receipts. It always renders now. And "Switch to Elite" said nothing about
+money: there is one sentence under it stating what starts when, and pointing at
+the receipt for the period being left — it deliberately does **not** assert a
+proration mechanism nobody has verified.
+
+### Part 4 — onboarding and the first run
+
+**D1.** `/onboarding/track` asked dating or interview and the run ended at
+`/train` in every case, where `AppShell`'s pathname effect set the track back to
+`dating`. The one question onboarding asks about intent was overwritten within a
+second of being answered — and the interview option was still a *waitlist*, from
+when the track was screens over fixtures. It is a real choice now, the run ends
+on `/interview` when it is taken, the mic step's *look around first* honours it
+too, and the focus question says which half it is about rather than asking
+somebody who came for interviews about flirting.
+
+**D2.** Clicking **Start training free** landed on *"Your date of birth"* —
+before email, before password, before anything was at stake. §16.4 requires the
+gate before the account **exists**, and nothing is created until the final
+submit; the ordering was a product decision on top of the rule, and it measured
+the wrong cost. Email and password first, the date on step two, the gate
+unchanged. Worth an A/B once PostHog keys land (B7).
+
+**D3.** The hero sells one product and the app has two. One clause in the hero,
+`Interviews` in the header and footer nav, and **`/interviews`** — a dedicated
+paid-traffic destination that renders the landing page's own `InterviewTrack`
+and `ScoringLaw` rather than restating them, so the ad and the page it lands on
+cannot come to describe different products. In the sitemap at 0.9.
+
+**D4.** Two free samples existed and never met: the sign-up voice rep and the
+five-minute screener. Nothing told a dating-track user the second one existed.
+One quiet row on `/train`, after the first graded rep, gone once the screener is
+spent.
+
+**D5.** `RosterScreen` renders `InterviewerPicker`, so the same screen lives at
+`/roster` and `/interview/interviewers` — and on the second URL the Roster rail
+item went dark and Train lit up, mid-run. `RUNS_UNDER` in `app-shell.tsx` names
+the exception.
+
+### One thing found while fixing these, and fixed
+
+`ProductProvider` was `useState('aisha-rahman')`, and every consumer reads
+`selectedInterviewerId ?? setup?.interviewerId` — a `??` that could never reach
+its right-hand side. The stored choice was unreachable: pick Marcus, save him,
+reload, get Aisha. Cosmetic while the picker was a screen you visited once; A1
+made it the first step of every run, so the fallback had to actually work. It is
+`null` now.
+
+### Part 5 — found signed in, all three shipped 8 September
+
+**E1. The brief named the outcome as the goal, on both arms.** `RuleBlock` read
+`Goal · Get her number` and `Goal · Answer well enough to be called back`, and
+`HowItWorksSheet` closed the dating four on *"She decides at the end whether you
+get her number."* Rule 2 is the product — outcome is never scored — and the
+landing page argues exactly that. This was not a copy inconsistency: it is the
+last thing read before the microphone opens, so it was an **instruction, at the
+moment of highest attention, to play for the result**, which is the behaviour
+that collapses Close and Signal reading. The screen primed the failure and the
+grader then scored it.
+
+Both rows now name a manner rather than a result — *Have a conversation worth
+having* and *Answer like the person they should call back* — and the sheet's
+fourth line is *"She decides at the end. Nothing she decides is scored."* The
+mechanic is untouched: she still decides, and the interview still ends on the
+clock. `lib/data/mission.ts` and `lib/data/guided.ts` are Tier 0 and neither was
+opened; the sentence never lived there.
+
+**E2. The track reset to dating on every cold load.** `ProductProvider` was
+`useState('dating')` — hardcoded, never seeded from `profiles.active_track`,
+never persisted — and `AppShell`'s pathname effect only corrects it on
+`/interview`, `/train` and `/field`. Every **shared** route inherited the
+default, so an interview account that refreshed, opened a bookmark, followed a
+link from an email or came back the next day landed on `/roster` and got the
+dating roster, the dating nav with Field back in it, and a "reps left" pill in
+place of its credits. `active_track` — the one thing onboarding asks about
+intent — was read by nothing in the chrome, and `setActiveTrack` was dead code.
+
+The provider gained `adoptTrack`, which is deliberately not `setTrack`: the two
+answers arrive in the wrong order. The pathname is known during the first
+render and the profile a fetch later, so the **first** answer wins and every
+later one is ignored — landing on `/interview` and being dragged back to dating
+a moment later would be a worse bug than the one being fixed. It is gated on
+`unlockedTracks`, so a stored track the account cannot open never draws a rail
+to a guard. And the switcher now writes `active_track`, without awaiting and
+without revalidating the layout: nothing server-rendered is behind a nav tap.
+
+**E3. The card marked CURRENT PLAN quoted whatever tab you pressed.** On a
+monthly Pro trial, pressing **Weekly** made your own subscription read `$7 /
+week · $7 every week. Cancel any time. · About $30 a month.` A tab is a question
+about what is **for sale**; the current plan is not for sale, so it answers a
+different question now and quotes what was bought.
+
+The period was the hard part and is the interesting half. The mirror did not
+carry one, and it cannot be derived in a browser — the vendor-plan-id map lives
+in `WHOP_PLAN_*`. So `applySubscriptionEvent` resolves it at write time and
+stores it on the `last_event` blob it already owns: no migration, and the env
+stays server-side. It is kept under the same rule as the renewal date and the
+cancel flag beside it — **an event may change it and may not forget it** —
+because `invoice.past_due` names a user and no plan, and writing the absence
+through would blank the price on the subscription screen of the account whose
+card has just failed. When the period is genuinely unknown (a hand-set
+entitlement, a row written before the field existed) the card draws **no price
+at all** rather than falling back to the tab, which is the same mistake in a
+quieter voice.
+
+Two things came with it. The *"Also seen"* on the audit was real: nothing
+reconciled `entitlements.reps_per_day` with the authored plan, so the header
+read *"20 voice reps per day"* over a card reading *"3 / day"*. The current
+card now prints what the account is **granted** and every other card prints
+what its plan is authored to grant — one formatter, `repsPerDayLine`, so the two
+cannot be worded differently. And `PlanCard` was still calling
+`interviewsLine(plan.id)` with no period, so in-app the weekly tab said
+*"1 / month"* where the public board said *"Sold separately"* — C2 surviving on
+one surface.
+
+### Three found walking the interview arm itself, and fixed
+
+Not on the audit — it walked the money surfaces. These are the second track
+still wearing the first one's furniture, and in all three the interview material
+already existed and was simply not being reached.
+`INTERVIEW-TECHNICAL-PLAN.md` §15 is the long version.
+
+**The judged half of the scorecard was labelled with dating dimensions.** An
+interview is graded on structure, specificity, listening, signal reading,
+composure and the questions asked back; `INTERVIEW_SUBSCORE_KEY` renames those
+onto the `scores` columns the dating arm already had, so no migration is needed.
+**That rename was a storage decision and it leaked onto the screen** — a
+candidate scored on whether their answer had a shape read *"Opening 71"*, and
+one scored on evidence read *"Curiosity 64"*. Every number was right and four of
+the six labels named something an interview is not scored on at all.
+`subScoreLabel(key, interview)` fixes it, and the interview labels are **derived
+from `DIMENSION_LABEL`** — this arm's existing naming, already printed on
+`/interview` — rather than authored a second time. The measured half needed
+nothing: it has read *answer share · longest answer · fillers / min · thinking
+time · questions back* since §14, and technical accuracy already answers
+"did they know it".
+
+**`/progress` drew interview scores as dating trends.** `fetchProgress` read
+`scores` unfiltered, and every interview writes a row into those same six
+columns — so structure was plotted on the Opening line and specificity on
+Curiosity, and somebody who did four interviews watched their dating trends move
+without doing a dating rep. It filters to `sessions.track = 'dating'` now, which
+is the other half of a filter the interview arm has always applied on its side.
+
+**The library is dating-only** — D17 in §4. Recorded as spec drift rather than a
+bug, because §11 is what says otherwise.
+
+### Part 6 — the gaps against what subscription products ship
+
+Every **essential** on the audit's table is now Have. Three were closed here:
+E2, E3, and **failed-payment recovery**, which was Partial — `past_due` stated
+the problem and offered no action, so the only route to a new card was an email
+from a provider that person had already ignored once. The dunning state now
+carries an **Update card** button above the cancel button (a screen whose only
+action during a failed payment is "Cancel" is a screen recommending churn), the
+line is amber rather than mute, and when there is no `manageUrl` it stops
+promising one and says the provider will email a link instead.
+
+Two nice-to-haves were taken because both are cheap and both prevent a support
+ticket rather than adding a feature:
+
+**Usage history for credits.** The ledger is append-only and has always held
+every movement; nothing ever showed one. *"I bought five and I have three"* is
+the standard question in a credit product, asked by somebody who ran two
+interviews and could not see that they had. `lib/data/credit-history.ts` turns a
+row into a sentence — hand-authored per kind, never the column name — and
+`CreditsPanel` draws it behind a closed `<details>`, so the card is the same
+height for everybody who is not asking and the buy buttons cannot be pushed
+below the fold on a phone (B6's lesson). **It reads the ledger and never sums
+it**: the balance is the RPC's answer, and a second, subtly different total on
+the same card is exactly the bug this was meant to prevent.
+
+**The low-balance line (S5).** One credit left, said once, on the interview
+scorecard — the highest-intent second in the product, and the only place where
+that line is a service rather than an advertisement interrupting training. It
+is below the actions, never above them, and **zero is not low**: `creditRefusal`
+already owns the empty case in its own words on the brief, and two sentences
+about one emptiness in two voices is worse than one.
+
+The rest of the nice-to-haves were declined on 8 September rather than
+deferred by omission: **no annual offer** (S4), **no bundle** (S2), **no
+referral** (S5's first item). Pause and win-back stay where the audit put them.
+
+### Part 7 — the founding allocation (S3), and nothing else
+
+S1's argument is why almost none of Part 7 was built: **discounting a metered
+product recruits the cohort that uses it hardest**, so a percentage off buys
+worse customers than it does revenue. The one urgency device that survives that
+is the founding price, and `CHECKOUT_NOTE` had been promising it since 31 August
+while asking nobody to act.
+
+It has a cap now. `FOUNDING_ACCOUNTS` is 200, `PRO_STANDARD_PRICE` is $29, and
+`checkoutNoteFor` writes the sentence both pricing surfaces print. Three states,
+hand-authored, and the middle one is the whole point:
+
+| Places left | What it says |
+|---|---|
+| `null` | The bare promise, **with no number in it**. The count could not be read |
+| `> 0` | "Pro is $19 for the first 200 accounts and $29 after that — 183 founding places left" |
+| `0` | "The 200 founding places are taken and Pro is **moving to** $29" |
+
+**The number is counted, not asserted.** `lib/db/founding.ts` reads `profiles`
+with `head: true`, so a count comes back and no row does; it memoises for a
+minute (the figure only grows, so stale is never an over-promise) and answers
+`null` rather than throwing. A "3 places left" nobody counts is a compliance
+risk on the page §14 has a reviewer reading, not a taste question — which is
+also why the `null` state publishes no figure at all.
+
+**The raise itself is a plan at the provider, not a constant in this repo.**
+`npm run whop:verify` now warns the moment the allocation is spent while Pro is
+still selling at the founding price, so the promise coming due is something the
+preflight says out loud. Until that plan exists we charge less than advertised,
+which is the safe direction to be wrong in — and the note says *moving to*
+rather than *is*, for exactly that reason. There is no countdown, nothing
+resets, and no struck-through price we never charged; `plans.test.ts` asserts
+the copy never mentions time.
+
+### Two things the preflight caught that were not in the audit
+
+Both were live, both were found by `npm run whop:verify` on 8 September, and
+both are fixed.
+
+**The industry classification had drifted again** — to `ai_and_automation_software
+/ ai_chatbot_software`, the value rule 12 records the 7 September `PATCH
+/products` causing. Restored to `personal_development /
+public_speaking_coaching` and read back with the preflight, then read back a
+**second** time after the plan write below, because rule 12's whole point is
+that a product write is an account write.
+
+**The "One interview" pack was selling at $2.** Changed at 03:15 that morning
+for a live checkout test — the account's only earnings were the $2.04 it took —
+and left there, so `/pricing` advertised $9 over a $2 checkout. Restored to the
+authored $9. The one existing purchase stands.
+
 ## 4. Spec drift — decide, then make one of them true
 
 These are not bugs. They are places where the build and the spec disagree and
@@ -1490,8 +1868,8 @@ somebody has to say which is right.
 
 | # | Spec says | Build does | Note |
 |---|---|---|---|
-| D1 | "No password fields anywhere" (§04, §11) | Password sign-up and sign-in, alongside OTP. Google removed 30 Aug — never configured | The frontend brief asked for passwords. Either the spec line goes, or the screens do |
-| ~~D2~~ | Free = 3 reps ≈ 9 min, then paywall; $19 / 60 min and $39 / 150 min | Free = **no voice at all** past one sign-up rep; Pro $19 / 3 a day; Elite $49 / 6 a day | **Resolved 31 Aug — see `PAYMENTS-NEW-INTEGRATION.md`.** All three inconsistencies closed. Price: Pro is at §14's own $19, launched as an explicit founding-member price so it can be raised for later cohorts without breaking faith; Elite went to $49 because $39 with six reps a day lands at 53% gross after the merchant of record, under the 59% §14 had already rejected once. Unit: reps a day, which §14 agrees is the better framing, and the spec's minutes stay recorded as drift rather than being rewritten. Generosity: free was one rep a day *forever*, a recurring ≈$2.64/month for a user who never pays; it is now voice-less, and the one free rep happens once during sign-up. `lib/site/plans.ts` is still the single record both surfaces read, and `lib/site/plans.test.ts` asserts the ordering and the copy. **Extended 7 September**: the same record now also holds the three interview credit packs ($9 / $29 / $59), the per-plan interview allotment (1 on Pro, 4 on Elite) and both credit expiry rules, so the second meter is authored in the same place as the first and cannot drift from `/pricing` either — see `PAYMENTS-NEW-INTEGRATION.md` §13 and D16 below |
+| D1 | "No password fields anywhere" (§04, §11) | Password sign-up and sign-in, alongside OTP. Google removed 30 Aug — never configured | The frontend brief asked for passwords. Either the spec line goes, or the screens do. **Order changed 8 September (§3b, D2 of the audit):** email and password are step one and the date of birth step two. §16.4 is untouched — it requires the gate before the account **exists**, and nothing is created until the final submit, where `checkAge` runs on the server ahead of `auth.signUp`. Asking the date first was a product decision on top of that rule and it measured the wrong cost: cold ad traffic met the most personal question this product asks before anything was at stake |
+| ~~D2~~ | Free = 3 reps ≈ 9 min, then paywall; $19 / 60 min and $39 / 150 min | Free = **no voice at all** past one sign-up rep; Pro $19 / 3 a day; Elite $49 / 6 a day | **Resolved 31 Aug — see `PAYMENTS-NEW-INTEGRATION.md`.** All three inconsistencies closed. Price: Pro is at §14's own $19, launched as an explicit founding-member price so it can be raised for later cohorts without breaking faith; Elite went to $49 because $39 with six reps a day lands at 53% gross after the merchant of record, under the 59% §14 had already rejected once. Unit: reps a day, which §14 agrees is the better framing, and the spec's minutes stay recorded as drift rather than being rewritten. Generosity: free was one rep a day *forever*, a recurring ≈$2.64/month for a user who never pays; it is now voice-less, and the one free rep happens once during sign-up. `lib/site/plans.ts` is still the single record both surfaces read, and `lib/site/plans.test.ts` asserts the ordering and the copy. **Extended 7 September**: the same record now also holds the three interview credit packs ($9 / $29 / $59), the per-plan interview allotment (1 on Pro, 4 on Elite) and both credit expiry rules, so the second meter is authored in the same place as the first and cannot drift from `/pricing` either — see `PAYMENTS-NEW-INTEGRATION.md` §13 and D16 below. **Extended again 8 September (§3b, B3 and C2)**: rounds are priced by length rather than flat (1 / 2 / 3 / 2), so the packs are sold as **credits** and `ROUND_COST_NOTE` is the one string that says what a round costs; and the interview grant moved from the plan to the **offer**, because credits are granted per payment and weekly Pro pays every seven days — it was granting ~4.35 a month while printing "1 / month", out-granting Elite at 60% of the price. Weekly grants none and says "Sold separately". **Extended a third time, 9 September**: the ladder is **1 / 2 / 2 / 2** and the packs carry **2 / 8 / 20** credits at unchanged prices, with Pro on two a month and Elite six — see D18 |
 | D3 | Bill per second, minutes framed as reps | Both: an append-only per-second ledger *and* a reps/day counter that actually gates | Fine as a design, but only one is enforced. If a rep can run 2 minutes, reps/day and minutes are interchangeable — say so once, in the spec |
 | ~~D4~~ | Streaks run on asks made, never on asks accepted (§09) | ~~Streak counts days with a voice rep~~ | **Resolved 23 Aug.** A logged ask calls `recordTrainingDay`, so the field carries the day when the voice quota is gone (§14), and `npm run db:field` asserts a streak starting with no rep anywhere near it |
 | D5 | Robin at a gallery opening; Alex at a bar, alone (§06) | Robin in a hotel lobby; Alex at a gallery opening | Alex was authored and tuned first and kept her room. Level 7 is `signalClarity: 20`, not the venue |
@@ -1505,6 +1883,8 @@ somebody has to say which is right.
 | D14 | "No coaching during the rep. Nothing on screen but a timer, a live waveform and the mission" (§05) | **Interview only:** a fourth thing may appear on the live screen — the question the interviewer just asked — behind a setting that is **off by default** | **Decided 7 September in favour of the build, bounded by a test.** `INTERVIEW-PLAN.md` §5.11 is the argument and the honest part of it is that this is text on a live screen and §05 allows three things. Three reasons it is a setting rather than a decision, in ascending order of weight: an interview question is longer and denser than "what do you do", holding it while answering is a real load; the product's own recommendation is to leave it off, and the setup screen says so in those words; and it is a genuine **accessibility control**, which is the strongest of the three and the one that makes imposing either answer wrong. **It is a caption and never a prompt, and that is enforced in code rather than in this note.** `assertCaption` (`lib/data/interview-agenda.ts`) refuses any string that is not a verbatim substring of something the interviewer actually said in this rep — not a banned-word list, which would be an argument about which hints are acceptable, but a refusal of the entire category: there is no phrasing of "try the STAR method" that survives it. The counter beside it advances on **completed exchanges** rather than his turns alone, which is D13's lesson applied to a different rail, and the wind-down owns the last step outright for the same reason. §11 of the plan keeps the rest refused: no guided rail on the interview track, none on the free screener, and Tess's carve-out stays one character wide |
 | D15 | "Outcome is never scored. Score process, never result" (§07); the grade is six dimensions of delivery, and the rubric says "do not penalise a candidate for not knowing something" | **Interview only:** a seventh scored dimension, `technical_accuracy`, on rounds that probe | **Decided 7 September in favour of the build, one track wide, and `NERVE-SPEC.md` is deliberately NOT edited.** §07's rule is about the OUTCOME and it is untouched: whether the interviewer seemed convinced still contributes zero, and a candidate who is turned down can still score 92 — which matters more on this track than any other, because "did you get the job" is what every competitor in the category scores. What changed is a different question. The old rule made Nerve a gym for how you handle an interview; the reason for changing it is commercial and was stated plainly — *that is what people will be paying for, to know if they know* — and a candidate who wants to find out whether their understanding of authentication survives contact with an interviewer cannot find that out from a composure score. `INTERVIEW-TECHNICAL-PLAN.md` §3 is the argument. **Four things bound it, and three of them are code rather than this note.** She never surfaces it during a rep — no correction, no hint, no "how it is going" — so rule 8 and §05 are intact and the number exists only on the scorecard. "I do not know", said plainly, still scores well on composure and is excluded from accuracy entirely, so the card can say *you handled that well and you were wrong*, which is the useful sentence. The grader **abstains by construction** (§8.3): `UNSCORABLE` is the default, an abstention leaves the denominator rather than scoring zero, a round where everything abstained returns **null**, and `parseAccuracyJudgements` downgrades any `WRONG` with no quote, no correction, or a quote that is not verbatim in what the candidate actually said — because a grader that invents a quote tells somebody they said something they did not, and a false accusation costs the account where an abstention costs nothing. And the **dating arm has no accuracy dimension and never will**: `judgementMeanOf` branches on the layer's absence, every dating rep reaches the six-dimension arithmetic it always did, and `lib/characterization/dating-arm.test.ts` pins both the number and the fact that the seventh key is not on that path |
 | D16 | Free is **voice-less**: `reps_per_day: 0` is the paywall, and the only voice a free account ever gets is one sign-up rep (`PAYMENTS-NEW-INTEGRATION.md` §5.2, D2, D11) | **Every account, free included, is granted a free five-minute interview at sign-up** — real voice, on the real interview arm, worth about 14¢ | **Decided 7 September in favour of the build.** `INTERVIEW-PLAN.md` §5.6 budgeted it and D5 built it, but the tension with D2 is real and belongs here rather than in a plan: a free account is defined by having no voice, and this is voice. Three things settle it. It is **once per account, not once a day** — the same shape as the sign-up rep, on the same doctrine, with `screener:<user id>` as the reference so abandoning and resuming onboarding cannot mint a second; the recurring cost D2 was written to kill does not exist here. It is **a quarter of what a full interview costs and a fifth of what the old daily free rep cost the business**. And it is the only honest way to sell a $9 item: a pack bought by somebody who has never heard an interviewer is a refund, and §14 says a merchant-of-record account dies of disputes rather than of anything else. **The consequence nobody planned for was the spend cap**, and it is the interesting half. `voice_daily_cap_cents` adds 90c of headroom per credit — sized for a twenty-five-minute round — so granting every account a credit silently moved **free's daily ceiling from 100c to 190c**, which is a change to what a DATING account may spend, arriving sideways from a feature on the other track. That is exactly the shape rule 19 exists to catch and exactly the shape that would not have been noticed: it broke no test that was about it, and surfaced as one assertion in `db:credits` whose whole job was A5's promise that free's number never moves. Screener credits now earn no headroom at all (`20260907043000_screener_no_extra_cap.sql`), which is also simply correct — five minutes at 14c fits inside free's existing 100c beside the sign-up rep. **The second consequence is deliberate and is E1**: a credit landing opens the interview track, so every account in the product now has the track switcher in its chrome. §9 of the plan is the argument — a product whose public surface carries interview rehearsal is describing itself in the category the Whop account is already registered under |
+| D17 | §11 lists the **library under both tracks**, and `navItems` did: the argument was that the cards are about holding a conversation with somebody who is not helping you, which an interview is | The library is offered on the **dating rail only** | **Decided 8 September against the spec.** The argument does not survive reading the cards. `lib/techniques/library.ts` is *"Open with the room, not with her"*, *"Use what she already gave you"*, *"Ask for something specific"* and five sets of openers — café, gym, platform, party, conference. There is no reading of an interview in which **Openers — gym** is guidance, and a second track advertising the first one's material as its own is the same defect `INTERVIEW-TECHNICAL-PLAN.md` §14 already fixed one surface of: that pass took the library LINKS off the interview scorecard and left the rail offering the whole section, so the conclusion reached the screen that linked *into* a card and not the one that advertised it. The route is untouched and the track switcher is two taps away, so nothing a dating user had is gone. Writing interview technique cards is the version of this that puts the item back on the rail; until they exist, `scorecard.tryNext` is this arm's authored prose and is already there |
+| D18 | §14 prices voice by the minute and says nothing about how a second track's item is priced. The build's own answer, one day old, was to price a round by its **length**: 1 / 2 / 3 / 2 credits for 10 / 20 / 25 / 20 minutes | A round costs **one credit or two**: the ten-minute recruiter screen is one, every longer round is two. Packs carry 2 / 8 / 20 credits at the same $9 / $29 / $59, and the monthly grant is two on Pro and six on Elite | **Decided 9 September, on a costing rather than an argument.** Length is not what an interview costs. Costed component by component off `voice_operations` (`INTERVIEW-PLAN.md` §6.1): a deep technical runs at ~$0.41 against a technical's ~$0.34 and a recruiter screen's ~$0.18 — **1.2x the cost at 1.5x the price** — because her airtime is what scales and an interviewer talks *less* of a long round, not more. Cost-plus is the wrong frame here anyway: COGS is 3–4% of pack revenue, so the ladder was passing on a difference that does not matter at a magnitude that does. What it cost the buyer was worse than the accounting. One credit bought a recruiter screen and nothing else, so somebody who had just used the free five-minute screener, wanted a real technical, and paid $9 was answered by `creditRefusal` with *"a technical costs 2 credits and there is one in the account"* — **the first paid purchase in the product met by a request to buy again**, for a ten-minute version of the free thing they had just had. Pro had the same shape: $19 a month reached no round longer than the screen while its card promised "one practice interview a month". **Prices did not move and deliberately did not** — a public price is very hard to raise again (`FOUNDING_NOTE` already commits us on the plans) and credits-per-pack can be turned back down for a later cohort without breaking a promise. B3's finding survives intact: the screen is still strictly cheaper than every round it competes with, which is what stopped it being dominated; above that line the three long rounds are priced together so they are chosen on fit. Asserted by `interview-credits.test.ts` as a *property* — screen strictly cheapest, long rounds equal — rather than as a copy of the table |
 | D10 | Eight characters, one per level, and level 8 unwinnable by construction (§06) | **Four** characters on rungs 1–4; the other five retired; no unwinnable rung | **Decided 24 Aug — deliberate, and the one entry here that gives something up.** See D10a. **Narrowed 31 Aug:** Tess was authored for the sign-up rep and took rung 1, Nadia moved to 2 and Maya back to 3, so the ladder is contiguous for the first time and no rung falls back to a neighbour's curve. Robin stays at 4, which is where §12 takes the warmth digits off the screen — that rule finally lands on the character it was written for. Four rungs is four UI tiers, so `Level` widened and the rank rail stayed anchored to the characters it was written about: Nadia earns Regular, Maya Contender, Robin Closer, and the on-ramp mints nothing |
 
 ### D10a · Four characters instead of eight  ·  **decided 24 Aug, narrowed 31 Aug**
@@ -1810,6 +2190,7 @@ anything.
 | `/legal/terms` | **Done** (27 Aug) — `/terms` permanently redirects here |
 | `/legal/privacy` | **Done** (27 Aug) — `/privacy` permanently redirects here |
 | `/legal/safety` | **Done** (27 Aug) |
+| *(not in §11)* `/interviews` | **Added 8 Sep** — the paid-traffic destination for interview intent. Renders the landing page's own `InterviewTrack` and `ScoringLaw` rather than restating them, so the ad and the page cannot describe different products (§3b, D3) |
 | *(not in §11)* `/sitemap.xml`, `/robots.txt` | **Added 27 Aug** — public routes crawlable, the product disallowed |
 | `/auth/sign-in` · `/auth/sign-up` · `/auth/verify` · `/auth/callback` | Done as `/login`, `/signup`, `/verify-email`, `/auth/callback`, plus `/forgot-password` and `/reset-password` |
 | `/start/goal` · `/start/mic` · `/start/brief` · `/start/rep` | Done as `/onboarding/*` → first rep. **Rebuilt 30 Aug**: one client route holding the step, four questions and a gate — age, track, focus, name, mic, ready. `experience` cut (nothing read it); the URLs remain resume targets and the run opens at the first unanswered step. `ONBOARDING-AUDIT.md` |
@@ -1825,11 +2206,13 @@ anything.
 | `/progress` · `/progress/week/[id]` | **Done** (shipped 24 Aug, Phase C) — trends, sub-score lines and the stored Sunday letters |
 | `/library` · `/library/[slug]` · `/library/openers` | **Done** — one surface for all five kinds rather than a separate openers route; grouped by sub-score, with read state, next/previous and a rep link on every card |
 | *(not in §11)* `/text/[persona]` | **Added 25 Aug** — text mode. Same character, no microphone, no quota (B15) |
+| *(not in §11)* `/interview` · `/interview/setup/{role,cv,questions}` · `/interview/interviewers` · `/interview/rep/[id]/{brief,live}` | **Added 7 Sep** — the second track, behind `unlocked_tracks` |
+| *(not in §11)* `/interview/start` | **Added 8 Sep** — the per-run setup, between the interviewer and the brief. Round, question difficulty, captions and the CV, answered once per interview rather than once per account (§3b, A1) |
 | `/settings` · `/settings/session` | Done as `/profile/settings` |
-| `/settings/billing` | Partial — `/profile/subscription`, no portal |
+| `/settings/billing` | Partial — `/profile/subscription`, no portal. **Extended 8 Sep**: it sells interview credits, the invoice row always renders, and a plan switch states what happens to the money (§3b, A4 and C5) |
 | `/settings/usage` | **Missing** |
-| `/settings/privacy` | **Missing** (retention toggle, bulk delete, export) |
-| `/settings/danger` | Partial — modal exists, action disabled |
+| `/settings/privacy` | Partial — **export shipped 8 Sep** and runs the RPC (§3b, C4); the retention toggle and bulk delete are still missing |
+| `/settings/danger` | Partial — the dead confirm field and disabled button are gone (§3b, C4); the sheet is now an honest `mailto`, and the deletion path itself is still owed |
 
 ### Tables (§13)
 

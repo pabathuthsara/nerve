@@ -145,6 +145,10 @@ function Hero() {
           A rep is a timed conversation, out loud, with someone who can lose interest,
           get distracted and say no. You are scored on how you talked — never on
           whether it worked. A clean rep that ends in rejection can score 92.
+          {/* D3. Anyone arriving on an interview-prep intent had to scroll past
+              the entire dating argument to find out we do it. One clause, and
+              a nav link, and a page of its own at /interviews. */}
+          {' '}The same engine runs <Link href={SITE_LINKS.interviews} className="volt-link">practice job interviews</Link>, with one free round on every account.
         </p>
         <div className="rule-block hero__rules">
           {[['Length', '3:00, every time'], ['Ends', 'When the clock does'], ['Scored on', 'How you played']].map(([label, value]) => (
@@ -211,7 +215,7 @@ function ScorecardArtifact() {
   )
 }
 
-function ScoringLaw() {
+export function ScoringLaw() {
   return (
     <SiteSection
       kicker="The scorecard"
@@ -359,9 +363,10 @@ function Roster() {
  * sentence is load-bearing and was argued for once already. This section is
  * added; nothing above it moved.
  */
-function InterviewTrack() {
+export function InterviewTrack() {
   return (
     <SiteSection
+      id="interviews"
       kicker="The second track"
       title={<>The same engine,<br />pointed at an interview.</>}
       lede="An interviewer who has read your CV and the job description, asks what you actually know rather than only what you did, and comes back with a graded scorecard. Ten to twenty-five minutes, four interviewers, five round types — and the same rule as everywhere else: you are scored on how you handled it, never on whether you got the job."

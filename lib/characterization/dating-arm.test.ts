@@ -257,7 +257,11 @@ describe('characterization · the band table', () => {
     expect(MAX_BAND_WORDS).toBe(15)
     expect(UNSTEERED_WORD_CAP).toBe(40)
     expect(digest(BANDS.map((spec) => `${spec.band} ${spec.directive} ${spec.permission ?? ''}`).join('')))
-      .toBe('22ff80928e4757e0')
+      // Re-baselined 8 September: the length clause of all six directives asks
+      // for a fragment or a capped sentence count instead of "One sentence, N
+      // words", which was a specification for prose. Every number in the table
+      // above is untouched — see `bands.ts`, "A SENTENCE IS A REGISTER".
+      .toBe('58c14b7c2c1cd1c4')
   })
 
   it('selects the same band at every seam', () => {
@@ -269,13 +273,13 @@ describe('characterization · the band table', () => {
 
   it('renders the same directive with and without the standing orders', () => {
     expect(bandDirective(41)).toBe(
-      '[One sentence, seven or eight words. Twelve at the very most. Do not ask a question this turn unless he asked you one first. You may volunteer one small thing.]',
+      '[Seven or eight words. Twelve at the very most. One sentence, never two. Do not ask a question this turn unless he asked you one first. You may volunteer one small thing.]',
     )
     expect(bandDirective(41, { includeStanding: false })).toBe(
-      '[One sentence, seven or eight words. Twelve at the very most. Do not ask a question this turn unless he asked you one first.]',
+      '[Seven or eight words. Twelve at the very most. One sentence, never two. Do not ask a question this turn unless he asked you one first.]',
     )
     expect(bandDirective(65, { suppressQuestion: true, includeStanding: false })).toBe(
-      '[One sentence, eight or nine words. Fourteen at the very most. No filler, no reassurance, never "take your time" or "no rush". Do not ask him anything this turn.]',
+      '[Eight or nine words. Fourteen at the very most. One sentence, never two. No filler, no reassurance, never "take your time" or "no rush". Do not ask him anything this turn.]',
     )
   })
 
@@ -419,9 +423,12 @@ describe('characterization · the steering line', () => {
   it('composes identically for Nadia across the ladder', () => {
     const lines = [10, 28, 41, 55, 66, 84].map((warmth) =>
       composeSteering({ persona: nadia, warmth, his: REAL_TURN }))
-    expect(digest(lines.join(''))).toBe('85f3c67b8e31715d')
+    // Re-baselined 8 September with the band table above, and for that reason
+    // alone: the want, personality, gate and reciprocity clauses are byte for
+    // byte what they were at every rung.
+    expect(digest(lines.join(''))).toBe('724e6fa811f86965')
     expect(lines[2]).toBe(
-      '[One sentence, seven or eight words. Twelve at the very most. Do not ask a question this turn unless he asked you one first. You may volunteer one small thing. You would still rather be left alone with the shelf you are halfway through. You are not going yet. Light. You may say something real about your life.]',
+      '[Seven or eight words. Twelve at the very most. One sentence, never two. Do not ask a question this turn unless he asked you one first. You may volunteer one small thing. You would still rather be left alone with the shelf you are halfway through. You are not going yet. Light. You may say something real about your life.]',
     )
   })
 
@@ -431,8 +438,36 @@ describe('characterization · the steering line', () => {
       warmth: 41,
       his: { words: 1, askedQuestion: false, disclosed: false, deadEnd: true },
     })).toBe(
-      '[One sentence, seven or eight words. Twelve at the very most. Do not ask a question this turn unless he asked you one first. He gave you almost nothing. Match it. Do not fill the gap for him. You would still rather be left alone with the shelf you are halfway through. You are not going yet. Light.]',
+      '[Seven or eight words. Twelve at the very most. One sentence, never two. Do not ask a question this turn unless he asked you one first. He gave you almost nothing. Match it. Do not fill the gap for him. You would still rather be left alone with the shelf you are halfway through. You are not going yet. Light.]',
     )
+  })
+
+  /**
+   * 8 September. His opening turn is exempt from `deadEnd` so that a two-word
+   * hello costs him no warmth — and the invitation gate was reading that
+   * exemption as an offer, so the free sign-up rep answered "Hey there." with
+   * the band's invitation and two gates open at once.
+   *
+   * Pinned in the characterization file rather than only in `steering.test.ts`
+   * because the thing that must not move is the SHAPE of the first line of the
+   * product, and this is the file that notices shape moving.
+   */
+  it('withholds the invitation on a bare hello and grants it on a real opener', () => {
+    const hello = { words: 2, askedQuestion: false, disclosed: false, deadEnd: false }
+    const opener = { words: 13, askedQuestion: false, disclosed: true, deadEnd: false }
+
+    const toHello = composeSteering({ persona: nadia, warmth: 41, his: hello, firstExchange: true })
+    expect(toHello).not.toContain('You may')
+    expect(toHello).not.toContain('Ask about him')
+
+    // A substantive opener is a real offer and is still answered as one.
+    expect(composeSteering({ persona: nadia, warmth: 41, his: opener, firstExchange: true }))
+      .toContain('You may volunteer one small thing.')
+
+    // And the same hello on any later turn is unchanged — this is the first
+    // exchange only, never a new warmth opinion.
+    expect(composeSteering({ persona: nadia, warmth: 41, his: hello }))
+      .toContain('You may volunteer one small thing.')
   })
 })
 

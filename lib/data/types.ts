@@ -1,5 +1,6 @@
 export type Track = 'dating' | 'interview'
 import type { Rank } from './rank'
+import type { BillingPeriod } from '@/lib/site/plans'
 
 /**
  * A roster tier — one per shipped rung (§06, `lib/data/progression.ts`).
@@ -186,6 +187,17 @@ export interface SubscriptionState {
   currentPeriodEnd: string | null
   /** Already cancelled, still inside the period they paid for. */
   cancelAtPeriodEnd: boolean
+  /**
+   * The period this subscription was BOUGHT on, or null when the mirror does
+   * not know (E3).
+   *
+   * Null is a real answer and not an error: an account whose plan was set by
+   * hand has no vendor plan id to resolve, and every row written before this
+   * field existed carries no period either. The subscription screen draws no
+   * price at all on the current-plan card rather than guessing one — the card
+   * above it already states the real terms.
+   */
+  period: BillingPeriod | null
   /**
    * The provider's own page for the card and the invoices, when it has told us
    * one. Cancelling is ours and lives on this screen; changing a card is still

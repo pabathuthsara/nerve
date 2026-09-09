@@ -440,6 +440,85 @@ with a reconnect. At $9 that is ~6% COGS. The five-minute screener lands near
 **14¢**. Unit cost is not the risk here, which was worth measuring precisely
 because the instinct said otherwise.
 
+### 6.1 · Re-costed on 9 September, and it moved the credit ladder
+
+§6 above is the 6 September measurement and its projection. Both survive; what
+follows is the same exercise repeated once there were interview reps to measure
+rather than only dating ones, and it is the costing `LAUNCH-GAP.md` D18 is
+decided on.
+
+**Method.** Per-component sums from `voice_operations`, joined to `sessions`, on
+the ElevenLabs arm. Rows before 7 September are excluded: the STT envelope was
+still settling `unknown` and charging its whole reservation on 17 of 23 reps,
+which inflates every total through it. Rows with `estimated = true` are excluded
+from the component figures and counted separately, because an unpriced operation
+is charged its whole reservation (rule 18) and one aborted turn is $0.0374 of
+phantom against a real cost near zero.
+
+**A full-length dating rep** — 15 reps at or past 165 s, mean 176 s, 14.6 turns:
+
+| Component | avg | worst seen |
+|---|---|---|
+| TTS · `eleven_v3_conversational`, 984 chars (max 1,435) | $0.0492 | $0.0718 |
+| LLM · `gpt-4.1-mini` | $0.0071 | $0.0090 |
+| STT · `gpt-4o-mini-transcribe`, prorated envelope | $0.0090 | $0.0240 |
+| Warmth · one call per user turn | $0.0034 | $0.0055 |
+| Grade · `gpt-4.1`, one pass | $0.0042 | $0.0049 |
+| Moderation · `omni-moderation-latest` | free | free |
+| **Total** | **$0.073** | **$0.115** |
+
+Against a hard ceiling of **$0.20** — `voiceBudgetPolicy().budgetUsd`, enforced
+by `voice_sessions.budget_usd` and not by care.
+
+**Interviews**, projected off the two real 8–9 minute rounds (213 and 227
+chars/min, 2.15–2.79 turns/min). Nothing longer than 537 s has ever run, so
+every row below the screener is arithmetic:
+
+| Round | TTS | LLM | STT | warmth | grade | accuracy | **total** | ceiling |
+|---|---|---|---|---|---|---|---|---|
+| screener 5 min | .058 | .015 | .009 | .007 | .007 | — | **$0.10** | $0.34 |
+| recruiter 10 min | .110 | .026 | .018 | .011 | .010 | — | **$0.18** | $0.62 |
+| technical 20 min | .200 | .051 | .036 | .020 | .016 | .020 | **$0.34** | $0.90 |
+| deep technical 25 min | .244 | .060 | .045 | .023 | .019 | .020 | **$0.41** | $0.90 |
+| final 20 min | .205 | .053 | .036 | .021 | .016 | — | **$0.33** | $0.90 |
+
+That brackets §6's 28–43¢ projection, which is the useful part: two methods, one
+answer. **The maximum cost of any interview is $0.90** — `interviewBudgetPolicy`
+clamps at it, and the resource limits (12,000 characters, 900k tokens) sit above
+it, so the dollar figure is what binds on every round of fifteen minutes or more.
+
+**What this settled.** A deep technical costs **1.2x a technical** and was priced
+at **1.5x**. TTS is 60–67% of every rep and nothing else is close, so what scales
+is HER airtime — and an interviewer talks less of a long round, not more. The
+ladder is 1 / 2 / 2 / 2 now; the argument and the buyer-facing half of it are
+`LAUNCH-GAP.md` D18.
+
+**Four things worth knowing that fell out of this measurement:**
+
+- **The accuracy pass has never fired.** All six real interview reps were
+  behavioural rounds with no probe pairs, so `scoreAccuracy` returned null every
+  time. The 2¢ in the table is the least-tested line in it.
+- **The STT envelope caps at four minutes whatever the round.**
+  `pipelineTranscriptionAllowance()` is `0.003 × 4`, and
+  `settleTranscriptionEnvelope` takes `min(prorated, maxCostUsd)`. A
+  twenty-five-minute deep technical books at most $0.012 against a real ~$0.045.
+  It is ~3¢ per long interview and it is the one bound in the system that fails
+  in the **wrong** direction — everything else over-charges on purpose.
+- **Our ElevenLabs character rate wants one invoice against it.** `config.ts`
+  prices `eleven_v3_conversational` at $0.05/1k characters, which is ElevenLabs'
+  published API list price for that exact model. The account is on **Creator —
+  $22/month, 121,009 credits** — and across 5–8 September we submitted **27,411
+  characters** while the vendor billed **12,321 credits** for that model. Both a
+  ~0.45 credits-per-character multiplier and a higher effective dollar rate are
+  consistent with that; which one is real decides whether a rep is $0.073 or
+  $0.10, and therefore whether the $0.20 budget is really $0.20 or really $0.33.
+  `rates.ts` already says vendor reconciliation is owed. This is the number that
+  makes it worth doing.
+- **`DEFAULT_CREDIT_BUDGET = 10_000` is the free plan's allowance** and we are on
+  121,009. With `ELEVENLABS_CREDIT_BUDGET` unset, the console warns from 8,000
+  upward on every rep and the audition CLI refuses runs it can afford twelve
+  times over.
+
 Three findings that fell out of the measurement, all of them **observations about
 the current build rather than licence to change it**:
 
@@ -1611,3 +1690,83 @@ classification survived the `--apply` and `whop:verify` says so.
 5. **The first real purchase should be watched end to end** — checkout, webhook,
    credits, the switcher appearing, an interview run against a bought credit.
    Everything below that is asserted; the composition of it is not.
+
+---
+
+## 16. The 8 September experience audit — Parts 1–4
+
+The whole finding list and what landed for each is `LAUNCH-GAP.md` §3b. Two
+things belong here, because they change what this plan said the track *is*.
+
+### The track's shape changed: a profile and a run
+
+§C1–C3 designed setup as one three-step wizard — role, CV, questions — and the
+interviewer picker was bolted on after it. That was right while setup was
+something you did once and then trained inside. It is wrong now that the round
+and the question difficulty are real dials (§5.1, §5.7): they were buried in
+step one of a flow you run once, so the two things anybody actually wants to
+change per interview were the two hardest to reach, and the only route back was
+an *Edit setup* button that re-entered the whole wizard.
+
+    profile   role · company · job description · field · CV · questions
+              asked once, edited from /interview
+
+    run       /interview/interviewers  →  /interview/start  →  brief  →  live
+              round · question difficulty · captions · CV, every time
+
+`/interview/start` is the new route. Cold start to microphone went from eight
+screens to five, and the wizard's `0X / 03` is honest for the first time — it
+was counting three over four screens (§3b, B4).
+
+**The captions toggle moved out of the home sidebar and onto the run setup.**
+§5.11 argued it as a setting and that stands; where it lived was the mistake. It
+is a per-interview decision, and on a phone it was sitting in a rail of six
+equal-weight cards below a full-height hero, drawn at the same importance as the
+credit balance.
+
+### §5.6's free screener was unreachable, and that is the finding that matters
+
+The screener credit is granted at sign-up, buys the five-minute round and
+nothing else (`spendableFor`). `DEFAULT_ROUND` was `recruiter`. So the default
+path was: walk the setup, arrive at `/interview`, read *"a recruiter screen
+costs one credit, and there are none in the account"* — with the chrome pill
+saying **1 credit**, because that pill shows the account total.
+
+Every account in the database was holding a giveaway worth about 90c to run and
+$9 to buy, and it **silently failed at the moment of redemption**. §5.6 budgeted
+it, D5 built it, D16 in `LAUNCH-GAP.md` argued it against the free tier's
+voice-less definition — and nobody had walked the default path with it.
+
+`openingRound(hasScreener)` is the whole fix: a null setup opens on the round
+the free credit can pay for. Two things follow it and both are about the same
+class of bug — numbers on one screen disagreeing:
+
+- The hero quotes the **account total**, matching the pill and the credits card,
+  with one sentence saying what it cannot buy. Printing the round-aware figure
+  there would have kept the disagreement and merely moved it.
+- `creditRefusal` is one function and three surfaces say it. It was three
+  hand-written strings, two of which only knew about the screener case — and
+  since B3 there is a second shape they all have to handle: two credits against
+  a three-credit deep technical is not "none left".
+
+### And §5.4's packs are credits now
+
+Rounds are priced by length (`PAYMENTS-NEW-INTEGRATION.md` §14). §5.4 said a
+pack decides a balance rather than an entitlement, which is why it needed no
+`Plan` value and no migration — that reasoning holds and is what made this
+cheap on the pricing side. It did **not** hold on the ledger side: a hold was one
+row and the balance counted rows, so the schema could not express a
+three-credit round. One migration, `planSpend`, and a settle that writes one row
+per source. `npm run db:credits` covers it.
+
+### Still owed by hand, after this pass
+
+Everything in §15's list is unchanged and still owed. Added to it:
+
+1. **A whole interview against a bought credit, end to end**, now that a round
+   can cost more than one. `db:credits` asserts the hold and the release; the
+   settle-across-two-lots path is asserted in `interview-credits.test.ts` as
+   pure arithmetic and has not run against a real graded rep.
+2. **Nothing in this pass has been heard out loud** — the same sentence §13.3 is
+   emphatic about. It is routing, copy and arithmetic; no prompt, no band, no
+   trajectory and no `PIPELINE_*` default moved.

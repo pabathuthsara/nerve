@@ -27,12 +27,13 @@ import { supabaseAdmin } from '@/lib/db/admin'
 import { issueInterviewCredits, voidInterviewCredits } from '@/lib/db/credits'
 import { planById } from '@/lib/site/plans'
 import type { Plan } from '@/lib/data/types'
-import type { PackId } from '@/lib/site/plans'
+import { readBillingPeriod, type BillingPeriod, type PackId } from '@/lib/site/plans'
 import type { BillingEvent } from './events'
 import { creditEffectFor } from './credit-rules'
 import { resolvedPlan, shouldApply } from './events'
 import {
-  configuredPackMap, configuredPlanMap, packForWhopPlan, planForWhopPlan,
+  configuredPackMap, configuredPeriodMap, configuredPlanMap,
+  packForWhopPlan, periodForWhopPlan, planForWhopPlan,
 } from './plans'
 
 export interface ApplyResult {
@@ -217,6 +218,29 @@ export async function applyBillingEvent(event: BillingEvent): Promise<ApplyResul
   const customerId = event.providerCustomerId ?? existing?.provider_customer_id ?? null
   const subscriptionId = event.providerSubscriptionId ?? existing?.provider_subscription_id ?? null
 
+  /**
+   * Which period this subscription was actually bought on (E3).
+   *
+   * `/profile/subscription` resolved the card marked CURRENT PLAN from the
+   * period TAB, so an account on a monthly Pro trial that pressed **Weekly**
+   * read `$7 / week · About $30 a month` on its own subscription. A billing
+   * screen quoting a price the user is not paying is §14's failure mode
+   * arriving as a number rather than as silence, and it is the one thing on
+   * that screen a disputing customer would screenshot.
+   *
+   * The period is knowable only here: the map lives in `WHOP_PLAN_*`, which is
+   * server-side, and `fetchSubscription` reads the mirror from the browser. So
+   * it is resolved at write time and stored on the blob we already own — no
+   * migration, and the env stays where it is.
+   *
+   * Kept under the same rule as the renewal date and the cancel flag two lines
+   * up: an event may CHANGE it and may not forget it. `invoice.past_due` names
+   * a user and no plan, so writing the absence through would blank the price on
+   * the subscription screen of the account whose card has just failed.
+   */
+  const period = periodForWhopPlan(event.planId, configuredPeriodMap())
+    ?? readPeriod(existing?.last_event)
+
   const { error: mirrorError } = await admin.from('subscriptions').upsert(
     {
       user_id: userId,
@@ -232,6 +256,8 @@ export async function applyBillingEvent(event: BillingEvent): Promise<ApplyResul
         type: event.type,
         occurred_at: event.occurredAt,
         plan_id: event.planId,
+        // The period that plan id was sold on, resolved server-side (E3).
+        period,
         // Whop's own page for the card and the invoices. Kept on the mirror so
         // the subscription screen can link to it without an API call.
         manage_url: event.manageUrl,
@@ -369,6 +395,9 @@ async function applyCreditEffect(
     ...(context.pack !== undefined ? { pack: context.pack } : {}),
     ...(context.plan !== undefined ? { plan: context.plan } : {}),
     ...(context.periodEnd !== undefined ? { periodEnd: context.periodEnd } : {}),
+    // Which offer was actually bought (C2). The grant is a property of the
+    // period, and the plan id is the only thing on the payload that names it.
+    period: periodForWhopPlan(event.planId, configuredPeriodMap()),
   })
   if (!effect) return null
 
@@ -467,4 +496,10 @@ function readOccurredAt(lastEvent: unknown): number | null {
   if (typeof lastEvent !== 'object' || lastEvent === null || Array.isArray(lastEvent)) return null
   const value = (lastEvent as Record<string, unknown>)['occurred_at']
   return typeof value === 'number' ? value : null
+}
+
+/** Reads the stored billing period off a `last_event` blob (E3). */
+function readPeriod(lastEvent: unknown): BillingPeriod | null {
+  if (typeof lastEvent !== 'object' || lastEvent === null || Array.isArray(lastEvent)) return null
+  return readBillingPeriod((lastEvent as Record<string, unknown>)['period'])
 }

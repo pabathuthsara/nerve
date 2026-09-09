@@ -29,8 +29,16 @@
  *   trial start        `pay_` at $0        → one credit for the trial period
  *   the day-7 charge   a second `pay_`     → one credit for the first month
  *   a renewal          a further `pay_`    → one credit for that month
- *   weekly, no trial   one `pay_` at $7    → one credit for that week
+ *   weekly, no trial   one `pay_` at $7    → nothing: weekly grants none (C2)
  *   a pack             one `pay_` at $9    → the pack's credits, never expiring
+ *
+ * ── AND THE GRANT IS A PROPERTY OF THE OFFER, NOT THE PLAN ───────────────
+ *
+ * That last line is C2. A weekly Pro pays every seven days, so granting the
+ * plan's monthly number on every payment handed out about 4.35 credits a month
+ * while every surface printed *"1 / month"* — weekly Pro out-granting Elite at
+ * 60% of the price, and under-promising it at the same time. `interviewCreditsFor`
+ * reads the offer, and the caller resolves the period from the vendor plan id.
  *
  * ── AND THE TWO EXPIRY RULES ARE ONE FIELD ───────────────────────────────
  *
@@ -40,8 +48,8 @@
  * purchase that carries one, so the rule cannot be broken by a caller.
  */
 
-import { INTERVIEW_PACKS, PLAN_INTERVIEW_CREDITS, TRIAL_DAYS, offersFor } from '@/lib/site/plans'
-import type { PackId } from '@/lib/site/plans'
+import { INTERVIEW_PACKS, TRIAL_DAYS, interviewCreditsFor, offersFor } from '@/lib/site/plans'
+import type { BillingPeriod, PackId } from '@/lib/site/plans'
 import type { Plan } from '@/lib/data/types'
 import type { BillingEvent } from './events'
 
@@ -132,6 +140,16 @@ export function creditEffectFor(
     pack?: PackId | null
     /** The plan this event's subscription grants, when it grants one. */
     plan?: Plan | null
+    /**
+     * The period the plan was bought on, when the plan id names one (C2).
+     *
+     * The grant is a property of the OFFER, not of the plan: weekly Pro pays
+     * every seven days and grants nothing, monthly Pro grants one a month. Null
+     * when the id maps to a plan but not to a period, in which case
+     * `interviewCreditsFor` falls back to the plan-level headline — the number
+     * the buyer was shown — rather than guessing.
+     */
+    period?: BillingPeriod | null
     /** The period end already known for this account, if any. */
     periodEnd?: string | null
     now?: Date
@@ -194,7 +212,7 @@ export function creditEffectFor(
 
   if (event.type !== 'payment.succeeded' || !plan || plan === 'free') return null
 
-  const credits = PLAN_INTERVIEW_CREDITS[plan]
+  const credits = interviewCreditsFor(plan, context.period ?? null)
   if (credits <= 0) return null
 
   return {

@@ -64,6 +64,36 @@ describe('a directive for a provider that keeps nothing', () => {
     session.dispose()
   })
 
+  /**
+   * The wiring for `SteeringContext.firstExchange`, through a real session
+   * rather than through `composeSteering` directly — the flag is computed from
+   * `userTurnCount`, so a test that passes it by hand proves nothing about
+   * whether the session ever sets it.
+   *
+   * 8 September: his opener is exempt from `deadEnd` on purpose, and the
+   * invitation gate was reading that exemption as an offer. Tess is rung 1 and
+   * this was the first line of the product.
+   */
+  it('answers a bare hello with no invitation, and warms up on his next turn', () => {
+    // Warm enough that the band carries a permission and gates are open, so a
+    // silent line here is the gate and not the ladder.
+    const persona = { ...nadia, trajectory: { ...nadia.trajectory, start: 62, startJitter: 0 } }
+    const session = sessionFor(persona)
+
+    session.onUserTurn({ speaker: 'user', text: 'Hey there.', t_start: 1, t_end: 2 })
+    const hello = session.statelessDirective()
+    expect(hello).not.toMatch(/You may |Ask about him/)
+    // The band still ships. Nothing else owns reply length.
+    expect(hello).toContain('Eight or nine words.')
+
+    session.onUserTurn({
+      speaker: 'user', text: 'I came in looking for something for my brother, he only reads crime.',
+      t_start: 4, t_end: 8,
+    })
+    expect(session.statelessDirective()).toContain('Ask about him, tease him, swap names.')
+    session.dispose()
+  })
+
   it('rations EVERY standing order, not only the agenda', () => {
     // PERSONA-AUDIT §11 rationed the want clause and left the invitations
     // running before every reply. They fail the same way: a permission
