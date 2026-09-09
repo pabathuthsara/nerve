@@ -634,10 +634,12 @@ export const CHECKOUT_UNCONFIGURED_NOTE =
  * ── THE PRICES, AND WHY THEY ARE NOT THE RISK ────────────────────────────
  *
  * A twenty-minute interview costs $0.45–0.60 at p90 with a reconnect
- * (INTERVIEW-PLAN §6, measured). At $9 for one that is ~6% COGS; the pack of
- * twelve is the worst case at ~11%. Unit cost is not what to worry about here —
- * an 11% provider-error rate on a twenty-minute item is, which is why Phase A
- * shipped before this file gained a price.
+ * (INTERVIEW-PLAN §6, measured), and §6.1 re-measured the ladder off real rows
+ * at $0.17–0.21 a credit. At $6 for two credits that is ~7% COGS after the
+ * merchant of record; the pack of twenty is the same, because COGS is rounding
+ * error at every rung. Unit cost is not what to worry about here — an 11%
+ * provider-error rate on a twenty-minute item is, which is why Phase A shipped
+ * before this file gained a price.
  */
 export type PackId = 'single' | 'pack5' | 'pack12'
 
@@ -685,22 +687,52 @@ export interface InterviewPack {
  * promised "one practice interview a month".
  *
  * So the entry pack buys any round in the product, and the counts above it
- * scale with it. **The prices did not move and deliberately did not.** A price
- * on a public page is very hard to raise again — `FOUNDING_NOTE` already
- * commits us on the plans — and this dial can be turned back down for a later
- * cohort without breaking a promise to anybody. Unit cost is not what is being
- * recovered here either way: a round costs between $0.18 and $0.41 to run, so
- * the $59 pack spent entirely on twenty-five-minute rounds is $4.10 of COGS.
+ * scale with it. Unit cost is not what is being recovered here either way: a
+ * round costs between $0.18 and $0.41 to run, so the top pack spent entirely on
+ * twenty-five-minute rounds is $4.10 of COGS.
  *
- * The volume ladder survives the change: $4.50 a credit, then $3.63, then
- * $2.95.
+ * ── AND WHY THE PRICES MOVED, 9 SEPTEMBER ────────────────────────────────
+ *
+ * They were $9 / $29 / $59, and the doubling above deliberately left them
+ * alone. This is the second half of the same decision, taken the same day and
+ * in the one window where it is free: the account had **no paying customers**
+ * — one $2 test purchase, $0 of volume — so a cut costs nothing today and is a
+ * public price cut in a month. The direction matters, and it is the one that
+ * cannot be undone. A price on a public page is very hard to RAISE again
+ * (`FOUNDING_NOTE` already commits us on the plans), so this is spent once,
+ * now, deliberately, and the credits dial stays the one that gets turned
+ * afterwards.
+ *
+ * What it buys is the audience: students preparing for a first graduate round,
+ * for whom $9 to find out whether the thing works at all is the barrier and $6
+ * is not.
+ *
+ * **The margin was never the question.** Whop's real cost is $0.37 fixed plus
+ * 5% — read off the fee breakdown of an actual payment, not the published
+ * table (rule 14) — so $6 nets $5.33 against $0.36 of COGS. Every rung clears
+ * 92% and the worst case, every credit burned on a round that hits the $0.90
+ * clamp, still clears 73%.
+ *
+ * ── WHY THE TOP PACK IS $45 AND NOT $49 ──────────────────────────────────
+ *
+ * Two reasons, and the first is the ladder. At $49 the rate runs $3.00, $2.50,
+ * $2.45 — a 17% step and then a **2%** one, which is not a volume discount, it
+ * is the big pack losing its reason to exist. The test below only asserts that
+ * the rate falls, so $2.45 would have passed it while defeating what it is
+ * for. $45 restores a real step: $3.00, $2.50, $2.25 — 17%, then 10%.
+ *
+ * The second is that $49 is **Elite's monthly price**. A one-time $49 for
+ * twenty credits drawn beside "$49 / month" for six credits a month, on the
+ * page §14 has a compliance reviewer reading, is a comparison that makes the
+ * subscription look like a mistake. Prices on one page have to be legible
+ * together, not only correct apart.
  */
 export const INTERVIEW_PACKS: readonly InterviewPack[] = [
   {
     id: 'single',
     name: 'Two credits',
-    price: '$9',
-    priceUsd: 9,
+    price: '$6',
+    priceUsd: 6,
     credits: 2,
     tagline: 'One full round of any kind, graded. For the call on Thursday.',
     env: 'WHOP_PACK_SINGLE',
@@ -708,8 +740,8 @@ export const INTERVIEW_PACKS: readonly InterviewPack[] = [
   {
     id: 'pack5',
     name: 'Eight credits',
-    price: '$29',
-    priceUsd: 29,
+    price: '$20',
+    priceUsd: 20,
     credits: 8,
     tagline: 'A week of preparation: a technical, a final, a deep technical and a screen.',
     env: 'WHOP_PACK_FIVE',
@@ -717,8 +749,8 @@ export const INTERVIEW_PACKS: readonly InterviewPack[] = [
   {
     id: 'pack12',
     name: 'Twenty credits',
-    price: '$59',
-    priceUsd: 59,
+    price: '$45',
+    priceUsd: 45,
     credits: 20,
     tagline: 'A whole job hunt. Every round type, several times each.',
     env: 'WHOP_PACK_TWELVE',
@@ -827,7 +859,7 @@ export function interviewsLine(plan: Plan, period?: BillingPeriod | null): strin
    * A paid plan whose offer grants none says where they come from instead of
    * printing a zero (C2). Weekly Pro is the case: it is the cheap door for
    * voice reps, and "None" on a $7 card reads as something withheld rather than
-   * as something sold separately — which it is, at $9.
+   * as something sold separately — which it is, at $6.
    */
   if (credits === 0) return 'Sold separately'
   return `${credits} / ${periodNoun(offer?.period ?? 'monthly')}`

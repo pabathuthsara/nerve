@@ -133,7 +133,7 @@ and what it was worth* — the band table, the reciprocity model, the intimacy
 scale, the six-dimension rubric, the wind-down — is authored about a stranger in
 a shop, and gets a parallel set of files rather than a parameter. Interview
 demand is episodic, so it is sold as **credits**, which the current entitlement
-shape cannot express. A twenty-minute interview costs **$0.45–0.60** against a $9
+shape cannot express. A twenty-minute interview costs **$0.45–0.60** against a $6
 price, so unit cost is not the risk; an **11% provider-error rate measured over
 the last 28 reps** is, because at three minutes that is an annoyance and at
 twenty minutes on a paid item it is a refund. Interview keeps **its own
@@ -254,9 +254,9 @@ service-role write, owner read, exactly like `usage_ledger` and the field log.
 | | Price | Contents | COGS at $0.55/interview |
 |---|---|---|---|
 | Free screener | **$0** | 1 × 5 min, once per account | ~14¢ |
-| Single | **$9** | 1 × 20 min, fully graded | ~6% |
-| Pack of 5 | **$29** | 5 × 20 min | ~9% |
-| Pack of 12 | **$59** | 12 × 20 min | ~11% |
+| Two credits | **$6** | 2 credits — one full round of any kind, graded | ~7% |
+| Eight credits | **$20** | 8 credits | ~8% |
+| Twenty credits | **$45** | 20 credits | ~9% |
 | Pro $19/mo | — | **1 credit / month**, on top of 3 dating reps a day | — |
 | Elite $49/mo | — | **4 credits / month**, on top of 6 dating reps a day | — |
 
@@ -349,7 +349,7 @@ substitute for one.
 ### 5.10 Difficulty is chosen, not earned
 
 **Do not copy the dating ladder.** The dating ladder is a progression — you earn
-Robin — and that is the shape of the dating product. Somebody who paid $29
+Robin — and that is the shape of the dating product. Somebody who paid $20
 because they interview on Thursday needs the hard one tonight, and a pack of five
 mostly spent on tutorial is a refund request. So: **three difficulty levels,
 chosen on the brief.** The curves come from `levelTrajectory` (read, never

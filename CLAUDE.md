@@ -20,15 +20,22 @@ the real world and log the outcome.
    **`docs/INTERVIEW-PLAN.md` is the second track, and every phase of it has
    now shipped** — A, B and C on 7 September, C½ the same day, and **D (money)
    and E (the door) the same day again. Its §15 is what landed**: three
-   one-time packs at $9 / $29 / $59 carrying 2 / 8 / 20 credits, two interview
+   one-time packs at $6 / $20 / $45 carrying 2 / 8 / 20 credits, two interview
    credits a month on Pro and six on Elite, a free five-minute screener granted
    to every account at sign-up, and a trigger that opens the track the moment
-   any credit lands. **The prices are original; the credit counts doubled on
-   9 September** (`LAUNCH-GAP.md` D18) because one credit bought a recruiter
-   screen and nothing else — so a $9 first purchase was answered by
-   `creditRefusal` telling the buyer to buy again, and Pro's monthly credit
-   could not reach a technical round at all. Turn the credits dial, never the
-   price: a public price is very hard to raise again. Two
+   any credit lands. **The credit counts doubled on 9 September**
+   (`LAUNCH-GAP.md` D18) because one credit bought a recruiter screen and
+   nothing else — so a $9 first purchase was answered by `creditRefusal`
+   telling the buyer to buy again, and Pro's monthly credit could not reach a
+   technical round at all. **The prices were then cut the same day to
+   $6 / $20 / $45** from $9 / $29 / $59 (D19), to put the entry door where a
+   student will risk it. Read the two together as one rule: **the credits dial
+   turns freely in both directions and the price only turns down.** A public
+   price is very hard to RAISE again, so the cut was spent once, deliberately,
+   in the only window where it was free — no paying customers, $0 of volume —
+   and anything wanted afterwards comes out of the credit counts. Margin was
+   never the constraint at any of these numbers: Whop costs $0.37 plus 5%, a
+   credit costs $0.17–0.21 to serve, and every rung clears 92%. Two
    things in §15 are worth knowing before touching money or the other track.
    **A card-backed trial emits a real `payment.succeeded` at $0** — read off a
    captured delivery rather than the specification — so the obvious credit
@@ -174,9 +181,9 @@ future sessions read those markers to decide what to do.
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint
-npm test              # vitest, 1995 assertions
+npm test              # vitest, 2021 assertions
 npm run build:check   # production build into .next-check, never .next
-npm run db:verify     # RLS from a second real account, 51 checks
+npm run db:verify     # RLS from a second real account, 84 checks
 npm run db:rep        # the whole rep lifecycle, without a microphone
 npm run db:field      # the field loop: assign, accept, log, streak, milestones
 npm run db:spend      # the spend ceiling: rate limit, daily cap, both kill switches

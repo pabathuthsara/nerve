@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_ROUND,
+  ROUND_COST_ROWS,
   ROUND_SHAPE_LABEL,
   ROUND_TYPES,
   SCREENER_ROUND,
@@ -9,11 +10,12 @@ import {
   creditBalance,
   creditCost,
   expired,
-  isRoundTypeId,
   hasScreenerCredit,
+  isRoundTypeId,
   nextLotToSpend,
   openingRound,
   planSpend,
+  roundCostLabel,
   roundProbes,
   roundType,
   spendableFor,
@@ -23,6 +25,55 @@ import {
 const NOW = new Date('2026-09-07T12:00:00.000Z')
 const lot = (over: Partial<CreditLot> & Pick<CreditLot, 'source'>): CreditLot =>
   ({ remaining: 1, expiresAt: null, ...over })
+
+describe('the round cost table, as a screen draws it (D18)', () => {
+  it('reads its prices off the authored rounds and never retypes them', () => {
+    // The whole point of the derivation. A repriced round has to move the
+    // credits card with it, and the only way to guarantee that is for the card
+    // to have no number of its own.
+    expect(ROUND_COST_ROWS).toHaveLength(ROUND_TYPES.length)
+    for (const row of ROUND_COST_ROWS) {
+      const round = roundType(row.id)
+      expect(row.credits, row.id).toBe(round.credits)
+      expect(row.label, row.id).toBe(round.label)
+      expect(row.minutes, row.id).toBe(Math.round(round.durationMs / 60_000))
+    }
+  })
+
+  it('never prints a zero where a price goes', () => {
+    // "0 credits" on the free round reads as a bug rather than as a gift.
+    const screener = ROUND_COST_ROWS.find((row) => row.id === 'screener')!
+    expect(roundCostLabel(screener)).toBe('Free')
+    expect(roundCostLabel({ ...screener, credits: 1 })).toBe('1 credit')
+    expect(roundCostLabel({ ...screener, credits: 2 })).toBe('2 credits')
+  })
+
+  it('agrees with the sentence that says the same thing elsewhere', () => {
+    /**
+     * Two renderings of one fact, and they must not come apart. The sentence
+     * still runs on the paywall sheet, the scorecard's low-balance line and the
+     * two public pages, where there is no room for a table; the table runs on
+     * the credits card, where there is. A round repriced in `ROUND_TYPES` moves
+     * the table on its own and leaves the hand-authored sentence behind, so
+     * this is the assertion that catches it.
+     */
+    const paid = ROUND_COST_ROWS.filter((row) => row.credits > 0)
+    const cheapest = Math.min(...paid.map((row) => row.credits))
+    const dearest = Math.max(...paid.map((row) => row.credits))
+    expect(cheapest, 'the sentence says the screen is ONE credit').toBe(1)
+    expect(dearest, 'the sentence says every longer round is TWO').toBe(2)
+
+    const recruiter = ROUND_COST_ROWS.find((row) => row.id === 'recruiter')!
+    expect(recruiter.minutes, 'the sentence says TEN minutes').toBe(10)
+    expect(recruiter.credits).toBe(1)
+
+    // And every round longer than the recruiter screen is the dearer one, which
+    // is the other half of what the sentence claims.
+    for (const row of paid) {
+      if (row.minutes > recruiter.minutes) expect(row.credits, row.id).toBe(2)
+    }
+  })
+})
 
 describe('creditBalance', () => {
   it('is zero for an account that has never bought anything', () => {

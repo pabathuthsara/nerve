@@ -490,6 +490,58 @@ async function main(): Promise<void> {
       'B\'s export contains none of A\'s rows',
     )
 
+    // ── The admin surfaces (`/admin`) ───────────────────────────────────
+    //
+    // Both tables have RLS on and NO POLICIES AT ALL — the `rate_limits`
+    // pattern. That is a stronger statement than the owner-read tables above
+    // and it is worth proving rather than asserting, because "enable row level
+    // security" with no policy looks identical in a migration to a table
+    // somebody forgot to write policies for.
+    //
+    // What each one would cost if it were readable:
+    //   page_views    every other visitor's path history, and a visitor digest
+    //                 that could then be correlated against a signed-in id
+    //   admin_actions the record of who was comped, halted or deleted, which is
+    //                 the one table whose whole value is that its subject
+    //                 cannot reach it
+    console.log('\nthe admin surfaces')
+
+    const { data: aViews } = await a.from('page_views').select('path').limit(1)
+    check((aViews ?? []).length === 0, 'a signed-in user cannot read the traffic table')
+
+    const { error: viewForgery } = await a
+      .from('page_views')
+      .insert({ path: '/forged', visitor: 'f'.repeat(32) })
+    check(!!viewForgery, 'a user cannot write a page view directly')
+
+    const { data: aAudit } = await a.from('admin_actions').select('action').limit(1)
+    check((aAudit ?? []).length === 0, 'a signed-in user cannot read the admin audit log')
+
+    const { error: auditForgery } = await a
+      .from('admin_actions')
+      .insert({ actor: 'forged@example.com', action: 'plan.set', subject: aId })
+    check(!!auditForgery, 'a user cannot append to the admin audit log')
+
+    // The reporting functions are `security definer` and read `auth.users`, so
+    // execute is revoked from `authenticated` and granted only to the service
+    // role. Without that revoke the definer rights would hand every signed-in
+    // account the whole user table.
+    const { error: overviewDenied } = await a.rpc('admin_overview')
+    check(!!overviewDenied, 'a signed-in user cannot run the admin overview')
+
+    const { error: rowsDenied } = await a.rpc('admin_user_rows', { search: null, lim: 5 })
+    check(!!rowsDenied, 'a signed-in user cannot list every account')
+
+    const { error: dailyDenied } = await a.rpc('admin_daily', { days: 7 })
+    check(!!dailyDenied, 'a signed-in user cannot run the traffic series')
+
+    // And the service role can, or the panel has no data source.
+    const { data: adminOverviewRows, error: adminOverviewError } = await admin.rpc('admin_overview')
+    check(
+      !adminOverviewError && (adminOverviewRows ?? []).length === 1,
+      `the service role can run the admin overview${adminOverviewError ? ` (${adminOverviewError.message})` : ''}`,
+    )
+
     console.log('\ncascade and detach')
     const { error: ownDelete } = await a.from('sessions').delete().eq('id', sessionId)
     check(!ownDelete, `A can delete her own rep${ownDelete ? ` (${ownDelete.message})` : ''}`)

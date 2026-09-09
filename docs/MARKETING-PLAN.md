@@ -175,7 +175,7 @@ customers, not at a thousand.
 
 ### 4.4a · There is now a $9 door, and it is not a plan — **7 September**
 
-`INTERVIEW-PLAN.md` D3 shipped: **a $9 door**, then $29 and $59, bought outright
+`INTERVIEW-PLAN.md` D3 shipped: **a $6 door**, then $20 and $45, bought outright
 and never expiring. It answers most of §4.4 without paying any of §4.4's price.
 
 **What each price buys has moved twice since and the prices have not.** They were

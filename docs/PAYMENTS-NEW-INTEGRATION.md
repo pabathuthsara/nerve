@@ -849,7 +849,7 @@ correct on its next page load.
 
 > **The ladder and the pack sizes moved on 9 September and the prices did not.**
 > A round costs one credit (the ten-minute recruiter screen) or two (everything
-> longer); the packs carry **2 / 8 / 20** at the same $9 / $29 / $59; and the
+> longer); the packs carry **2 / 8 / 20**, repriced the same day to $6 / $20 / $45; and the
 > monthly grant is **2 on Pro, 6 on Elite**. The costing that decided it is
 > `INTERVIEW-PLAN.md` §6.1 and the argument is `LAUNCH-GAP.md` D18 — in short, a
 > deep technical costs 1.2x a technical and was priced at 1.5x, and one credit
@@ -885,9 +885,9 @@ period cost no migration. No new plan value, no CHECK constraint, no mark glyph.
 | | Price | Contents | COGS at $0.55/interview |
 |---|---|---|---|
 | Free screener | **$0** | 1 × 5 min, once per account, granted at sign-up | ~14¢ |
-| One credit | **$9** | 1 credit — a recruiter screen, graded | ~6% |
-| Five credits | **$29** | 5 credits | ~9% |
-| Twelve credits | **$59** | 12 credits | ~11% |
+| Two credits | **$6** | 2 credits — one full round of any kind, graded | ~7% |
+| Eight credits | **$20** | 8 credits | ~8% |
+| Twenty credits | **$45** | 20 credits | ~9% |
 | Pro **monthly** $19/mo | — | **1 credit a month**, on top of 3 dating reps a day | — |
 | Pro **weekly** $7/wk | — | **none** — interviews sold separately | — |
 | Elite $49/mo | — | **4 credits a month**, on top of 6 a day | — |
@@ -1096,7 +1096,7 @@ which is the number the buyer was shown.
 
 The card says **"Sold separately"** rather than printing a zero: "None" on a $7
 card reads as something withheld rather than as something sold separately, which
-it is, at $9. Weekly stays the cheap no-commitment door for **voice reps**,
+it is, at $6. Weekly stays the cheap no-commitment door for **voice reps**,
 which is what it was designed to be.
 
 `plans.test.ts` asserts the plan headline and the monthly offer agree, so the

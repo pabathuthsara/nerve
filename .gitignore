@@ -24,3 +24,8 @@ public/shots/
 
 # Regenerable: 500KB of base64 font data, rebuilt by `npm run brand:assets`.
 public/brand/.fonts.css
+
+# `npm run social:carousels` and `npm run social:facebook` output — 33MB of
+# generated PNGs and zips, rebuilt from the scripts that made them. The scripts
+# are committed; their output is not, for the same reason `public/shots/` is not.
+marketing/

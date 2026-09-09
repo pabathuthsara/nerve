@@ -10,7 +10,7 @@
  *
  * §5.10: **do not copy the dating ladder.** The dating ladder is a progression
  * — you earn Robin — and that is the shape of the dating product. Somebody who
- * paid $29 because they interview on Thursday needs the hard one tonight, and a
+ * paid $20 because they interview on Thursday needs the hard one tonight, and a
  * pack of five mostly spent on tutorial is a refund request. So all four are
  * open from the first credit, and the number is only what `levelTrajectory`
  * would read if it ever fell through to it.

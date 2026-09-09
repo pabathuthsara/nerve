@@ -1271,6 +1271,66 @@ export type Database = {
         }
         Relationships: []
       }
+      page_views: {
+        Row: {
+          at: string
+          country: string | null
+          device: string
+          id: number
+          path: string
+          referrer_host: string | null
+          user_id: string | null
+          visitor: string
+        }
+        Insert: {
+          at?: string
+          country?: string | null
+          device?: string
+          id?: never
+          path: string
+          referrer_host?: string | null
+          user_id?: string | null
+          visitor: string
+        }
+        Update: {
+          at?: string
+          country?: string | null
+          device?: string
+          id?: never
+          path?: string
+          referrer_host?: string | null
+          user_id?: string | null
+          visitor?: string
+        }
+        Relationships: []
+      }
+      admin_actions: {
+        Row: {
+          action: string
+          actor: string
+          at: string
+          detail: Json
+          id: number
+          subject: string | null
+        }
+        Insert: {
+          action: string
+          actor: string
+          at?: string
+          detail?: Json
+          id?: never
+          subject?: string | null
+        }
+        Update: {
+          action?: string
+          actor?: string
+          at?: string
+          detail?: Json
+          id?: never
+          subject?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -1363,6 +1423,75 @@ export type Database = {
           reason: string
           retry_after: number
           spent_cents: number
+        }[]
+      }
+      admin_overview: {
+        Args: never
+        Returns: {
+          accounts: number
+          accounts_7d: number
+          accounts_30d: number
+          activated: number
+          paying: number
+          halted: number
+          reps_today: number
+          reps_7d: number
+          reps_30d: number
+          reps_total: number
+          interview_reps_30d: number
+          minutes_30d: number
+          cost_cents_today: number
+          cost_cents_30d: number
+          visitors_today: number
+          visitors_7d: number
+          views_7d: number
+          credits_outstanding: number
+          field_logs_30d: number
+        }[]
+      }
+      admin_daily: {
+        Args: { days: number }
+        Returns: {
+          day: string
+          visitors: number
+          views: number
+          signups: number
+          reps: number
+        }[]
+      }
+      admin_top_paths: {
+        Args: { days: number; lim: number }
+        Returns: { path: string; views: number; visitors: number }[]
+      }
+      admin_top_referrers: {
+        Args: { days: number; lim: number }
+        Returns: { host: string; views: number; visitors: number }[]
+      }
+      admin_user_rows: {
+        Args: { search: string | null; lim: number }
+        Returns: {
+          user_id: string
+          email: string | null
+          created_at: string
+          last_sign_in_at: string | null
+          display_name: string | null
+          plan: string
+          reps_per_day: number
+          reps_used_today: number
+          renews_at: string | null
+          spend_halted_at: string | null
+          active_track: string
+          unlocked_tracks: string[]
+          rank: string
+          current_level: number
+          onboarding_complete: boolean
+          credits: number
+          sessions_total: number
+          sessions_7d: number
+          last_session_at: string | null
+          best_score: number | null
+          cost_cents_total: number
+          field_logs: number
         }[]
       }
       spend_today_cents: { Args: never; Returns: number }

@@ -9,7 +9,8 @@ import 'server-only'
  * minutes that is the right trade: the rep is nearly free, the quota resets
  * tonight, and the refund path only has to catch the rep that heard nothing.
  *
- * A twenty-minute interview costs $0.45–0.60 and is sold for $9 (§6, §5.4), and
+ * A twenty-minute interview costs $0.45–0.60 and is sold as two credits — $6
+ * at the entry pack, $4.50 at the top (§6.1, §5.4) — and
  * a rep that dies at minute fourteen has heard the user, keeps the money and
  * returns nothing. So the credit is **reserved at connect and settled at the
  * scorecard** — rule 18's doctrine applied to a credit, and the same shape

@@ -33,14 +33,15 @@
  */
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui'
 import { startPackCheckout } from '@/app/interview/actions'
 import { useCreditHistory } from '@/lib/data'
+import { ROUND_COST_ROWS, roundCostLabel } from '@/lib/data/interview-credits'
 import { creditAmountLabel, creditEntryDay, creditEntryLine } from '@/lib/data/credit-history'
 import {
   CREDIT_EXPIRY_NOTE,
   INTERVIEW_PACKS,
-  ROUND_COST_NOTE,
   perCredit,
   type InterviewPack,
 } from '@/lib/site/plans'
@@ -124,10 +125,11 @@ export function PackOffer({ packsOpen, compact = false }: { packsOpen: boolean; 
 /**
  * The seconds between paying and the credits appearing.
  *
- * The buyer comes back from Whop's checkout to `/interview?bought=1` while the
+ * The buyer comes back from Whop's checkout to `/interview/credits?bought=1`
+ * (or to whichever surface sent them) while the
  * `payment.succeeded` webhook is still in flight — usually under a second, and
  * occasionally longer if Whop is retrying. Without this, somebody who has just
- * paid $29 lands on a screen showing the balance they had before, which reads
+ * paid $20 lands on a screen showing the balance they had before, which reads
  * as a failed purchase and is the exact moment a support ticket or a chargeback
  * gets written.
  *
@@ -166,6 +168,73 @@ export function JustBought({ returnTo }: { returnTo: string }) {
 }
 
 /**
+ * The balance, and nothing else, for a rail that is not about money.
+ *
+ * ── WHY THE PACKS LEFT THE INTERVIEW HOME ────────────────────────────────
+ *
+ * `CreditsPanel` is four things at once — a balance, what a round costs, three
+ * buy buttons and a ledger — and it sat at the top of `/interview`'s sidebar,
+ * beside the role, the company, the CV and the next interview. So the pill in
+ * the chrome, which is the most-tapped affordance in any credit product, landed
+ * somebody on a screen where the store and the profile were the same screen.
+ * The dating arm has never done that: its store is `/profile/subscription` and
+ * the pill goes there.
+ *
+ * So the store moved to `/interview/credits` and this is what stays behind: the
+ * number, and one way to go and change it. The link is secondary — volt on
+ * `/interview` is **Start an interview**, and a buy button drawn at the same
+ * weight as the primary action makes the account's own money the loudest thing
+ * on a training screen.
+ */
+export function CreditsSummary({ credits, screener }: { credits: number; screener: number }) {
+  return (
+    <Card className="interview-credits">
+      <span className="label">Interview credits</span>
+      <div className="interview-last">
+        <span><strong>Available</strong>{screener > 0 ? <small>including one free screener</small> : null}</span>
+        <span className="data">{credits}</span>
+      </div>
+      <Link className="arena-button arena-button--secondary arena-button--full" href="/interview/credits">
+        {credits === 0 ? 'Get credits' : 'Credits and packs'}
+      </Link>
+    </Card>
+  )
+}
+
+/**
+ * What a round costs, as rows rather than as a wrapped tag.
+ *
+ * `ROUND_COST_NOTE` says the same thing in one sentence and still does on the
+ * paywall sheet, the scorecard's low-balance line and the two public pages —
+ * places with room for a sentence and no room for a table. Here there is room,
+ * and this is the number a buyer choosing between eight credits and twenty has
+ * to reason with, so it gets a shape: name, length, price, one row each.
+ *
+ * Derived from `ROUND_COST_ROWS`, which is derived from `ROUND_TYPES`. Nothing
+ * about a round is retyped in this file, so a repriced round moves this list
+ * with it.
+ *
+ * No volt. Arena allows it once a screen and this is reference material, not
+ * the action — the price is emphasised by being the only thing in full-strength
+ * ink on its row, which is the same device `.interview-dimensions` uses.
+ */
+function RoundCosts() {
+  return (
+    <div className="round-costs">
+      <span className="label">What a round costs</span>
+      <ul>
+        {ROUND_COST_ROWS.map((row) => (
+          <li key={row.id}>
+            <span className="round-costs__name">{row.label}<small>{row.minutes} min</small></span>
+            <span className="data">{roundCostLabel(row)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/**
  * What is in the balance, and what it costs to fill it (INTERVIEW-PLAN D3, E1).
  *
  * ── WHY THE TWO EXPIRY RULES ARE ON THIS CARD ────────────────────────────
@@ -178,7 +247,9 @@ export function JustBought({ returnTo }: { returnTo: string }) {
  *
  * `ROUND_COST_NOTE` joined it on 8 September, because B3 made "five credits"
  * ambiguous on its own: a reader has to know a recruiter screen is one and a
- * deep technical is three before a balance means anything.
+ * deep technical is two before a balance means anything. On 9 September it
+ * became `RoundCosts` — the same fact, from the same authored table, in rows a
+ * reader can scan rather than a sentence set in a tag typeface.
  */
 export function CreditsPanel({
   credits,
@@ -204,11 +275,15 @@ export function CreditsPanel({
         <span className="data">{credits}</span>
       </div>
       {paid === 0 && screener > 0
-        ? <p className="label mute">The free screener pays for the five-minute round and nothing else. The longer rounds need a credit.</p>
+        ? <p className="credits-note">The free screener pays for the five-minute round and nothing else. The longer rounds need a credit.</p>
         : null}
-      <p className="label mute">{ROUND_COST_NOTE}</p>
+      <RoundCosts />
       <PackOffer packsOpen={packsOpen} />
-      <p className="label mute">{CREDIT_EXPIRY_NOTE}</p>
+      {/* Sentence case, not `.label`. This is two lines of prose quoted almost
+          verbatim in terms clause 07, and 11px uppercase mono is a tag style —
+          it made the one promise a disputing customer reads the hardest thing
+          on the card to read. The string is untouched; only its typeface is. */}
+      <p className="credits-note">{CREDIT_EXPIRY_NOTE}</p>
       <CreditHistory />
     </Card>
   )

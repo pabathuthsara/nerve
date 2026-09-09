@@ -1528,6 +1528,24 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .interview-credits { display: grid; gap: 12px; }
 .interview-credits .interview-last { margin-top: 0; border-top: 0; padding-top: 0; }
 .interview-credits p { margin: 0; }
+/* What a round costs, as rows (9 Sep). It was `ROUND_COST_NOTE` in `.label` —
+   11px uppercase mono, wrapped over two lines — which is a tag style carrying
+   the one fact somebody choosing a pack has to do arithmetic with. Hairlines
+   and tabular digits, the same device `.interview-dimensions` uses: the price
+   is the only full-strength ink on its row, so it reads without needing volt. */
+.round-costs { display: grid; gap: 8px; }
+.round-costs ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.round-costs li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 7px 0; border-top: 1px solid var(--line); }
+.round-costs li:first-child { border-top: 0; }
+.round-costs__name { display: flex; align-items: baseline; gap: 8px; min-width: 0; color: var(--text); font-size: 14px; }
+.round-costs__name small { color: var(--text-mute); font-size: 11px; font-family: var(--font-mono), monospace; font-variant-numeric: tabular-nums; }
+.round-costs .data { color: var(--text); font-size: 13px; white-space: nowrap; }
+
+/* The two sentences on the credits card that are prose rather than tags: the
+   screener explainer and the expiry promise quoted in terms clause 07. Set to
+   be read, not to be scanned — sentence case, body face, real line height. */
+.credits-note { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.55; }
+
 /* "Where your credits went" (Part 6). A disclosure, closed by default, so the
    card is the same height for everybody who is not asking — and so it can never
    push the buy buttons below the fold on a phone (B6). A ledger, so the numbers
@@ -1553,6 +1571,15 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .credits-low p { margin: 0; }
 .credits-low .pack-list { margin: 0; }
 @media (min-width: 720px) { .credits-low { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; } }
+
+/* The credit store, on its own route. Reached from the balance pill, so the
+   way back is the first thing on it — there is no rail item that reads as
+   "the screen I just left". The intro is one sentence and the card below it
+   carries everything else. */
+.credits-store { display: grid; gap: 0; }
+.credits-store > .text-action { justify-self: start; }
+.credits-store > .display-lg { margin: 18px 0 8px; }
+.credits-store__intro { margin: 0 0 22px; max-width: 46ch; color: var(--text-dim); font-size: 14px; line-height: 1.6; }
 
 /* The seconds between paying and the webhook landing. Not an error and not a
    celebration — a statement of fact with the one action that resolves it. */
@@ -2655,3 +2682,104 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .baseline-span { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--text-mute); }
 .baseline-span i { flex: 1; height: 1px; background: var(--line); }
 .baseline-span b { font-weight: 400; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+
+/* ---------------------------------------------------------------------------
+   THE ADMIN PANEL — /admin and /admin/users
+   ---------------------------------------------------------------------------
+   Arena, read as data rather than as product. Hairlines, 2px radii, mono
+   digits with tabular-nums, no shadows and no fills that are not surface.
+
+   VOLT APPEARS ONCE: on the primary chart series, which is visitors. Cool is
+   the second series (reps), which is the palette's own rule for it. Every
+   figure on the page is Ink or Ink-2; Amber and Red stay semantic — a halted
+   account and a deletion — and are never used to brand anything.
+   --------------------------------------------------------------------------- */
+
+.admin-head { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+.admin-head > div { display: grid; gap: 4px; }
+.admin-head h1 { margin: 0; }
+.admin-head .admin-roster { justify-content: flex-end; }
+@media (max-width: 620px) {
+  .admin-head { grid-template-columns: minmax(0, 1fr); }
+  .admin-head .admin-roster { justify-content: flex-start; }
+}
+
+a.admin-chip { text-decoration: none; }
+
+.admin-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.admin-figure { display: grid; gap: 5px; align-content: start; padding: 14px; background: var(--surface-2); }
+.admin-figure > strong { color: var(--text); font-family: var(--font-mono), monospace; font-size: 22px; font-variant-numeric: tabular-nums; font-weight: 500; line-height: 1; }
+.admin-figure > small { color: var(--text-mute); font-size: 11px; }
+.admin-figure--amber > strong { color: var(--amber); }
+
+.admin-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.admin-chart { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 2px; padding: 16px; background: var(--surface); }
+.admin-chart__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.admin-chart__head > strong { color: var(--text); font-size: 18px; font-variant-numeric: tabular-nums; font-weight: 500; }
+/* Fixed height with a stretched viewBox: the bars are positioned in a 100-unit
+   space and scaled to whatever width the column has, so the chart reflows
+   without any measurement in JavaScript. */
+.admin-chart__svg { width: 100%; height: 68px; overflow: visible; }
+.admin-chart__svg rect { fill: var(--volt-dim); }
+.admin-chart__svg--primary rect { fill: var(--volt); }
+.admin-chart__svg--second rect { fill: var(--cool); }
+.admin-chart__base { stroke: var(--line-bright); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+.admin-chart__axis { display: flex; justify-content: space-between; gap: 10px; color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .06em; }
+
+.admin-readout--top .admin-readout__row { grid-template-columns: minmax(0, 1fr) 5rem 5rem; }
+.admin-readout--audit .admin-readout__row { grid-template-columns: 6rem minmax(0, 1.4fr) minmax(0, 1fr) 6rem; }
+.admin-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.admin-search { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-search input { flex: 1 1 240px; min-height: 40px; border: 1px solid var(--line); border-radius: 2px; padding: 0 12px; background: var(--surface); color: var(--text); font-family: var(--font-sans), sans-serif; font-size: 14px; }
+.admin-search input:focus-visible { border-color: var(--line-bright); outline: none; }
+
+/* ── The accounts table ──────────────────────────────────────────────────
+   One grid shared by the header row and every account row, so the columns
+   line up without a <table> — which matters because each row expands into a
+   panel, and a <tr> cannot contain one. */
+.admin-users { display: grid; gap: 1px; border: 1px solid var(--line); background: var(--line); }
+.admin-users__row { display: grid; grid-template-columns: minmax(0, 2.2fr) 4.5rem 4.5rem 4.5rem 6rem 5.5rem; align-items: center; gap: 12px; padding: 11px 14px; background: var(--surface-2); text-align: left; font-family: var(--font-mono), monospace; font-size: 12px; color: var(--text-dim); }
+.admin-users__row--head { color: var(--text-mute); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; background: var(--surface); }
+.admin-users__row--button { width: 100%; border: 0; cursor: pointer; transition: background-color 120ms; }
+.admin-users__row--button:hover { background: var(--surface-3); }
+.admin-users__item.is-open .admin-users__row--button { background: var(--surface-3); }
+.admin-users__row .data { color: var(--text); font-variant-numeric: tabular-nums; }
+.admin-users__who { display: grid; gap: 3px; min-width: 0; }
+.admin-users__who > strong { color: var(--text); font-size: 13px; font-weight: 500; }
+.admin-users__who > small { color: var(--text-mute); font-size: 10.5px; }
+.admin-users__paying { color: var(--text); }
+
+.admin-users__panel { display: grid; gap: 16px; border-top: 1px solid var(--line); padding: 18px 14px; background: var(--surface); }
+.admin-users__facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 18px; }
+.admin-users__facts > .label { align-self: end; }
+.admin-users__facts > strong { color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; font-weight: 500; }
+@media (min-width: 640px) {
+  .admin-users__facts { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+}
+
+.admin-users__group { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: 2px; padding: 14px; margin: 0; background: var(--surface-2); }
+.admin-users__group > legend { padding: 0 6px; }
+.admin-users__group:disabled { opacity: .55; }
+.admin-users__group--danger { border-color: rgba(255, 77, 61, 0.24); }
+.admin-users__group .arena-button.is-on { border-color: var(--line-bright); background: var(--surface-3); color: var(--text); }
+
+.admin-number { width: 5.5rem; min-height: 40px; border: 1px solid var(--line); border-radius: 2px; padding: 0 10px; background: var(--surface); color: var(--text); font-family: var(--font-mono), monospace; font-size: 13px; font-variant-numeric: tabular-nums; }
+.admin-number--wide { width: auto; flex: 1 1 220px; }
+.admin-number:focus-visible { border-color: var(--line-bright); outline: none; }
+
+.admin-fine--amber { color: var(--amber); }
+.admin-fine a { color: var(--text-dim); }
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-users__row--button { transition: none; }
+}
+
+@media (max-width: 720px) {
+  /* Below this the six columns stop being readable, so the row becomes two
+     lines: who, then the numbers. No column is dropped — an operator on a
+     phone is usually looking for the one they cannot see. */
+  .admin-users__row { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .admin-users__who { grid-column: 1 / -1; }
+  .admin-users__row--head { display: none; }
+}

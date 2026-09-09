@@ -194,6 +194,42 @@ describe('billing periods', () => {
     expect(periodLabel('monthly')).toBe('/ month')
   })
 
+  it('makes every step of the ladder worth taking', () => {
+    /**
+     * Strictly cheaper is not the same as cheaper enough, and the difference
+     * is what nearly shipped on 9 September. At $6 / $20 / $49 the rate ran
+     * $3.00, $2.50, $2.45: the test above passes on a **2%** discount for
+     * spending two and a half times as much, which is not a volume ladder, it
+     * is a top pack with no reason to exist beside the middle one.
+     *
+     * Eight percent is the floor rather than the target — the authored ladder
+     * steps 17% and 10% — and it is here so the next reprice has to clear the
+     * intent of the rule and not just its letter.
+     */
+    for (let index = 1; index < INTERVIEW_PACKS.length; index += 1) {
+      const previous = INTERVIEW_PACKS[index - 1]!
+      const current = INTERVIEW_PACKS[index]!
+      const discount = 1 - perCredit(current) / perCredit(previous)
+      expect(discount, `${previous.name} -> ${current.name}`).toBeGreaterThanOrEqual(0.08)
+    }
+  })
+
+  it('never prices a pack at a subscription\'s headline number', () => {
+    /**
+     * `/pricing` draws the plans and the packs on one page, so the numbers have
+     * to be legible together and not only correct apart. A one-time $49 for
+     * twenty credits beside "$49 / month" for six credits a month reads as a
+     * mistake in the subscription's favour — on the page §14 has a
+     * merchant-of-record reviewer opening.
+     */
+    const planPrices = PUBLIC_PLANS
+      .map((plan) => plan.price)
+      .filter((price): price is string => typeof price === 'string')
+    for (const pack of INTERVIEW_PACKS) {
+      expect(planPrices, pack.name).not.toContain(pack.price)
+    }
+  })
+
   it('quotes a price that matches its own numeric value', () => {
     // `price` is printed and `priceUsd` is charged. They are two fields and
     // they must never disagree — that is the whole failure lib/site/plans.ts

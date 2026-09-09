@@ -131,6 +131,38 @@ export function resetPerson(): void {
   enqueue((posthog) => posthog.reset())
 }
 
+/**
+ * The first-party page count, alongside the vendor one.
+ *
+ * `/admin` sends nothing: an operator refreshing their own dashboard would
+ * otherwise be the largest source of traffic on it, and a number that counts
+ * the person reading it is not a number.
+ *
+ * `sendBeacon` rather than `fetch`, because a landing-page visitor who reads
+ * the hero and leaves is exactly the arrival worth counting, and a normal fetch
+ * is cancelled when the document goes away. It fails silently and returns
+ * false when the queue is full; `keepalive` is the fallback for the browsers
+ * that have no beacon. Neither path is awaited and neither can throw into a
+ * render — §05's rule about vendors, applied to our own endpoint.
+ */
+function countPageView(pathname: string): void {
+  if (pathname.startsWith('/admin')) return
+  try {
+    const body = JSON.stringify({ path: pathname, ref: document.referrer || null })
+    if (navigator.sendBeacon?.(POST_PATH, new Blob([body], { type: 'application/json' }))) return
+    void fetch(POST_PATH, {
+      method: 'POST',
+      body,
+      headers: { 'content-type': 'application/json' },
+      keepalive: true,
+    }).catch(() => {})
+  } catch {
+    // As everywhere else in this file: instrumentation never reaches the user.
+  }
+}
+
+const POST_PATH = '/api/pageview'
+
 export function Analytics() {
   const pathname = usePathname()
 
@@ -140,6 +172,7 @@ export function Analytics() {
 
   useEffect(() => {
     if (!pathname) return
+    countPageView(pathname)
     enqueue((posthog) => {
       posthog.capture('$pageview', { $current_url: window.location.origin + pathname })
       // The §04 rule, applied on every navigation rather than once at startup:

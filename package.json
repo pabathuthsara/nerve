@@ -35,6 +35,8 @@
     "db:billing": "vite-node --config vitest.config.ts scripts/verify-billing.ts",
     "legal:pdf": "vite-node --config vitest.config.ts scripts/legal-pdf.ts",
     "brand:assets": "vite-node --config vitest.config.ts scripts/brand-assets.ts",
+    "social:first-posts": "vite-node --config vitest.config.ts scripts/social-carousels.ts",
+    "social:facebook-assets": "vite-node --config vitest.config.ts scripts/facebook-page-assets.ts",
     "whop:setup": "vite-node --config vitest.config.ts scripts/setup-whop.ts",
     "whop:verify": "vite-node --config vitest.config.ts scripts/verify-whop.ts",
     "whop:probe": "vite-node --config vitest.config.ts scripts/verify-whop-webhook.ts",

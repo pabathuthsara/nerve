@@ -151,6 +151,34 @@ const PRODUCT_ROUTE = 'hellonerve'
 const WEBHOOK_URL = 'https://www.hellonerve.com/api/webhooks/whop'
 
 /** Every event `lib/billing/events.ts` acts on. Fewer would be a silent gap. */
+/**
+ * What a dry run has to say out loud when a plan already exists.
+ *
+ * ── THE RUN THAT NEARLY SHIPPED A PRICE MISMATCH ─────────────────────────
+ *
+ * Repricing the packs on 9 September, this script's dry run answered `ok
+ * already exists` three times over vendor plans still charging the old price,
+ * and said nothing else. `--apply` would have fixed all three — it PATCHes an
+ * existing plan — but nothing on the screen said there was anything to fix, so
+ * the reasonable reading of a clean dry run was "the vendor already agrees".
+ * It was `npm run whop:verify` that caught it, which is the preflight doing its
+ * job and this script failing to do its own: a dry run is a plan of work, and
+ * work it intends to do must be visible in it.
+ *
+ * Only the money is compared. Titles and descriptions are refreshed on every
+ * apply and differ harmlessly between runs; a price that differs is the one
+ * that charges a buyer a number the site does not show.
+ */
+function priceDrift(found: Record<string, unknown>, body: Record<string, unknown>): string | null {
+  const parts: string[] = []
+  for (const field of ['initial_price', 'renewal_price'] as const) {
+    const now = Number(found[field] ?? 0)
+    const next = Number(body[field] ?? 0)
+    if (now !== next) parts.push(`${field} $${now} -> $${next}`)
+  }
+  return parts.length > 0 ? parts.join(', ') : null
+}
+
 const WEBHOOK_EVENTS = [
   'membership.activated',
   'membership.deactivated',
@@ -496,6 +524,8 @@ async function main(): Promise<void> {
       const id = found['id'] as string
       planIds[key] = id
       console.log(`  ok    already exists — ${id}`)
+      const drift = priceDrift(found, body)
+      if (drift && !apply) console.log(`  ----  its price does not match this repo (${drift}) — --apply rewrites it`)
       if (apply) {
         const patched = await call('PATCH', `/plans/${encodeURIComponent(id)}`, body, `plan-update:${key}`)
         if (patched.ok) done('price, period, trial and visibility refreshed')
@@ -563,6 +593,8 @@ async function main(): Promise<void> {
       const id = found['id'] as string
       packIds[pack.id] = id
       console.log(`  ok    already exists — ${id}`)
+      const drift = priceDrift(found, body)
+      if (drift && !apply) console.log(`  ----  its price does not match this repo (${drift}) — --apply rewrites it`)
       if (apply) {
         const patched = await call('PATCH', `/plans/${encodeURIComponent(id)}`, body, `pack-update:${pack.id}`)
         if (patched.ok) done('price, type and visibility refreshed')

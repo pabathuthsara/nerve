@@ -81,6 +81,9 @@ interface Shot {
 const SHOTS: Shot[] = [
   { name: 'train', path: '/train', ready: '.field-card__head', width: 1280, height: 900, settle: 2200 },
   { name: 'train-mobile', path: '/train', ready: '.field-card__head', width: 420, height: 860, settle: 2200 },
+  { name: 'interview-home', path: '/interview', ready: '.setup-prompt, .interview-hero', width: 1280, height: 900, settle: 900 },
+  { name: 'interview-home-mobile', path: '/interview', ready: '.setup-prompt, .interview-hero', width: 420, height: 860, settle: 900 },
+  { name: 'interviews-landing', path: '/interviews', ready: '.round-list', width: 1280, height: 1100, settle: 700 },
   { name: 'scorecard', path: '', ready: '.composite-card', width: 1280, height: 1100, settle: 1800, reach: { from: '/profile/history', click: '.session-row' } },
   { name: 'history', path: '/profile/history', ready: '.session-row', width: 1280, height: 900, settle: 600 },
   { name: 'roster', path: '/roster', ready: '.persona-card', width: 1280, height: 900, settle: 1400 },

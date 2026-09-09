@@ -431,7 +431,10 @@ export function RepLiveScreen({
   // at midnight and is not part of any plan, so neither of the two above is
   // true of it — and a surface that explains what it costs beats a dead end.
   if (blockedByCredits) {
-    return <BriefGate title={creditNote ? 'Not this round' : 'No interview credits'} description={creditNote ?? 'Interviews are bought as credits rather than by the day. They do not expire once you have paid for them.'} href="/interview" />
+    // To the store rather than the interview home: this gate exists because
+    // there is nothing to spend, and the balance and the packs live on their
+    // own route now.
+    return <BriefGate title={creditNote ? 'Not this round' : 'No interview credits'} description={creditNote ?? 'Interviews are bought as credits rather than by the day. They do not expire once you have paid for them.'} href="/interview/credits" />
   }
   if (!live) return <BriefGate title={interview ? 'Interview reps are not open yet' : `${subject.name} is not ready`} description={interview ? 'The interview track opens once its interviewers are written.' : 'This character has no session configured yet.'} href={interview ? '/interview' : '/roster'} />
   if (!online) return <BriefGate title="You're offline" description="Reconnect before starting or resuming this rep." href={interview ? '/interview' : '/train'} />

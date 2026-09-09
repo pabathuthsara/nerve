@@ -299,6 +299,7 @@ export function PrivacyDocument() {
           <li><strong>Field log.</strong> Which exercise you were given, whether you did it, how nervous you expected to be and how nervous you were, and anything you chose to write down.</li>
           <li><strong>Usage.</strong> How many reps you have run, when, against which character, and a per-session record of which provider and model served it and what it cost. This is how we meter the plan and how we check our own bills.</li>
           <li><strong>Safety.</strong> When automated moderation acts on a session, or when you report a problem with one, we record what happened: which category was triggered, which side of the conversation it came from, what we did, and — for a report — what you wrote. The turn itself is not copied into that record.</li>
+          <li><strong>Pages visited.</strong> Which page was opened, when, the site you arrived from, your country and whether you were on a phone. We do not store your IP address or your browser string: they are combined with a secret and today&rsquo;s date into a one-way code that groups one person&rsquo;s visits within a single day and cannot be linked to the next day, to you, or to anything else. Addresses that identify a specific page you were sent — a shared scorecard link, for example — are reduced to the kind of page before they are stored, never the link itself.</li>
           <li><strong>Technical.</strong> Ordinary server and delivery logs kept by our hosting providers — IP address, browser, timestamps — used for security and debugging.</li>
         </ul>
       </Clause>
@@ -308,8 +309,10 @@ export function PrivacyDocument() {
           No advertising or cross-site trackers. No card numbers — those go directly to our
           merchant of record and never reach us. No contact list, no location, no microphone
           access outside a session you started. We do not sell personal data, and we do not
-          share it with advertisers. If we add product analytics, this page will list the
-          processor before it is switched on.
+          share it with advertisers. Our page counting is our own: the counts are computed and
+          held by us, they are not sent to an analytics company, and there is no processor to
+          name. If that ever changes, this page will list the processor before it is switched
+          on.
         </p>
       </Clause>
 
@@ -368,7 +371,9 @@ export function PrivacyDocument() {
         <p>
           Only the ones that sign you in and keep you signed in, plus what our hosting needs to
           serve the page. No advertising cookies and no cross-site tracking, so there is no
-          consent banner to dismiss.
+          consent banner to dismiss. Counting page visits needs no cookie either, which is why
+          it does not add one. If your browser sends a Do Not Track signal, we do not count the
+          visit at all.
         </p>
       </Clause>
 

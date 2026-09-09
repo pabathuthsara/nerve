@@ -26,6 +26,7 @@ const sessionViews = new Set<SessionView>(['result', 'scorecard', 'transcript'])
  */
 const INTERVIEW_ROUTES = new Set<InterviewRoute>([
   '/interview',
+  '/interview/credits',
   '/interview/setup/role',
   '/interview/setup/cv',
   '/interview/setup/questions',
@@ -122,7 +123,13 @@ export function isBillingRoute(path: string): boolean {
    * is always a window where the ids exist and the deployment cannot see them.
    */
   return path === '/profile/subscription'
-    || path === '/interview'
+    /**
+     * The store moved off `/interview` and onto its own route, so the
+     * environment answer moved with it. The home draws a balance and a link
+     * now — no buy button — and asking the server whether a checkout can be
+     * opened in order to render neither would be a question with no reader.
+     */
+    || path === '/interview/credits'
     || path === '/interview/start'
     /**
      * The scorecard, since the low-balance line (S5).

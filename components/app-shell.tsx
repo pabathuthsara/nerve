@@ -23,6 +23,14 @@ import { setActiveTrack } from '@/app/profile/actions'
 const RUNS_UNDER: Record<string, string> = {
   '/interview/interviewers': '/roster',
   '/interview/start': '/roster',
+  /**
+   * The credit store. Reached from the balance pill rather than from the rail,
+   * so without this no item is lit at all — `/interview` matches exactly, by
+   * design, because its other children are not its own. Train is the honest
+   * parent: it is the interview track's home section and a credit is what a
+   * round is bought with.
+   */
+  '/interview/credits': '/interview',
 }
 
 const navItems = [
@@ -237,7 +245,10 @@ export function RepsRemaining({ count, resetAt, locked = false, track = 'dating'
    * is a destination, not a new control.
    *
    * A count goes to where it can be changed: reps to the subscription screen,
-   * credits to the interview home, which is where the packs are.
+   * credits to `/interview/credits`, which is where the packs are. It used to
+   * be `/interview`, and that was the dating arm's rule broken on the second
+   * track — the reps pill has never landed on `/train` with a plan board bolted
+   * into its sidebar. Tapping a balance should open the store, not the profile.
    */
   /**
    * TWO METERS, AND THE PILL HAS TO KNOW WHICH ONE IT IS ON.
@@ -253,8 +264,8 @@ export function RepsRemaining({ count, resetAt, locked = false, track = 'dating'
    */
   if (track === 'interview') {
     return credits > 0
-      ? <Link className="reps-pill" href="/interview"><strong>{credits}</strong> credit{credits === 1 ? '' : 's'}</Link>
-      : <Link className="reps-pill reps-pill--locked" href="/interview">No credits</Link>
+      ? <Link className="reps-pill" href="/interview/credits"><strong>{credits}</strong> credit{credits === 1 ? '' : 's'}</Link>
+      : <Link className="reps-pill reps-pill--locked" href="/interview/credits">No credits</Link>
   }
   if (locked) {
     return <Link className="reps-pill reps-pill--locked" href="/profile/subscription">Voice on Pro</Link>

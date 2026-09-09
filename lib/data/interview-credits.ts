@@ -475,6 +475,50 @@ export const ROUND_TYPES: readonly RoundType[] = [
   },
 ]
 
+/**
+ * What each round costs, as a screen draws it rather than as a sentence.
+ *
+ * ── WHY A TABLE AND NOT ONLY `ROUND_COST_NOTE` ───────────────────────────
+ *
+ * The one string reads *"A ten-minute recruiter screen is one credit; every
+ * longer round — technical, deep technical, final — is two."* That is exactly
+ * right in a paywall sheet and on a marketing aside, where there is room for a
+ * sentence and nothing else. On the credits card it was rendered as `.label`,
+ * which is 11px uppercase mono — a tag style, wrapped over two lines and asked
+ * to carry the one fact a buyer has to do arithmetic with. Somebody deciding
+ * between eight credits and twenty has to know what a round costs, and they
+ * were reading it in the typeface used for the word "AVAILABLE".
+ *
+ * So the same fact gets a second rendering with rows a reader can scan, and
+ * **both are derived from `ROUND_TYPES`** — the credits column is not retyped
+ * here, and `interview-credits.test.ts` asserts the sentence and this table
+ * cannot come to disagree.
+ *
+ * The screener is included at zero. It is a real answer to "what does this
+ * cost", it is what a new account is holding, and leaving it out would make the
+ * table describe a product with no free round in it.
+ */
+export interface RoundCostRow {
+  id: RoundTypeId
+  label: string
+  /** Whole minutes, which is how every round is authored and how one is sold. */
+  minutes: number
+  credits: number
+}
+
+export const ROUND_COST_ROWS: readonly RoundCostRow[] = ROUND_TYPES.map((round) => ({
+  id: round.id,
+  label: round.label,
+  minutes: Math.round(round.durationMs / 60_000),
+  credits: round.credits,
+}))
+
+/** What one row's price says. `Free` rather than `0 credits`, which reads as an error. */
+export function roundCostLabel(row: RoundCostRow): string {
+  if (row.credits === 0) return 'Free'
+  return `${row.credits} credit${row.credits === 1 ? '' : 's'}`
+}
+
 export const DEFAULT_ROUND: RoundTypeId = 'recruiter'
 
 export function roundType(id: string | null | undefined): RoundType {

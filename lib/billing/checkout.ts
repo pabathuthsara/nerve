@@ -205,7 +205,7 @@ export function absoluteCheckoutUrl(purchaseUrl: string): string {
  * **The idempotency key carries a timestamp, and this one differs from the
  * subscription path on purpose.** A subscription is keyed `user:plan` because
  * somebody may only have one of them and a double-clicked button must not open
- * two. A pack is a thing you can buy twice — the second $29 next month is a
+ * two. A pack is a thing you can buy twice — the second $20 next month is a
  * second purchase, not a duplicate — and a stable key would hand back the first
  * checkout's URL forever. Keyed by the minute: a double-click inside the same
  * minute is one checkout, and a deliberate second purchase is its own.

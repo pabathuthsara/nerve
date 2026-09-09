@@ -237,7 +237,7 @@ export async function startPackCheckout(pack: string): Promise<PackCheckoutResul
   const result = await createPackCheckout({
     userId: user.id,
     pack,
-    ...(origin ? { successUrl: `${origin}/interview?bought=1` } : {}),
+    ...(origin ? { successUrl: `${origin}/interview/credits?bought=1` } : {}),
   })
 
   if (!result.ok || !result.url) {

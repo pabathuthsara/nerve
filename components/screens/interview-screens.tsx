@@ -44,7 +44,7 @@ import { CVReplaceSheet } from '@/components/modals'
 import { useProduct } from '@/components/product-provider'
 import { FluidPersona } from '@/components/fluid-persona'
 import { removeCv, saveInterviewSetup, uploadCv } from '@/app/interview/actions'
-import { CreditsPanel } from '@/components/interview/credits'
+import { CreditsPanel, CreditsSummary } from '@/components/interview/credits'
 import {
   DEFAULT_FIELD,
   interviewField,
@@ -72,6 +72,7 @@ import { JOB_DESCRIPTION_LIMIT } from '@/lib/data/interview-limits'
 
 export type InterviewRoute =
   | '/interview'
+  | '/interview/credits'
   | '/interview/setup/role'
   | '/interview/setup/cv'
   | '/interview/setup/questions'
@@ -79,12 +80,59 @@ export type InterviewRoute =
   | '/interview/start'
 
 export function InterviewScreen({ route, packsOpen = false }: { route: InterviewRoute; packsOpen?: boolean }) {
+  if (route === '/interview/credits') return <CreditsStore packsOpen={packsOpen} />
   if (route === '/interview/setup/role') return <RoleSetup />
   if (route === '/interview/setup/cv') return <CvSetup />
   if (route === '/interview/setup/questions') return <QuestionsSetup />
   if (route === '/interview/interviewers') return <InterviewerPicker />
   if (route === '/interview/start') return <RunSetup packsOpen={packsOpen} />
-  return <InterviewHome packsOpen={packsOpen} />
+  return <InterviewHome />
+}
+
+/**
+ * The interview track's store, on its own route.
+ *
+ * ── WHY IT IS NOT ON `/interview` ANY MORE ───────────────────────────────
+ *
+ * The balance pill in the chrome is the most-tapped thing in a credit product
+ * and it pointed at `/interview`, where the full `CreditsPanel` — balance,
+ * round costs, three buy buttons and the ledger — sat at the top of a rail that
+ * also carried the role, the company, the field, the CV and the last score.
+ * Somebody tapping **No credits** to find out how to fix it arrived at the
+ * profile screen with the answer wedged into a sidebar.
+ *
+ * The dating arm has never worked that way: its store is
+ * `/profile/subscription`, its pill goes there, and nothing about a plan is
+ * drawn on `/train`. This is the same separation on the second track, and it is
+ * additive — `/profile/subscription` keeps its own `CreditsPanel`, because
+ * somebody who has come to the money screen to buy something should not be sent
+ * to a third page to finish.
+ *
+ * `.setup-page`'s narrow column rather than `.train-grid`: there is one thing
+ * to read here and no second column of it.
+ */
+function CreditsStore({ packsOpen }: { packsOpen: boolean }) {
+  const { data: user, loading } = useUserState()
+  return (
+    <AppShell title="Interview credits">
+      <div className="setup-page credits-store">
+        <Link className="text-action" href="/interview">Back to interviews</Link>
+        <h1 className="display-lg">Interview credits</h1>
+        <p className="credits-store__intro">
+          One balance, spent on whatever round you run next. What is in the account, what a round
+          costs, and where the rest of it went.
+        </p>
+        {loading
+          ? <Skeleton height={320} />
+          : <CreditsPanel
+              credits={user?.interviewCredits ?? 0}
+              screener={user?.interviewScreenerCredits ?? 0}
+              packsOpen={packsOpen}
+              returnTo="/interview/credits"
+            />}
+      </div>
+    </AppShell>
+  )
 }
 
 /**
@@ -112,7 +160,7 @@ export function InterviewScreen({ route, packsOpen = false }: { route: Interview
  * interview. **The captions toggle is gone from here entirely** — it is a
  * per-interview decision and it lives on the run setup, beside the round.
  */
-function InterviewHome({ packsOpen }: { packsOpen: boolean }) {
+function InterviewHome() {
   const { selectedInterviewerId } = useProduct()
   const { data: setup, loading: setupLoading } = useInterviewSetup()
   const { data: interviewers, loading: interviewersLoading } = useInterviewers()
@@ -171,7 +219,7 @@ function InterviewHome({ packsOpen }: { packsOpen: boolean }) {
       the two hardest to reach. Interviewer → setup → go, every time. */}
 <Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href="/interview/interviewers">Start an interview</Link>{refusal ? <p className="interview-hero__note label mute">{refusal}</p> : null}</article> : <SetupPrompt />}</section><aside className="side-stack">{/* B6: ordered by what somebody does, because on a phone this whole rail
       is a screen-height below a full-height hero. */}
-<CreditsPanel credits={user?.interviewCredits ?? 0} screener={screenerCredits} packsOpen={packsOpen} /><Card className="interview-stats"><Stat label="Role" value={setup?.roleTitle || 'Not set'} /><Stat label="Company" value={setup?.company || 'Not set'} /><Stat label="Field" value={interviewField(setup?.field ?? DEFAULT_FIELD).label} /><Stat label="CV" value={setup?.cvFileName || 'Not added'} /><Stat label="Questions added" value={setup?.customQuestions.length ?? 0} /></Card><Link className="arena-button arena-button--secondary arena-button--full" href="/interview/setup/role">Edit your profile</Link><ReadinessPanel />{last ? <Card><span className="label">Last interview</span><div className="interview-last"><span><strong>{last.personaName}</strong><small>{last.compositeScore === null ? 'Not graded' : 'Graded'}</small></span><span className="data">{last.compositeScore ?? '—'}</span></div></Card> : null}</aside></div></AppShell>
+<CreditsSummary credits={user?.interviewCredits ?? 0} screener={screenerCredits} /><Card className="interview-stats"><Stat label="Role" value={setup?.roleTitle || 'Not set'} /><Stat label="Company" value={setup?.company || 'Not set'} /><Stat label="Field" value={interviewField(setup?.field ?? DEFAULT_FIELD).label} /><Stat label="CV" value={setup?.cvFileName || 'Not added'} /><Stat label="Questions added" value={setup?.customQuestions.length ?? 0} /></Card><Link className="arena-button arena-button--secondary arena-button--full" href="/interview/setup/role">Edit your profile</Link><ReadinessPanel />{last ? <Card><span className="label">Last interview</span><div className="interview-last"><span><strong>{last.personaName}</strong><small>{last.compositeScore === null ? 'Not graded' : 'Graded'}</small></span><span className="data">{last.compositeScore ?? '—'}</span></div></Card> : null}</aside></div></AppShell>
 }
 
 /**
