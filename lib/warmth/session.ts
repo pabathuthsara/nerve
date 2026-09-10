@@ -19,6 +19,7 @@ import { DEFAULT_REPLY_SHAPE, type ReplyShape, type TurnKind } from './timing'
 import { isOpenQuestion } from './fast'
 import { DISCLOSURE_WORDS, type UserTurnShape } from './reciprocity'
 import { advanceExit, isDismissal, isUserFarewell, type SceneExit } from './leaving'
+import type { UserTurnKind } from './turn-kind'
 import { personaNotes } from './persona-notes'
 import type { SteeringContext } from './steering'
 // B2's seam. One selector, reading `persona.track`, with dating as the default
@@ -26,6 +27,7 @@ import type { SteeringContext } from './steering'
 // `bands.ts`, `reciprocity.ts` or `steering.ts` is opened to make this work.
 import { judgementFor } from './track'
 import type { InterviewTurnKind } from './interview/bands'
+import type { InterviewSteeringContext } from './interview/steering'
 
 /**
  * Re-send an unchanged direction at least this often.
@@ -47,6 +49,17 @@ const QUESTION_WINDOW = 5
  * five — see the note there.
  */
 const MAX_QUESTION_SHARE = 0.4
+
+/**
+ * Her ceiling when he has only said hello.
+ *
+ * "Hey." is one word and "Morning, yeah." is three. Four leaves room for a
+ * greeting with a word of warmth on it and no room at all for the concrete
+ * observation that filled both stored openers. It is a CEILING and not a
+ * target — the band, the sentence rule and the reciprocity clause all still
+ * apply beneath it.
+ */
+const GREETING_REPLY_WORDS = 4
 
 export interface WarmthSessionOptions {
   /** The persona, or a getter for it. A getter is what the dev panel needs. */
@@ -180,6 +193,14 @@ export class WarmthSession {
   private turnsSinceSilence = Number.POSITIVE_INFINITY
   /** His last turn actually contained a question mark. See `askedDirectly`. */
   private lastUserAskedDirectly = false
+  /**
+   * What his last turn WAS (`./turn-kind.ts`), beside the four-field shape.
+   *
+   * Carried here rather than added to `UserTurnShape` for the reason
+   * `lastUserAskedDirectly` is: that record is read by every dating gate and
+   * stays byte-identical.
+   */
+  private lastUserKind: UserTurnKind = 'silence'
 
   constructor(options: WarmthSessionOptions) {
     this.options = options
@@ -203,23 +224,38 @@ export class WarmthSession {
    * inferable from token deltas. If this does not match her turn count, the
    * steering is not landing and no amount of prompt wording will fix it.
    */
-  directive(): string {
-    this.steeringSent += 1
-    // Composed from all four layers, and read LIVE — the persona reference is
-    // whatever the tuning store currently holds, so a slider moved mid-rep
-    // changes her very next reply (§3).
-    const line = this.judgement.steer({
+  /**
+   * Everything the steering composer reads, in ONE place.
+   *
+   * The three callers below used to build this literal independently, and the
+   * `exit` field proved why that is a bug waiting: added to `statelessDirective`
+   * alone, it was silently dropped on every turn where the directive had
+   * CHANGED — which is most turns — so a character who had committed to leaving
+   * was still being told "You are not going yet." A field that three call sites
+   * must remember is a field two of them will eventually forget.
+   *
+   * Read LIVE: the persona reference is whatever the tuning store currently
+   * holds, so a slider moved mid-rep changes her very next reply (§3).
+   */
+  private steeringContext(): InterviewSteeringContext {
+    return {
       persona: this.persona,
       warmth: this.engine.warmth,
       suppressQuestion: this.questionQuotaSpent(),
-      ...this.openingBriefFlag,
       // The other two axes reach her as a posture, never as numbers — the same
       // rule warmth has always followed. Silent when the three agree.
       posture: this.engine.posture,
       repairOpen: this.engine.repairOpen,
       his: this.lastUserShape,
       firstExchange: this.firstExchange,
-    })
+      exit: this.exit,
+      ...this.openingBriefFlag,
+    }
+  }
+
+  directive(): string {
+    this.steeringSent += 1
+    const line = this.judgement.steer(this.steeringContext())
     this.lastDirective = line
     this.turnsSinceSteer = 0
     return line
@@ -246,16 +282,7 @@ export class WarmthSession {
    */
   directiveIfChanged(): string | null {
     if (this.consumeClosingHandover()) return null
-    const next = this.judgement.steer({
-      persona: this.persona,
-      warmth: this.engine.warmth,
-      suppressQuestion: this.questionQuotaSpent(),
-      posture: this.engine.posture,
-      repairOpen: this.engine.repairOpen,
-      his: this.lastUserShape,
-      firstExchange: this.firstExchange,
-      ...this.openingBriefFlag,
-    })
+    const next = this.judgement.steer(this.steeringContext())
     this.turnsSinceSteer += 1
     // Hers if she has one. See `Persona.steerHeartbeatTurns` — a wider band
     // drifts further between reminders, so the two are one setting.
@@ -293,18 +320,7 @@ export class WarmthSession {
     if (this.consumeClosingHandover()) return ''
     const fresh = this.directiveIfChanged()
     if (fresh !== null) return fresh
-    return this.judgement.steer({
-      persona: this.persona,
-      warmth: this.engine.warmth,
-      suppressQuestion: this.questionQuotaSpent(),
-      posture: this.engine.posture,
-      repairOpen: this.engine.repairOpen,
-      his: this.lastUserShape,
-      firstExchange: this.firstExchange,
-      includeStanding: false,
-      exit: this.exit,
-      ...this.openingBriefFlag,
-    })
+    return this.judgement.steer({ ...this.steeringContext(), includeStanding: false })
   }
 
   /**
@@ -424,7 +440,28 @@ export class WarmthSession {
    * earned it — "Mhm." buys two words, not nine. See `mirrorCapFor`.
    */
   get replyWordCap(): number {
-    return this.judgement.wordCap(this.engine.warmth, this.lastUserShape, this.openingTurnKind)
+    const band = this.judgement.wordCap(this.engine.warmth, this.lastUserShape, this.openingTurnKind)
+    // A HELLO IS ANSWERED WITH A HELLO, AND THE MIRROR RULE CANNOT SAY SO.
+    //
+    // `mirrorCapFor` is a measured NO-OP on the opening turn: a one-word hello
+    // yields `ceil(1 × 1.3) = 2`, which is then raised to the band's own
+    // typical by the "a real turn always buys a sentence" floor — 3, 4, 6, 7, 8
+    // and 9 across the table. That floor is right for "I am hungry" and wrong
+    // for "Hello.", and the difference is not something the mirror rule can see
+    // because it only counts words.
+    //
+    // So the carve-out lives here, where `firstExchange` and the turn kind are
+    // both known, rather than as a warmth opinion added to a Tier 0 file. It
+    // can only ever LOWER the band, like every other reciprocity rule.
+    //
+    // Measured consequence of not having it: "Hello." → "Hello. Not a bad
+    // morning for sitting still." and "Hello there." → "Morning. The place is
+    // noisier than I wanted." Both are a greeting AND an unprompted
+    // observation, at a band whose directive says "Answer only what he asked."
+    if (this.firstExchange && this.lastUserKind === 'greeting') {
+      return Math.min(band, GREETING_REPLY_WORDS)
+    }
+    return band
   }
 
   /**
@@ -589,6 +626,7 @@ export class WarmthSession {
     // and every dating gate reads it exactly as it always has. This is the
     // stricter question test the interview arm needs, and nothing else reads it.
     this.lastUserAskedDirectly = turn.text.includes('?')
+    this.lastUserKind = score.kind
 
     // The run, for the judge. Pushed with her reply still unknown; `onAgentTurn`
     // fills it in when she answers. Four is two exchanges more than the judge is
