@@ -1,31 +1,52 @@
 /**
- * Tess is Nadia, in a launderette, on the rung-1 curve.
+ * Cass is her own person, on Nadia's craft rules, on the rung-1 curve.
  *
- * ── WHY THIS FILE EXISTS IN THIS SHAPE ───────────────────────────────────
+ * ── THIS FILE HAS NOW ASSERTED THREE DIFFERENT THINGS ────────────────────
  *
- * It used to assert the opposite. `PERSONA-AUDIT.md` found that the shared band
- * table was tuned against Nadia and concluded it was overwriting any character
- * authored against that grain, so Tess was given her own bands, her own posture
- * reading, her own punctuation, a mood roll and a list of things to say — and
- * this file asserted each of them.
+ * It is worth knowing why, because each turn was right at the time.
  *
- * The person who has talked to both then said Nadia is fun and Tess still read
- * as an AI. Nadia runs the shared table with none of those overrides. So the
- * table was not the thing flattening Tess; it is most of what makes Nadia good.
+ * **First** it asserted that rung 1 had her own bands, posture reading and
+ * punctuation — `PERSONA-AUDIT.md` had measured, correctly, that the shared
+ * band table was tuned against Nadia, and concluded it must be overwriting
+ * anyone authored against that grain.
  *
- * The assertions therefore invert. What is checked now is **fidelity** — that
- * her contract really is Nadia's and not a paraphrase, that she carries none of
- * the per-character escape hatches, and that the only things still hers are
- * layer 1 and the two dials that layer 1 implies. A port that drifts is a port
- * that stops being the thing that was working.
+ * **Then it inverted.** The person who had talked to both said Nadia was fun
+ * and Tess still read as an AI, and Nadia runs the shared table with none of
+ * those overrides. So the table was not what flattened her — it is most of
+ * what makes Nadia good. The overrides came out, the contract was replaced
+ * with Nadia's ported into a launderette, and this file started asserting
+ * FIDELITY: that the port had not drifted.
  *
- * Two fixes were kept from the audit, and they are asserted separately at the
- * bottom, because both are broken OUTPUT rather than an opinion about who she
- * is: the room name, and a `want` that completes the sentence built around it.
+ * **10 September, and this is the third.** The port did its job and then
+ * outgrew it. With four characters on the roster, rung 1 and rung 2 were the
+ * same woman — same job, same sister, same crime novels, same `playful` — and
+ * the first two reps of the product are rung 1 followed by rung 2 about twenty
+ * seconds later.
+ *
+ * ── THE DISTINCTION THIS FILE NOW EXISTS TO HOLD ─────────────────────────
+ *
+ * **Giving a character her own JUDGEMENT MACHINERY made her worse. Giving her
+ * her own LIFE is what every other character already has.** Those are not the
+ * same act and the first round conflated them.
+ *
+ * So the assertions split in two, and both halves matter:
+ *
+ *   `the craft rules are still Nadia's`   every rule about how she TALKS,
+ *                                         verbatim. This is the half of the
+ *                                         port that was always right, and the
+ *                                         half that would rot silently.
+ *   `she is not Nadia`                    every rule about who she IS, and
+ *                                         none of Nadia's personal material.
+ *                                         Two characters converging is what
+ *                                         this round was called to fix.
+ *
+ * The escape-hatch test at the bottom is the one that carries the original
+ * lesson forward, and it is roster-wide rather than about her.
  */
 
 import { describe, expect, it } from 'vitest'
 import { DATING_PERSONAS, RETIRED_PERSONAS } from './index'
+import { sceneFor } from '@/lib/audio/scenes'
 import { tess } from './tess'
 import { nadia } from './nadia'
 import { compileInstructions, moodFor } from '@/lib/voice/openai/persona'
@@ -88,11 +109,15 @@ const NADIA_SECTIONS = [
   '# You never',
 ]
 
-describe('Tess — the port is faithful', () => {
-  it('carries every one of Nadia\'s craft rules verbatim', () => {
+describe('Cass — the craft rules are still Nadia\'s', () => {
+  it('carries every one of her craft rules verbatim', () => {
+    // THE HALF OF THE PORT THAT WAS ALWAYS RIGHT. These are the lines that
+    // decide how she TALKS rather than who she is, they were tuned and measured
+    // on the arm that ships, and they are what stops a character sounding like
+    // a customer-service agent. She got a new life; she did not get new craft.
     for (const rule of NADIA_CRAFT) {
       expect(nadia.contract, `nadia is missing: ${rule}`).toContain(rule)
-      expect(tess.contract, `tess is missing: ${rule}`).toContain(rule)
+      expect(tess.contract, `cass is missing: ${rule}`).toContain(rule)
     }
   })
 
@@ -102,36 +127,6 @@ describe('Tess — the port is faithful', () => {
       const at = tess.contract.indexOf(heading)
       expect(at, `missing or out of order: ${heading}`).toBeGreaterThan(cursor)
       cursor = at
-    }
-  })
-
-  it('changes only the props', () => {
-    // The exhaustive list of what a launderette port is allowed to touch. If
-    // something else diverges it belongs in this test with a reason.
-    expect(tess.contract).toContain('a launderette')
-    expect(tess.contract).toContain('Your machine has nineteen minutes left on it')
-    expect(tess.contract).toContain('claim knowledge of the launderette, its machines, or its ownership')
-    expect(tess.contract).toContain('Do not narrate watching the machine')
-    expect(tess.contract).toContain('Never retreat to your book, the machine')
-    // And nothing of the bookshop survives the port.
-    for (const leak of ['bookshop', 'the shelves', 'in stock', 'browsing']) {
-      expect(tess.contract.toLowerCase(), `bookshop leak: ${leak}`).not.toContain(leak)
-    }
-  })
-
-  it('keeps the material that makes her good company', () => {
-    // Nadia leans on having something in her hands and an opinion about it.
-    // A woman with nineteen minutes and a paperback is the same person as a
-    // woman killing forty minutes in a shop, so the book ports rather than
-    // being replaced with launderette small talk.
-    for (const line of [
-      'people being sad in nice houses',
-      'Tana French',
-      'airport thrillers',
-      'something in logistics that you find boring',
-    ]) {
-      expect(tess.contract, line).toContain(line)
-      expect(nadia.contract, line).toContain(line)
     }
   })
 
@@ -147,43 +142,83 @@ describe('Tess — the port is faithful', () => {
   })
 })
 
-describe('Tess — she sounds like Nadia because the dials say so', () => {
-  it('matches her on every dial that is not the rung', () => {
-    // `patience` and `distraction` are what "easier" means in layer 2 and are
-    // pinned against Nadia's by `roster.test.ts`. Everything else is hers.
-    expect(tess.personality.sharpness).toBe(nadia.personality.sharpness)
-    expect(tess.personality.sharpnessLowWarmthBoost).toBe(nadia.personality.sharpnessLowWarmthBoost)
-    expect(tess.personality.humour).toBe(nadia.personality.humour)
-    expect(tess.personality.talkativeness).toBe(nadia.personality.talkativeness)
-    expect(tess.personality.expression).toBe(nadia.personality.expression)
-    expect(tess.personality.signalClarity).toBe(nadia.personality.signalClarity)
-  })
-
-  it('compiles to the same derived behaviour block except the disposition', () => {
-    // The disposition line is banded off `trajectory.start`, and the composure
-    // line off `patience` — both of which ARE the rung, so both must differ.
-    // Every other derived sentence — effort, clarity, delivery — should read
-    // identically, because they are read off dials she shares.
-    //
-    // The humour sentence below is the one that caught the drift: 37e2961
-    // retuned Nadia from 69 to 50 without bringing Tess with her, and this
-    // assertion started failing on its own CONTROL. Read the expected strings
-    // off the compiler when a dial moves; do not adjust them to whatever makes
-    // the test green.
-    const hers = compileInstructions(tess, { canEndScene: true })
-    const nadias = compileInstructions(nadia, { canEndScene: true })
-    for (const line of [
-      'You meet them halfway. You answer what you are asked, and you do not drive the conversation.',
-      'Your level of interest is obvious and unmistakable from how you respond.',
-      'You are light and quick, and you enjoy winding people up a little.',
-      'You are amused by things occasionally and do not make a performance of it.',
+describe('Cass — she is not Nadia', () => {
+  it('shares none of her personal material', () => {
+    // The defect this round was called to fix. Rung 1 and rung 2 were the same
+    // woman: same job, same sister, same books, same opinion about literary
+    // fiction — and the first two reps of the product are one then the other,
+    // about twenty seconds apart.
+    for (const leak of [
+      'people being sad in nice houses',
+      'Tana French',
+      'airport thrillers',
+      'something in logistics',
+      'non-fiction and crime',
     ]) {
-      expect(nadias, `control: ${line}`).toContain(line)
-      expect(hers, `tess: ${line}`).toContain(line)
+      expect(nadia.contract, `control: ${leak}`).toContain(leak)
+      expect(tess.contract, `leaked: ${leak}`).not.toContain(leak)
     }
   })
 
+  it('stands somewhere else, and nothing of the old room survives', () => {
+    expect(tess.contract).toContain('a gallery')
+    expect(tess.contract).toContain('veterinary nurse')
+    for (const gone of ['launderette', 'bookshop', 'machine', 'dryer', 'the shelves']) {
+      expect(tess.contract.toLowerCase(), `stale: ${gone}`).not.toContain(gone)
+    }
+  })
+
+  it('does not mean what she says with an angle on it', () => {
+    // `expression` is the load-bearing difference and the one a beginner
+    // actually hears. Nadia and Tess were both `playful`, Maya is `dry`, so
+    // every character on the roster had irony in her — and irony is a thing you
+    // have to decode before you can answer it, which is the last thing to ask
+    // of somebody on their first rep.
+    expect(tess.personality.expression).toBe('earnest')
+    expect(tess.personality.expression).not.toBe(nadia.personality.expression)
+    const compiled = compileInstructions(tess, { canEndScene: true })
+    expect(compiled).toContain('You mean what you say and you do not hide behind irony.')
+    expect(composeSteering({ persona: tess, warmth: 50 })).toContain('Straight, no irony.')
+  })
+
+  it('is the only character a user actually meets who means it plainly', () => {
+    // Stated as a property of the SET rather than of her, so a later retune
+    // that gives a second shipped character `earnest` has to come here and say
+    // so. Shipped only: Priya is `earnest` too, and she is retired.
+    //
+    // KNOWN AND NOT FIXED HERE: Maya and Robin are both `dry`, so the shipped
+    // roster carries three registers across four characters. That is a real
+    // overlap and a separate decision — the one this round was called to fix
+    // was rung 1 and rung 2 being the same woman, and those are the first two
+    // reps anybody runs.
+    const shipped = Object.values(DATING_PERSONAS)
+    const earnest = shipped.filter((p) => p.personality.expression === 'earnest')
+    expect(earnest.map((p) => p.slug)).toEqual(['tess'])
+    expect(tess.personality.expression).not.toBe(nadia.personality.expression)
+  })
+
+  it('never bluffs, which is the whole engine of the room', () => {
+    // A gallery could read as the most intimidating room on the roster. A woman
+    // in it who cannot tell you what anything means, and is not embarrassed
+    // about it, inverts that — and gives a nervous user permission to not know
+    // something in front of a stranger, which is the hardest thing to script.
+    expect(tess.contract).toContain('You never bluff about art')
+    expect(tess.contract).toContain('claim to know what a painting means')
+  })
+
+  it('does not sound like her on the dials that are not the rung', () => {
+    // The inverse of what this file used to assert. `patience` and
+    // `distraction` ARE the rung and are pinned against Nadia's by
+    // `roster.test.ts`; everything else is now hers and must not converge back.
+    expect(tess.personality.sharpness).toBeLessThan(nadia.personality.sharpness)
+    expect(tess.personality.signalClarity).toBeGreaterThan(nadia.personality.signalClarity)
+    expect(tess.personality.humour).not.toBe(nadia.personality.humour)
+  })
+
   it('reads the same shared band table she does, at every warmth', () => {
+    // THE LESSON THAT SURVIVES ALL THREE ROUNDS. A different life, not a
+    // different judgement layer: she is steered by the same table Nadia is,
+    // word for word, because that table is most of what makes Nadia good.
     for (const warmth of [10, 30, 50, 70, 90]) {
       const line = composeSteering({ persona: tess, warmth })
       expect(line.startsWith(`[${specFor(bandFor(warmth)).directive}`), `@${warmth}`).toBe(true)
@@ -298,29 +333,48 @@ describe('Tess — she is still rung 1', () => {
   })
 })
 
-describe('Tess — the two fixes kept from the audit', () => {
-  it('stands in a launderette, in the section that says what is inviolable', () => {
-    // `sceneId` returns `bed ?? reverbIr`, and with `bed: null` that was the
-    // impulse response — so her Absolute rules told her to react "the way a
-    // stranger in a bookshop would" while she stood in a launderette.
-    //
-    // She has her own authored room now (`lib/audio/scenes.ts`), so the IR is
-    // no longer borrowed and `place` no longer carries the fix on its own. It
-    // stays anyway: the name of the room and its acoustics are separate fields
-    // by design, and the next character to borrow an IR will need that again.
+describe('Cass — the fixes that outlived the room they were found in', () => {
+  it('stands in a gallery, in the section that says what is inviolable', () => {
+    // The original defect: `sceneId` returns `bed ?? reverbIr`, so a borrowed
+    // impulse response told her to react "the way a stranger in a bookshop
+    // would" while she stood somewhere else entirely. She has her own authored
+    // room, so `place` no longer carries the fix on its own — it stays because
+    // the NAME of a room and its ACOUSTICS are separate fields by design, and
+    // the next character to borrow an IR will need that separation again.
     const compiled = compileInstructions(tess, { canEndScene: true })
-    expect(compiled).toContain('the way a stranger in a launderette would react')
+    expect(compiled).toContain('the way a stranger in a gallery would react')
     expect(compiled).not.toContain('a stranger in a bookshop')
-    expect(tess.room.reverbIr).toBe('launderette')
-    expect(tess.room.place).toBe('launderette')
+    expect(tess.room.place).toBe('gallery')
   })
 
-  it('anchors the live scorer to a launderette', () => {
+  it('does not stand in the gallery Alex stands in', () => {
+    // `gallery` already existed and is a crowded OPENING — crowd wash, glass
+    // clinks, one-shots every six seconds. That is a different event in the
+    // same building, and putting a quiet weekday afternoon under a drinks
+    // reception would be the room contradicting the scene.
+    //
+    // `gallery-quiet` carries the IDENTICAL reverb, because it is the identical
+    // hall, and loses the crowd. `room-tone.test.ts` is what refuses to let two
+    // characters authored into different rooms share one scene id.
+    expect(tess.room.bed).toBe('gallery-quiet')
+    expect(sceneFor('gallery-quiet')?.reverb).toEqual(sceneFor('gallery')?.reverb)
+    const quiet = sceneFor('gallery-quiet')!
+    for (const layer of quiet.ambient.layers) {
+      expect(layer.kind, 'a weekday afternoon is not a crowd').not.toBe('crowd-wash')
+    }
+    expect(quiet.ambient.masterDb).toBeLessThan(sceneFor('gallery')!.ambient.masterDb)
+  })
+
+  it('anchors the live scorer to the room she is actually in', () => {
     // `intimacy` drives `classifyOverreach`, and its bottom anchor is "the shop,
-    // the books". Judging a launderette against a bookshop moves her the wrong
-    // way. Every character without a `place` keeps the old literal to the byte.
-    expect(scorerPlaceFor('Tess')).toBe('a launderette')
-    expect(buildSystemPrompt('Tess', scorerPlaceFor('Tess'))).toContain('talking to in a launderette')
+    // the books". Judging a gallery against a bookshop moves her the wrong way.
+    //
+    // The lookup is by NAME, which is the thing that changed here: renaming her
+    // to Cass without a room would have silently returned the default and put
+    // the judge back in a bookshop. Every character without a `place` keeps the
+    // old literal to the byte.
+    expect(scorerPlaceFor('Cass')).toBe('a gallery')
+    expect(buildSystemPrompt('Cass', scorerPlaceFor('Cass'))).toContain('talking to in a gallery')
     expect(scorerPlaceFor('Nadia')).toBe(DEFAULT_SCORER_PLACE)
     expect(buildSystemPrompt('Nadia', scorerPlaceFor('Nadia'))).toBe(buildSystemPrompt('Nadia'))
   })
@@ -334,8 +388,17 @@ describe('Tess — the two fixes kept from the audit', () => {
     for (const warmth of [10, 40, 80]) {
       const [clause] = wantClauses(tess, warmth)
       expect(clause, `warmth ${warmth}`).toMatch(
-        /^You would (still )?rather be left alone with the book you are halfway through[.,]/,
+        /^You would (still )?rather be getting round the last two rooms before the place shuts[.,]/,
       )
     }
+  })
+
+  it('keeps her slug, so every rep anyone has run against rung 1 still resolves', () => {
+    // She is a different person. She is not a different ROW. `sessions`,
+    // `scores`, `unlocks` and the streak all reference `persona_slug`, and
+    // `lib/data/guided.ts` keys her script on it.
+    expect(tess.slug).toBe('tess')
+    expect(tess.name).toBe('Cass')
+    expect(DATING_PERSONAS.tess).toBe(tess)
   })
 })

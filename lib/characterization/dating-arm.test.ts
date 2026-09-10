@@ -142,6 +142,22 @@ describe('characterization · compiled contracts', () => {
     // reasons 2 and 3. That is a cross-track change and it is intended: an
     // em-dash is a TTS artefact on both arms, and reason 2 removes a licence
     // from a sentence that already said "you do not drive" in both versions.
+    //
+    // ── AND TESS MOVED AGAIN, ALONE, LATER THE SAME DAY ─────────────────
+    //
+    // She is a new character. Until now she was Nadia ported into a launderette
+    // — the right call when the roster had two people on it, and the wrong one
+    // once it had four: rung 1 and rung 2 were the same woman, same job, same
+    // sister, same crime novels, same `playful`, and the first two reps anybody
+    // runs are one then the other about twenty seconds apart.
+    //
+    // She is Cass now: a veterinary nurse on a day off, in a public gallery,
+    // who knows nothing about art and says so. `earnest`, which nothing on the
+    // shipped roster was. **The craft rules are still Nadia's verbatim and she
+    // carries no per-character overrides** — that is §7's lesson and it is
+    // untouched. `tess.test.ts` asserts both halves.
+    //
+    // THE SLUG DID NOT MOVE. Every stored rep against rung 1 still resolves.
     alex: { canEndScene: 'b6891988b7899fd3', stateless: '044f43223c1b272c', length: 7481 },
     erin: { canEndScene: '3f14d8a54fceded4', stateless: 'b086f49dcdbac4fa', length: 8228 },
     jules: { canEndScene: 'b79246fe190e2413', stateless: '8b4a49a3701b1e68', length: 8649 },
@@ -150,7 +166,7 @@ describe('characterization · compiled contracts', () => {
     priya: { canEndScene: '55110e31cab449e4', stateless: 'e582989e7cefec41', length: 8594 },
     robin: { canEndScene: '71bca423df662959', stateless: '3000cd913b25963a', length: 9813 },
     sam: { canEndScene: '0c282e4dd7f3f76d', stateless: '26ab3646768e5911', length: 8370 },
-    tess: { canEndScene: '9073629c92cf9765', stateless: 'fa7ec9f986873682', length: 10310 },
+    tess: { canEndScene: 'd9d8c2606a1127cb', stateless: '2257297c328218a4', length: 10608 },
   }
 
   it('covers every authored character, so a new one cannot slip past unpinned', () => {
@@ -208,11 +224,18 @@ describe('characterization · the pipeline arm', () => {
     new ElevenLabsPersonaCompiler(resolvePipelineConfig(env))
       .compile(ROSTER.find((persona) => persona.slug === slug)!, DEFAULT_CALIBRATION, { rng: seed() })
 
-  // RE-BASELINED 10 September 2026. Only `prompt` moved, on every character
-  // and under both environments; `tts` and `turn` are byte-identical, which is
-  // the claim worth making — the retune is entirely in what she is told and
-  // nothing about her voice, her stability or her turn-taking changed. See the
-  // contract table above for the five reasons.
+  // RE-BASELINED 10 September 2026. `prompt` moved on every character under
+  // both environments; `turn` is byte-identical everywhere.
+  //
+  // `tts` moved for TESS ALONE and only under `defaults`, which is worth
+  // reading rather than skipping: her `expression` went `playful` -> `earnest`,
+  // and `stabilityFor` maps those to 0.4 and 0.55. Under `shipped` her digest
+  // is UNCHANGED, because `ELEVENLABS_STABILITY` is 0.85 in production and the
+  // env dial wins for a dating persona. So the stability change is real in the
+  // table and inert on the arm customers are on; what they will actually hear
+  // differently is the `[earnest]` delivery tag, which moves under both.
+  //
+  // Nothing else about anybody's voice, casting or turn-taking changed.
   const EXPECTED: Record<keyof typeof ENVS, Record<string, { prompt: string; tts: string; turn: string }>> = {
     defaults: {
       alex: { prompt: 'a5a487316b591d2c', tts: '24db3ed2807bb4d4', turn: 'f6acbfc49fa3d135' },
@@ -223,7 +246,7 @@ describe('characterization · the pipeline arm', () => {
       priya: { prompt: '7466457675b92319', tts: '870c50002ec89bb0', turn: 'f5b2229cc620b177' },
       robin: { prompt: 'e7987982157375d8', tts: '04d5e936f442ce7f', turn: 'f5b2229cc620b177' },
       sam: { prompt: '8366f0a690f5c5ad', tts: '61d52974a0e6f66a', turn: 'f6acbfc49fa3d135' },
-      tess: { prompt: '627facb49be8b80c', tts: 'c7244037bea4bcd6', turn: 'f5b2229cc620b177' },
+      tess: { prompt: '61f4236895c25885', tts: 'a4d8cd933b426637', turn: 'f5b2229cc620b177' },
     },
     shipped: {
       alex: { prompt: '83e0f45212e4e515', tts: '68cb66a0513de355', turn: 'f6acbfc49fa3d135' },
@@ -234,7 +257,7 @@ describe('characterization · the pipeline arm', () => {
       priya: { prompt: '08558312780c0ddc', tts: 'eaf47d8ed9daad75', turn: 'f5b2229cc620b177' },
       robin: { prompt: 'c85e8daf84ef4d6f', tts: 'f0da90696682069a', turn: 'f5b2229cc620b177' },
       sam: { prompt: '455eaa24e9d45b35', tts: '63159e2880527025', turn: 'f6acbfc49fa3d135' },
-      tess: { prompt: '8688a23b7c3d859d', tts: 'fa9fbd31881dd6fb', turn: 'f5b2229cc620b177' },
+      tess: { prompt: 'fb9cb45eba024605', tts: 'fa9fbd31881dd6fb', turn: 'f5b2229cc620b177' },
     },
   }
 

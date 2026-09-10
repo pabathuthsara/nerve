@@ -92,9 +92,15 @@ const STEP_AT: readonly number[] = [0, 1, 2, 4, 7]
  * the connective tissue `site-audit-openai.md` says the product lacks, and it
  * is the reason the steps are keyed to `SubScores` rather than authored free.
  *
- * The lines are written for Tess's room — a launderette on a Sunday, nineteen
- * minutes left on her machine. A second guided character needs her own script;
- * `guidedScriptFor` is where that choice would live.
+ * The lines are written for Cass's room — a public gallery on a weekday
+ * afternoon, in front of a painting neither of them understands. A second
+ * guided character needs her own script; `guidedScriptFor` is where that
+ * choice would live.
+ *
+ * **The room does half the work of the opener**, which is why it was chosen:
+ * a beginner does not have to invent a reason to speak, because there is a
+ * thing on the wall and they are both looking at it. `say` below is one
+ * suggestion out of fifty the room supplies.
  *
  * **None of them asks her for anything.** The close is owned by
  * `lib/data/rep-rules.ts` and she never speaks digits, so a suggested line
@@ -105,7 +111,7 @@ export const TESS_SCRIPT: readonly GuidedStep[] = [
   {
     key: 'opening',
     aim: 'Open early. Rough is fine.',
-    say: 'Sunday afternoon in a launderette. Living the dream.',
+    say: 'I have been standing here a while and I still have no idea.',
     why: 'The first ten seconds are the whole skill. It does not have to be good, it has to be early.',
   },
   {
@@ -136,7 +142,7 @@ export const TESS_SCRIPT: readonly GuidedStep[] = [
   {
     key: 'close',
     aim: 'Leave warmly, on purpose.',
-    say: 'I will let you get your washing. Good to meet you.',
+    say: 'I will let you get round the rest of it. Good to meet you.',
     why: 'Ending it yourself, before it runs out, is worth more to the score than anything she decides.',
   },
 ]

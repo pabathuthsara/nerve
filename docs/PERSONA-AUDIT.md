@@ -1498,3 +1498,86 @@ Two options remain and both are decisions rather than tickets:
 - **Move the functions to `iad1`.** Auth and admission drop to ~30ms and the LLM
   hop shortens; TTS gets slower and the user's own leg grows by ~400ms round
   trip. Probably net positive and definitely not free.
+
+---
+
+## 15. Rung 1 and rung 2 were the same woman (10 September)
+
+`§7` ported Tess onto Nadia's contract with the props changed, and that was the
+right call: it reversed an experiment that had given her her own bands, posture
+reading and punctuation and made her worse. **That lesson stands and nothing
+here weakens it.**
+
+What the port could not fix is that it worked too well. With four characters on
+the roster, rung 1 and rung 2 were the same person — same job in logistics, same
+sister, same crime novels, same opinion about literary fiction, both `playful` —
+and **the first two reps anybody runs are rung 1 followed by rung 2, about
+twenty seconds apart.**
+
+### 15.1 The distinction the first round conflated
+
+> Giving a character her own JUDGEMENT MACHINERY made her worse.
+> Giving her her own LIFE is what every other character already has.
+
+Those are not the same act. She runs the shared band table, the shared craft
+rules and the shared judgement layer, exactly as Maya and Robin do, and
+`tess.test.ts` asserts that she carries **no** per-character override. What she
+has now is a name, a room, a job and an afternoon.
+
+### 15.2 Who she is
+
+**Cass.** Twenty-six, a veterinary nurse on a day off, in a public gallery, in a
+room of paintings she does not understand, who has decided to find one thing she
+likes before she leaves. Three things are load-bearing rather than decorative:
+
+- **The thing on the wall is a free opener.** A beginner does not have to invent
+  a reason to speak, which is the hardest part of a first rep.
+- **She knows nothing about art and says so.** A gallery is the most
+  intimidating room on the roster until the woman in it cannot tell you what
+  anything means and is not embarrassed about it. It also gives a nervous user
+  permission to not know something in front of a stranger.
+- **`expression: 'earnest'`, which nothing shipped was.** Nadia and Tess were
+  both `playful`, Maya and Robin are `dry`. Irony is a thing you have to decode
+  before you can answer it, and rung 1 is the worst place to ask that.
+
+**The slug stays `tess`.** Every stored session, score, unlock and streak
+references it, and `guided.ts` keys her script on it. She is a different person;
+she is not a different row.
+
+### 15.3 What it touched
+
+`gallery-quiet` is a new scene, and the reason is worth recording: `gallery`
+already existed and is Alex's — a crowded **opening**, with crowd wash and glass
+clinks every six seconds. That is a different event in the same building, and
+`room-tone.test.ts` refuses to let two characters authored into different rooms
+share a scene id. The new scene carries the **identical reverb**, because it is
+the identical hall, and loses the crowd.
+
+Also moved: the guided script (its opener was a joke about a launderette), her
+public copy, and `scorerPlaceFor` — which resolves by NAME, so renaming her
+without a room would have silently put the judge back in a bookshop.
+
+Her `defaults` TTS digest moved (`playful` 0.4 → `earnest` 0.55 stability) and
+her `shipped` one did **not**: `ELEVENLABS_STABILITY` is 0.85 in production and
+the env dial wins. The audible change is the `[earnest]` delivery tag.
+
+### 15.4 Auditioned, and what it still owes
+
+One rep on the bench, struggling player: 0 breaks, median 8 words, and she reads
+as somebody else — *"I'd rather be outside, honestly."*, *"I don't come here
+enough to know what to look for."*, *"I'm just glad it's not all just dull
+grey."*
+
+Two things it owes:
+
+- **Her casting has not been re-auditioned.** The ElevenLabs voice was chosen
+  when she was `playful` and the note read "brightness is the whole rung-1
+  read". Warm and direct is a different instrument from bright and quick.
+  Casting is decided by ear and the voice is deliberately unchanged rather than
+  swapped for one nobody has heard her in.
+- **A pre-existing contradiction the audition surfaced**, not introduced here:
+  at ENGAGED, on a turn where the direction is new AND the question quota is
+  spent, she is handed *"Ask about him, tease him, swap names"* and *"Do not ask
+  him anything this turn"* in the same line. The permission rides
+  `includeStanding` and the suppression rides the directive, so they only
+  collide on a changed turn. It is a Tier 0 decision of its own.

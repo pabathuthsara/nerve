@@ -232,6 +232,65 @@ export const GALLERY: SceneAcoustics = {
 }
 
 /**
+ * GALLERY, QUIET — the same physical room as GALLERY, on a different afternoon
+ * (Cass, rung 1).
+ *
+ * **The reverb is byte-identical to `GALLERY` on purpose.** It is the same
+ * hall: the same stone, the same ceiling, the same 1.3s tail. What changes is
+ * the EVENT in it. An opening is a crowd with drinks in their hands; a weekday
+ * afternoon is four people and an attendant.
+ *
+ * So the bed loses `crowd-wash` and `glass-clink` entirely and keeps the air,
+ * and the one-shots are sparser and further away. That is also why this is a
+ * second scene rather than a reuse: `room-tone.test.ts` refuses to let two
+ * characters authored into different rooms share one scene id, and a crowded
+ * opening and an empty weekday gallery are different rooms even though they
+ * are the same building.
+ *
+ * Like `BOOKSHOP`, the difficulty here is that quiet is not silence. There is
+ * nothing masking her, so a dry voice is MORE obvious in this room, not less.
+ *
+ * **Tuned from the vocabulary rather than by ear**, which is the honest
+ * caveat: procedural beds are off (see the note under `SCENES`), and every
+ * number below is reasoned from its neighbours in this file rather than heard.
+ */
+export const GALLERY_QUIET: SceneAcoustics = {
+  id: 'gallery-quiet',
+  label: 'Gallery, weekday afternoon',
+  ambient: {
+    layers: [
+      // The room's own air, and nothing else continuous. `crowd-wash` is what
+      // made the opening an opening.
+      { kind: 'hall-air', levelDb: 0, lowCutHz: 60, highCutHz: 900 },
+      { kind: 'room-rumble', levelDb: -12, lowCutHz: 30, highCutHz: 180 },
+    ],
+    oneShots: [
+      // Hard floors and a big room: footsteps carry, and they are the only
+      // thing you reliably hear in a gallery that is not busy.
+      { kind: 'heel-on-stone', weight: 5, levelDb: 0 },
+      { kind: 'distant-door', weight: 2, levelDb: -2 },
+      // The attendant's stool, once in a while.
+      { kind: 'chair-scrape', weight: 1, levelDb: -4 },
+    ],
+    // Sparser than the opening's [6, 15]. Four people in a big room.
+    oneShotIntervalSeconds: [11, 26],
+    // Near BOOKSHOP's floor rather than the opening's -26. This is a noise
+    // floor, not an atmosphere.
+    masterDb: -38,
+  },
+  // The same hall as `GALLERY`, because it IS the same hall — byte for byte,
+  // and `tess.test.ts` asserts that rather than trusting it. Stone and a high
+  // ceiling do not care how many people are standing under them.
+  reverb: {
+    rt60Seconds: 1.3,
+    preDelayMs: 22,
+    earlyReflectionRatio: 0.35,
+    dampingHz: 12000,
+    wetMix: 0.22,
+  },
+}
+
+/**
  * HOUSE PARTY — a kitchen with the music in the next room (Sam, retired 6).
  *
  * The bed is mostly what comes through the wall, which is why a music layer is
@@ -497,6 +556,7 @@ export const SCENES: Record<string, SceneAcoustics> = {
   [COFFEE_SHOP.id]: COFFEE_SHOP,
   [HOTEL_LOBBY.id]: HOTEL_LOBBY,
   [GALLERY.id]: GALLERY,
+  [GALLERY_QUIET.id]: GALLERY_QUIET,
   [HOUSE_PARTY.id]: HOUSE_PARTY,
   [TRAIN_PLATFORM.id]: TRAIN_PLATFORM,
   [GYM.id]: GYM,

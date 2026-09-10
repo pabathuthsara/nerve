@@ -90,13 +90,13 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
    * and "flirty" is a dial in her file, never a description on a screen.
    */
   tess: {
-    setting: 'Launderette, Sunday afternoon',
-    settingShort: 'Launderette',
-    hook: 'Nineteen minutes left on her machine and nothing to do for any of them.',
+    setting: 'Public gallery, weekday afternoon',
+    settingShort: 'Gallery',
+    hook: 'A day off, a room full of paintings, and no idea what any of them are.',
     blurb:
-      'Quick, cheerful and completely stuck. She has read everything on her phone twice and would rather talk to somebody than watch the drum go round.',
-    respondsTo: ['saying anything at all', 'anything about the room you are both stuck in', 'a small opinion'],
-    shutsDownOn: ['sustained rudeness', 'crossing a real boundary'],
+      'Warm and completely straight with you. She knows nothing about art and says so, and she has decided to find one thing in here she actually likes before she leaves.',
+    respondsTo: ['saying anything at all', 'telling her what you think of something', 'a small opinion, even a hesitant one'],
+    shutsDownOn: ['explaining the art at her', 'sustained rudeness', 'crossing a real boundary'],
     portraitUrl: '',
   },
   nadia: {
