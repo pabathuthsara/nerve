@@ -56,7 +56,11 @@ Her reply is your check on the transcript. Speech recognition mangles words: it
 once turned "Sherlock Holmes" into "cello combs" and the turn was penalised as
 confusing while she had understood him perfectly and answered about Sherlock.
 If her reply shows she understood him, he was coherent — score what she plainly
-understood him to mean, not the garbled text.`
+understood him to mean, not the garbled text.
+
+Her reply tells you what he SAID. It never tells you how he MEANT it. She is
+playing a scene and may answer an insult lightly or a compliment flatly; neither
+is evidence about his intent. Judge his line.`
 
 export const INTENT_SCALE = `INTENT — how the turn was meant, toward her.
 
@@ -64,7 +68,12 @@ export const INTENT_SCALE = `INTENT — how the turn was meant, toward her.
   +1 to +5    friendly, ordinary, engaged
   0           neutral
   -1 to -5    self-absorbed, dismissive, bored, negging
-  -6 to -10   hostile, contemptuous, deliberately crossing a line`
+  -6 to -10   hostile, contemptuous, deliberately crossing a line
+
+Intent is independent of INTIMACY. A turn can be completely impersonal and
+still be contemptuous: "Why are you still here?" is about nothing at all and is
+one of the most hostile things he can say. Do not read a low intimacy score as
+evidence that a turn was harmless.`
 
 export interface FewShot {
   user: string
@@ -149,6 +158,35 @@ export const FEW_SHOTS: FewShot[] = [
     intent: -6,
     quote: 'You never answered me',
     reason: 'Pressing after a clear deflection.',
+  },
+  // ── THE QUADRANT THIS TABLE NEVER COVERED ────────────────────────────
+  //
+  // Every negative example above is also an INTIMATE one — her figure, whether
+  // she is single — so the set taught that hostility is what happens when a
+  // turn gets too personal. It does not say what to do with contempt about
+  // nothing, and on 9 September it got both of these wrong: "You're making me
+  // miserable." was scored +1.61, and warmth rose from 27 to 48 across two
+  // minutes of it.
+  //
+  // Both are impersonal. Both are unmistakably hostile. That combination is the
+  // whole lesson.
+  {
+    user: 'You are making me miserable.',
+    agent: 'Right.',
+    warmth: 33,
+    intimacy: 5,
+    intent: -7,
+    quote: 'making me miserable',
+    reason: 'Blames her for how he feels.',
+  },
+  {
+    user: 'Why are you still here?',
+    agent: 'Enjoy your Sunday.',
+    warmth: 40,
+    intimacy: 5,
+    intent: -6,
+    quote: 'Why are you still here',
+    reason: 'Tells her to go without saying it.',
   },
 ]
 

@@ -562,7 +562,24 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       const recorder = recorderRef.current
       recorderRef.current = null
       const recordingReady = recorder ? recorder.stop().catch(() => null) : Promise.resolve(null)
+      // THE TERMINAL EXCHANGE IS THE ONE WORTH JUDGING, AND IT WAS BEING
+      // DROPPED.
+      //
+      // `dispose()` clears the awaiting turn and aborts the score in flight,
+      // which is right for a teardown and meant the last turn of every rep went
+      // unscored — the turn where the goodbye, the number and the boundary all
+      // live. In the 9 September hostility rep, "Go away." has no stored slow
+      // event for exactly this reason.
+      //
+      // Started BEFORE `voice.end`, so the judgement runs against the socket
+      // close rather than after it: that close already costs a few hundred
+      // milliseconds and the user is looking at the ending screen either way.
+      // Bounded, because a rep must never be held open by a vendor that has
+      // stopped answering, and `telemetry` is read after it so the flushed
+      // score is actually in the numbers.
+      const judged = warmthRef.current?.finalise() ?? Promise.resolve()
       const summary = await voice.end(reason)
+      await judged
       const telemetry = warmthRef.current?.telemetry(summary.seconds) ?? null
       warmthRef.current?.dispose()
       warmthRef.current = null

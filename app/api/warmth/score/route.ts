@@ -29,6 +29,34 @@ function str(value: unknown, limit = 800): string | null {
   return typeof value === 'string' && value.trim() ? value.slice(0, limit) : null
 }
 
+/** At most four authored bullets, each clamped. Everything here is prompt. */
+function lines(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .slice(0, 4)
+    .map((entry) => str(entry, 200))
+    .filter((entry): entry is string => entry !== null)
+}
+
+/**
+ * At most three prior exchanges, both halves clamped.
+ *
+ * Validated here rather than trusted, for the same reason `personaName` is only
+ * ever interpolated as a name: this arrives from the browser and becomes prompt
+ * content. The shape is fixed and anything else is dropped.
+ */
+function recent(value: unknown): Array<{ him: string; her: string | null }> {
+  if (!Array.isArray(value)) return []
+  const out: Array<{ him: string; her: string | null }> = []
+  for (const entry of value.slice(-3)) {
+    if (!entry || typeof entry !== 'object') continue
+    const him = str((entry as Record<string, unknown>).him)
+    if (!him) continue
+    out.push({ him, her: str((entry as Record<string, unknown>).her) })
+  }
+  return out
+}
+
 export async function POST(request: Request): Promise<Response> {
   const auth = await requireUser(request)
   if ('response' in auth) return auth.response
@@ -63,7 +91,29 @@ export async function POST(request: Request): Promise<Response> {
       ? Math.max(0, Math.min(100, Math.round(body.warmth)))
       : 0
 
+  // WHAT SHE IS MOVED BY, extracted from her own authored contract rather than
+  // re-written here (`lib/warmth/persona-notes.ts`). Maya's contract says in as
+  // many words that a run of questions with nothing of his own in between loses
+  // her warmth; the actor was told and the judge never was, so a fourth
+  // consecutive question scored as a fourth open question.
+  const notes = [
+    ...lines(body.likes).map((line) => `  + ${line}`),
+    ...lines(body.dislikes).map((line) => `  - ${line}`),
+  ]
+
+  // THE RUN, and a run is most of what a conversation is. The judge used to see
+  // one pair, so a fourth consecutive question looked exactly like a first one
+  // and mounting contempt looked like a single sour remark. Oldest first, so it
+  // reads as a transcript rather than as a list.
+  const history = recent(body.recent).flatMap((exchange) => [
+    `HIM: ${exchange.him}`,
+    exchange.her ? `HER: ${exchange.her}` : 'HER: (nothing)',
+  ])
+
   const userContent = [
+    notes.length > 0 ? `WHAT MOVES HER:\n${notes.join('\n')}` : null,
+    history.length > 0 ? `EARLIER:\n${history.join('\n')}\n` : null,
+    'THE TURN YOU ARE SCORING:',
     agentPrior ? `(She had just said: ${agentPrior})` : null,
     `HIM: ${userText}`,
     agentReply ? `HER: ${agentReply}` : 'HER: (no reply — she was interrupted or the scene ended)',

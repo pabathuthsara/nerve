@@ -685,8 +685,24 @@ export class WarmthSession {
         this.engine.recordSkippedSlow()
         return
       }
+      // THE LEXICAL LAYER MAY DECIDE THE SIGN. IT MAY NOT DECIDE THE MAGNITUDE.
+      //
+      // The fast filter already refused to pay this turn and charged it
+      // `CONTEMPT_POINTS`; the judge is then asked what it MEANT, and on
+      // 9 September it came back +1.61 for "You're making me miserable."
+      // because her playful reply read as evidence the exchange was friendly.
+      // `PAIR_RULE` now says her performance is not evidence about his intent,
+      // and two few-shots cover the low-intimacy hostile quadrant the table
+      // never had — but a judgement layer is a model and will sometimes be
+      // wrong about a turn a precision-tuned filter is right about.
+      //
+      // Clamped, never inverted. How negative it was is still the model's
+      // question, and a hostile turn the judge scores at 0 stays at 0.
+      const judged = pending.trigger.includes('hostility')
+        ? { ...score, intent: Math.min(0, score.intent) }
+        : score
       this.engine.applySlow(
-        score,
+        judged,
         pending.warmthAtTurn,
         this.options.nowSeconds(),
         pending.userText,

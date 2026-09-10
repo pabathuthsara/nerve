@@ -582,8 +582,24 @@ describe('characterization · the judgement prompts', () => {
   })
 
   it('the live scorer’s anchors are unchanged', () => {
+    // INTIMACY_ANCHORS is byte-identical and that is the claim worth keeping:
+    // the intimacy scale decides the boundary rule, and nothing about what
+    // counts as personal has moved.
     expect(digest(INTIMACY_ANCHORS)).toBe('66a19739d8d178b5')
-    expect(digest(buildSystemPrompt('Nadia', 'a second-hand bookshop'))).toBe('bbbda88f48f3bf28')
+    // The assembled prompt moved on 10 September, deliberately, for three
+    // additions — all of them about INTENT and none about intimacy:
+    //
+    //   1. Two few-shots in the low-intimacy / hostile quadrant, which the
+    //      table never covered: every negative example was also an intimate one
+    //      (her figure, whether she is single), so the set taught that
+    //      hostility is what happens when a turn gets too personal. Measured
+    //      consequence: "You're making me miserable." scored +1.61.
+    //   2. `PAIR_RULE` gains one sentence saying her reply is evidence about
+    //      what he SAID and never about how he MEANT it. She is playing a scene
+    //      and may answer an insult lightly; that was being read as proof the
+    //      exchange was friendly.
+    //   3. `INTENT_SCALE` states that intent is independent of intimacy.
+    expect(digest(buildSystemPrompt('Nadia', 'a second-hand bookshop'))).toBe('89255afd728e57fc')
   })
 
   /**
