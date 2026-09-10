@@ -330,6 +330,85 @@ independently. Slow or failed upload does not block grading, and a browser
 recording failure does not end the conversation. A rep with no user text does
 not buy a grade.
 
+## Two ceilings, both made true — 10 September 2026
+
+`## The band ceiling, made true` above is half the rule. The other half took
+another five days and 487 measured turns to surface.
+
+**`capToBudget` pushed a sentence and THEN tested the running total**, so the
+sentence that broke the budget was always the one already added. With a cap of
+six, "Hello." spent one word, the check passed, and the whole seven-word second
+sentence went out — eight words against a six-word ceiling, reported as
+`capped: false`. Across 487 production turns, **67 exceeded their word cap and
+only 17 were flagged as trimmed at all**: the flag means "some generated words
+were removed", never "the output stayed inside its budget".
+
+**And there was no sentence ceiling.** "One sentence, never two" is stated at
+four bands in `lib/warmth/bands.ts` and was measured disobeyed on 43% of opening
+turns and 55% overall. That is the same lesson as `maxWords` — a ceiling nobody
+enforces is a ceiling that becomes a target — arriving a second time in the same
+table. `BandSpec.maxSentences` is now read by the same seam `wordCapFor` is.
+
+Three things about the seam are load-bearing:
+
+- **The two fallbacks are tied.** `sentenceCap` is only invented when the caller
+  supplied NO ceiling at all. A caller that sent a `wordCap` has taken ownership
+  of this turn's length — the wind-down hand-over stands the band down and sends
+  `UNSTEERED_WORD_CAP` — and quietly applying a band sentence rule to a turn the
+  band is not steering would drop the number offer, which is naturally two or
+  three sentences and which rule 3 is written about.
+- **Filler is free.** `budgetedWordCount` excludes hesitation from the budget
+  while `spokenWordCount` keeps the honest number for telemetry and the drift
+  detector. At a six-word ceiling "Um, I dunno. Work stuff." spends a third of
+  its budget on nothing, so a writer optimising for density under a hard cap
+  correctly drops the filler — the cap and the register were fighting and the
+  cap always won. Six disfluencies in 1,274 turns.
+- **`sanitiseForSpeech` runs BEFORE the ceiling**, so the sentence count is
+  taken on the punctuation that will actually be spoken and the transcript
+  matches the audio. It replaces an em-dash with a COMMA rather than a full
+  stop: the dash almost always joins a clause to the one before it, and a full
+  stop there makes two sentences out of one, which the ceiling would then halve.
+  42 of 1,274 turns carried an em-dash against a contract that forbids them.
+
+## Authorization, measured — 10 September 2026
+
+Functions run in `sin1`. Supabase is in `us-east-1`. Every auth check and every
+admission check crosses the Pacific, and both were strictly serial in front of
+generation:
+
+| Stage | p50 | p90 |
+|---|---:|---:|
+| Auth (`requireUser`) | 269 ms | 443 ms |
+| Admission (`maySpend` + reservation) | 389 ms | 959 ms |
+| LLM first token | 698 ms | — |
+| LLM complete | 945 ms | 1,380 ms |
+| TTS first byte | 164 ms | — |
+| Server request → first audio | 1,923 ms | — |
+
+`requireUser` now caches a SUCCESSFUL verification for 60 seconds, keyed on the
+whole session cookie rather than a digest of it — a collision there would hand
+one user another user's id, and no amount of unlikeliness makes that acceptable
+for a cache that exists to save 269ms. Failures are never cached. `getUser()`
+over `getSession()` is unchanged and the reasoning in `lib/db/api-auth.ts`
+stands; what changed is how OFTEN, from fifteen times a rep to about three.
+
+The turn route runs `requireUser` and `parseTurnRequest` concurrently: they read
+different halves of the request, the slow one is a network hop, and the persona
+compile that prices the turn does not need to know who is asking.
+
+**Why this is a character problem and not a comfort one.** `lib/warmth/timing.ts`
+is built on Stivers et al. (2009): the universal modal turn gap is ~200ms and
+anything past ~700ms is decoded cross-culturally as a *dispreferred response*.
+Her measured median across 586 real replies is **3.40s**, p90 4.58s, with 390 of
+586 over three seconds — so `remainingResponseDelayMs` returns zero on
+essentially every turn, the fifth layer of the character does not exist in
+production, and every persona at every warmth sounds equally reluctant.
+
+What is left is written up in `PERSONA-AUDIT.md` §14.6: reserving turn N+1
+during turn N's playback (wins the 389ms without weakening rule 11, costs a
+release path for unused reservations), or moving the functions to `iad1` (wins
+auth, admission and the LLM hop, loses TTS and the user's own leg).
+
 ## Casting a voice
 
 **Voice Design needs a paid plan.** On the free plan `/v1/text-to-voice/design`

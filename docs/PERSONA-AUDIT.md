@@ -1300,3 +1300,136 @@ a fragment directive at CLOSED and HOSTILE is one step from "What?", which is
 the exact thing the "What the cold bands are allowed to be" section of
 `bands.ts` was written to stop. Coldness is meant to withhold curiosity, not
 syllables.
+
+---
+
+## 14. She was never inarticulate (10 September)
+
+The complaint was the same sentence it has been since §12: *she still sounds
+like an AI.* §12 fixed the caps and §13 fixed the register the caps produced,
+and both were right and neither was enough. This round measured the whole
+corpus instead of reading it, and the answer was not a length, a cadence or a
+band.
+
+### 14.1 The measurement
+
+Every stored dating turn, 1,274 of hers, 586 of them timed:
+
+| Signal | Count | Rate |
+|---|---:|---:|
+| Disfluency (`um`, `uh`, `hm`, `er`) | 6 | **0.5%** |
+| Self-repair (`sorry`, `wait`, `no, I mean`) | 5 | **0.4%** |
+| Trailing off | 8 | 0.6% |
+| Asked him to repeat something | **1** | 0.08% |
+| A bare `Yeah.` on its own | **3** | 0.24% |
+| Contains a comma | 807 | **63%** |
+| Two or more sentences | 393 | 31% |
+| The `[short beat]. [then more].` template | 373 | **29%** |
+| Em-dashes, which every contract forbids | 42 | 3.3% |
+
+Median turn: eight words. **The caps were working and length was never the
+defect.** What she never did was fumble. Over three minutes in a noisy café,
+against a user the transcriber renders as *"Bro, cords taste like wet
+cardboard"*, she asked "what?" **once in 1,274 turns**.
+
+Read her lines and the shape is unmistakable — "Machines hum, people pass, and
+I get a break from my usual noise" is a tricolon; "More crime than true, but
+close enough to satisfy" is an epigram. Both are good. Nobody says either of
+them while waiting for a dryer. **Her wit rate was 100%.**
+
+### 14.2 Why — and it is arithmetic as much as prose
+
+**The compiled prompt was ~40 prohibitions and zero demonstrations.** The
+contract, five banded prose blocks, the exit conditions, the clarification rule
+and thirteen `BANNED_REGISTER` bullets all describe how NOT to sound, and there
+was not one line of dialogue anywhere in it. Nadia's and Tess's contracts have
+asked for "an occasional um or a false start" since they were written. Six in
+1,274 turns is what describing a register buys.
+
+**And the word cap made disfluency unaffordable.** At a six-word ceiling "Um, I
+dunno. Work stuff." spends a third of its budget on nothing, so a writer
+optimising for informative density under a hard cap correctly drops the filler.
+The cap and the register were fighting and the cap always won.
+
+### 14.3 What shipped
+
+- **`Persona.examples`** — eight authored exchanges each for tess, nadia, maya
+  and robin, compiled into the cached prefix. None is witty; two of each set are
+  actively boring. Framed as a range and explicitly not as lines to reuse,
+  because a parroted few-shot block is worse than none.
+- **`budgetedWordCount`** — filler is free against the band budget. The honest
+  count stays for telemetry and the drift detector.
+- **`capToBudget` asks before spending.** It pushed a sentence and then tested
+  the total, so the sentence that broke the budget was always already in: 67 of
+  487 production turns exceeded their cap and 17 were reported as trimmed.
+- **`BandSpec.maxSentences`** — "One sentence, never two" was stated at four
+  bands, disobeyed on 55% of turns, and enforced nowhere.
+- **`sanitiseForSpeech`** — the em-dash rule is enforced rather than requested.
+- **The name leak.** `# His name` shipped "He is called John. You do not know
+  that yet." on every rep. At t=77.4s Tess said *"…at the book club, John."* At
+  t=84.0s he said *"My name is John."* It now ships only alongside
+  `memorySummary`, where she could honestly have it.
+- **The greeting.** `mirrorCapFor` is a measured no-op on the opening turn, so
+  "Hello." bought the band's typical — the same as a real sentence. `replyWordCap`
+  caps a reply to a bare greeting at four words, and the steering line says what
+  a greeting is answered with, which nothing anywhere did.
+
+### 14.4 The other three defects in the same round
+
+`docs/REP-BEHAVIOUR-AUDIT-2026-09-09.md` is the investigation. Beyond register:
+
+- **The meter paid for shape.** The hostility guard covered two of the three
+  structural positives and not the callback, so "You're making me miserable."
+  was paid +2 for repeating a word she had said and "Why are you still here?"
+  came out net +2.25. Warmth rose 27 → 48 through two minutes of contempt. It is
+  now one rule over the finished reason set, and replaying the real transcript
+  gives peak 45 and a final 17.
+- **Dead ends were measured in words.** "What's up?" and "How come?" were
+  charged -6 AND paid +3 on the same turn. `lib/warmth/turn-kind.ts` classifies
+  instead.
+- **Leaving was a request.** `lib/warmth/leaving.ts` makes it a monotonic state.
+
+### 14.5 What is still owed by hand
+
+**None of this has been heard out loud.** The suite is green and the corpus
+numbers above are all it proves. `npm run rep:audition -- maya <player> 1` is
+the instrument and it spends money. The claims worth auditioning, in order:
+
+1. Does she hesitate now, or do the examples just sit there unread?
+2. Does the four-word greeting cap read as curt rather than as guarded?
+3. Do the examples get parroted? The framing is written against it and only a
+   listening pass can say whether it held.
+4. Is a one-sentence GUARDED band too clipped in the ear, whatever it looks like
+   on the page?
+
+**And the timing layer is still inoperative.** `lib/warmth/timing.ts` intends
+120–280ms at INVESTED and 500–900ms at GUARDED. The measured median gap is
+**3.40s**, p90 4.58s, with 390 of 586 replies over three seconds — so
+`remainingResponseDelayMs` returns zero on essentially every turn and every
+character at every warmth sounds equally reluctant. Stivers et al. (2009) put
+the cross-cultural threshold for a *dispreferred response* at ~700ms. The auth
+cache took ~250ms off; the rest is three network legs and a region decision, and
+it is written up in §14.6.
+
+### 14.6 The latency that is left
+
+Measured over 487 turns. Functions run in `sin1`; Supabase is in `us-east-1`.
+
+| Stage | p50 |
+|---|---:|
+| Auth (`requireUser`) | 269 ms → ~0 on 14 turns in 15 |
+| Admission (`maySpend` + reservation) | 389 ms |
+| LLM first token | 698 ms |
+| LLM complete (the buffered turn costs ~247ms of this) | 945 ms |
+| TTS first byte (`eleven_v3_conversational`, `asia-southeast1`) | 164 ms |
+| Server request → first audio | 1,923 ms |
+
+Two options remain and both are decisions rather than tickets:
+
+- **Reserve turn N+1 during turn N's playback.** Wins the 389ms admission hop
+  without weakening rule 11 — `maySpend` still runs before every turn, just
+  earlier. Costs: a reservation that is never used must be released, and a leak
+  eats the daily cap. Deliberately not smuggled in beside a persona retune.
+- **Move the functions to `iad1`.** Auth and admission drop to ~30ms and the LLM
+  hop shortens; TTS gets slower and the user's own leg grows by ~400ms round
+  trip. Probably net positive and definitely not free.

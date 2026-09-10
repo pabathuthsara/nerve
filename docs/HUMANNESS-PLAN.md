@@ -464,6 +464,48 @@ valid position, at a rate set by state.
 This is testable, cheap, consistent with the existing architecture, and it
 belongs in the same layer as `wordCapFor`.
 
+### 4.1a What shipped instead — 10 September 2026
+
+**Not the post-processor.** A different mechanism, for a reason this section
+half-anticipated and half-got-wrong.
+
+The measurement first. Across 1,274 real agent turns: **six** disfluencies,
+five self-repairs, three bare answers, and one request to repeat something. So
+the diagnosis in §4 is correct and if anything understated — she is not
+under-disfluent, she is *never* inarticulate.
+
+**What was wrong was the account of why.** §4.1 says "do not ask gpt-4.1-mini to
+write fillers, it will produce parody, and it will do it every turn because
+instructions at maximum recency read as *do this now*". That is true of the
+DIRECTIVE and it is the reason the steering line was never the place for this.
+But it is not true of the **cached prefix**, and the prefix is where a
+demonstration can live: a permission restated before every single generation is
+an order, and an example sitting in a system prompt that has not changed for
+fifteen turns is a description of a register. The two are not the same
+instrument, and §4.1 treated them as one.
+
+So what shipped is:
+
+- **`Persona.examples`** — eight authored exchanges per shipped character,
+  compiled into the contract. Two of Maya's eight hesitate, one mishears him,
+  one is a single word. Framed explicitly as a range and not as lines to reuse,
+  because a parroted few-shot block is a louder tell than an epigram.
+- **`budgetedWordCount`** — the other half, and it is arithmetic rather than
+  prose. At a six-word ceiling "Um, I dunno. Work stuff." spends a third of its
+  budget on nothing, so a writer optimising for informative density under a hard
+  cap correctly drops the filler. **The cap and the register were fighting and
+  the cap always won.** Filler is now free against the band budget;
+  `spokenWordCount` keeps the honest number for telemetry and the drift
+  detector.
+
+**§4.2–§4.4 are not superseded and the injector may still be needed.** The
+honest position is that this is the cheaper experiment and it has not been
+heard: the suite proves the examples compile and the budget forgives filler, and
+neither proves she hesitates. `npm run rep:audition` is the instrument
+(`PERSONA-AUDIT.md` §14.5). If a listening pass says the examples sit there
+unread, the deterministic injector below is the fallback and the placement rules
+in §4.2 are what it should be built on.
+
 ### 4.2 Placement is not random
 
 The literature is specific about where disfluency occurs, which is what makes a
@@ -675,6 +717,22 @@ the meter **down** (32.0 → 29.9, the only reason paid being `dead-end`), where
 the same turns previously earned `open-question` and `engaged-length`. An
 ordinary civil exchange still rises (32.0 → 39.2).
 
+#### What shipped — 10 September 2026
+
+Contempt is no longer farmable and it now costs something. The hostility guard
+was two `!hostile &&` conditions bolted to two of the three structural
+positives, so **the callback was not covered**: "You're making me miserable."
+repeated a word she had said one turn earlier and was paid +2 for listening, and
+"Why are you still here?" came out net **+2.25**. Warmth rose 27 → 48 through
+two minutes of contempt.
+
+It is one rule over the finished reason set now, so a reason added later cannot
+forget it, and a dismissal is charged `CONTEMPT_POINTS` rather than only being
+charged for being short. Contempt is also exempt from the patience discount —
+patience is grace for fumbling, not grace for being told to fuck off — and it no
+longer arms the repair window. Replaying the real transcript through the live
+session: peak 45 during the banter, final **17**.
+
 ### 6.2 The boundary exit
 
 Every character carries *"he crosses a real boundary"* in prose and nothing ever
@@ -804,6 +862,19 @@ That last point is worth considering as a design question rather than a defect: 
 stranger in a bookshop does not greet you. If she currently speaks first, the
 most realistic and most instructive opening in the product is **silence** — he
 has to open. That is the actual skill, and it is currently being done for him.
+
+#### What shipped — 10 September 2026
+
+The opening line has a response class for the first time. `mirrorCapFor` is a
+measured **no-op** on the opening turn — a one-word hello yields
+`ceil(1 × 1.3) = 2`, which the "a real turn always buys a sentence" floor then
+raises to the band's own typical — so "Hello." bought exactly as many words as a
+real sentence would have. `replyWordCap` caps a reply to a bare greeting at four
+words, the steering line says what a greeting is answered *with* (nothing
+anywhere did), the want clause no longer ships on her first line, and the shared
+speech rule is exclusive: "a plain greeting OR one concrete observation, never
+both". Both stored openers were a greeting AND an observation, and the
+observation was her deterministic mood.
 
 ### 7.4 Cross-rep repetition
 

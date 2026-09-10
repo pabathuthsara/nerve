@@ -440,17 +440,27 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     server owns, never from a figure the browser reports (rule 11).
     (`PIPELINE.md` § Cost)
 
-19. **The dating arm is finished. Do not change how it behaves, sounds or
-    scores — for any reason, and especially not on the way to something else.**
-    The latency work is done, the characters read the way they were authored to
-    read, and that is the product customers pay for today. This is not a
-    preference to be traded off against a cleaner design: `PERSONA-AUDIT.md`
-    records an audit that correctly measured a problem with the shared band
-    table, gave Tess her own bands, posture reading and punctuation, and made her
-    worse — because the table was most of what made Nadia good. **An edit to a
-    shared judgement file is an edit to every character that reads it, including
-    the ones nobody was looking at.**
-    In practice, three tiers (`INTERVIEW-PLAN.md` §0). **Tier 0, never opened:**
+19. **The dating arm changes only on purpose, never on the way to something
+    else.** This rule used to read "the dating arm is finished", and on
+    10 September 2026 the product owner withdrew that premise on the evidence
+    that she sounds robotic — see `docs/PERSONA-AUDIT.md` §13 and
+    `docs/REP-BEHAVIOUR-AUDIT-2026-09-09.md`. The retune that followed touched
+    the band table, the fast scorer, the steering line, the persona contracts
+    and the grade gate.
+    **What survives unchanged is the mechanism, and it is the important half:**
+    a change to the dating arm is a DELIBERATE, signed-off, measured act with
+    the digest diff read line by line, and it is never a side effect of interview
+    work, a refactor, or a cleaner design. `PERSONA-AUDIT.md` records an audit
+    that correctly measured a problem with the shared band table, gave Tess her
+    own bands, posture reading and punctuation, and made her worse — because the
+    table was most of what made Nadia good. **An edit to a shared judgement file
+    is an edit to every character that reads it, including the ones nobody was
+    looking at.**
+    In practice, three tiers (`INTERVIEW-PLAN.md` §0), and **the 10 September
+    retune opened Tier 0 deliberately** — `bands.ts`, `fast.ts`, `steering.ts`,
+    `prompt.ts`, `session.ts` and all four shipped persona files. That was the
+    signed-off act this rule now describes; it is not a precedent for reaching
+    into them on the way past. **Tier 0, opened only on purpose:**
     the nine files in `lib/personas/`, `lib/warmth/{bands,reciprocity,prompt,fast,steering,levels}.ts`,
     `lib/grade/{prompt,memory}.ts`, `lib/data/{guided,mission}.ts`, `lib/audio/`,
     and every `PIPELINE_*` default — a second track gets a new file beside them,
@@ -463,7 +473,14 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     session, which stops being true the moment an interviewer is seeded.
     It is enforced by tests rather than by care, and the tests exist:
     **`lib/characterization/dating-arm.test.ts`**, written before any interview
-    code and green on every commit since. Fifty-two assertions — nine compiled
+    code. **Its expectations were re-baselined on 10 September 2026** for the
+    retune above, with the five reasons recorded inline and every compiled
+    prompt diffed before the digests were retaken — which is exactly the
+    ceremony this file is for. `tts` and `turn` came through byte-identical on
+    every character under both environments, so nothing about her voice, her
+    stability or her turn-taking moved.
+    **A digest that moves without that ceremony is still the bug this file
+    exists to catch.** Fifty-two assertions — nine compiled
     contracts by digest and length, nine pipeline configs under two environments,
     the band table, `capToBudget`, every reciprocity decision, the fast scorer
     with and without temperament, the steering line, every timing constant,
@@ -481,6 +498,12 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     multiplies a credit balance by ninety. No file in `lib/` changed, no
     constant moved, and a dating number moved anyway. When a feature on one
     track writes a row, ask what the other track multiplies it by.
+
+    **Two new files, not new parameters.** `lib/warmth/turn-kind.ts` and
+    `lib/warmth/leaving.ts` are where the 10 September behaviour changes live,
+    beside the judgement layer rather than inside it, which is the shape §0 asks
+    for. `UserTurnShape` kept its four fields byte for byte and `deadEnd` kept
+    its meaning at every call site; what changed is how the boolean is DECIDED.
 
     **Tier 2 has been spent.** The track filter landed on 7 September with the
     no-op measured rather than argued — 89 sessions across 17 users, every one of

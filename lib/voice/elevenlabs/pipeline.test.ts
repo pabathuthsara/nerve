@@ -19,7 +19,7 @@ import { BANNED_REGISTER, compileInstructions } from '../openai/persona'
 import { MAX_BAND_WORDS, UNSTEERED_WORD_CAP, specFor, wordCapFor } from '@/lib/warmth/bands'
 import { DEFAULT_CALIBRATION, resolveSilenceMs } from '../types'
 import { ElevenLabsPersonaCompiler, compileDeliveryTags, EXPRESSION_TAG } from './persona'
-import { ReplyBudget, SpokenTurn, budgetedWordCount, capToBudget, proportionalPrefix, snapToWordBoundary, spokenWordCount } from './truncate'
+import { ReplyBudget, SpokenTurn, budgetedWordCount, capToBudget, proportionalPrefix, sanitiseForSpeech, snapToWordBoundary, spokenWordCount } from './truncate'
 import { VadDetector, frameRms } from './vad'
 import { PipelineMeter, CreditGuard } from './telemetry'
 import { parseAlignment } from './tts'
@@ -659,6 +659,24 @@ describe('the reply budget', () => {
     // anything reaches the record. Counting it would shorten her by a word.
     expect(spokenWordCount('[playful] Just waiting on this machine.')).toBe(5)
     expect(spokenWordCount("Don't, isn't, o'clock")).toBe(3)
+  })
+
+  it('enforces the punctuation rule instead of asking for it', () => {
+    // `PUNCTUATION_RULES` has said "Never use em-dashes" in every contract on
+    // the roster since it was written. Measured across 1,274 real agent turns:
+    // 42 of them, 3.3% of her speech, including "You sound like a thrill,
+    // John—what's your hobby to beat that?"
+    expect(sanitiseForSpeech('You sound like a thrill—what is your hobby?'))
+      .toBe('You sound like a thrill, what is your hobby?')
+    // A COMMA and not a full stop: the dash almost always joins a clause to the
+    // one before it, and a full stop there makes two sentences out of one, which
+    // the sentence ceiling would then halve.
+    expect(sanitiseForSpeech('Flat white, oat milk — because I am arguing about it.'))
+      .toBe('Flat white, oat milk, because I am arguing about it.')
+    // Nothing that is not speech survives either. The contract asks for "spoken
+    // words only" and asking has a measured hit rate.
+    expect(sanitiseForSpeech('*Sighs* Not really.')).toBe('Sighs Not really.')
+    expect(sanitiseForSpeech('Ordinary line, unchanged.')).toBe('Ordinary line, unchanged.')
   })
 
   it('does not charge her budget for hesitating', () => {

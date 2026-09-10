@@ -1,5 +1,26 @@
 # Recent rep behaviour audit — 9 September 2026
 
+> **RESOLVED 10 September 2026.** Every numbered section below shipped a fix.
+> What landed, and the corpus measurement that reframed §1–§2, is
+> `docs/PERSONA-AUDIT.md` §14; the behaviour is pinned end to end by
+> `lib/warmth/rep-behaviour.test.ts`, which replays all four of these
+> transcripts through the live session with no model.
+>
+> | § | Fix | Where |
+> |---|---|---|
+> | 1 | A greeting has a response class, a four-word cap and its own steering clause | `steering.ts`, `session.ts` |
+> | 2 | `capToBudget` asks before spending; `BandSpec.maxSentences` enforces "never two" | `truncate.ts`, `bands.ts` |
+> | 3 | One hostility guard over the whole reason set; `turn-kind.ts` classifies instead of counting words | `fast.ts`, `turn-kind.ts` |
+> | 4 | The judge gets the run, her authored preferences, and the terminal exchange | `prompt.ts`, `session.ts`, `persona-notes.ts` |
+> | 5 | `SceneExit` is monotonic and committed synchronously from what he said | `leaving.ts` |
+> | 6 | Auth verified once a minute rather than once a turn; parse runs concurrently | `api-auth.ts`, `turn/route.ts` |
+> | 7 | `gradeEligibility` refuses; rate metrics need a denominator | `grade/eligibility.ts`, `grade/metrics.ts` |
+>
+> **§6 is the one that is only partly resolved.** ~250ms came back. The
+> remaining ~1.9s is three network legs and a region decision — see
+> `PERSONA-AUDIT.md` §14.6. **Nothing here has been auditioned out loud**
+> (§14.5).
+
 The reported behaviour is real. Maya starts in the intended GUARDED band, but reply enforcement, conflicting instructions, semantic scoring and exit handling do not reliably turn that state into believable behaviour. The scorecard arithmetic is correct in the recent records checked; the evidence being scored and the eligibility to receive a score are not consistently sound. Lowering Maya's starting warmth would not resolve these defects.
 
 This was an investigation, not a retune. No application code, persona content, production configuration or database records were changed.
