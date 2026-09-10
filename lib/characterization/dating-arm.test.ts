@@ -116,15 +116,41 @@ const seed = () => seededRandom('characterization-seed')
 
 describe('characterization · compiled contracts', () => {
   const EXPECTED: Record<string, { canEndScene: string; stateless: string; length: number }> = {
-    alex: { canEndScene: 'e2050268400c4895', stateless: '9eebec23daa98e98', length: 7483 },
-    erin: { canEndScene: '54bba64d7861b89e', stateless: 'f1d4a8f83cd32715', length: 8215 },
-    jules: { canEndScene: '38f419d8139c9675', stateless: '070b0e016f4f35b4', length: 8650 },
-    maya: { canEndScene: '9908e2fe96fe0879', stateless: 'e94c2c98036a87e1', length: 8565 },
-    nadia: { canEndScene: '0bd36e1eed125365', stateless: 'ec287060a12b031f', length: 9210 },
-    priya: { canEndScene: '98f0ca17ba372435', stateless: 'ab6ba369f7dde05a', length: 8595 },
-    robin: { canEndScene: '3cb79dedb0c18fe6', stateless: '1512fc7e42cc5f1f', length: 8768 },
-    sam: { canEndScene: 'b3de10df7c66e0a7', stateless: '2c0272ea79cee6d0', length: 8357 },
-    tess: { canEndScene: '349aca6ed554d984', stateless: 'da4df735a50f3e59', length: 9310 },
+    // ── RE-BASELINED 10 SEPTEMBER 2026 ──────────────────────────────────
+    //
+    // A deliberate dating retune, signed off against `perfect.md` and written
+    // up in `docs/PERSONA-AUDIT.md` §13. Rule 19's premise — "the dating arm is
+    // finished" — was withdrawn by the product owner on the evidence that it
+    // sounds robotic. Every prompt below moved for exactly five reasons, and
+    // the diff was read line by line before these were retaken:
+    //
+    //   1. `# How you actually sound` — authored register examples, on the
+    //      four SHIPPED dating characters only. The five retired ones carry
+    //      none, which is why their lengths barely move.
+    //   2. The mid `effort` band no longer licenses volunteering
+    //      ("occasionally add something"). Volunteering has one owner: the
+    //      band's `permission`.
+    //   3. Four em-dashes removed from the prompt's own prose. The contract
+    //      forbids them in her speech and then modelled three of them.
+    //   4. `# His name` now ships only alongside `memorySummary`. A name handed
+    //      over with "you do not know that yet" is a name she uses anyway —
+    //      measured, 6.7 seconds before he gave it.
+    //   5. The first-hello rule is exclusive ("greeting OR observation, never
+    //      both"). Both stored openers were a greeting AND an observation.
+    //
+    // The interviewers share `compileInstructions` and therefore moved for
+    // reasons 2 and 3. That is a cross-track change and it is intended: an
+    // em-dash is a TTS artefact on both arms, and reason 2 removes a licence
+    // from a sentence that already said "you do not drive" in both versions.
+    alex: { canEndScene: 'b6891988b7899fd3', stateless: '044f43223c1b272c', length: 7481 },
+    erin: { canEndScene: '3f14d8a54fceded4', stateless: 'b086f49dcdbac4fa', length: 8228 },
+    jules: { canEndScene: 'b79246fe190e2413', stateless: '8b4a49a3701b1e68', length: 8649 },
+    maya: { canEndScene: '78a2339f31b4934e', stateless: '3ba15a67ba9b67b0', length: 9364 },
+    nadia: { canEndScene: 'bf6b86853a148b34', stateless: '5a7200680c8d3d74', length: 10141 },
+    priya: { canEndScene: '55110e31cab449e4', stateless: 'e582989e7cefec41', length: 8594 },
+    robin: { canEndScene: 'b8934731c3dcff5e', stateless: 'd7a4b3b2f185f8dd', length: 9626 },
+    sam: { canEndScene: '0c282e4dd7f3f76d', stateless: '26ab3646768e5911', length: 8370 },
+    tess: { canEndScene: '51a9ce2f8d839c5f', stateless: 'f4e7b559ace279ea', length: 10123 },
   }
 
   it('covers every authored character, so a new one cannot slip past unpinned', () => {
@@ -182,28 +208,33 @@ describe('characterization · the pipeline arm', () => {
     new ElevenLabsPersonaCompiler(resolvePipelineConfig(env))
       .compile(ROSTER.find((persona) => persona.slug === slug)!, DEFAULT_CALIBRATION, { rng: seed() })
 
+  // RE-BASELINED 10 September 2026. Only `prompt` moved, on every character
+  // and under both environments; `tts` and `turn` are byte-identical, which is
+  // the claim worth making — the retune is entirely in what she is told and
+  // nothing about her voice, her stability or her turn-taking changed. See the
+  // contract table above for the five reasons.
   const EXPECTED: Record<keyof typeof ENVS, Record<string, { prompt: string; tts: string; turn: string }>> = {
     defaults: {
-      alex: { prompt: '6323980c56a7f928', tts: '24db3ed2807bb4d4', turn: 'f6acbfc49fa3d135' },
-      erin: { prompt: '4ad1f43c242d6efc', tts: '4ee49a964282f2b6', turn: 'f6acbfc49fa3d135' },
-      jules: { prompt: 'b10678e71edc9f86', tts: 'dbb369318facdfdd', turn: 'f5b2229cc620b177' },
-      maya: { prompt: 'dee30cbfed14384c', tts: 'cfe6e672a4864594', turn: 'f5b2229cc620b177' },
-      nadia: { prompt: '60950be998aff932', tts: 'adafe2068533ead8', turn: 'f5b2229cc620b177' },
-      priya: { prompt: '3210233d94e5ffa1', tts: '870c50002ec89bb0', turn: 'f5b2229cc620b177' },
-      robin: { prompt: '384f43c5996f004d', tts: '04d5e936f442ce7f', turn: 'f5b2229cc620b177' },
-      sam: { prompt: '41a2c5d1fef82c67', tts: '61d52974a0e6f66a', turn: 'f6acbfc49fa3d135' },
-      tess: { prompt: 'f8be2e602f2783a8', tts: 'c7244037bea4bcd6', turn: 'f5b2229cc620b177' },
+      alex: { prompt: 'a5a487316b591d2c', tts: '24db3ed2807bb4d4', turn: 'f6acbfc49fa3d135' },
+      erin: { prompt: '85ae99ad55bf2137', tts: '4ee49a964282f2b6', turn: 'f6acbfc49fa3d135' },
+      jules: { prompt: '8acfcf2e9eb9a200', tts: 'dbb369318facdfdd', turn: 'f5b2229cc620b177' },
+      maya: { prompt: 'ebc5443a7aa9783d', tts: 'cfe6e672a4864594', turn: 'f5b2229cc620b177' },
+      nadia: { prompt: '0ec4846dd027b160', tts: 'adafe2068533ead8', turn: 'f5b2229cc620b177' },
+      priya: { prompt: '7466457675b92319', tts: '870c50002ec89bb0', turn: 'f5b2229cc620b177' },
+      robin: { prompt: 'b60f69137f5f6c80', tts: '04d5e936f442ce7f', turn: 'f5b2229cc620b177' },
+      sam: { prompt: '8366f0a690f5c5ad', tts: '61d52974a0e6f66a', turn: 'f6acbfc49fa3d135' },
+      tess: { prompt: 'ca81c1e06d9a96d1', tts: 'c7244037bea4bcd6', turn: 'f5b2229cc620b177' },
     },
     shipped: {
-      alex: { prompt: 'ca6b190949aebbf0', tts: '68cb66a0513de355', turn: 'f6acbfc49fa3d135' },
-      erin: { prompt: 'addfc8742bff34ab', tts: '15abd07e819da5b5', turn: 'f6acbfc49fa3d135' },
-      jules: { prompt: 'de1937539e2a5e77', tts: 'e4ce4f2d3895289b', turn: 'f5b2229cc620b177' },
-      maya: { prompt: '32f888b2bca54f1f', tts: '6ec90fd2c54b374b', turn: 'f5b2229cc620b177' },
-      nadia: { prompt: 'f315c6cd05d65c27', tts: 'bc0ec26ebfa66ab8', turn: 'f5b2229cc620b177' },
-      priya: { prompt: '4911383c8844740a', tts: 'eaf47d8ed9daad75', turn: 'f5b2229cc620b177' },
-      robin: { prompt: '65f30ed3f217c79c', tts: 'f0da90696682069a', turn: 'f5b2229cc620b177' },
-      sam: { prompt: '9a19c8320f30880c', tts: '63159e2880527025', turn: 'f6acbfc49fa3d135' },
-      tess: { prompt: 'b15c97397256c561', tts: 'fa9fbd31881dd6fb', turn: 'f5b2229cc620b177' },
+      alex: { prompt: '83e0f45212e4e515', tts: '68cb66a0513de355', turn: 'f6acbfc49fa3d135' },
+      erin: { prompt: '74145f5062b20866', tts: '15abd07e819da5b5', turn: 'f6acbfc49fa3d135' },
+      jules: { prompt: '01aae49163e20b52', tts: 'e4ce4f2d3895289b', turn: 'f5b2229cc620b177' },
+      maya: { prompt: '9f545a47f469b117', tts: '6ec90fd2c54b374b', turn: 'f5b2229cc620b177' },
+      nadia: { prompt: '7243ae938af01aaa', tts: 'bc0ec26ebfa66ab8', turn: 'f5b2229cc620b177' },
+      priya: { prompt: '08558312780c0ddc', tts: 'eaf47d8ed9daad75', turn: 'f5b2229cc620b177' },
+      robin: { prompt: 'e77eb112a3eb4d37', tts: 'f0da90696682069a', turn: 'f5b2229cc620b177' },
+      sam: { prompt: '455eaa24e9d45b35', tts: '63159e2880527025', turn: 'f6acbfc49fa3d135' },
+      tess: { prompt: '82208588714cef32', tts: 'fa9fbd31881dd6fb', turn: 'f5b2229cc620b177' },
     },
   }
 

@@ -257,6 +257,19 @@ export interface VoiceSelection {
   pace?: number
 }
 
+/**
+ * One exchange, showing the register rather than describing it.
+ *
+ * `him` is deliberately ordinary — the point is never the prompt, it is what
+ * she does with a flat one. `note` is for the author and never reaches a model.
+ */
+export interface PersonaExample {
+  him: string
+  her: string
+  /** Why this one is in the set. Read by a human, stripped at compile. */
+  note?: string
+}
+
 export interface Persona {
   slug: string
   name: string
@@ -390,6 +403,56 @@ export interface Persona {
    * Authored in the repo and seeded, never generated at runtime (rule 8).
    */
   moods?: string[]
+  /**
+   * How she sounds, DEMONSTRATED.
+   *
+   * ── THE DEFECT THIS EXISTS FOR ─────────────────────────────────────────
+   *
+   * The compiled prompt is roughly forty prohibitions and zero examples. There
+   * is not one line of dialogue anywhere in it: the contract, five banded prose
+   * blocks, the exit conditions, the clarification rule and thirteen
+   * `BANNED_REGISTER` bullets all describe how NOT to sound, and nothing shows
+   * how to.
+   *
+   * Measured across 1,274 real agent turns on 10 September 2026:
+   *
+   *   disfluency (um, uh, hm)        6      0.5%
+   *   self-repair (sorry, wait)      5      0.4%
+   *   asked him to repeat something  1     0.08%
+   *   a bare "Yeah." on its own      3     0.24%
+   *   contains a comma             807       63%
+   *   the [short beat]. [more]. shape 373     29%
+   *
+   * Her median turn was eight words, so the caps were working and length was
+   * never the defect. What she never did was fumble. Over three minutes in a
+   * noisy cafe, against a nervous user the transcriber renders as "Bro, cords
+   * taste like wet cardboard", she asked "what?" ONCE in 1,274 turns. Every
+   * other turn was fluent, complete and quotable — "Machines hum, people pass,
+   * and I get a break from my usual noise" is a tricolon, and nobody speaks in
+   * tricolons while waiting for a dryer.
+   *
+   * A writer given a tight word budget, forty rules about register and no
+   * example of it writes the most defensible thing available, which is a
+   * balanced epigram. The band table's own header spotted this — "thirty-six
+   * prohibitions and no demonstrations push a writer towards hedging" — and
+   * then fixed only the length half of it.
+   *
+   * ── WHAT THESE ARE, AND ARE NOT ────────────────────────────────────────
+   *
+   * A RANGE, not a script. They exist to show the bottom of her register: the
+   * flat answer, the two-word answer, the misheard word, the turn where she has
+   * nothing to add. The top of her register was never in doubt — it is the only
+   * thing she has ever produced.
+   *
+   * Authored in the persona file and compiled into the cached prefix, so they
+   * are reviewed in a pull request (rule 10) and cost nothing per turn after the
+   * first. They are explicitly framed to the model as lines never to reuse; a
+   * few-shot block that gets parroted is worse than none, and `examples.test.ts`
+   * asserts the framing survives compilation.
+   *
+   * Absent is valid and means the behaviour this product had before.
+   */
+  examples?: PersonaExample[]
 
   /**
    * What she would rather be doing, in her own scene.

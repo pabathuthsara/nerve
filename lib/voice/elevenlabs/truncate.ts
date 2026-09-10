@@ -139,6 +139,41 @@ export class ReplyBudget {
  * exactly what both need — so the harness and the customer now go through the
  * same function rather than through two implementations of one rule.
  */
+/**
+ * The punctuation rule, ENFORCED rather than requested.
+ *
+ * `PUNCTUATION_RULES` has said "Never use em-dashes. They produce an unnatural
+ * clipped pause when spoken." in every contract on the roster since it was
+ * written. Measured across 1,274 real agent turns: 42 em-dashes, 3.3% of her
+ * speech, including "You sound like a thrill, John—what's your hobby to beat
+ * that?" and "Flat white, oat milk — because I'm always arguing about it."
+ *
+ * That is the same lesson as `maxWords` and `maxSentences` a third time. A rule
+ * stated once in a wall of forty prohibitions is a rule the writer obeys most of
+ * the time, and "most of the time" is a defect when the failure is audible.
+ *
+ * A COMMA, not a full stop. The dash is nearly always joining a clause to the
+ * one before it, and a full stop there makes two fragments out of one sentence
+ * — which would then be counted as two sentences by the ceiling above and get
+ * the second half deleted. A comma keeps the prosody and the arithmetic honest.
+ *
+ * Applied before the ceiling and before synthesis, so the transcript and the
+ * audio agree. Everything else the model can emit that is not speech — markdown
+ * emphasis, a stray bullet — goes here for the same reason: the contract asks
+ * for "spoken words only" and asking has a measured hit rate.
+ */
+export function sanitiseForSpeech(text: string): string {
+  return text
+    .replace(/\s*[–—]\s*/g, ', ')
+    .replace(/\*+/g, '')
+    .replace(/^\s*[-•]\s+/gm, '')
+    // A dash between two clauses can leave ", ," or " ,". Neither is speakable.
+    .replace(/,\s*,+/g, ',')
+    .replace(/\s+,/g, ',')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
 export function capToBudget(
   text: string,
   cap: number,

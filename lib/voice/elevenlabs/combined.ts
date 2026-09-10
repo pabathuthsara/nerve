@@ -30,7 +30,7 @@ import { ElevenLabsPersonaCompiler, deliveryFor } from './persona'
 import { LlmClient } from './llm'
 import { handleLlmRequest, handleTtsRequest, type PersonaOverlay } from './server'
 import { parseAlignment } from './tts'
-import { capToBudget, spokenWordCount } from './truncate'
+import { capToBudget, sanitiseForSpeech, spokenWordCount } from './truncate'
 import { sentenceCapFor, wordCapFor } from '@/lib/warmth/bands'
 import { MAX_REQUESTED_SENTENCE_CAP, MAX_REQUESTED_WORD_CAP, MAX_TURN_TTS_CHARACTERS, type TurnEvent, type TurnRequest } from './turn-protocol'
 import { proxiedRequestId } from '../request-id'
@@ -295,7 +295,10 @@ export function createCombinedTurn(
         // mid-clause. The part past the ceiling is the part she is not saying,
         // so it must reach neither synthesis nor the transcript: the transcript
         // is what comes back as history on the next turn.
-        const generated = result.text.trim()
+        // Sanitised BEFORE the ceiling, so the sentence count is taken on the
+        // punctuation that will actually be spoken and the transcript matches
+        // the audio. See `sanitiseForSpeech`.
+        const generated = sanitiseForSpeech(result.text)
         const spoken = capToBudget(generated, wordCap, sentenceCap === undefined ? {} : { sentences: sentenceCap })
         spokenWords = spokenWordCount(spoken)
         capped = spokenWords < spokenWordCount(generated)
