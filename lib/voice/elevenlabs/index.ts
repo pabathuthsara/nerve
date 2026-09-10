@@ -74,7 +74,7 @@ import { LlmClient, historyFrom, type LlmMessage } from './llm'
 import { TtsClient } from './tts'
 import { TurnClient } from './turn'
 import { PcmPlayer } from './player'
-import { SpokenTurn, capToBudget } from './truncate'
+import { SpokenTurn, capToBudget, sanitiseForSpeech } from './truncate'
 import { PipelineMeter } from './telemetry'
 import { SAMPLE_INTERVAL_MS, TurnAudibility, analyserRms } from '../audibility'
 import { PIPELINE_MODEL_ID, type MintedPipelineSession } from './mint'
@@ -682,7 +682,16 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     // at a time. The tokens past it are paid for and dropped: this path reads
     // `result.aborted` as "throw the turn away", so cancelling the stream would
     // discard what she has already said.
-    const spokenText = capToBudget(result.text.trim(), this.replyWordCap)
+    // BOTH CEILINGS AND THE SANITISER, exactly as the combined path applies
+    // them. A rule enforced on one arm and not the other is the failure rule 1
+    // records for `audibility.ts`: written provider-neutral, wired into one
+    // adapter, and four days later the arm serving every customer was the one
+    // without it.
+    const spokenText = capToBudget(
+      sanitiseForSpeech(result.text),
+      this.replyWordCap,
+      { sentences: this.replySentenceCap },
+    )
     if (spokenText) this.enqueueSynthesis(spokenText, spoken)
     return result
   }

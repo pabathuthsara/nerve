@@ -435,7 +435,9 @@ async function runRep(
     // The live turn stops synthesising at the flush that reaches the ceiling.
     // Applied here so the transcript she is fed back — and every number this
     // harness prints — is what a customer would actually have heard.
-    const agentText = capToBudget(generated, replyCap, { sentences: replySentences })
+    // Sanitised first, exactly as `combined.ts` does it, so the sentence count
+    // is taken on the punctuation that would actually be spoken.
+    const agentText = capToBudget(sanitiseForSpeech(generated), replyCap, { sentences: replySentences })
     if (agentText !== generated) capped += 1
 
     history.push({ role: 'assistant', content: agentText })

@@ -335,3 +335,90 @@ describe('reciprocity, at the seams', () => {
     session.dispose()
   })
 })
+
+/**
+ * The terminal exchange, and the scene state.
+ *
+ * `dispose()` is a hard teardown and used to be the only one: it dropped the
+ * awaiting turn and aborted the score in flight, so the last turn of every rep
+ * went unjudged — the turn where the goodbye, the number and the boundary all
+ * live. In the 9 September hostility rep, "Go away." has no stored slow event
+ * for exactly that reason.
+ */
+describe('finalise', () => {
+  const turn = (speaker: 'user' | 'agent', text: string, at: number): TranscriptTurn =>
+    ({ speaker, text, t_start: at, t_end: at + 1 })
+
+  it('flushes a turn that never got a reply, instead of dropping it', async () => {
+    const scored: string[] = []
+    const session = new WarmthSession({
+      persona: nadia,
+      trajectory: { ...nadia.trajectory, startJitter: 0 },
+      nowSeconds: () => 0,
+      scorer: {
+        score: async (request) => {
+          scored.push(request.userText)
+          return { intimacy: 5, intent: -6, quote: '', reason: '' }
+        },
+      },
+    })
+    // A turn that triggers scoring and is never answered — the rep ended.
+    session.onUserTurn(turn('user', 'Go away.', 10))
+    await session.finalise(50)
+    expect(scored).toContain('Go away.')
+  })
+
+  it('returns promptly when there is nothing in flight', async () => {
+    const session = new WarmthSession({
+      persona: nadia,
+      trajectory: { ...nadia.trajectory, startJitter: 0 },
+      nowSeconds: () => 0,
+      scorer: null,
+    })
+    await session.finalise(50)
+    expect(session.sceneExit).toBe('present')
+  })
+})
+
+describe('the scene state', () => {
+  const make = () => new WarmthSession({
+    persona: nadia,
+    trajectory: { ...nadia.trajectory, startJitter: 0 },
+    nowSeconds: () => 0,
+    scorer: null,
+  })
+  const t = (speaker: 'user' | 'agent', text: string, at: number): TranscriptTurn =>
+    ({ speaker, text, t_start: at, t_end: at + 1 })
+
+  it('runs on to leaving once she has said her line, when HE ended it', () => {
+    const session = make()
+    session.onUserTurn(t('user', 'I should get going.', 10))
+    expect(session.sceneExit).toBe('wrapping')
+    expect(session.shouldEndScene).toBe(false)
+    // She gets one line. A character who vanishes mid-conversation is a
+    // dropped connection; one who says a last thing and goes is a person.
+    session.onAgentTurn(t('agent', 'See you.', 12))
+    expect(session.sceneExit).toBe('leaving')
+    expect(session.shouldEndScene).toBe(true)
+  })
+
+  it('does NOT run on when the CLOCK started the wind-down', () => {
+    // The thirty-second hand-over is the moment the product is built around —
+    // she offers her number and the rep ends on the timer. Auto-advancing it
+    // would cut the rep short at 2:31.
+    const session = make()
+    session.handOverToClosing()
+    expect(session.sceneExit).toBe('wrapping')
+    session.onAgentTurn(t('agent', 'Here, take my number.', 12))
+    expect(session.sceneExit).toBe('wrapping')
+    expect(session.shouldEndScene).toBe(false)
+  })
+
+  it('never moves backwards', () => {
+    const session = make()
+    session.commitExit('leaving')
+    session.commitExit('present')
+    session.commitExit('wrapping')
+    expect(session.sceneExit).toBe('leaving')
+  })
+})
