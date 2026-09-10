@@ -113,7 +113,15 @@ const ROUTES: {
     call: (m, r) => m.POST!(r),
     request: () =>
       post('http://t/api/grade', {
-        transcript: [{ speaker: 'user', text: 'Hello.', t_start: 0, t_end: 1 }],
+        // A GRADEABLE transcript, so this exercises the spend gate rather than
+        // the eligibility gate that now sits behind it — an 18-second hello
+        // used to score 45 and `lib/grade/eligibility.ts` refuses it before the
+        // model call. One user turn is no longer a rep.
+        transcript: [
+          { speaker: 'user', text: 'Hello.', t_start: 0, t_end: 1 },
+          { speaker: 'agent', text: 'Hey.', t_start: 1, t_end: 2 },
+          { speaker: 'user', text: 'Quiet in here today.', t_start: 2, t_end: 4 },
+        ],
         sessionSeconds: 60,
       }),
   },

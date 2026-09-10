@@ -12,6 +12,7 @@ import { pointsShort, resultReading } from '@/lib/data/rep-rules'
 import { lifetimeLine } from '@/lib/data/counters'
 import { AppShell } from '@/components/app-shell'
 import { Button, Card, Chip, EmptyState, Skeleton, Tabs } from '@/components/ui'
+import { GRADE_REFUSAL_COPY, gradeEligibility } from '@/lib/grade/eligibility'
 import { FirstLossSheet, FirstWinSheet, LevelUnlockedSheet, PaywallSheet, ScorecardExplainerSheet } from '@/components/modals'
 import { acknowledgeUnlock } from '@/app/profile/actions'
 import { ShareButton } from '@/components/share/share-button'
@@ -503,6 +504,25 @@ function ScorecardScreen({ session, packsOpen }: { session: SessionSummary; pack
   if (loading) return <AppShell title="Scorecard"><div className="scorecard-grid"><Skeleton height={490} /><Skeleton height={490} /></div></AppShell>
   // Grading runs once, after the rep, on a model call that can fail. A rep
   // with no grade says so; it does not draw an empty card that reads as zero.
+  // WHY IT WAS NOT GRADED, which used to be a question this screen could not
+  // answer. There was no eligibility gate at all: an 18-second "Hello." scored
+  // 45, and a 38-second session in which she never spoke scored 36 — an
+  // infrastructure failure rendered as the user's conversational performance.
+  //
+  // Computed here off the same pure function the route and the client use, so
+  // the three cannot disagree about what "too short" means. `turns` may still
+  // be loading, in which case this is null and the general copy stands: a
+  // confident wrong reason is worse than a vague right one.
+  const refusal = turns.length > 0
+    ? (() => {
+        const verdict = gradeEligibility({
+          sessionSeconds: session.durationMs / 1000,
+          transcript: turns,
+        })
+        return verdict.ok ? null : GRADE_REFUSAL_COPY[verdict.reason]
+      })()
+    : null
+  if (!scorecard && refusal) return <AppShell title="Scorecard"><EmptyState mark="state-session" title={refusal.title} description={refusal.body} action={<div className="empty-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link><Link className="arena-button arena-button--ghost" href={`/session/${session.id}/transcript`}>Read the transcript</Link></div>} /></AppShell>
   if (!scorecard) return <AppShell title="Scorecard"><EmptyState mark="state-session" title={session.track === 'interview' ? 'This interview was not graded' : 'This rep was not graded'} description={session.track === 'interview'
     // A CREDIT IS NOT A DAILY REP, and this line was claiming it was. An
     // interview credit is spent when the scorecard is written and held until

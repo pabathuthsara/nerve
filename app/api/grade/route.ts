@@ -13,6 +13,7 @@
 
 import { NextResponse } from 'next/server'
 import { requireUser } from '@/lib/db/api-auth'
+import { gradeEligibility } from '@/lib/grade/eligibility'
 import { runScoringCall } from '@/lib/db/scoring-usage'
 import { parseGradeTranscript, readScoringBody, ScoringInputError, SCORING_LIMITS } from '@/lib/voice/scoring-request'
 import { composeScorecard, clampSubScores } from '@/lib/grade'
@@ -92,6 +93,15 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: 'invalid duration' }, { status: 400 })
   }
   const personaName = typeof body.personaName === 'string' ? body.personaName.slice(0, 40) : 'She'
+
+  // NOTHING HERE IS WORTH A NUMBER. Checked before the model call, so a rep
+  // that cannot be graded does not also cost one. See `lib/grade/eligibility.ts`
+  // — an 18-second "Hello." scored 45, and a session in which she never spoke
+  // scored 36 for a pipeline failure.
+  const eligible = gradeEligibility({ sessionSeconds, transcript })
+  if (!eligible.ok) {
+    return NextResponse.json({ error: 'not graded', reason: eligible.reason }, { status: 422 })
+  }
 
   const metrics = computeDeterministicMetrics(transcript, sessionSeconds)
   const rubric = rubricForPersonaName(personaName)

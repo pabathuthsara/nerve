@@ -56,6 +56,7 @@ import { uploadRepAudio } from '@/lib/db/audio'
 import { abandonSession, attachAudio, finishSession, saveScore, startSession } from '@/app/rep/actions'
 import { completeRep } from './rep-completion'
 import type { Scorecard } from '@/lib/grade/types'
+import { gradeEligibility } from '@/lib/grade/eligibility'
 import { uiBand, uiWarmth } from './progression'
 import { interviewShouldWrapUp, interviewWrapUpMs } from './interview-rules'
 import {
@@ -681,7 +682,12 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
           // Graded once, after the rep, on a separate path from the live scorer
           // (§07). The scorecard screen waits for this row rather than inventing
           // a number while it is in flight.
-          if (summary.turns.some((turn) => turn.speaker === 'user' && turn.text.trim().length > 0)) {
+          // THE SAME DECISION THE ROUTE MAKES, so the client does not spend a
+          // request finding out. `gradeEligibility` refuses a rep under twenty
+          // seconds, a rep with fewer than two user turns, and a rep in which
+          // she never spoke — the last of which used to be graded as the user's
+          // conversational performance. See `lib/grade/eligibility.ts`.
+          if (gradeEligibility({ sessionSeconds: summary.seconds, transcript: summary.turns }).ok) {
             const card = await fetch('/api/grade', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },

@@ -10,6 +10,7 @@
  */
 
 import type { TranscriptTurn } from '@/lib/voice/types'
+import { MIN_FILLERS_TO_COUNT } from '@/lib/warmth/fast'
 import { fillerCount, isOpenQuestion } from '@/lib/warmth/fast'
 
 export interface DeterministicMetrics {
@@ -91,6 +92,23 @@ function speakingSeconds(turns: readonly TranscriptTurn[]): number {
   return turns.reduce((sum, turn) => sum + Math.max(0, turn.t_end - turn.t_start), 0)
 }
 
+/**
+ * The shortest session a per-session rate may be computed from.
+ *
+ * Sixty seconds is a third of a rep and about five exchanges. Below it,
+ * "questions per three minutes" is one question multiplied by six.
+ */
+export const MIN_RATE_SECONDS = 60
+
+/**
+ * The least user speech a filler rate may be computed from.
+ *
+ * Twenty seconds, matching `MIN_GRADED_SECONDS` — a rep that is long enough to
+ * grade at all is long enough to count hesitation in, and one that is not is
+ * refused before it reaches here.
+ */
+export const MIN_FILLER_SECONDS = 20
+
 export function computeDeterministicMetrics(
   transcript: readonly TranscriptTurn[],
   sessionSeconds: number,
@@ -140,11 +158,21 @@ export function computeDeterministicMetrics(
   return {
     talkRatio: totalSpoken > 0 ? userSeconds / totalSpoken : null,
     questionsAsked,
-    questionsPer3Min: sessionSeconds > 0 ? (questionsAsked / sessionSeconds) * 180 : null,
+    // A RATE NEEDS A DENOMINATOR BIG ENOUGH TO CARRY ONE.
+    //
+    // Null is "not measured" and the composite already knows how to leave a
+    // dimension out; a number extrapolated from three seconds is not a low
+    // score, it is a fabricated one. Measured on 9 September: a 30-second rep
+    // with a single "Ah" in 2.30 seconds of speech reported 26.11 fillers per
+    // minute and scored zero on the band. The live scorer already ignores a
+    // lone filler (`MIN_FILLERS_TO_COUNT`); the final grader did not.
+    questionsPer3Min: sessionSeconds >= MIN_RATE_SECONDS ? (questionsAsked / sessionSeconds) * 180 : null,
     openQuestions,
     closedQuestions,
     openClosedRatio: closedQuestions > 0 ? openQuestions / closedQuestions : null,
-    fillerRate: userSeconds > 0 ? (fillers / userSeconds) * 60 : null,
+    fillerRate: userSeconds >= MIN_FILLER_SECONDS && fillers >= MIN_FILLERS_TO_COUNT
+      ? (fillers / userSeconds) * 60
+      : null,
     longestMonologue: user.reduce(
       (longest, turn) => Math.max(longest, turn.t_end - turn.t_start),
       0,

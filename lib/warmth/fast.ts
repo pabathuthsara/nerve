@@ -147,7 +147,7 @@ const FILLERS = /\b(um+|uh+|er+|ah+|erm+|you know|i mean|sort of|kind of|kinda|s
  * instantly. Our user is nervous by definition; charging them for a single
  * hesitation is the same mistake as the pause penalty at level 1.
  */
-const MIN_FILLERS_TO_COUNT = 2
+export const MIN_FILLERS_TO_COUNT = 2
 
 export function wordsIn(text: string): string[] {
   return text
