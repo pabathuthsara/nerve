@@ -83,6 +83,52 @@
  * two" now: a ceiling stated as a prohibition, which is the same lesson as
  * `maxWords` one paragraph up.
  *
+ * ## AND THE SAME ARGUMENT REACHED THE WARM BANDS FIVE DAYS LATE
+ *
+ * The paragraph above is right and was applied to half the table. "One sentence"
+ * is a specification for a WELL-FORMED sentence at OPEN exactly as it is at
+ * GUARDED, and OPEN is where most of a good rep is spent — so the epigram
+ * problem was fixed where it was least visible and left running where it
+ * mattered.
+ *
+ * Measured on 10 September, twice, on the audition bench. With authored
+ * register examples in the contract and the band still saying "One sentence,
+ * never two": sixteen turns, ZERO disfluencies, and "It's a fine line, though,
+ * between alive and chaos." The examples were being read and then overruled,
+ * because the band directive is the last thing before every generation and it
+ * was asking for a tidy sentence.
+ *
+ * "Say it how it comes out, not tidily" keeps both numbers and stops
+ * demanding the form. **The word counts are still byte for byte what they
+ * were.**
+ *
+ * ## AND THE SENTENCE CEILING HAD TO MOVE WITH IT
+ *
+ * `maxSentences` is 1 at the three cold bands, where the prose asks for a
+ * fragment and "never two" is the measured fix. It is 2 at OPEN and ENGAGED and
+ * 3 at INVESTED, and the reason is the register: **rough speech fragments into
+ * more pieces than it has thoughts.** A third audition returned "Marketing.
+ * Sounds busy, yeah. I keep numbers, not stories." — one conversational turn,
+ * nine words, well inside the ceiling, and three sentences by punctuation. A
+ * cap of one would have delivered "Marketing."
+ *
+ * The word cap is what bounds length at these bands. This is a runaway guard,
+ * and at the cold bands it is also the rule.
+ *
+ * ## AND "NO FILLER" MEANT TWO OPPOSITE THINGS
+ *
+ * ENGAGED and INVESTED said "No filler, never 'take your time'". In context
+ * that clause is about the ASSISTANT register — the round-6 failure where warm
+ * directives read as permission and the model reverted to reassurance the
+ * moment warmth rose — and "take your time" is the thing it was written to
+ * prevent.
+ *
+ * But `FILLERS` in `lib/warmth/fast.ts` is `um`, `uh`, `er`, `sort of`, and the
+ * whole of the 10 September work is an argument that she needs MORE of those.
+ * So the same word forbade the register in one file and named it in another,
+ * and the copy the model actually reads was the one telling her not to. It is
+ * "No reassurance" now, which is what it always meant.
+ *
  * ## PERMISSION IS NOT LENGTH, AND IT IS RATIONED SEPARATELY
  *
  * The warm bands used to carry their invitations inside the directive itself —
@@ -210,9 +256,9 @@ export const BANDS: readonly BandSpec[] = [
     max: 59,
     typicalWords: 7,
     maxWords: 12,
-    maxSentences: 1,
+    maxSentences: 2,
     directive:
-      'Seven or eight words. Twelve at the very most. One sentence, never two. Do not ask a question this turn unless he asked you one first.',
+      'Seven or eight words. Twelve at the very most. Say it how it comes out, not tidily. Do not ask a question this turn unless he asked you one first.',
     permission: 'You may volunteer one small thing.',
   },
   {
@@ -221,9 +267,9 @@ export const BANDS: readonly BandSpec[] = [
     max: 79,
     typicalWords: 8,
     maxWords: 14,
-    maxSentences: 1,
+    maxSentences: 2,
     directive:
-      'Eight or nine words. Fourteen at the very most. One sentence, never two. No filler, no reassurance, never "take your time" or "no rush".',
+      'Eight or nine words. Fourteen at the very most. Say it how it comes out, not tidily. No reassurance, never "take your time" or "no rush".',
     permission: 'Ask about him, tease him, swap names.',
   },
   {
@@ -232,9 +278,9 @@ export const BANDS: readonly BandSpec[] = [
     max: 100,
     typicalWords: 9,
     maxWords: 15,
-    maxSentences: 2,
+    maxSentences: 3,
     directive:
-      'Nine or ten words. Fifteen at the very most. Two short sentences at the most. No filler, never "take your time".',
+      'Nine or ten words. Fifteen at the very most. Two short sentences at the most. No reassurance, never "take your time".',
     permission: 'Start a topic or bring back something he said. Open to a concrete plan.',
   },
 ]

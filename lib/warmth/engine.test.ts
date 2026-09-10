@@ -163,12 +163,20 @@ describe('bands', () => {
 
   it('constrains the warm bands as hard as the cold ones (§4e)', () => {
     // Round 6's warm directives read as permission, so the model reverted to
-    // assistant default the moment warmth rose.
+    // assistant default the moment warmth rose. That is what these assert —
+    // the ASSISTANT register, which is what "take your time" is.
+    //
+    // It used to look for 'no filler' as well, and that clause is gone
+    // deliberately: `FILLERS` in `lib/warmth/fast.ts` is `um`, `uh`, `sort of`,
+    // and the 10 September register work is an argument that she needs more of
+    // those. One word forbade the register in one file and named it in another,
+    // and the copy the model reads was the one telling her not to.
     for (const warmth of [65, 85]) {
       const directive = bandDirective(warmth).toLowerCase()
       expect(directive).toContain('at the very most')
       expect(directive).toContain('take your time')
-      expect(directive).toContain('no filler')
+      expect(directive).toContain('no reassurance')
+      expect(directive).not.toContain('no filler')
     }
   })
 

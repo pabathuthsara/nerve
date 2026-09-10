@@ -689,8 +689,17 @@ describe('the reply budget', () => {
     expect(budgetedWordCount('Work stuff.')).toBe(2)
     // The honest count is unchanged — telemetry and the drift detector read it.
     expect(spokenWordCount('Um, work stuff.')).toBe(3)
-    // …and the discount cannot be farmed into a free sentence.
-    expect(budgetedWordCount('Well so like you know right yeah')).toBeGreaterThan(4)
+    // UNAMBIGUOUS FILLERS ONLY. This list began with `well|so|like|right|yeah`
+    // on it and an audition shipped fourteen words against a twelve-word
+    // ceiling, because "sounds LIKE a headache" was discounted twice over. A
+    // word that is a filler half the time is not usable as one — the same
+    // lesson `FILLERS` in `lib/warmth/fast.ts` already records.
+    expect(budgetedWordCount('Right, it sounds like a headache')).toBe(6)
+    expect(budgetedWordCount('Well so you know right yeah')).toBe(6)
+    // A discount on an ordinary word makes the ceiling not a ceiling, which is
+    // the whole defect this file was reopened to fix.
+    expect(capToBudget('Right, Croydon logistics sounds like a headache sometimes. I am glad this place is calm.', 12))
+      .toBe('Right, Croydon logistics sounds like a headache sometimes.')
   })
 
   it('reaches the same answer on a reply that arrived whole', () => {

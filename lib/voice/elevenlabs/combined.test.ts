@@ -342,11 +342,16 @@ describe('the band ceiling, enforced rather than stated', () => {
     const invested = await spokenBy({ ...input, warmth: 85 }, ...sentences)
     expect(spokenWordCount(invested.spoken.join(' ')))
       .toBeGreaterThan(spokenWordCount(guarded.spoken.join(' ')))
-    // INVESTED is the one band that allows a second sentence — "Two short
-    // sentences at the most" — so it reaches the second and stops there. The
-    // third is refused for the same reason GUARDED's second is.
+    // INVESTED is the widest band on both ceilings: fifteen words and three
+    // sentences. All three fit — 5 + 6 + 4 — and the point of the pair is that
+    // GUARDED, on the identical input, gets one.
+    //
+    // The sentence guard sits one above each warm band's prose because ROUGH
+    // SPEECH FRAGMENTS INTO MORE PIECES THAN IT HAS THOUGHTS: an audition
+    // returned "Marketing. Sounds busy, yeah. I keep numbers, not stories." —
+    // one conversational turn, nine words, three sentences by punctuation.
     expect(invested.spoken.join(' ')).toContain('It has been a long morning.')
-    expect(invested.spoken.join(' ')).not.toContain('What about you')
+    expect(invested.spoken.join(' ')).toContain('What about you')
   })
 
   it('still completes the turn, and records what it cost her', async () => {

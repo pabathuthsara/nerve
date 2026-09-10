@@ -1389,18 +1389,83 @@ The cap and the register were fighting and the cap always won.
   instead.
 - **Leaving was a request.** `lib/warmth/leaving.ts` makes it a monotonic state.
 
-### 14.5 What is still owed by hand
+### 14.5 Four auditions, and what they actually changed
 
-**None of this has been heard out loud.** The suite is green and the corpus
-numbers above are all it proves. `npm run rep:audition -- maya <player> 1` is
-the instrument and it spends money. The claims worth auditioning, in order:
+Run on the bench (`npm run rep:audition`), text only, so this is the PROMPT and
+not the voice. Each one changed the design.
 
-1. Does she hesitate now, or do the examples just sit there unread?
+**Audition 1 — examples in, band untouched.** Sixteen turns, **zero**
+disfluencies, and *"It's a fine line, though, between alive and chaos."* The
+examples were being read and then overruled. Two causes: the block sat between
+the exit conditions and `# Absolute rules`, so ~1,100 characters of prohibition
+followed it, and the framing said a boring answer was *allowed* while never
+saying she was allowed to be inarticulate.
+
+**Audition 2 — block moved last, hesitation named.** Better —
+*"Black hole's right, my evenings vanish that way too."* — and still no
+hesitation. What was left was the band directive at maximum recency:
+**"One sentence, never two"** is a specification for a WELL-FORMED sentence, and
+this file's own §12 header already made that argument and applied it only to the
+cold bands. OPEN is where most of a good rep is spent.
+
+**Audition 3 — "Say it how it comes out, not tidily."** The register broke open:
+*"Marketing. Sounds busy, yeah. I keep numbers, not stories."* Breaks went 1 → 0.
+And the run exposed two defects that were invisible at a desk:
+
+- **The harness was not applying the sentence ceiling**, so it was auditioning a
+  path production does not run — the third time this file has recorded that
+  exact failure. Fixed in `scripts/rep-audition.ts`.
+- **`maxSentences: 1` would have butchered the good line.** Rough speech
+  fragments into more pieces than it has thoughts: that nine-word turn is three
+  sentences by punctuation and a cap of one delivers *"Marketing."* The guard is
+  2 at OPEN and ENGAGED, 3 at INVESTED, and stays 1 at the cold bands where the
+  prose asks for a fragment.
+
+**Audition 4 — the shipping ceilings, on both characters.** Maya: 0 breaks,
+median 7 words, *"Yeah, days like that."*, *"That's the job, I suppose."* Tess:
+0 breaks, *"Yeah. It's sort of…"*, *"Like, you think you're ahead and then nope,
+surprise."*
+
+And it caught a bug of mine. `BUDGET_FREE` started as
+`um|uh|…|well|so|like|right|yeah|okay`, and Maya shipped **fourteen words
+against a twelve-word ceiling** — *"Right, Croydon logistics sounds like a
+headache sometimes. I'm glad this place is calm."* — because "Right" AND "like"
+were discounted. *Sounds LIKE a headache* is a preposition. That is the same
+mistake `FILLERS` in `fast.ts` already documents, and here it is worse than a
+mis-scored turn: a discount on an ordinary word makes the ceiling not a ceiling,
+which is the whole defect this round was reopened to fix. Hesitation noises
+only, now.
+
+### 14.5a The finding the auditions leave open
+
+**Tess was truncated on 11 of 16 turns**, Maya on 5 of 16. She writes 1.5–2.5×
+her ceiling at OPEN and `capToBudget` cuts her back. Nothing is cut mid-sentence
+— whole sentences only, first one always kept — so every result above is
+well-formed, and several of the best lines in audition 4 are what a cut produced
+(*"Yeah. It's sort of…"* is a truncation).
+
+That is the ceiling working as §12 designed it. It is also a number worth
+watching: the risk is a turn whose preamble survives and whose point is in the
+sentence that got dropped. **Only a listening pass can tell a clean stop from a
+clipped one**, and the caps must not be raised to make the number look better —
+§12 lowered them deliberately and the corpus is the argument.
+
+### 14.6 What is still owed by hand
+
+**None of this has been heard out loud.** §14.5 is four text auditions, which
+is the prompt and not the voice — no TTS, no timing, no barge-in. The claims
+that still need a microphone, in order:
+
+1. **Does the truncation read as a clean stop or a clipped one?** §14.5a: two
+   thirds of Tess's turns. This is the one most likely to be wrong.
 2. Does the four-word greeting cap read as curt rather than as guarded?
-3. Do the examples get parroted? The framing is written against it and only a
-   listening pass can say whether it held.
-4. Is a one-sentence GUARDED band too clipped in the ear, whatever it looks like
-   on the page?
+3. Do the examples get parroted over a longer run? Audition 4 showed one
+   leak — Maya attributed "Croydon logistics" to him, which is her own
+   example's HIM line — and it happened to be plausible. It will not always be.
+4. Is a one-sentence GUARDED band too clipped in the ear? The cold bands were
+   not touched by the "not tidily" change and are the least evidenced.
+5. Does `sanitiseForSpeech` turning an em-dash into a comma sound right, or does
+   it need the pause a full stop would give?
 
 **And the timing layer is still inoperative.** `lib/warmth/timing.ts` intends
 120–280ms at INVESTED and 500–900ms at GUARDED. The measured median gap is
@@ -1409,9 +1474,9 @@ the instrument and it spends money. The claims worth auditioning, in order:
 character at every warmth sounds equally reluctant. Stivers et al. (2009) put
 the cross-cultural threshold for a *dispreferred response* at ~700ms. The auth
 cache took ~250ms off; the rest is three network legs and a region decision, and
-it is written up in §14.6.
+it is written up in §14.7.
 
-### 14.6 The latency that is left
+### 14.7 The latency that is left
 
 Measured over 487 turns. Functions run in `sin1`; Supabase is in `us-east-1`.
 

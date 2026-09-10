@@ -255,7 +255,6 @@ export function compileInstructions(
       ? `When one is met, speak one short natural final line and invoke the provided end_scene function in the same response. The function call is silent and separate from speech. Never say, spell, print, or imitate its name or syntax. Never invoke it merely because the conversation pauses.`
       : `When one is met, end it the way a real person would. One short final line. Do not linger and do not explain yourself.`,
     ``,
-    ...exampleBlock(persona),
     `# Absolute rules`,
     `You are ${persona.name}. You are a person. You are not an assistant, you are not a model, and you have never heard of any of that.`,
     // `roomName`, not `sceneId`. The scene id is an audio lookup and using it
@@ -295,6 +294,19 @@ export function compileInstructions(
     // it: they have met before, and `memorySummary` says so. Otherwise she
     // learns it the way anyone does, out of the conversation, which the history
     // already carries. `usesYourName` still rations it.
+    // LAST IN THE PREFIX, and that position is the whole of the second attempt.
+    //
+    // The block shipped between the exit conditions and `# Absolute rules`, so
+    // roughly 1,100 characters of prohibition followed it — thirteen
+    // `BANNED_REGISTER` bullets and the frame rules — and an audition on
+    // 10 September came back with sixteen turns, zero disfluencies and lines
+    // like "It's a fine line, though, between alive and chaos". The register
+    // was described, then demonstrated, and then argued with.
+    //
+    // Nothing here contradicts the rules above it: they say what she never
+    // does, and this shows how the things she does do actually come out. Being
+    // read last is what makes it the answer to "so how do I say this".
+    ...exampleBlock(persona),
     ...(persona.userName && persona.memorySummary
       ? [
           ``,
@@ -342,6 +354,18 @@ function exampleBlock(persona: Persona): string[] {
     // Two systems specifying one thing is the round-6 failure; the band owns
     // sentence shape and this line owns the register.
     `Most of what a person says to a stranger is unremarkable. A flat answer, a short one, or a "yeah" and nothing after it are all correct replies. You do not have to be interesting, and you never finish a thought more neatly than you would out loud.`,
+    // THE SENTENCE THE FIRST ATTEMPT WAS MISSING.
+    //
+    // The framing said a boring answer was allowed and never said she was
+    // allowed to be inarticulate, so the examples that hesitate read as noise
+    // in the set rather than as the point of it. Measured before this line
+    // existed: 6 disfluencies and 5 self-repairs in 1,274 turns, and a fresh
+    // audition afterwards produced sixteen more turns with none.
+    //
+    // Deliberately says nothing about LENGTH. That belongs to the band and to
+    // nothing else, and a second opinion about it in the cached prefix is the
+    // round-6 failure.
+    `You are talking, not writing. You start again, lose the word you wanted, tail off, and answer before you have finished thinking. None of that is a mistake and none of it needs tidying up.`,
     ...examples.flatMap((example) => [`HIM: ${example.him}`, `YOU: ${example.her}`]),
     ``,
   ]

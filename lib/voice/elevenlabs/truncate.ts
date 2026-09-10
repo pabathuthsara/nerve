@@ -64,9 +64,24 @@ export function spokenWordCount(text: string): number {
  * words and two "um"s is a four-word reply. This does not make her hesitate —
  * only the authored examples in her contract do that — but it stops the ceiling
  * from deleting the hesitation when she does.
+ *
+ * ── UNAMBIGUOUS FILLERS ONLY, AND THIS LIST LEARNED THAT THE HARD WAY ────
+ *
+ * It began as `um|uh|…|well|so|like|right|yeah|okay`, and an audition on
+ * 10 September shipped "Right, Croydon logistics sounds like a headache
+ * sometimes. I'm glad this place is calm." — fourteen words against a
+ * twelve-word ceiling, admitted because "Right" AND "like" were discounted.
+ * "Sounds LIKE a headache" is a preposition.
+ *
+ * That is the same mistake `FILLERS` in `lib/warmth/fast.ts` already documents
+ * and already corrected once, in the other direction: "a word that is a filler
+ * half the time is not usable as a filler signal". Here the cost is worse than
+ * a mis-scored turn — a discount on an ordinary word makes the ceiling not a
+ * ceiling, which is the whole defect this file was reopened to fix.
+ *
+ * So: hesitation noises and nothing else. The discount is small and correct.
  */
-const BUDGET_FREE =
-  /^(?:um+|uh+|er+|erm+|ah+|oh+|hm+|mm+|mhm+|hmm+|well|so|like|right|yeah|okay|ok|i mean|you know|sort of|kind of)$/i
+const BUDGET_FREE = /^(?:um+|uh+|er+|erm+|ah+|oh+|hm+|mm+|mhm+|hmm+)$/i
 
 /**
  * What a reply costs against its band ceiling.

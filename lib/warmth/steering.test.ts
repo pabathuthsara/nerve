@@ -24,7 +24,7 @@ describe('composition across the four layers', () => {
     // Layer 1 reaches the character as a band and never as a number. She is
     // never told her difficulty, her trajectory, or that a meter exists.
     expect(at(nadia, 10)).toContain('Four or five words')
-    expect(at(nadia, 45)).toContain('One sentence')
+    expect(at(nadia, 45)).toContain('not tidily')
     expect(at(nadia, 70)).toContain('Ask about him')
   })
 

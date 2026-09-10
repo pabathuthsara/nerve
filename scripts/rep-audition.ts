@@ -66,7 +66,7 @@ import { getPersonaEverAuthored } from '../lib/personas'
 import { compileInstructions } from '../lib/voice/openai/persona'
 import { WarmthSession } from '../lib/warmth/session'
 import { bandFor } from '../lib/warmth/bands'
-import { capToBudget } from '../lib/voice/elevenlabs/truncate'
+import { capToBudget, sanitiseForSpeech } from '../lib/voice/elevenlabs/truncate'
 import { chatApiKey, completeChat, type ChatMessage } from '../lib/voice/chat'
 import { StabilityMeter, DEFAULT_VERBOSITY_MEDIAN } from '../lib/metrics/stability'
 import { dueSceneBeat, DATING_DURATION_MS, ARM_THRESHOLD, INTERVIEW_THRESHOLD } from '../lib/data/rep-rules'
@@ -377,6 +377,10 @@ async function runRep(
     // he just gave (`mirrorCapFor`). Read after the directive, for the same
     // reason the adapter reads both out of one `ReplyState`.
     const replyCap = session.replyWordCap
+    // THE SENTENCE CEILING TOO, or this instrument measures a path nobody is
+    // on — the same defect this file's header records twice already, once for
+    // `directiveIfChanged` and once for the mirror cap.
+    const replySentences = session.replySentenceCap
 
     // ── what the room does to her, on its own clock ─────────────────────
     const elapsedFraction = (clock * 1000) / repLengthMs
@@ -431,7 +435,7 @@ async function runRep(
     // The live turn stops synthesising at the flush that reaches the ceiling.
     // Applied here so the transcript she is fed back — and every number this
     // harness prints — is what a customer would actually have heard.
-    const agentText = capToBudget(generated, replyCap)
+    const agentText = capToBudget(generated, replyCap, { sentences: replySentences })
     if (agentText !== generated) capped += 1
 
     history.push({ role: 'assistant', content: agentText })
