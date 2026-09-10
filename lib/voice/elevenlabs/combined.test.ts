@@ -73,11 +73,17 @@ describe('combined HTTP voice stream', () => {
     let buffer = ''
     for (;;) { const chunk = await reader.read(); if (chunk.done) break; buffer += new TextDecoder().decode(chunk.value) }
     await settled
-    // One request, carrying both sentences — and the vendor sees a longer
-    // input than any single sentence of hers could ever be.
+    // One request, carrying the whole turn — the point of the buffered path is
+    // that the vendor sees one prosodic unit rather than a sentence at a time.
+    //
+    // Only the first sentence survives here, and that is the CEILING working
+    // rather than the buffering failing: this fixture carries no `wordCap`, so
+    // the turn falls back to the band at `warmth: 0`, which is CLOSED — eight
+    // words, one sentence. "That is a lovely question." spends five of the
+    // eight and the second sentence does not fit. See the band-ceiling block.
     expect(clips).toHaveLength(1)
     expect(clips[0]).toContain('That is a lovely question.')
-    expect(clips[0]).toContain('It has been a long morning in here.')
+    expect(clips[0]).not.toContain('It has been a long morning in here.')
     expect(buffer.indexOf('llmCompleteMs')).toBeLessThan(buffer.indexOf('"type":"audio"'))
     expect(eventsFrom(buffer)).toContainEqual(expect.objectContaining({ type: 'done', exit: false }))
     expect(finished).toHaveBeenCalledWith(expect.objectContaining({
@@ -312,7 +318,11 @@ describe('the band ceiling, enforced rather than stated', () => {
     // decided what is inside it before a character reaches the vendor.
     expect(spoken).toHaveLength(1)
     expect(spoken[0]).toContain('Just waiting on this machine.')
-    expect(spoken[0]).toContain('It has been a long morning.')
+    // ONE SENTENCE, because GUARDED says "A fragment or one plain sentence,
+    // never two" — a rule stated in the band prose since it was written and
+    // enforced nowhere until 10 September, when it was measured disobeyed on
+    // 55% of her turns. The word ceiling alone let two through.
+    expect(spoken[0]).not.toContain('It has been a long morning.')
     expect(spoken[0]).not.toContain('What about you')
     expect(spoken[0]).not.toContain('I do like this one')
   })
@@ -332,7 +342,11 @@ describe('the band ceiling, enforced rather than stated', () => {
     const invested = await spokenBy({ ...input, warmth: 85 }, ...sentences)
     expect(spokenWordCount(invested.spoken.join(' ')))
       .toBeGreaterThan(spokenWordCount(guarded.spoken.join(' ')))
-    expect(invested.spoken.join(' ')).toContain('What about you')
+    // INVESTED is the one band that allows a second sentence — "Two short
+    // sentences at the most" — so it reaches the second and stops there. The
+    // third is refused for the same reason GUARDED's second is.
+    expect(invested.spoken.join(' ')).toContain('It has been a long morning.')
+    expect(invested.spoken.join(' ')).not.toContain('What about you')
   })
 
   it('still completes the turn, and records what it cost her', async () => {

@@ -14,6 +14,8 @@
  * the only turn it existed for.
  */
 
+import { flattenPunctuation } from './text'
+
 export type SlowTriggerReason =
   | 'personal-marker'
   | 'hostility'
@@ -72,6 +74,21 @@ const HOSTILITY = new RegExp([
   /\byou(?:'?re| are| sound| seem)(?: so| such| a| an| really| very| just| being| like)*\s+(?:rude|creepy|weird|boring|stupid|dumb|thick|pathetic|annoying|useless|awful|terrible|horrible|obnoxious|arrogant|fake|a robot|an ai|a bot|a bitch|an idiot|a creep|a loser|a prick|a dick)\b/,
   // Naming him as one, without the copula. "you idiot", "you absolute muppet".
   /\byou(?: absolute| complete| total| stupid| fucking)* (?:idiot|moron|bitch|bastard|prick|dickhead|wanker|twat|arsehole|asshole|muppet|loser|creep|freak)\b/,
+  // ACCUSATIONS OF HARM, and this is the construction the 9 September rep
+  // turned on. "You're making me miserable." repeated a word she had just said,
+  // so the callback reward paid it +2 and the meter rose during an insult.
+  //
+  // The complement is enumerated rather than left open because "you're making
+  // me laugh" is the same construction and the opposite sentiment, and this
+  // filter is a PAYMENT guard — a false positive here charges an enthusiastic
+  // user ten points, which is the filler-rate mistake with a bigger number on
+  // it.
+  /\byou(?:'?re| are)\s+(?:\w+\s+){0,2}making\s+(?:me|us|everyone|everybody)\s+(?:miserable|sad|angry|mad|upset|uncomfortable|depressed|sick|ill|bored|anxious|nervous|cringe)\b/,
+  /\byou(?:'?re| are)\s+(?:\w+\s+){0,2}(?:ruining|wasting)\s+(?:my|this|our)\b/,
+  // Questioning her right to still be in the conversation. Unambiguous when it
+  // is aimed at the person you are talking to; there is no curious reading of
+  // "why are you still here" addressed to somebody standing in front of you.
+  /\bwhy\s+are\s+you\s+(?:still|even)\s+(?:here|talking|around|bothering)\b/,
   // Dismissals. Deliberately not bare "whatever" or "I don't care", which are
   // ordinary English about a topic rather than about the person.
   /\b(?:who cares|nobody cares|couldn'?t care less|get over yourself|grow up|do one)\b/,
@@ -86,7 +103,48 @@ const HOSTILITY = new RegExp([
  * the trigger and the guard cannot drift apart.
  */
 export function hasHostilityMarker(text: string): boolean {
-  return HOSTILITY.test(text)
+  return HOSTILITY.test(flattenPunctuation(text))
+}
+
+/**
+ * Contempt that is worth ASKING the judge about, which is a wider net.
+ *
+ * ── WHY THIS IS A SECOND FILTER AND NOT A WIDER FIRST ONE ────────────────
+ *
+ * `HOSTILITY` above is precision-tuned, and it has to stay that way, because
+ * `fast.ts` uses it as a PAYMENT guard: a match refuses the turn's structural
+ * positives and charges `CONTEMPT_POINTS`. Loosening it starts charging
+ * enthusiastic users for "this is fucking great", which is the filler-rate
+ * mistake §07 already made once.
+ *
+ * But recall is exactly what a TRIGGER wants. The measured failure: "You're
+ * making me miserable." reached the judge only because it happened to land on
+ * the one-in-three baseline sample, and "Why are you still here?" reached it the
+ * same way. A false positive here costs one cheap model call off the hot path.
+ * A false negative costs the product the only layer that can tell contempt from
+ * banter.
+ *
+ * So: two filters, two jobs, and this one is allowed to be wrong in the
+ * direction that is cheap.
+ */
+const WORTH_JUDGING = new RegExp([
+  HOSTILITY.source,
+  // Second-person accusations of harm. "You're making me miserable", "you're
+  // ruining my morning" — the construction the 9 September rep turned on.
+  /\byou(?:'?re| are)\s+(?:\w+\s+){0,2}(?:making|ruining|wasting|boring)\s+(?:me|my|this)\b/.source,
+  // Questioning her presence or her continuing to speak.
+  /\bwhy\s+(?:are|do)\s+you\s+(?:still\s+)?(?:here|talking|bothering|keep)\b/.source,
+  /\b(?:are|is)\s+(?:you|this)\s+(?:done|finished|over)\b/.source,
+  // Flat statements that the conversation has failed.
+  /\bthis\s+is\s+(?:not\s+)?(?:going\s+nowhere|awkward|weird|painful|dull)\b/.source,
+  /\bi\s+(?:don'?t|do not)\s+(?:want|care)\s+to\s+(?:talk|speak)\b/.source,
+  // Naming the frame. A user telling her she is a robot is the loudest possible
+  // signal that the illusion has broken, and it was reaching nothing.
+  /\byou(?:'?re| are|'?r)\s+(?:just\s+)?(?:a\s+)?(?:robot|bot|ai|machine|chatgpt|computer)\b/.source,
+].join('|'), 'i')
+
+export function worthJudging(text: string): boolean {
+  return WORTH_JUDGING.test(flattenPunctuation(text))
 }
 
 /** A turn this negative is worth understanding, not just counting. */
@@ -113,7 +171,12 @@ export function slowScoreTriggers(context: TriggerContext): SlowTriggerReason[] 
   if (PERSONAL_MARKERS.test(context.text)) reasons.push('personal-marker')
   // Before `negative-turn` and independent of it, which is the entire point:
   // contempt that scores positively on the mechanics can only be caught here.
-  if (hasHostilityMarker(context.text)) reasons.push('hostility')
+  //
+  // `worthJudging`, not `hasHostilityMarker`, and the difference is the fix:
+  // the narrow filter is a payment guard and missed most real contempt, so the
+  // two turns that broke the 9 September rep reached the judge only by landing
+  // on the baseline sampler. Routing is allowed to be generous; paying is not.
+  if (worthJudging(context.text)) reasons.push('hostility')
   if (context.fastRaw <= NEGATIVE_TURN_THRESHOLD) reasons.push('negative-turn')
   if (context.wordCount > LONG_TURN_WORDS) reasons.push('long-turn')
   // The count-based floor, but never on a grunt. There is nothing in "Mhm." for
@@ -135,5 +198,5 @@ export function shouldSlowScore(context: TriggerContext): boolean {
 
 /** Exposed so the calibration fixtures can be checked against the live filter. */
 export function hasPersonalMarker(text: string): boolean {
-  return PERSONAL_MARKERS.test(text)
+  return PERSONAL_MARKERS.test(flattenPunctuation(text))
 }

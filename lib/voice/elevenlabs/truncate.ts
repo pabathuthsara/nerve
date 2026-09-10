@@ -47,6 +47,48 @@ export function spokenWordCount(text: string): number {
 }
 
 /**
+ * Hesitation, which is not something she says. It is something she does.
+ *
+ * Measured across 1,274 real agent turns: SIX contained a disfluency, five a
+ * self-repair, three were a bare "Yeah." A person waiting for a dryer is
+ * inarticulate constantly; she was inarticulate 0.5% of the time, and that —
+ * not her sentence length, which was fine at a median of 8 words — is the
+ * loudest reason she reads as a machine.
+ *
+ * Part of the cause is arithmetic. At a six-word ceiling "Um, I dunno. Work
+ * stuff." spends a third of its budget on nothing, so a writer optimising for
+ * informative density under a hard cap correctly drops the filler and produces
+ * an epigram. The cap and the register were fighting and the cap always won.
+ *
+ * So filler is FREE. It costs no budget, and a reply that spends four real
+ * words and two "um"s is a four-word reply. This does not make her hesitate —
+ * only the authored examples in her contract do that — but it stops the ceiling
+ * from deleting the hesitation when she does.
+ */
+const BUDGET_FREE =
+  /^(?:um+|uh+|er+|erm+|ah+|oh+|hm+|mm+|mhm+|hmm+|well|so|like|right|yeah|okay|ok|i mean|you know|sort of|kind of)$/i
+
+/**
+ * What a reply costs against its band ceiling.
+ *
+ * The same count as `spokenWordCount` with the hesitation removed. Deliberately
+ * a SECOND function rather than a change to the first: `spokenWordCount` is
+ * what the telemetry records and what the drift detector reads, and those want
+ * the honest number. Only the budget forgives filler.
+ *
+ * `BUDGET_FREE` is capped at a third of the reply so the discount cannot be
+ * farmed: "Well, so, like, you know, right, yeah" is not a free sentence.
+ */
+export function budgetedWordCount(text: string): number {
+  const words = text
+    .replace(/\[[^\]]*\]/g, ' ')
+    .match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? []
+  if (words.length === 0) return 0
+  const free = words.filter((word) => BUDGET_FREE.test(word)).length
+  return words.length - Math.min(free, Math.floor(words.length / 3))
+}
+
+/**
  * The band's word ceiling, made true rather than merely stated.
  *
  * `lib/warmth/bands.ts` argues the case: every cap in that table was authored
@@ -97,13 +139,42 @@ export class ReplyBudget {
  * exactly what both need — so the harness and the customer now go through the
  * same function rather than through two implementations of one rule.
  */
-export function capToBudget(text: string, cap: number): string {
+export function capToBudget(
+  text: string,
+  cap: number,
+  options: { sentences?: number } = {},
+): string {
   const sentences = text.trim().split(/(?<=[.!?]["'’”)]?)\s+/).filter(Boolean)
-  const budget = new ReplyBudget(cap)
-  const kept: string[] = []
-  for (const sentence of sentences) {
+  const first = sentences[0]
+  if (!first) return ''
+
+  // ALWAYS ONE WHOLE SENTENCE, so a low band can never produce silence and a
+  // single long sentence still goes out intact. This is a ceiling on how much
+  // she PILES ON, not a shredder.
+  const kept = [first]
+  let spent = budgetedWordCount(first)
+  // A sentence ceiling as well as a word one. `maxWords` was made true in code
+  // because a stated maximum that is only ever hoped for is not a maximum, and
+  // "never two [sentences]" was stated at four bands and disobeyed on 55% of
+  // turns for exactly the same reason. Absent means no sentence limit.
+  const sentenceCap = Math.max(1, options.sentences ?? Number.POSITIVE_INFINITY)
+
+  // ASK BEFORE SPENDING, NOT AFTER.
+  //
+  // This loop used to push a sentence and THEN test the running total, so the
+  // sentence that broke the budget was always the one already added: with a cap
+  // of six, "Hello." spent one word, the check passed, and the whole seven-word
+  // second sentence went out — eight words against a six-word ceiling, reported
+  // as `capped: false`. Measured over 487 production turns, 67 exceeded their
+  // cap and only 17 were flagged as having been trimmed at all.
+  for (let i = 1; i < sentences.length; i += 1) {
+    const sentence = sentences[i]
+    if (sentence === undefined) break
+    if (kept.length >= sentenceCap) break
+    const cost = budgetedWordCount(sentence)
+    if (spent + cost > cap) break
     kept.push(sentence)
-    if (budget.spend(sentence)) break
+    spent += cost
   }
   return kept.join(' ')
 }

@@ -292,8 +292,16 @@ describe('characterization · the band table', () => {
 describe('characterization · capToBudget', () => {
   const REPLY = 'Pretty much. Saturdays especially, when nobody comes in. I like it that way, honestly.'
 
-  it('keeps whole sentences to the first boundary at or past the cap', () => {
-    expect(capToBudget(REPLY, 4)).toBe('Pretty much. Saturdays especially, when nobody comes in.')
+  it('keeps whole sentences, and refuses the one that would break the cap', () => {
+    // RE-BASELINED 10 September 2026, deliberately. See PERSONA-AUDIT §13.
+    //
+    // This used to read `capToBudget(REPLY, 4)` → both sentences, because the
+    // loop pushed a sentence and THEN tested the running total: the sentence
+    // that broke the budget was always the one already added. Measured over 487
+    // production turns, 67 exceeded their word cap and only 17 were reported as
+    // having been trimmed at all — `capped: false` on an eight-word reply
+    // against a six-word ceiling.
+    expect(capToBudget(REPLY, 4)).toBe('Pretty much.')
     expect(capToBudget(REPLY, 8)).toBe('Pretty much. Saturdays especially, when nobody comes in.')
     expect(capToBudget(REPLY, 15)).toBe(REPLY)
     expect(capToBudget(REPLY, 40)).toBe(REPLY)

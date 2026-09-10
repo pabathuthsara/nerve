@@ -26,7 +26,7 @@
  */
 
 import type { Persona, TrackId } from '@/lib/voice/types'
-import { UNSTEERED_WORD_CAP, wordCapFor } from './bands'
+import { UNSTEERED_WORD_CAP, sentenceCapFor, wordCapFor } from './bands'
 import { composeSteering, type SteeringContext } from './steering'
 import {
   mayAskFor,
@@ -65,6 +65,15 @@ export interface TrackJudgement {
   wordCap(value: number, his: UserTurnShape | null, turnKind?: InterviewTurnKind): number
   /** The band's ceiling alone, with no turn to mirror against. */
   bandCap(value: number, turnKind?: InterviewTurnKind): number
+  /**
+   * Her sentence ceiling this turn.
+   *
+   * The dating band table states one ("never two") at every band but INVESTED
+   * and it was never enforced. The interview arm has no such rule authored, so
+   * it returns a generous constant rather than inheriting a dating number —
+   * a shared dial reached through a default is still a shared dial.
+   */
+  sentenceCap(value: number): number
   /** May she ask him something this turn? */
   mayAsk(value: number, his: UserTurnShape | null): boolean
   /** May she say nothing at all? */
@@ -108,6 +117,7 @@ const DATING: TrackJudgement = {
   steer: composeSteering,
   wordCap: mirrorCapFor,
   bandCap: wordCapFor,
+  sentenceCap: sentenceCapFor,
   mayAsk: mayAskFor,
   maySayNothing: (value, his, options = {}) =>
     mayStaySilentFor(value, his, { ...(options.silentLastTurn !== undefined ? { silentLastTurn: options.silentLastTurn } : {}) }),
@@ -125,6 +135,11 @@ const INTERVIEW: TrackJudgement = {
   wordCap: (value, his, turnKind) =>
     turnKind === 'brief' ? INTERVIEW_BRIEF_WORD_CAP : interviewWordCap(value, his),
   bandCap: interviewWordCapFor,
+  // NOT the dating table. An interviewer's answers and questions are naturally
+  // two or three sentences — "tell me about a time when" is one sentence of
+  // setup and one of question — and holding her to the dating arm's "never two"
+  // would truncate half of what she asks. Her length is her band's, in words.
+  sentenceCap: () => INTERVIEW_SENTENCE_CAP,
   // An interviewer always has a question; what varies is whether it follows up
   // or moves to the next item, and the band owns that. See `interviewMayAsk`,
   // which is deliberately NOT `interviewMayFollowUp` — the first audition is
@@ -158,6 +173,15 @@ const INTERVIEW: TrackJudgement = {
   mayVolunteer: interviewMayFollowUp,
   maxQuestionShare: 1,
 }
+
+/**
+ * The sentence ceiling for an interviewer.
+ *
+ * A runaway guard rather than a rule: `interviewWordCapFor` owns her length and
+ * nothing in her contract asks for a sentence count. Wide enough that it never
+ * binds on an authored question, narrow enough to stop a monologue.
+ */
+const INTERVIEW_SENTENCE_CAP = 5
 
 /**
  * The language track is specified (§01) and unbuilt. It reads the dating

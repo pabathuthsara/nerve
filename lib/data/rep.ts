@@ -1042,6 +1042,26 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         warmthRef.current?.onAgentTurn(turn)
         publish(voice)
 
+        // SHE HAS SAID HER LAST LINE AND SHE IS GOING.
+        //
+        // The second route out, beside the model's own `[[END_SCENE]]` sentinel
+        // (which arrives as `character.exit` and lands on the same stop). This
+        // one is the warmth layer's committed state, for the two conditions that
+        // are lexical facts rather than judgements: he told her to go, or he
+        // said goodbye. Both used to reach nothing at all — after "Just fuck
+        // off" she said "Enjoy your Sunday" and then answered two more turns,
+        // and Nadia said goodbye and then asked a fresh question.
+        //
+        // Read HERE rather than in the adapter, and after her turn has been
+        // committed, for two reasons: the transcript has landed so the exit
+        // state is up to date, her audio has already drained so she is heard
+        // before the rep ends — and `ReplyState` must not be read a second time
+        // in a turn, because reading it is what records the silence decision.
+        if (warmthRef.current?.shouldEndScene) {
+          void stopRef.current?.('character')
+          return
+        }
+
         // §05 countermeasure 3, which until now ran only in the M0 harness.
         // A character break in production was never detected and never
         // repaired — she drifted into assistant register and stayed there for

@@ -11,6 +11,7 @@
 import type { Personality, TranscriptTurn } from '@/lib/voice/types'
 import { temperamentOf } from './temperament'
 import { hasHostilityMarker } from './triggers'
+import { classifyUserTurn, deadEndFrom, type UserTurnKind } from './turn-kind'
 
 export interface FastScoreContext {
   /** Persona level. Gates the pause penalty. */
@@ -35,6 +36,16 @@ export interface FastScoreContext {
    */
   openingTurn?: boolean
   /**
+   * Her previous line ended in a question.
+   *
+   * Read only by `classifyUserTurn`, and it is the half of "was that a dead
+   * end" that word count can never supply: "Yeah." is an ANSWER when she just
+   * asked him something and an ACKNOWLEDGEMENT when she did not. Absent falls
+   * back to the stricter reading, so a fixture that says nothing keeps the
+   * behaviour it has always had.
+   */
+  herLastTurnAsked?: boolean
+  /**
    * Seconds between her finishing and him starting. Null when unknown — the
    * opening turn, or a turn where she never spoke.
    */
@@ -46,6 +57,7 @@ export interface FastReason {
     | 'open-question'
     | 'engaged-length'
     | 'callback'
+    | 'contempt'
     | 'dead-end'
     | 'dead-end-streak'
     | 'filler-rate'
@@ -60,8 +72,41 @@ export interface FastScore {
   reasons: FastReason[]
   wordCount: number
   deadEnd: boolean
+  /**
+   * What the turn WAS, not merely how long it was.
+   *
+   * Carried out of the scorer because three layers need the same answer and
+   * classifying twice is how two layers come to disagree: the meter reads it
+   * for `deadEnd`, the session reads it to commit a scene exit on a dismissal,
+   * and the timing layer reads it to decide whether a hesitation belongs in
+   * front of the reply. See `./turn-kind.ts`.
+   */
+  kind: UserTurnKind
   fillerPerMinute: number
 }
+
+/**
+ * What contempt costs.
+ *
+ * Worse than `dead-end-streak` at -8, because telling somebody they are making
+ * you miserable is a bigger event in a conversation than answering them in one
+ * word twice. It cannot become a cliff: `WarmthEngine.scale` already bounds any
+ * single turn's fall to `LOSS_CAP_MULTIPLE × maxGainPerTurn`.
+ *
+ * ── WHY THIS EXISTS AT ALL ───────────────────────────────────────────────
+ *
+ * §07 splits the layers so that this one never pretends to understand what was
+ * said, and that split is right. But the measured consequence of having NO
+ * representation for contempt here was that the only penalty a dismissal ever
+ * paid was for being short: "Just fuck off." cost -0.25 from the fast layer,
+ * which is less than "Ok." Meanwhile "Why are you still here?" was net +2.25.
+ *
+ * The narrow claim this makes is not "I understand this turn". It is "this turn
+ * matched a precision-tuned contempt filter", which is a lexical fact, and the
+ * same lexical fact the file already trusted enough to withhold rewards on.
+ * Judging HOW BAD it was is still the slow scorer's job.
+ */
+export const CONTEMPT_POINTS = -10
 
 /**
  * Words that carry no topical content. Used so a "callback" means he picked up
@@ -196,31 +241,24 @@ export function scoreFast(turn: TranscriptTurn, context: FastScoreContext): Fast
   const reasons: FastReason[] = []
 
   /**
-   * HOSTILITY IS NOT FARMABLE.
+   * WHAT THE TURN WAS, decided once and read by everything below.
    *
-   * The two structural positives below are the only reasons in this file that
-   * can be earned without meaning anything: "What the fuck?" is an open
-   * question by shape, and a paragraph of abuse is engaged-length by shape.
-   * Measured: a user was openly contemptuous for two minutes and warmth rose
-   * from 47 to 52 on exactly those two reasons.
-   *
-   * This does not score contempt DOWN — judging what a turn meant is the slow
-   * scorer's job and §07 splits the two layers precisely so this one never
-   * pretends to understand. It refuses to pay for shape alone. A user who
-   * learns to insult her with a question mark is being trained in the wrong
-   * direction, and that is the largest single threat to the product's claim.
-   *
-   * The same turn is routed to the slow scorer by `hostility` in
-   * `./triggers.ts`, off this same filter, so the judgement still happens.
+   * `deadEnd` used to be `wordCount < 3`, which charged -6 for "How come?" and
+   * "What's up?" while simultaneously paying +3 for them as open questions —
+   * the same turn, scored twice, in opposite directions. See `./turn-kind.ts`.
    */
-  const hostile = hasHostilityMarker(text)
+  const kind = classifyUserTurn(text, {
+    ...(context.openingTurn !== undefined ? { opening: context.openingTurn } : {}),
+    ...(context.herLastTurnAsked !== undefined ? { herLastTurnAsked: context.herLastTurnAsked } : {}),
+  })
+  const hostile = kind === 'dismissal' || hasHostilityMarker(text)
 
-  if (!hostile && isOpenQuestion(text)) {
+  if (isOpenQuestion(text)) {
     reasons.push({ code: 'open-question', points: 3, detail: 'asked an open question' })
   }
 
   // Engaged but not rambling. Both ends of this band are failure modes (§07).
-  if (!hostile && wordCount >= 8 && wordCount <= 25) {
+  if (wordCount >= 8 && wordCount <= 25) {
     reasons.push({ code: 'engaged-length', points: 2, detail: `${wordCount} words` })
   }
 
@@ -255,7 +293,9 @@ export function scoreFast(turn: TranscriptTurn, context: FastScoreContext): Fast
   // is an opener. Everything after his first turn is scored exactly as before,
   // including a two-word reply to her greeting — that one IS a dead end, and
   // the exemption is one turn wide by construction.
-  const deadEnd = !context.openingTurn && wordCount > 0 && wordCount < 3
+  const deadEnd = deadEndFrom(kind, {
+    ...(context.openingTurn !== undefined ? { opening: context.openingTurn } : {}),
+  })
   if (deadEnd) {
     /**
      * A CONVERSATION DECAYS FASTER THAN IT BUILDS.
@@ -310,6 +350,30 @@ export function scoreFast(turn: TranscriptTurn, context: FastScoreContext): Fast
     })
   }
 
+  /**
+   * HOSTILITY IS NOT FARMABLE, AND THE GUARD IS ONE RULE OVER THE WHOLE SET.
+   *
+   * It used to be two `!hostile &&` conditions bolted to two of the reasons,
+   * and it therefore covered two of the three positives. **The callback was not
+   * one of them**, and that is the hole the whole rep of 9 September fell
+   * through: "You're making me miserable." repeated a word she had just said,
+   * so it was paid +2 for having listened, and "Why are you still here?" came
+   * out net +2.25. Warmth rose from 27 to 48 during two minutes of contempt.
+   *
+   * A guard written per-reason has to be remembered every time a reason is
+   * added. A guard written over the finished set cannot be forgotten, which is
+   * why it moved here and why nothing above this line mentions hostility.
+   *
+   * It still does not judge. It refuses to PAY, and it charges a flat lexical
+   * penalty for a match on a precision-tuned filter. How bad the turn actually
+   * was remains the slow scorer's question — `hostility` in `./triggers.ts`
+   * routes the same turn there off the same filter.
+   */
+  const scored = hostile ? reasons.filter((reason) => reason.points < 0) : reasons
+  if (hostile) {
+    scored.push({ code: 'contempt', points: CONTEMPT_POINTS, detail: 'contempt or dismissal' })
+  }
+
   // LAYER 2, applied last and to the whole set.
   //
   // Until this existed, every character on the ladder was moved by identical
@@ -327,7 +391,13 @@ export function scoreFast(turn: TranscriptTurn, context: FastScoreContext): Fast
   //                skill her rung claims to train.
   const t = temperamentOf(context.personality)
   const specific = callback !== null
-  const weighted = reasons.map((reason) => {
+  const weighted = scored.map((reason) => {
+    // CONTEMPT IS NOT DISCOUNTED BY PATIENCE, and the exemption is the point.
+    // Patience is grace for FUMBLING — the nervous pause, the one-word answer,
+    // the thing the product exists to treat. It is not grace for being told to
+    // fuck off, and a forgiving character who barely notices contempt teaches
+    // the user that contempt is barely noticed.
+    if (reason.code === 'contempt') return reason
     if (reason.points < 0) return { ...reason, points: reason.points * t.penalty }
     if (specific) return reason
     return { ...reason, points: reason.points * t.genericGain }
@@ -343,6 +413,7 @@ export function scoreFast(turn: TranscriptTurn, context: FastScoreContext): Fast
     })),
     wordCount,
     deadEnd,
+    kind,
     fillerPerMinute,
   }
 }

@@ -31,8 +31,8 @@ import { LlmClient } from './llm'
 import { handleLlmRequest, handleTtsRequest, type PersonaOverlay } from './server'
 import { parseAlignment } from './tts'
 import { capToBudget, spokenWordCount } from './truncate'
-import { wordCapFor } from '@/lib/warmth/bands'
-import { MAX_REQUESTED_WORD_CAP, MAX_TURN_TTS_CHARACTERS, type TurnEvent, type TurnRequest } from './turn-protocol'
+import { sentenceCapFor, wordCapFor } from '@/lib/warmth/bands'
+import { MAX_REQUESTED_SENTENCE_CAP, MAX_REQUESTED_WORD_CAP, MAX_TURN_TTS_CHARACTERS, type TurnEvent, type TurnRequest } from './turn-protocol'
 import { proxiedRequestId } from '../request-id'
 import { seededRandom } from '../seed'
 
@@ -106,6 +106,9 @@ export async function parseTurnRequest(request: Request): Promise<TurnRequest | 
       ...(typeof body.wordCap === 'number' && Number.isFinite(body.wordCap)
         ? { wordCap: Math.round(Math.max(1, Math.min(MAX_REQUESTED_WORD_CAP, body.wordCap))) }
         : {}),
+      ...(typeof body.sentenceCap === 'number' && Number.isFinite(body.sentenceCap)
+        ? { sentenceCap: Math.round(Math.max(1, Math.min(MAX_REQUESTED_SENTENCE_CAP, body.sentenceCap))) }
+        : {}),
     }
   } catch { return null } finally { reader.releaseLock() }
 }
@@ -177,6 +180,15 @@ export function createCombinedTurn(
       // The caller's ceiling when it sent one — only it knows whether the
       // band is steering this turn. See `TurnRequest.wordCap`.
       const wordCap = input.wordCap ?? wordCapFor(input.warmth)
+      // ONLY INVENT A SENTENCE CEILING WHEN THE CALLER SUPPLIED NO CEILING AT
+      // ALL, and the closing turn is the reason. A caller that sent a word cap
+      // has taken ownership of this turn's length — the wind-down hand-over
+      // stands the band down and sends `UNSTEERED_WORD_CAP` — and quietly
+      // applying a BAND sentence rule to a turn the band is not steering is two
+      // systems owning one thing, with the number offer as the casualty. It is
+      // naturally two or three sentences and rule 3 is written about it.
+      const sentenceCap = input.sentenceCap
+        ?? (input.wordCap === undefined ? sentenceCapFor(input.warmth) : undefined)
       /** What she actually said, after the ceiling. Zero until generation ends. */
       let spokenWords = 0
       let capped = false
@@ -284,7 +296,7 @@ export function createCombinedTurn(
         // so it must reach neither synthesis nor the transcript: the transcript
         // is what comes back as history on the next turn.
         const generated = result.text.trim()
-        const spoken = capToBudget(generated, wordCap)
+        const spoken = capToBudget(generated, wordCap, sentenceCap === undefined ? {} : { sentences: sentenceCap })
         spokenWords = spokenWordCount(spoken)
         capped = spokenWords < spokenWordCount(generated)
         if (!abort.signal.aborted) enqueue(spoken)
@@ -346,7 +358,7 @@ export function createCombinedTurn(
               deploymentUrl: process.env.VERCEL_URL ?? 'local',
               ttsModel: compiled.tts.model, llmModel: compiled.llm.model,
               llmRequestId, ttsRequestIds,
-              wordCap, spokenWords, capped,
+              wordCap, sentenceCap: sentenceCap ?? null, spokenWords, capped,
               ...timings,
             },
           }).catch(() => undefined) // A failed settlement leaves the server reservation held.

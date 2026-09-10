@@ -18,6 +18,8 @@ import { NEGATIVE_TURN_THRESHOLD, slowScoreTriggers, type SlowTriggerReason } fr
 import { DEFAULT_REPLY_SHAPE, type ReplyShape, type TurnKind } from './timing'
 import { isOpenQuestion } from './fast'
 import { DISCLOSURE_WORDS, type UserTurnShape } from './reciprocity'
+import { advanceExit, isDismissal, isUserFarewell, type SceneExit } from './leaving'
+import { personaNotes } from './persona-notes'
 import type { SteeringContext } from './steering'
 // B2's seam. One selector, reading `persona.track`, with dating as the default
 // branch that reaches exactly the code it reached yesterday. Nothing in
@@ -118,6 +120,39 @@ export class WarmthSession {
   private turnsSinceSteer = 0
   /** The closing decision owns the next direction on its own. */
   private closingHandover = false
+  /**
+   * Where the scene is, and it only ever moves forward.
+   *
+   * `closingHandover` above is a one-shot: it stands the whole directive down
+   * for exactly ONE turn so the wind-down decision arrives alone, and it is
+   * cleared the moment it is read. That is right for the hand-over and it was
+   * catastrophic as a record of having said goodbye — measured on 9 September,
+   * Nadia said she had better check on the present and then, one turn later
+   * with ordinary steering restored, asked him what his secret talent was.
+   *
+   * So the one-shot keeps its job and this keeps the memory. Monotonic, by
+   * construction: see `advanceExit`.
+   */
+  private exit: SceneExit = 'present'
+  /**
+   * The exit was HIS doing, not the clock's.
+   *
+   * Both routes reach `'wrapping'` and only one of them may run on to
+   * `'leaving'`. The thirty-second wind-down is the moment the whole product is
+   * built around — she offers her number and the rep ends on the timer — and
+   * auto-advancing it would cut the rep short at 2:31. A dismissal or a goodbye
+   * is the opposite: she says one more line and the scene is over.
+   */
+  private exitByUser = false
+  /**
+   * The last four exchanges, oldest first, for the judge.
+   *
+   * The slow scorer used to see one pair and nothing else, so a RUN of anything
+   * — three dead ends, a fourth question with nothing of his own in between,
+   * mounting contempt — was invisible to the only layer that could recognise
+   * it. Trimmed hard because this is serialised into a prompt.
+   */
+  private readonly exchanges: Array<{ him: string; her: string | null }> = []
   /**
    * What kind of thing she is about to answer — the fifth layer's other input.
    *
@@ -267,6 +302,7 @@ export class WarmthSession {
       his: this.lastUserShape,
       firstExchange: this.firstExchange,
       includeStanding: false,
+      exit: this.exit,
       ...this.openingBriefFlag,
     })
   }
@@ -288,6 +324,34 @@ export class WarmthSession {
    */
   handOverToClosing(): void {
     this.closingHandover = true
+    this.commitExit('wrapping')
+  }
+
+  /**
+   * Move the scene forward. Never backwards.
+   *
+   * The one writer for `exit`, so that "she has decided to go" cannot be
+   * un-decided by a later caller who happens to run in a different order.
+   */
+  commitExit(next: SceneExit): void {
+    this.exit = advanceExit(this.exit, next)
+  }
+
+  /** Where the scene is. Read by the adapter to end the rep, and by the tests. */
+  get sceneExit(): SceneExit {
+    return this.exit
+  }
+
+  /**
+   * She has committed to leaving and has now said her last line.
+   *
+   * The adapter reads this after her turn completes and ends the rep. It is
+   * deliberately NOT read before she speaks: a committed exit still gets one
+   * line, because a character who vanishes mid-conversation is a dropped
+   * connection and a character who says one last thing and goes is a person.
+   */
+  get shouldEndScene(): boolean {
+    return this.exit === 'leaving'
   }
 
   private consumeClosingHandover(): boolean {
@@ -364,6 +428,17 @@ export class WarmthSession {
   }
 
   /**
+   * Her sentence ceiling for the next reply.
+   *
+   * Off the band alone, and NOT mirrored against his last turn — reciprocity
+   * lowers how much she gives, and "one sentence" is already the floor of that
+   * for every band but INVESTED. See `BandSpec.maxSentences`.
+   */
+  get replySentenceCap(): number {
+    return this.judgement.sentenceCap(this.engine.warmth)
+  }
+
+  /**
    * The kind of turn she is about to take, when it is not a reply.
    *
    * Her first one only, and only when the caller said so. Everything after it —
@@ -408,6 +483,10 @@ export class WarmthSession {
     // that decision is the moment the whole product is built around. A grunt at
     // 2:30 must not be able to swallow it.
     if (this.closingHandover) return false
+    // NOR ON THE WAY OUT. A committed exit gets exactly one line, and a grunt
+    // must not be able to swallow it — the goodbye is the whole point of having
+    // made leaving a state rather than a request.
+    if (this.exit !== 'present') return false
     return this.judgement.maySayNothing(this.engine.warmth, this.lastUserShape, {
       silentLastTurn: this.silentLastTurn,
       // How long since she last did it. The dating arm does not read this —
@@ -434,6 +513,12 @@ export class WarmthSession {
 
   onAgentTurn(turn: TranscriptTurn): void {
     this.agentTurns.push(turn)
+    const open = this.exchanges[this.exchanges.length - 1]
+    if (open && open.her === null) open.her = turn.text
+    // She has now said the line a committed exit is owed. The next thing the
+    // adapter reads is `shouldEndScene`, and the rep ends. Only when HE ended
+    // it — the clock's wind-down keeps running to the timer. See `exitByUser`.
+    if (this.exitByUser && this.exit === 'wrapping') this.commitExit('leaving')
     // Her reply completes the pair, which is the unit the scorer judges (§2b).
     const awaiting = this.awaiting
     if (awaiting) {
@@ -463,10 +548,34 @@ export class WarmthSession {
       // Counted here rather than inferred from `agentTurns`, so it holds whether
       // he opened or she did.
       openingTurn: this.userTurnCount === 1,
+      // The half of "was that a dead end" that word count cannot supply. "Yeah."
+      // is an ANSWER when she just asked him something; it used to cost him six
+      // points either way. See `./turn-kind.ts`.
+      herLastTurnAsked: lastAgent?.text.trim().endsWith('?') ?? false,
     })
 
-    this.engine.applyFast(score, turn.t_end, turn.text)
+    this.engine.applyFast(score, turn.t_end, turn.text, {
+      // CONTEMPT MUST NOT ARM THE REPAIR BONUS.
+      //
+      // A fall opens a two-turn window in which his next positive turn is worth
+      // more, and she is told "He misjudged it and is recovering. Let him, if he
+      // earns it." That is exactly right for a fumble and exactly wrong for
+      // "fuck off": measured on 9 September, the dismissal opened the window and
+      // the next turn was scored as a repair.
+      repairable: !score.reasons.some((reason) => reason.code === 'contempt'),
+    })
     this.consecutiveDeadEnds = score.deadEnd ? this.consecutiveDeadEnds + 1 : 0
+
+    // LEAVING IS A STATE, DECIDED HERE, SYNCHRONOUSLY, FROM WHAT HE SAID.
+    //
+    // Not a request to the model and not a sentinel it has to remember to emit
+    // while also writing a line. He told her to go, or he said goodbye; both are
+    // lexical facts already in hand, and both used to reach nothing at all.
+    // `wrapping` rather than `leaving`, so she still gets one line to go out on.
+    if ((score.kind === 'dismissal' && isDismissal(turn.text)) || isUserFarewell(turn.text)) {
+      this.exitByUser = true
+      this.commitExit('wrapping')
+    }
 
     // What he gave, for the reciprocity gates. Everything here is already
     // computed above or is one call away from it; nothing sees a model.
@@ -480,6 +589,12 @@ export class WarmthSession {
     // and every dating gate reads it exactly as it always has. This is the
     // stricter question test the interview arm needs, and nothing else reads it.
     this.lastUserAskedDirectly = turn.text.includes('?')
+
+    // The run, for the judge. Pushed with her reply still unknown; `onAgentTurn`
+    // fills it in when she answers. Four is two exchanges more than the judge is
+    // shown, so trimming here can never drop one it was about to be given.
+    this.exchanges.push({ him: turn.text, her: null })
+    while (this.exchanges.length > 4) this.exchanges.shift()
 
     // Evidence-driven, with a count-based floor underneath (§2a).
     const triggers = slowScoreTriggers({
@@ -549,6 +664,18 @@ export class WarmthSession {
       warmth: awaiting.warmthAtTurn,
       band: this.engine.band,
       personaName: this.persona.name,
+      // The three exchanges BEFORE the one being judged. Without them a run of
+      // anything is invisible: the judge saw one pair, so a fourth consecutive
+      // question with nothing of his own in between looked exactly like a first
+      // one, and mounting contempt looked like a single sour remark.
+      recent: this.exchanges
+        .slice(0, -1)
+        .slice(-3)
+        .map((exchange) => ({ him: exchange.him, her: exchange.her })),
+      // What her author says moves her, extracted from the contract she is
+      // already compiled from — one authored source, never a second copy.
+      likes: personaNotes(this.persona).likes,
+      dislikes: personaNotes(this.persona).dislikes,
     }
 
     void scorer.score(request, controller.signal).then((score) => {
@@ -584,6 +711,38 @@ export class WarmthSession {
 
   telemetry(sessionSeconds: number): WarmthTelemetry & { steeringItemsSent: number } {
     return { ...this.engine.telemetry(sessionSeconds), steeringItemsSent: this.steeringSent }
+  }
+
+  /**
+   * Let the last exchange finish being judged, then stop.
+   *
+   * `dispose()` is a hard teardown: it drops the awaiting turn and aborts the
+   * score in flight. That is correct for a teardown and it silently threw away
+   * the single most informative turn of every rep — the terminal one, which is
+   * where the goodbye, the number and the boundary all live. In the 9 September
+   * hostility rep, "Go away." has no stored slow event for exactly this reason.
+   *
+   * Called at the TOP of the rep teardown, before the socket close, so the
+   * few hundred milliseconds that close already costs are spent waiting for a
+   * judgement rather than in addition to it. Bounded, because a rep must never
+   * be held open by a vendor that has stopped answering.
+   */
+  async finalise(budgetMs = 800): Promise<void> {
+    this.flushAwaiting()
+    const pending = this.pending
+    if (!pending) return
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        const started = Date.now()
+        const poll = setInterval(() => {
+          if (this.pending !== pending || Date.now() - started > budgetMs) {
+            clearInterval(poll)
+            resolve()
+          }
+        }, 25)
+      }),
+      new Promise<void>((resolve) => setTimeout(resolve, budgetMs)),
+    ])
   }
 
   dispose(): void {

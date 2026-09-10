@@ -39,6 +39,15 @@ export interface ReplyState {
    */
   wordCap?: number
   /**
+   * Her sentence ceiling this turn, off the same band.
+   *
+   * Sent beside `wordCap` because the two fail differently and the band table
+   * states both: a long single sentence blows the word cap, and "Hello. Not a
+   * bad morning for sitting still." blows "never two" while sitting well inside
+   * any word count. Absent falls back to the band alone.
+   */
+  sentenceCap?: number
+  /**
    * She says nothing this turn.
    *
    * Enforced by making no request at all, rather than by asking a model to

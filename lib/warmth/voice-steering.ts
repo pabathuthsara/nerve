@@ -25,6 +25,7 @@ export function bindVoiceSteering(voice: VoiceProvider, session: WarmthSession):
         // Reciprocity: her ceiling mirrored against his last turn, and whether
         // this is a turn she has nothing to say on. `lib/warmth/reciprocity.ts`.
         wordCap: session.replyWordCap,
+        sentenceCap: session.replySentenceCap,
         silent,
       }
     })

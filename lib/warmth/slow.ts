@@ -43,6 +43,20 @@ export interface SlowScoreRequest {
   warmth: number
   band: WarmthBand
   personaName: string
+  /**
+   * The exchanges BEFORE this one, oldest first, at most three.
+   *
+   * A judge shown one pair cannot see a RUN, and a run is most of what a
+   * conversation is: the fourth consecutive question with nothing of his own in
+   * between looks exactly like the first one, and mounting contempt looks like a
+   * single sour remark. Optional, so a caller with no history keeps the
+   * behaviour it has always had.
+   */
+  recent?: Array<{ him: string; her: string | null }>
+  /** Her authored "What earns your warmth". Extracted, never re-authored. */
+  likes?: string[]
+  /** Her authored "What loses it". See `lib/warmth/persona-notes.ts`. */
+  dislikes?: string[]
 }
 
 export interface SlowScorer {

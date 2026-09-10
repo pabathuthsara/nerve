@@ -69,7 +69,7 @@ import { MicCapture } from './capture'
 import { VadDetector, frameRms } from './vad'
 import { RealtimeTranscriber, type TranscriptionTiming } from './stt'
 import { composeSteering } from '@/lib/warmth/steering'
-import { UNSTEERED_WORD_CAP, wordCapFor } from '@/lib/warmth/bands'
+import { UNSTEERED_SENTENCE_CAP, UNSTEERED_WORD_CAP, sentenceCapFor, wordCapFor } from '@/lib/warmth/bands'
 import { LlmClient, historyFrom, type LlmMessage } from './llm'
 import { TtsClient } from './tts'
 import { TurnClient } from './turn'
@@ -137,6 +137,8 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   /** Warmth-band directives waiting for the next reply. */
   private pendingSteering: string[] = []
   private readReplyState: (() => ReplyState) | null = null
+  /** This turn's sentence ceiling. See `TurnRequest.sentenceCap`. */
+  private replySentenceCap = UNSTEERED_SENTENCE_CAP
   /** This turn's reply ceiling. See `TurnRequest.wordCap`. */
   private replyWordCap = UNSTEERED_WORD_CAP
   private interruptible = false
@@ -532,6 +534,12 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     this.replyWordCap = direction.trim()
       ? state?.wordCap ?? wordCapFor(this.warmth)
       : UNSTEERED_WORD_CAP
+    // The same rule for the same turn: a directive that has stood down must not
+    // be held to a sentence count either, or the wind-down loses the goodbye or
+    // the number offer. Rule 3.
+    this.replySentenceCap = direction.trim()
+      ? state?.sentenceCap ?? sentenceCapFor(this.warmth)
+      : UNSTEERED_SENTENCE_CAP
     // Scene, safety and closing instructions remain one-shot and take priority.
     const steering = [direction, ...this.pendingSteering].filter(Boolean).join(' ')
     this.pendingSteering = []
@@ -598,6 +606,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       steering,
       warmth: this.warmth,
       wordCap: this.replyWordCap,
+      sentenceCap: this.replySentenceCap,
     }, {
       onClip: (id, text) => {
         if (!this.isCurrentResponse(spoken, abort)) return

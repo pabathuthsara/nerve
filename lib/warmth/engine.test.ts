@@ -379,7 +379,7 @@ describe('WarmthEngine', () => {
   it('applies diminishing returns — the same turn is worth less when warm', () => {
     const cold = new WarmthEngine({ trajectory: fixed(L1, 10) })
     const warm = new WarmthEngine({ trajectory: fixed(L1, 80) })
-    const score = { raw: 7, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 }
+    const score = { raw: 7, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0, kind: 'answer' as const }
 
     const coldGain = cold.applyFast(score, 10, 'x').delta
     const warmGain = warm.applyFast(score, 10, 'x').delta
@@ -390,7 +390,7 @@ describe('WarmthEngine', () => {
     const engine = new WarmthEngine({ trajectory: fixed(L1, 0) })
     // An absurd raw score cannot buy more than one turn's worth of ground.
     const event = engine.applyFast(
-      { raw: 500, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 },
+      { raw: 500, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0, kind: 'answer' as const },
       10,
       'x',
     )
@@ -404,7 +404,7 @@ describe('WarmthEngine', () => {
     const engine = new WarmthEngine({ trajectory: fixed(L1, 80) })
     for (let i = 0; i < 500; i += 1) {
       engine.applyFast(
-        { raw: 50, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 },
+        { raw: 50, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0, kind: 'answer' as const },
         i,
         'x',
       )
@@ -416,7 +416,7 @@ describe('WarmthEngine', () => {
   it('charges natural decay on every turn, scored or not (§4d)', () => {
     const engine = new WarmthEngine({ trajectory: fixed(L1, 50) })
     const event = engine.applyFast(
-      { raw: 0, reasons: [], wordCount: 5, deadEnd: false, fillerPerMinute: 0 },
+      { raw: 0, reasons: [], wordCount: 5, deadEnd: false, fillerPerMinute: 0, kind: 'answer' as const },
       10,
       'Yeah, a lot of stuff.',
     )
@@ -460,7 +460,7 @@ describe('WarmthEngine', () => {
     const engine = new WarmthEngine({ trajectory: fixed(L8) })
     for (let i = 0; i < 200; i += 1) {
       engine.applyFast(
-        { raw: 7, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 },
+        { raw: 7, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0, kind: 'answer' as const },
         i * 5,
         GOOD_TURN,
       )
@@ -496,11 +496,11 @@ describe('WarmthEngine', () => {
 
   it('rises slowly and falls fast', () => {
     const up = new WarmthEngine({ trajectory: fixed(L1, 45) })
-    up.applyFast({ raw: 10, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 }, 5, 'x')
+    up.applyFast({ raw: 10, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0, kind: 'answer' as const }, 5, 'x')
     const gained = up.warmth - 45
 
     const down = new WarmthEngine({ trajectory: fixed(L1, 45) })
-    down.applyFast({ raw: -10, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0 }, 5, 'x')
+    down.applyFast({ raw: -10, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0, kind: 'answer' as const }, 5, 'x')
     const lost = 45 - down.warmth
 
     // After the round-9 retune the cap is what holds a rise down, not the gain:
@@ -513,14 +513,14 @@ describe('WarmthEngine', () => {
 
     // Alex is the mirror image: effort barely counts, missteps cost quadruple.
     const alexUp = new WarmthEngine({ trajectory: fixed(L8) })
-    alexUp.applyFast({ raw: 10, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 }, 5, 'x')
+    alexUp.applyFast({ raw: 10, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0, kind: 'answer' as const }, 5, 'x')
     // Even an excellent turn is clipped to her per-turn cap, then charged the
     // same natural decay as any other turn. Derived, not frozen: the retune
     // moved both numbers.
     expect(alexUp.warmth - L8.start).toBeCloseTo(L8.maxGainPerTurn - L8.decayPerTurn, 5)
 
     const alexDown = new WarmthEngine({ trajectory: fixed(L8) })
-    alexDown.applyFast({ raw: -10, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0 }, 5, 'x')
+    alexDown.applyFast({ raw: -10, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0, kind: 'answer' as const }, 5, 'x')
     // A misstep costs her far more than a good turn earns. That ratio is what
     // makes level 8 level 8.
     expect(L8.start - alexDown.warmth).toBeGreaterThan((alexUp.warmth - L8.start) * 4)
@@ -539,7 +539,7 @@ describe('WarmthEngine', () => {
   it('never leaves the floor-ceiling range', () => {
     const engine = new WarmthEngine({ trajectory: fixed(L1) })
     for (let i = 0; i < 100; i += 1) {
-      engine.applyFast({ raw: -20, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0 }, i, 'x')
+      engine.applyFast({ raw: -20, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0, kind: 'answer' as const }, i, 'x')
     }
     // Bottoms out hostile, not merely closed.
     expect(engine.warmth).toBe(-20)
@@ -549,7 +549,7 @@ describe('WarmthEngine', () => {
   it('attributes time to the band that was actually occupied', () => {
     const engine = new WarmthEngine({ trajectory: fixed(L1, 45) })
     // 30s in OPEN, then a crash into GUARDED for the remaining 30s.
-    engine.applyFast({ raw: -20, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0 }, 30, 'x')
+    engine.applyFast({ raw: -20, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0, kind: 'answer' as const }, 30, 'x')
     const telemetry = engine.telemetry(60)
     expect(telemetry.timeInBand.OPEN).toBe(30)
     expect(telemetry.timeInBand.GUARDED).toBe(30)
@@ -569,9 +569,9 @@ describe('WarmthEngine', () => {
 
   it('records peak and trough, not just where it ended', () => {
     const engine = new WarmthEngine({ trajectory: fixed(L1, 45) })
-    engine.applyFast({ raw: 10, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 }, 10, 'up')
-    engine.applyFast({ raw: -30, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0 }, 20, 'down')
-    engine.applyFast({ raw: 4, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0 }, 30, 'up')
+    engine.applyFast({ raw: 10, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0, kind: 'answer' as const }, 10, 'up')
+    engine.applyFast({ raw: -30, reasons: [], wordCount: 1, deadEnd: true, fillerPerMinute: 0, kind: 'answer' as const }, 20, 'down')
+    engine.applyFast({ raw: 4, reasons: [], wordCount: 12, deadEnd: false, fillerPerMinute: 0, kind: 'answer' as const }, 30, 'up')
 
     const telemetry = engine.telemetry(40)
     expect(telemetry.peak).toBeGreaterThan(45)
@@ -872,7 +872,7 @@ describe('the retuned trajectory', () => {
     const engine = new WarmthEngine({ trajectory: { ...alex.trajectory, startJitter: 0 } })
     for (let i = 0; i < 500; i += 1) {
       engine.applyFast(
-        { raw: 100, reasons: [], wordCount: 20, deadEnd: false, fillerPerMinute: 0 },
+        { raw: 100, reasons: [], wordCount: 20, deadEnd: false, fillerPerMinute: 0, kind: 'answer' as const },
         i,
         'x',
       )

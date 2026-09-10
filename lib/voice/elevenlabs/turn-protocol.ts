@@ -20,6 +20,17 @@ export interface TurnRequest {
    * surface than `steering`, which the caller already writes in full.
    */
   wordCap?: number
+  /**
+   * The reply ceiling in SENTENCES, decided by the same layer for the same
+   * reason. See `wordCap` above and `BandSpec.maxSentences`.
+   *
+   * Two ceilings rather than one because they fail differently: a long single
+   * sentence blows the word cap and stays one sentence, and "Hello. Not a bad
+   * morning for sitting still." blows the sentence rule while sitting inside
+   * any reasonable word count. Both were stated in the band prose and neither
+   * was enforced.
+   */
+  sentenceCap?: number
 }
 
 export type TurnTimingStage = 'llmFirstTokenMs' | 'llmCompleteMs' | 'ttsFirstByteMs'
@@ -53,3 +64,6 @@ export const MAX_TURN_TTS_CHARACTERS = 600
  * behaviour: `mirrorCapFor` cannot return above the band table's maximum.
  */
 export const MAX_REQUESTED_WORD_CAP = 90
+
+/** Transport bound on the sentence ceiling, for the same reason. */
+export const MAX_REQUESTED_SENTENCE_CAP = 8

@@ -148,6 +148,19 @@ export interface BandSpec {
    * number cannot drift apart.
    */
   maxWords: number
+  /**
+   * The most sentences this band allows, machine-readable.
+   *
+   * The other half of the argument this file's header makes about `maxWords`,
+   * and it took the same route. "One sentence, never two" is stated at four
+   * bands and was measured DISOBEYED on 43% of opening turns and 55% overall,
+   * because nothing enforced it — exactly as "twelve at most" was a target
+   * rather than a ceiling until `wordCapFor` was read by the pipeline.
+   *
+   * Enforced by `capToBudget` alongside the word cap. A ceiling that is only
+   * ever written down is the ceiling this file already argued about once.
+   */
+  maxSentences: number
 }
 
 /** The lowest warmth can go. Below zero she actively wants out. */
@@ -167,6 +180,7 @@ export const BANDS: readonly BandSpec[] = [
     max: -1,
     typicalWords: 3,
     maxWords: 6,
+    maxSentences: 1,
     directive:
       'Three or four words. Six at the very most. Not a full sentence. You want this over. Do not ask anything, and do not soften it.',
   },
@@ -176,6 +190,7 @@ export const BANDS: readonly BandSpec[] = [
     max: 19,
     typicalWords: 4,
     maxWords: 8,
+    maxSentences: 1,
     directive:
       'Four or five words. Eight at the very most. Not a full sentence. Answer, then stop. Do not ask him anything, do not volunteer, do not warm it up.',
   },
@@ -185,6 +200,7 @@ export const BANDS: readonly BandSpec[] = [
     max: 39,
     typicalWords: 6,
     maxWords: 10,
+    maxSentences: 1,
     directive:
       'Six or seven words. Ten at the very most. A fragment or one plain sentence, never two. Answer only what he asked. Do not ask him anything back.',
   },
@@ -194,6 +210,7 @@ export const BANDS: readonly BandSpec[] = [
     max: 59,
     typicalWords: 7,
     maxWords: 12,
+    maxSentences: 1,
     directive:
       'Seven or eight words. Twelve at the very most. One sentence, never two. Do not ask a question this turn unless he asked you one first.',
     permission: 'You may volunteer one small thing.',
@@ -204,6 +221,7 @@ export const BANDS: readonly BandSpec[] = [
     max: 79,
     typicalWords: 8,
     maxWords: 14,
+    maxSentences: 1,
     directive:
       'Eight or nine words. Fourteen at the very most. One sentence, never two. No filler, no reassurance, never "take your time" or "no rush".',
     permission: 'Ask about him, tease him, swap names.',
@@ -214,6 +232,7 @@ export const BANDS: readonly BandSpec[] = [
     max: 100,
     typicalWords: 9,
     maxWords: 15,
+    maxSentences: 2,
     directive:
       'Nine or ten words. Fifteen at the very most. Two short sentences at the most. No filler, never "take your time".',
     permission: 'Start a topic or bring back something he said. Open to a concrete plan.',
@@ -366,6 +385,27 @@ export function bandPermissionParts(
 export function wordCapFor(warmth: number): number {
   return specFor(bandFor(warmth)).maxWords
 }
+
+/**
+ * The sentence ceiling this warmth allows.
+ *
+ * Read by the same seam `wordCapFor` is: the turn pipeline stops adding
+ * sentences here as well as at the word count. Both numbers are stated in the
+ * band's own prose AND enforced in code, for the reason the header gives.
+ */
+export function sentenceCapFor(warmth: number): number {
+  return specFor(bandFor(warmth)).maxSentences
+}
+
+/**
+ * The sentence ceiling for a turn the band is not steering.
+ *
+ * Generous for the same reason `UNSTEERED_WORD_CAP` is: the closing turn is the
+ * one moment the product is built around, the number offer is naturally two or
+ * three sentences, and enforcing a rule she was not given on that turn would
+ * drop the goodbye or the offer itself. Rule 3.
+ */
+export const UNSTEERED_SENTENCE_CAP = 4
 
 /**
  * The ceiling for a turn the band is not steering.

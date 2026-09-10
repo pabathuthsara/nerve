@@ -19,7 +19,7 @@ import { BANNED_REGISTER, compileInstructions } from '../openai/persona'
 import { MAX_BAND_WORDS, UNSTEERED_WORD_CAP, specFor, wordCapFor } from '@/lib/warmth/bands'
 import { DEFAULT_CALIBRATION, resolveSilenceMs } from '../types'
 import { ElevenLabsPersonaCompiler, compileDeliveryTags, EXPRESSION_TAG } from './persona'
-import { ReplyBudget, SpokenTurn, capToBudget, proportionalPrefix, snapToWordBoundary, spokenWordCount } from './truncate'
+import { ReplyBudget, SpokenTurn, budgetedWordCount, capToBudget, proportionalPrefix, snapToWordBoundary, spokenWordCount } from './truncate'
 import { VadDetector, frameRms } from './vad'
 import { PipelineMeter, CreditGuard } from './telemetry'
 import { parseAlignment } from './tts'
@@ -661,13 +661,37 @@ describe('the reply budget', () => {
     expect(spokenWordCount("Don't, isn't, o'clock")).toBe(3)
   })
 
+  it('does not charge her budget for hesitating', () => {
+    // Six disfluencies in 1,274 real agent turns, against a contract that says
+    // "occasional hesitation and unfinished thoughts are natural". Part of the
+    // cause is arithmetic: at a six-word ceiling "Um, I dunno." spends a third
+    // of its budget on nothing, so a writer optimising for density under a hard
+    // cap correctly drops the filler and produces an epigram.
+    expect(budgetedWordCount('Um, work stuff.')).toBe(2)
+    expect(budgetedWordCount('Work stuff.')).toBe(2)
+    // The honest count is unchanged — telemetry and the drift detector read it.
+    expect(spokenWordCount('Um, work stuff.')).toBe(3)
+    // …and the discount cannot be farmed into a free sentence.
+    expect(budgetedWordCount('Well so like you know right yeah')).toBeGreaterThan(4)
+  })
+
   it('reaches the same answer on a reply that arrived whole', () => {
     // The audition harness holds a finished reply; the pipeline never does.
     // Both have to cut in the same place or the instrument measures a path
     // nobody is on.
     const reply = 'Just waiting on this machine. It has been a long morning. What about you, then?'
-    expect(capToBudget(reply, 10)).toBe('Just waiting on this machine. It has been a long morning.')
+    // ELEVEN WORDS DO NOT FIT UNDER TEN, and until 10 September they did: the
+    // loop pushed a sentence and THEN tested the running total, so the sentence
+    // that broke the budget was always the one already added. Measured over 487
+    // production turns, 67 exceeded their cap and only 17 were flagged trimmed.
+    expect(capToBudget(reply, 10)).toBe('Just waiting on this machine.')
+    expect(capToBudget(reply, 11)).toBe('Just waiting on this machine. It has been a long morning.')
     expect(capToBudget(reply, 30)).toBe(reply)
+    // The sentence ceiling, which the band table stated at four bands and
+    // nothing enforced. "One sentence, never two" was disobeyed on 55% of turns.
+    expect(capToBudget(reply, 30, { sentences: 1 })).toBe('Just waiting on this machine.')
+    expect(capToBudget(reply, 30, { sentences: 2 }))
+      .toBe('Just waiting on this machine. It has been a long morning.')
     // One long sentence survives whole, exactly as the streaming path leaves it.
     const long = 'It has been an unusually long and complicated morning in here for a Tuesday, honestly.'
     expect(capToBudget(`${long} And you?`, 6)).toBe(long)

@@ -10,6 +10,12 @@ markers, and both are meant to be updated by whoever does the work.
 read [`HUMANNESS.md`](HUMANNESS.md) instead. It is the only document that
 describes the whole judgement machine end to end, in the present tense.
 
+For the measured failures in the latest Maya, Nadia and Robin reps, read
+[`REP-BEHAVIOUR-AUDIT-2026-09-09.md`](REP-BEHAVIOUR-AUDIT-2026-09-09.md).
+It traces greeting overshoot, warmth rewards for dismissals, unreliable exits,
+response latency and grades based on insufficient evidence. Findings only;
+the recommended fixes have not been implemented.
+
 ---
 
 ## Start here

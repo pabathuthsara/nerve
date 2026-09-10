@@ -56,6 +56,11 @@ const COMFORT_WEIGHT: Record<FastReason['code'], number> = {
   'open-question': 0.1,
   'engaged-length': 0.4,
   callback: 0.3,
+  // Contempt is an EASE collapse before it is a liking one: being told to go
+  // away makes a conversation unbearable faster than it makes you dislike
+  // somebody. Above `dead-end-streak`, which is the same failure arrived at
+  // slowly.
+  contempt: 0.8,
   'dead-end': 0.3,
   'dead-end-streak': 0.6,
   'filler-rate': 0.2,
@@ -66,6 +71,7 @@ const LIKING_WEIGHT: Record<FastReason['code'], number> = {
   'open-question': 0.5,
   'engaged-length': 0.3,
   callback: 1.0,
+  contempt: 1.0,
   'dead-end': 0.5,
   'dead-end-streak': 0.4,
   'filler-rate': 0.1,
@@ -160,6 +166,14 @@ export interface WarmthEvent {
   turnIndex: number
   /** Applied delta, after gain/decay and after clamping to floor/ceiling. */
   delta: number
+  /**
+   * The score's own contribution, after gain/decay but WITHOUT natural decay.
+   *
+   * `delta` is net of the turn's decay; this is not. The distinction only
+   * matters to `retractFast`, and getting it wrong would refund the passage of
+   * time every time a judgement overturned a mechanical reward.
+   */
+  scaledDelta: number
   /** Before gain/decay. Kept so the asymmetry is auditable in telemetry. */
   rawDelta: number
   /** Warmth lost to per-turn natural decay, included in `delta`. */
@@ -498,6 +512,16 @@ export class WarmthEngine {
     likingRaw?: number
     /** This turn was allowed past the per-turn cap. */
     breakthrough?: boolean
+    /**
+     * Whether a fall on this turn may open the repair window. Default true.
+     *
+     * CONTEMPT IS NOT A MISSTEP. A fall arms a two-turn bonus and tells her
+     * "He misjudged it and is recovering. Let him, if he earns it." — which is
+     * the right response to a fumble and the wrong response to "fuck off".
+     * Measured on 9 September: the dismissal armed the window, and the next
+     * turn was priced as a recovery from it.
+     */
+    repairable?: boolean
   }): WarmthEvent {
     const bandBefore = this.band
     // Time is attributed to the band that was actually occupied while it
@@ -525,9 +549,10 @@ export class WarmthEngine {
     if (breakthrough) this.breakthroughCount += 1
 
     // A real fall opens the window; anything else closes it. Ordinary per-turn
-    // decay is not a misstep and must not arm a bonus.
-    if (delta <= REPAIR_TRIGGER) this.lastFallTurn = params.turnIndex
-    else if (repaired) this.lastFallTurn = null
+    // decay is not a misstep and must not arm a bonus — and neither is contempt,
+    // which is a decision rather than a slip. See `repairable`.
+    if (delta <= REPAIR_TRIGGER && params.repairable !== false) this.lastFallTurn = params.turnIndex
+    else if (repaired || params.repairable === false) this.lastFallTurn = null
 
     this.peakValue = Math.max(this.peakValue, this.current)
     this.troughValue = Math.min(this.troughValue, this.current)
@@ -542,6 +567,13 @@ export class WarmthEngine {
       at: Math.round(params.at * 100) / 100,
       turnIndex: params.turnIndex,
       delta: Math.round((this.warmth - warmthBefore) * 100) / 100,
+      // THE SCORE'S OWN CONTRIBUTION, WITHOUT THE DECAY.
+      //
+      // `delta` above is NET: `naturalDecay` was subtracted after
+      // `warmthBefore` was captured, so it is inside that number. Retracting
+      // `delta` would therefore refund the turn's decay as well, handing warmth
+      // back for the passage of time. This is the part a retraction may undo.
+      scaledDelta: Math.round(delta * 100) / 100,
       rawDelta: params.rawDelta,
       naturalDecay,
       source: repaired ? 'repair' : params.source,
@@ -569,7 +601,12 @@ export class WarmthEngine {
    * hold that index and hand it back with any slow score for the same turn —
    * see applySlow.
    */
-  applyFast(score: FastScore, at: number, userText: string): WarmthEvent {
+  applyFast(
+    score: FastScore,
+    at: number,
+    userText: string,
+    options: { repairable?: boolean } = {},
+  ): WarmthEvent {
     this.turnIndex += 1
 
     // The same reasons, weighted differently per axis. See COMFORT_WEIGHT /
@@ -597,6 +634,7 @@ export class WarmthEngine {
       rawDelta: taper(score.raw),
       comfortRaw: taper(comfortRaw),
       likingRaw: taper(likingRaw),
+      ...(options.repairable !== undefined ? { repairable: options.repairable } : {}),
       source: 'fast',
       reason: score.reasons.length ? dominantReason(score.reasons) : 'no signal',
       userText,

@@ -32,6 +32,7 @@ import {
 import { bandDirectiveParts, bandPermissionParts, type DirectiveContext } from './bands'
 import { postureClause, type Posture } from './affect'
 import { reciprocityClauses, type UserTurnShape } from './reciprocity'
+import { isLeaving, type SceneExit } from './leaving'
 
 export interface SteeringContext extends DirectiveContext {
   persona: Persona
@@ -102,6 +103,17 @@ export interface SteeringContext extends DirectiveContext {
    * offered her something. He had said hello. See `invitedThisTurn`.
    */
   firstExchange?: boolean
+  /**
+   * Where the scene is (`./leaving.ts`). Absent means `'present'`.
+   *
+   * Once she has decided to go, every clause that tells her to DO something is
+   * a clause arguing against it — and one of them said so in as many words.
+   * `wantClauses` at warmth 20-59 shipped "You are not going yet." as the last
+   * system message before every generation, so on the turn after "Just fuck
+   * off" the most recent instruction she had was that she was staying. She duly
+   * stayed, twice, and the rep ran to the clock.
+   */
+  exit?: SceneExit
 }
 
 /**
@@ -164,6 +176,8 @@ export function composeSteering(context: SteeringContext): string {
   // the band's decision and the gate's own, and this line is not allowed a
   // third opinion. See `lib/warmth/reciprocity.ts`.
   const invited = invitedThisTurn(context)
+  const leaving = isLeaving(context.exit ?? 'present')
+  const greeting = bareGreeting(context)
   return assemble([
     // Her own band table when she has one, the shared one otherwise. The band
     // still owns reply length either way — see `BandDirectives`.
@@ -171,20 +185,82 @@ export function composeSteering(context: SteeringContext): string {
     // Directly under the band, because it qualifies the band: it is the clause
     // that decides whether this turn has earned what the band allows.
     reciprocityClauses(context.warmth, context.his ?? null),
+    // ABOVE EVERYTHING ELSE THAT IS DROPPABLE. When she is going, that is the
+    // most important thing she can be told, and it replaces rather than joins
+    // the clauses below — see `leavingClauses`.
+    leavingClauses(context),
+    // A hello is answered with a hello. The band's "Answer only what he asked"
+    // has no referent when he asked nothing, and what filled the gap was her
+    // mood: both stored openers were a greeting followed by a concrete
+    // observation lifted straight out of the deterministic mood line.
+    greeting ? GREETING_CLAUSE : [],
     postureClauses(context),
     repairClauses(context),
     invited ? bandPermissionParts(context.warmth, context) : [],
-    // The want is NOT gated, and that is deliberate: when he has given her
-    // nothing, an agenda pulling her away from him is exactly the right thing
-    // for her to have. It is the one standing order that is not about him.
-    standing ? wantClauses(context.persona, context.warmth) : [],
+    // The want is a standing order and a permission to DRIVE, so it rides the
+    // same two gates the others do — with one carve-out kept deliberately: it
+    // STILL ships on an ordinary dead end mid-rep, because an agenda pulling
+    // her away from a man who has given her nothing is exactly right there.
+    // What it must not do is fill her very first line to a stranger who has
+    // said hello, or argue with an exit she has already committed to.
+    standing && !greeting && !leaving ? wantClauses(context.persona, context.warmth) : [],
     personalityClauses(context.persona, context.warmth),
     // The gates are. "You may start a topic" and "You may use his name" are
     // permissions to drive, same as the band's invitation, and a line that
     // says both "match him, do not fill the gap" and "start a topic" is the
     // third answer nobody asked for.
-    standing && invited ? gateClauses(context.persona, context.warmth) : [],
+    standing && invited && !leaving ? gateClauses(context.persona, context.warmth) : [],
   ])
+}
+
+/**
+ * He has said hello and nothing else.
+ *
+ * The predicate was already here, buried inside `invitedThisTurn`, where its
+ * entire effect was to WITHHOLD permissions. Nothing anywhere said what a
+ * greeting is answered WITH — so the band said "Answer only what he asked",
+ * he had asked nothing, and the sentence had no referent. What filled the
+ * vacuum was the next most recent instruction, which was her mood.
+ *
+ * Exported so the one definition serves the invitation gate, the want gate and
+ * the greeting clause alike.
+ */
+export function bareGreeting(context: SteeringContext): boolean {
+  if (!context.firstExchange) return false
+  if (!context.his) return false
+  return !context.his.askedQuestion && !context.his.disclosed
+}
+
+/**
+ * The whole of what a greeting is answered with.
+ *
+ * One clause, and it is a SHAPE rather than a script — rule 10 keeps authored
+ * words in the persona file, and a line written here would be the same line
+ * from all nine characters. "Nothing else yet" is the load-bearing half: it is
+ * the only instruction in the composed line that tells her a reply can be
+ * finished after four words.
+ */
+const GREETING_CLAUSE = [
+  'He has only said hello. Say hello back and nothing else yet.',
+]
+
+/**
+ * She is going, and this is the only thing she needs to be told.
+ *
+ * Two states, and the difference matters. `wrapping` is a decision taken — she
+ * is finishing this, not continuing it — and she may still take a turn or two
+ * to do it. `leaving` is the last line.
+ *
+ * Phrased as what is happening rather than as an instruction to perform,
+ * because §12's lesson is that anything at maximum recency reading as "do this
+ * now" gets done now, and "say goodbye" restated every turn produces a
+ * character who says goodbye four times.
+ */
+export function leavingClauses(context: SteeringContext): string[] {
+  const exit = context.exit ?? 'present'
+  if (exit === 'wrapping') return ['You are done with this. Wind it up and go.']
+  if (exit === 'leaving') return ['This is your last line. Say it and leave.']
+  return []
 }
 
 /**
