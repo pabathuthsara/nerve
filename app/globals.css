@@ -1797,12 +1797,11 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
    appears twice on a screen one of them is wrong, and a page this long would
    break that rule immediately if the accent were allowed to decorate. So volt
    is spent on exactly two things: the primary action, which is the same action
-   every time it appears, and the composite score in the replay — which is the
+   every time it appears, and the composite score on the scorecard — which is the
    §03 rule verbatim, applied to a page that happens to scroll.
 
    Mobile is the default and not the fallback. Every grid below starts at one
-   column and earns more; nothing is positioned absolutely except the replay's
-   score overlay; every interactive target clears 44px.
+   column and earns more; every interactive target clears 44px.
    --------------------------------------------------------------------------- */
 
 .site {
@@ -1943,134 +1942,8 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .hero__fine { margin: 0; color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: 0.05em; }
 
 @media (min-width: 1024px) {
-  .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 520px); align-items: center; gap: 64px; }
   .hero__actions .arena-button { flex: 0 0 auto; }
 }
-
-/* ---- the hero rep ---- */
-/* Deliberately the live rep screen and not a transcript: `/rep/[persona]/live`
-   is an orb, a clock and one caption at a time, and a scrolling column of chat
-   bubbles told every visitor that a voice product was a messaging app. */
-
-.replay { display: grid; gap: 10px; }
-
-.stage {
-  position: relative;
-  height: 470px;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  overflow: hidden;
-  border: 1px solid var(--line-bright);
-  border-radius: 2px;
-  background: var(--surface);
-}
-.stage__top {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--line);
-  padding: 8px 14px;
-}
-.stage__top .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stage__clock { flex: 0 0 auto; color: var(--text); font-size: 17px; }
-
-.stage__body {
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 22px;
-  padding: 20px 20px 24px;
-  background: var(--ground);
-}
-
-/* Chroma arrives with warmth, the same rule the roster avatars follow (D9):
-   at rest she is graphite and nothing competes with volt. The ring is the
-   speaking indicator — a hairline that widens, never a glow. */
-.stage__orb {
-  position: relative;
-  width: clamp(104px, 26vw, 148px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background-color: var(--orb-deep);
-  background-image:
-    radial-gradient(circle at 34% 30%, var(--orb-sheen), transparent 38%),
-    radial-gradient(circle at 52% 56%, var(--orb-core), transparent 74%);
-  filter: saturate(calc(0.2 + var(--orb-chroma, 0) * 1.1));
-  opacity: calc(0.62 + var(--orb-chroma, 0) * 0.38);
-  transition: filter 500ms cubic-bezier(.2,0,0,1), opacity 500ms cubic-bezier(.2,0,0,1);
-}
-.stage__orb::after {
-  content: '';
-  position: absolute;
-  inset: -10px;
-  border: 1px solid color-mix(in srgb, var(--orb-sheen) 40%, transparent);
-  border-radius: 50%;
-  opacity: calc(0.15 + var(--orb-level, 0) * 0.85);
-  transform: scale(calc(1 + var(--orb-level, 0) * 0.06));
-  transition: opacity 90ms linear, transform 90ms linear;
-}
-
-.stage__caption { min-height: 96px; display: grid; align-content: start; gap: 8px; text-align: center; }
-.stage__caption strong {
-  color: var(--text);
-  font-family: var(--font-display), sans-serif;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-.stage__caption p { max-width: 34ch; margin: 0 auto; color: var(--text); font-size: clamp(15px, 1.7vw, 17px); line-height: 1.5; }
-.stage__caption p.mute { color: var(--text-mute); font-size: 14px; }
-@media (prefers-reduced-motion: no-preference) {
-  .stage__caption > * { animation: caption-in 260ms cubic-bezier(.2,0,0,1) both; }
-}
-
-.stage__meters { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; width: min(100%, 320px); }
-.stage__meter { display: grid; gap: 7px; opacity: .4; transition: opacity 180ms; }
-.stage__meter--live { opacity: 1; }
-.stage__meter .label { display: inline-flex; align-items: center; gap: 5px; }
-.stage__blocks { display: flex; gap: 2px; height: 10px; align-items: flex-end; }
-.stage__blocks span { flex: 1; height: 3px; background: var(--line-bright); transition: height 90ms linear, background 90ms linear; }
-.stage__blocks span.on { height: 10px; background: var(--text); }
-.stage__blocks--flat span.on { height: 5px; background: var(--text-dim); }
-
-.stage__warmth {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 4px 10px;
-  border-top: 1px solid var(--line);
-  padding: 12px 14px 14px;
-}
-.stage__warmth .label { grid-column: 1 / -1; }
-.stage__warmth strong { font-size: 24px; font-weight: 500; line-height: 1; transition: color 400ms; }
-.stage__band { color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
-.stage__track { grid-column: 1 / -1; height: 3px; margin-top: 8px; background: var(--surface-2); }
-.stage__track > i { display: block; height: 100%; transition: width 500ms cubic-bezier(.2,0,0,1), background 400ms; }
-
-/* The invitation. Audio cannot autoplay, and a page that makes noise on its
-   own is a page people close — so the tap is the point, not a limitation. */
-.stage__invite {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 14px;
-  border: 0;
-  padding: 20px;
-  background: color-mix(in srgb, var(--ground) 76%, transparent);
-  backdrop-filter: blur(3px);
-  cursor: pointer;
-}
-.stage__invite .arena-button { pointer-events: none; }
-
-.replay__controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
-.replay__stamp { color: var(--text-mute); }
-.replay__buttons { display: flex; gap: 8px; margin-left: auto; }
 
 /* ---- the scorecard, as a document ---- */
 
@@ -2502,14 +2375,9 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
      to a 320px diagram is a row of slivers. */
   .loop-grid { grid-template-columns: 1fr 1fr; }
   .site-footer__inner { grid-template-columns: minmax(0, 1.4fr) minmax(0, 2fr); align-items: start; }
-  .stage { height: 512px; }
 }
 
-/* Narrow phones: the stage is the only thing on the page with a fixed shape,
-   so it is the only thing that needs telling to give some of it back. */
 @media (max-width: 380px) {
-  .stage { height: 430px; }
-  .stage__caption { min-height: 108px; }
   .scorecard__subs li { grid-template-columns: 92px minmax(0, 1fr) 26px; }
 }
 

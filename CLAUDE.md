@@ -292,11 +292,15 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    a pull request, and reach the database through `npm run db:seed` and
    `npm run db:content`. For field challenges this is a safety rule, not a
    preference: the worst realistic outcome of any challenge is a polite no. (§09, §16)
-   **The landing page's hero rep inverts this, and only there.** His half of it
-   is authored and read aloud verbatim; **hers is captured from the real persona
-   and must never be hand-written**, because what she says is the product and a
-   written version of it would be advertising our own prose. `npm run hero:audio`
-   records both. It spends money, so it is run by hand and never from a build.
+   **The landing page's hero rep used to invert this, and the rule it was
+   carrying outlives it.** The played-back rep was removed from `/` on
+   10 September 2026 because it did not work properly; `RepReplay`, its CSS and
+   the hero's second column went with it, and the hero is one column of copy now.
+   `scripts/hero-audio.ts` and `public/hero/` are still in the tree and nothing
+   reads them. If a demo ever returns, the asymmetry is the part to keep: his
+   half may be authored and read aloud verbatim, **hers must be captured from the
+   real persona and never hand-written**, because what she says is the product
+   and a written version of it would be advertising our own prose.
 11. **Anything a user could pay to change has no user write path.** Plan, quota,
    the one-off sign-up rep, streak, unlocks, difficulty offsets and
    subscriptions are read-only to their owner and written by the service role.

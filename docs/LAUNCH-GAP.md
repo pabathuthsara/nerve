@@ -96,6 +96,18 @@ form: six blocks to scroll past before the email field on `/login`, a screen
 only people who already have an account ever see. Both doors are now the door
 and nothing else. The landing page is the only place the pitch lives.
 
+**The hero rep was removed on 10 September 2026, and everything below it about
+the hero is now history.** It did not work properly on the page, so `RepReplay`,
+its whole `.replay` / `.stage` block in `globals.css`, and the two-column hero
+grid that existed only to seat it are gone; `/` opens on one column of copy, the
+two CTAs and the rules block, and the §07 proof stays where it moved to — the
+static scorecard, which was always the part that argued rather than demonstrated.
+What is left over and unread: `scripts/hero-audio.ts`, `npm run hero:audio` and
+the twelve files in `public/hero/`. They are kept rather than deleted because the
+capture was expensive and the two rules underneath it are the ones a future demo
+has to obey — read the paragraphs below for those, not for what the page does
+now.
+
 **The hero is the live rep screen, not a transcript.** §11 asks for "a live
 30-second demo rep with no sign-up", and that cannot be built: it needs a
 microphone, a WebRTC session, and an unauthenticated route that spends money on

@@ -2,12 +2,11 @@
  * The landing page (§11).
  *
  * The order is an argument, not a layout. It opens with what a rep is, because
- * the thing being sold is a format rather than a feature; it shows one being
- * played before it claims anything; it states the scoring law immediately after,
- * because "you are not scored on whether it worked" is the sentence that
- * separates this from the category; and it puts "what Nerve is not" above the
- * price, because the four things it is not are the four reasons somebody is
- * hesitating.
+ * the thing being sold is a format rather than a feature; it states the scoring
+ * law immediately after, because "you are not scored on whether it worked" is
+ * the sentence that separates this from the category; and it puts "what Nerve is
+ * not" above the price, because the four things it is not are the four reasons
+ * somebody is hesitating.
  *
  * Nothing here quotes a user count, a success rate or a testimonial. There are
  * none, and §02 rule 12 means we do not write copy we cannot stand behind. The
@@ -17,7 +16,6 @@
 import Link from 'next/link'
 import { ArrowRight, Check } from 'lucide-react'
 import { Mark, dimensionMark } from '@/components/marks'
-import { RepReplay } from './rep-replay'
 import { LoopDiagram } from './figures'
 import { SiteSection, SITE_LINKS } from './site-chrome'
 import { PRESENTATION } from '@/lib/personas/presentation'
@@ -169,20 +167,17 @@ function Hero() {
         </div>
         <p className="hero__fine">Sign-up includes a voice rep. No card.</p>
       </div>
-      <div className="hero__demo">
-        <RepReplay />
-      </div>
     </section>
   )
 }
 
 /**
- * The rep the hero used to show, moved to where it argues best.
+ * What we actually measure, as a document.
  *
- * The hero's job is "this sounds like a person". This one's job is "and here
- * is what we actually measure" — and the sharpest way to make §07 concrete is
- * a rep that ends in her leaving and scores 87 anyway. Static: it is a
- * document, not a demonstration, so it costs no JavaScript.
+ * The sharpest way to make §07 concrete is a rep that ends in her leaving and
+ * scores 87 anyway. Static: it is a document, not a demonstration, so it costs
+ * no JavaScript — which is also why it outlived the played-back rep the hero
+ * used to carry.
  */
 function ScorecardArtifact() {
   const subs = [
