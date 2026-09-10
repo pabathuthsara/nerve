@@ -1318,7 +1318,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
           // One thing, once. The standing directive stands down for this turn
           // so the decision arrives on its own rather than behind a line that
           // still says she would rather be somewhere else.
-          warmthRef.current?.handOverToClosing()
+          warmthRef.current?.handOverToClosing(offering ? 'number' : 'leave')
           providerRef.current?.reinforce(
             interview
               ? (roundType(round).nextSteps ? INTERVIEW_NEXT_STEPS_DIRECTIVE : INTERVIEW_WRAP_UP_DIRECTIVE)

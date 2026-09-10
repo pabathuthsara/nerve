@@ -264,6 +264,18 @@ export interface VoiceSelection {
  * she does with a flat one. `note` is for the author and never reaches a model.
  */
 export interface PersonaExample {
+  /**
+   * His line. Deliberately ordinary, and deliberately ANONYMOUS.
+   *
+   * It must never put a fact about him into his mouth — not a name, not where
+   * he works, not where he lives. A few-shot exchange is read as conversation
+   * that happened, and on 10 September one of these shipped as
+   * `him: 'I am Dan, by the way.'` — after which she called every user Dan.
+   *
+   * That is the same frame break as the `# His name` leak the examples were
+   * written alongside: a stranger who knows a name she was never given is not
+   * warm, she is a system that has read a file. `examples.test.ts` refuses it.
+   */
   him: string
   her: string
   /** Why this one is in the set. Read by a human, stripped at compile. */

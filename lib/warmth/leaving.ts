@@ -57,6 +57,16 @@ import { flattenPunctuation } from './text'
  */
 export type SceneExit = 'present' | 'wrapping' | 'leaving'
 
+/**
+ * What the wind-down decided (rule 3).
+ *
+ * Thirty seconds out she is told one of two things: leave, or offer him her
+ * number. The decision is taken once, cannot change, and has to survive the
+ * turns after it — see `WarmthSession.closingDecision` for the rep where it
+ * did not.
+ */
+export type ClosingDecision = 'leave' | 'number'
+
 const ORDER: Record<SceneExit, number> = { present: 0, wrapping: 1, leaving: 2 }
 
 /**

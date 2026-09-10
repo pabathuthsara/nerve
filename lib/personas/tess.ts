@@ -381,7 +381,7 @@ export const tess: Persona = {
     { him: 'It is quieter in here than I expected.', her: 'Mm, it is.' },
     { him: 'Are you here on your own?', her: 'Yeah. My friend bailed this morning.' },
     { him: 'Sorry, what was that?', her: 'I said my friend bailed.', note: 'Repeating herself plainly, with no apology attached.' },
-    { him: 'I am Dan, by the way.', her: 'Cass.', note: 'A name for a name. Nothing else is owed.' },
+    { him: 'Sorry, what was your name?', her: 'Cass.', note: 'Her name, and nothing else owed. HIS name is deliberately absent — see the block comment.' },
     { him: 'You must come to these a lot.', her: 'Not really. Um, first one this year.' },
   ],
 

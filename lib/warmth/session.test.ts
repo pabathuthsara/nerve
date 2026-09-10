@@ -402,6 +402,38 @@ describe('the scene state', () => {
     expect(session.shouldEndScene).toBe(true)
   })
 
+  it('holds the number decision for the rest of the rep, not for one turn', () => {
+    // MEASURED, 10 September. She offered her number, he asked for it, and on
+    // the very next turn ordinary steering had resumed and the contract's own
+    // standing refusal took over: "Not while this is still going... Never
+    // promise it for later." She offered and then refused, consecutively, in
+    // the one ending the product is built around.
+    //
+    // `NUMBER_DIRECTIVE` is reinforced once and `closingHandover` stands the
+    // band down for that single turn. The DECISION has to outlive both.
+    const session = make()
+    session.handOverToClosing('number')
+    // The hand-over turn itself: the band stands down entirely so the decision
+    // arrives on its own. Unchanged.
+    expect(session.statelessDirective()).toBe('')
+    // Every turn after it still carries the decision.
+    for (let turn = 0; turn < 3; turn += 1) {
+      const line = session.statelessDirective()
+      expect(line, `turn ${turn}`).toContain('offered him your number')
+      expect(line, `turn ${turn}`).toContain('Never say the digits out loud')
+      expect(line, `turn ${turn}`).not.toContain('not going yet')
+    }
+  })
+
+  it('does not tell a character who is leaving that she offered anything', () => {
+    const session = make()
+    session.handOverToClosing('leave')
+    session.statelessDirective()
+    const line = session.statelessDirective()
+    expect(line).toContain('Wind it up and go')
+    expect(line).not.toContain('number')
+  })
+
   it('does NOT run on when the CLOCK started the wind-down', () => {
     // The thirty-second hand-over is the moment the product is built around —
     // she offers her number and the rep ends on the timer. Auto-advancing it

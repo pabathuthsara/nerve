@@ -18,7 +18,7 @@ import { NEGATIVE_TURN_THRESHOLD, slowScoreTriggers, type SlowTriggerReason } fr
 import { DEFAULT_REPLY_SHAPE, type ReplyShape, type TurnKind } from './timing'
 import { isOpenQuestion } from './fast'
 import { DISCLOSURE_WORDS, type UserTurnShape } from './reciprocity'
-import { advanceExit, isDismissal, isUserFarewell, type SceneExit } from './leaving'
+import { advanceExit, isDismissal, isUserFarewell, type ClosingDecision, type SceneExit } from './leaving'
 import type { UserTurnKind } from './turn-kind'
 import { personaNotes } from './persona-notes'
 import type { SteeringContext } from './steering'
@@ -158,6 +158,25 @@ export class WarmthSession {
    */
   private exitByUser = false
   /**
+   * What the wind-down decided, kept for the REST of the rep.
+   *
+   * `NUMBER_DIRECTIVE` is reinforced once, on the turn the decision is taken,
+   * and `closingHandover` stands the band down for that one turn. That was
+   * enough when the offer was the last thing she said and is not enough the
+   * moment he answers it — measured on 10 September, she offered her number,
+   * he asked for it, and on the next turn ordinary steering resumed and the
+   * contract's own rule took over:
+   *
+   *   "Not while this is still going... Never promise it for later."
+   *
+   * So she offered and then refused, in consecutive turns, which is the one
+   * ending the product is built around arriving as a contradiction. The
+   * contract defers to the bracketed line in as many words — "If that changes,
+   * the direction in brackets will tell you so" — and until now the direction
+   * only told her once.
+   */
+  private closingDecision: ClosingDecision = 'leave'
+  /**
    * The last four exchanges, oldest first, for the judge.
    *
    * The slow scorer used to see one pair and nothing else, so a RUN of anything
@@ -249,6 +268,7 @@ export class WarmthSession {
       his: this.lastUserShape,
       firstExchange: this.firstExchange,
       exit: this.exit,
+      ...(this.exit === 'present' ? {} : { closing: this.closingDecision }),
       ...this.openingBriefFlag,
     }
   }
@@ -338,8 +358,9 @@ export class WarmthSession {
    * takes another turn before the rep ends she gets her band back rather than
    * nothing.
    */
-  handOverToClosing(): void {
+  handOverToClosing(decision: ClosingDecision = 'leave'): void {
     this.closingHandover = true
+    this.closingDecision = decision
     this.commitExit('wrapping')
   }
 

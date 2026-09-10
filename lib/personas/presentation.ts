@@ -12,6 +12,19 @@
  */
 
 export interface PersonaPresentation {
+  /**
+   * Her display name.
+   *
+   * Carried here rather than left to whoever is rendering, because it was left
+   * to whoever was rendering and the landing page had its own copy: renaming
+   * rung 1 from Tess to Cass on 10 September updated the persona, the contract,
+   * the database and the roster card, and left the marketing page introducing
+   * her by the old name.
+   *
+   * `presentation.test.ts` pins this against `Persona.name`, so the public half
+   * and the engine half cannot drift again.
+   */
+  name: string
   /** Scene, in the register the UI uses. Shorter than the engine's `scene`. */
   setting: string
   /** Two words at most. Roster cards and history rows. */
@@ -42,6 +55,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
    * they answer, never about whether they get the job.
    * ---------------------------------------------------------------- */
   'dan-whitfield': {
+    name: 'Dan Whitfield',
     setting: 'Glass meeting room, mid-morning',
     settingShort: 'Screen call',
     hook: 'He has your CV open and four of these before eleven.',
@@ -52,6 +66,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   'aisha-rahman': {
+    name: 'Aisha Rahman',
     setting: 'Panel room, early afternoon',
     settingShort: 'Panel',
     hook: 'She is chairing, two colleagues are on the call, and she is writing everything down.',
@@ -62,6 +77,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   'marcus-vance': {
+    name: 'Marcus Vance',
     setting: 'Office booth, late afternoon',
     settingShort: 'Technical',
     hook: 'No small talk. He starts with the work and stays there.',
@@ -72,6 +88,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   'elena-kovac': {
+    name: 'Elena Kovač',
     setting: 'Corner office, end of the day',
     settingShort: 'Final round',
     hook: 'Twenty minutes that were originally thirty, and a phone face down on the desk.',
@@ -90,6 +107,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
    * and "flirty" is a dial in her file, never a description on a screen.
    */
   tess: {
+    name: 'Cass',
     setting: 'Public gallery, weekday afternoon',
     settingShort: 'Gallery',
     hook: 'A day off, a room full of paintings, and no idea what any of them are.',
@@ -100,6 +118,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   nadia: {
+    name: 'Nadia',
     setting: 'Second-hand bookshop, Saturday afternoon',
     settingShort: 'Bookshop',
     hook: 'She is hunting for a birthday present for her sister and getting nowhere.',
@@ -110,6 +129,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   priya: {
+    name: 'Priya',
     setting: 'Gym floor, weekday evening',
     settingShort: 'Gym',
     hook: 'She is between sets with three left to go.',
@@ -120,6 +140,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   maya: {
+    name: 'Maya',
     setting: 'Coffee shop, Sunday morning',
     settingShort: 'Coffee shop',
     hook: 'She came alone with a notebook and is two-thirds through a drink.',
@@ -130,6 +151,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   jules: {
+    name: 'Jules',
     setting: 'Loud bar, Friday night',
     settingShort: 'Bar',
     hook: 'She is mid-conversation with a friend she sees twice a year.',
@@ -140,6 +162,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   erin: {
+    name: 'Erin',
     setting: 'Train platform, evening',
     settingShort: 'Platform',
     hook: 'Four minutes until her train, headphones half in.',
@@ -150,6 +173,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   sam: {
+    name: 'Sam',
     setting: 'House party, in the kitchen',
     settingShort: 'House party',
     hook: 'Her friend vanished upstairs twenty minutes ago.',
@@ -160,6 +184,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   robin: {
+    name: 'Robin',
     setting: 'Hotel lobby, early evening',
     settingShort: 'Hotel lobby',
     hook: 'Her car is fifteen minutes late and she is in no hurry about it.',
@@ -170,6 +195,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     portraitUrl: '',
   },
   alex: {
+    name: 'Alex',
     setting: 'Gallery opening, early evening',
     settingShort: 'Gallery',
     hook: 'She came for one specific person and they have not arrived.',

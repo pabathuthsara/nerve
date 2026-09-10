@@ -76,6 +76,30 @@ describe('authored register examples', () => {
       .toBe(true)
   })
 
+  it('never puts a fact about HIM into his mouth', () => {
+    // MEASURED, 10 September 2026. One of these shipped as
+    // `him: 'I am Dan, by the way.'` — and she called the user Dan, in a rep
+    // where he had never said it.
+    //
+    // A few-shot exchange is read as a conversation that HAPPENED, so a
+    // personal fact planted in his line becomes a personal fact she believes.
+    // That is the same frame break as the `# His name` leak these examples were
+    // written alongside, arriving through the fix rather than through the bug.
+    //
+    // A QUESTION is fine ("Are you from London?" asserts nothing), and so is
+    // something of HERS he can see ("What do you think of the Tana French?").
+    // What is refused is him STATING something about himself.
+    const NAMES = /\b(?:i(?:'m| am)|my name(?:'s| is)|call me)\s+[A-Z][a-z]+|,\s*by the way\b/
+    const FIRST_PERSON_PROPER = /\bI\b[^.?!]*?\b(?!I\b)[A-Z][a-z]{2,}\b/
+    for (const persona of Object.values(PERSONAS)) {
+      for (const example of persona.examples ?? []) {
+        expect(example.him, `${persona.slug}: names him`).not.toMatch(NAMES)
+        expect(example.him, `${persona.slug}: gives him a proper noun`)
+          .not.toMatch(FIRST_PERSON_PROPER)
+      }
+    }
+  })
+
   it('never models the punctuation the contract forbids', () => {
     // The contract has said "Never use em-dashes" on every character since it
     // was written, and 42 of 1,274 turns contained one. An example carrying one

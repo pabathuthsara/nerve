@@ -1581,3 +1581,45 @@ Two things it owes:
   him anything this turn"* in the same line. The permission rides
   `includeStanding` and the suppression rides the directive, so they only
   collide on a changed turn. It is a Tier 0 decision of its own.
+
+### 15.5 Three defects found by talking to her (10 September, later)
+
+All three were reported from one real rep, and one of them I had introduced
+that morning.
+
+**She called the user Dan.** Her example set shipped with
+`him: 'I am Dan, by the way.'`, and she used it as his name in a rep where he
+had never said it. A few-shot exchange is read as a conversation that HAPPENED,
+so a personal fact planted in his line becomes a personal fact she believes —
+**the same frame break as the `# His name` leak the examples were written
+alongside, arriving through the fix instead of through the bug.** §14.6 listed
+parroting as the thing a listening pass would have to check; it was right, and
+this is what it looked like. Maya's set had the milder version, a town he
+supposedly worked in that she repeated back to him. `examples.test.ts` now
+refuses a name or a first-person proper noun in his half.
+
+**She offered her number and then refused it.** `NUMBER_DIRECTIVE` is
+reinforced once, on the turn the wind-down decides, and `closingHandover` stands
+the band down for that turn alone. Enough when the offer was her last line;
+useless the moment he answered it. On the next turn ordinary steering resumed
+and the contract's own standing rule took over — *"Not while this is still
+going… Never promise it for later"* — so she offered and refused in consecutive
+turns, in the one ending the product is built around.
+
+The contract defers to the bracketed line in as many words: *"If that changes,
+the direction in brackets will tell you so."* It told her once.
+`ClosingDecision` now rides the scene state for the rest of the rep, and carries
+the no-digits half with it because that half is absolute and now applies to more
+than one turn.
+
+**The front end still said Launderette.** Rule 10: content is authored in the
+repo and reaches the database through `npm run db:seed`. I changed the repo and
+did not seed, so every roster card, history row and setting label served the old
+character. Seeded now — and the landing page had a SECOND copy of her display
+name, hardcoded, which introduced her as Tess on the one surface §14 has a
+compliance reviewer reading. `PersonaPresentation.name` is the single public
+source and `presentation.test.ts` pins it against `Persona.name`.
+
+**The pattern in all three is one sentence:** a fact about a character that
+lives in two places will be wrong in one of them. The name, the room and the
+copy each had a second home, and each was stale in a different direction.

@@ -26,12 +26,20 @@ import { LEVEL_NAMES } from '@/lib/data/progression'
 import { PUBLIC_PLANS, SCREENER_NOTE, TRIAL_DAYS, repsLine } from '@/lib/site/plans'
 import type { CSSProperties } from 'react'
 
-/** The shipped roster, in rung order, with the tier name the app uses. */
+/**
+ * The shipped roster, in rung order, with the tier the app uses.
+ *
+ * THE NAME IS NOT WRITTEN HERE ANY MORE. It was, and renaming rung 1 from Tess
+ * to Cass on 10 September updated the persona, the contract, the database and
+ * the roster card, and left this page introducing her by the old name — on the
+ * one surface §14 has a merchant-of-record reviewer reading. `PRESENTATION` is
+ * the public half of a character and now carries it.
+ */
 const ROSTER = [
-  { slug: 'tess', tier: 1 as const, name: 'Tess' },
-  { slug: 'nadia', tier: 2 as const, name: 'Nadia' },
-  { slug: 'maya', tier: 3 as const, name: 'Maya' },
-  { slug: 'robin', tier: 4 as const, name: 'Robin' },
+  { slug: 'tess', tier: 1 as const },
+  { slug: 'nadia', tier: 2 as const },
+  { slug: 'maya', tier: 3 as const },
+  { slug: 'robin', tier: 4 as const },
 ]
 
 /**
@@ -313,7 +321,7 @@ function Roster() {
               />
               <div className="roster-card__head">
                 <span className="label">Tier {character.tier} · {LEVEL_NAMES[character.tier]}</span>
-                <h3 className="display-md">{character.name}</h3>
+                <h3 className="display-md">{presentation.name}</h3>
                 <span className="mute">{presentation.setting}</span>
               </div>
               <p className="roster-card__blurb">{presentation.blurb}</p>

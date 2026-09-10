@@ -84,7 +84,7 @@ export function GuidedBrief({ script }: { script: readonly GuidedStep[] }) {
       </ol>
       <p className="guided-brief__foot">
         The lines are examples, not a script to read. Anything in [brackets] is the word you fill in from what
-        she just said. This is the only character who does this — after Tess, the words are yours.
+        she just said. This is the only character who does this — after her, the words are yours.
       </p>
     </section>
   )

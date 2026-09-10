@@ -158,15 +158,28 @@ describe('characterization · compiled contracts', () => {
     // untouched. `tess.test.ts` asserts both halves.
     //
     // THE SLUG DID NOT MOVE. Every stored rep against rung 1 still resolves.
+    //
+    // ── AND BOTH MOVED ONCE MORE, FOR A BUG THE EXAMPLES CAUSED ─────────
+    //
+    // Cass shipped with `him: 'I am Dan, by the way.'` in her example set, and
+    // she called the user Dan in a rep where he had never said it. Maya's set
+    // named a town he supposedly worked in and she repeated it back to him.
+    //
+    // A few-shot exchange is read as a conversation that HAPPENED, so a
+    // personal fact planted in his line becomes a personal fact she believes —
+    // the same frame break as the `# His name` leak the examples were written
+    // alongside, arriving through the fix instead of through the bug.
+    // `examples.test.ts` refuses a name or a first-person proper noun in his
+    // half now.
     alex: { canEndScene: 'b6891988b7899fd3', stateless: '044f43223c1b272c', length: 7481 },
     erin: { canEndScene: '3f14d8a54fceded4', stateless: 'b086f49dcdbac4fa', length: 8228 },
     jules: { canEndScene: 'b79246fe190e2413', stateless: '8b4a49a3701b1e68', length: 8649 },
-    maya: { canEndScene: '75f1326018c93d0b', stateless: '5b0625532b4d30ef', length: 9551 },
+    maya: { canEndScene: '0534afb56941a33d', stateless: 'ee73c6eb82d56d8e', length: 9563 },
     nadia: { canEndScene: '50e5e3beb148ba27', stateless: '31e9deb5e53ba948', length: 10328 },
     priya: { canEndScene: '55110e31cab449e4', stateless: 'e582989e7cefec41', length: 8594 },
     robin: { canEndScene: '71bca423df662959', stateless: '3000cd913b25963a', length: 9813 },
     sam: { canEndScene: '0c282e4dd7f3f76d', stateless: '26ab3646768e5911', length: 8370 },
-    tess: { canEndScene: 'd9d8c2606a1127cb', stateless: '2257297c328218a4', length: 10608 },
+    tess: { canEndScene: '4e643d917ca52e4b', stateless: '7222c2eb5409beb6', length: 10613 },
   }
 
   it('covers every authored character, so a new one cannot slip past unpinned', () => {
@@ -241,23 +254,23 @@ describe('characterization · the pipeline arm', () => {
       alex: { prompt: 'a5a487316b591d2c', tts: '24db3ed2807bb4d4', turn: 'f6acbfc49fa3d135' },
       erin: { prompt: '85ae99ad55bf2137', tts: '4ee49a964282f2b6', turn: 'f6acbfc49fa3d135' },
       jules: { prompt: '8acfcf2e9eb9a200', tts: 'dbb369318facdfdd', turn: 'f5b2229cc620b177' },
-      maya: { prompt: '09b9767f1ac0093d', tts: 'cfe6e672a4864594', turn: 'f5b2229cc620b177' },
+      maya: { prompt: 'f83cb707e20b6919', tts: 'cfe6e672a4864594', turn: 'f5b2229cc620b177' },
       nadia: { prompt: 'afa133fb0f639057', tts: 'adafe2068533ead8', turn: 'f5b2229cc620b177' },
       priya: { prompt: '7466457675b92319', tts: '870c50002ec89bb0', turn: 'f5b2229cc620b177' },
       robin: { prompt: 'e7987982157375d8', tts: '04d5e936f442ce7f', turn: 'f5b2229cc620b177' },
       sam: { prompt: '8366f0a690f5c5ad', tts: '61d52974a0e6f66a', turn: 'f6acbfc49fa3d135' },
-      tess: { prompt: '61f4236895c25885', tts: 'a4d8cd933b426637', turn: 'f5b2229cc620b177' },
+      tess: { prompt: 'ef1a7fc5cb751aa5', tts: 'a4d8cd933b426637', turn: 'f5b2229cc620b177' },
     },
     shipped: {
       alex: { prompt: '83e0f45212e4e515', tts: '68cb66a0513de355', turn: 'f6acbfc49fa3d135' },
       erin: { prompt: '74145f5062b20866', tts: '15abd07e819da5b5', turn: 'f6acbfc49fa3d135' },
       jules: { prompt: '01aae49163e20b52', tts: 'e4ce4f2d3895289b', turn: 'f5b2229cc620b177' },
-      maya: { prompt: '397103384793624c', tts: '6ec90fd2c54b374b', turn: 'f5b2229cc620b177' },
+      maya: { prompt: '7e826a0ddb04a60d', tts: '6ec90fd2c54b374b', turn: 'f5b2229cc620b177' },
       nadia: { prompt: 'a7b0b0c6ff14aff7', tts: 'bc0ec26ebfa66ab8', turn: 'f5b2229cc620b177' },
       priya: { prompt: '08558312780c0ddc', tts: 'eaf47d8ed9daad75', turn: 'f5b2229cc620b177' },
       robin: { prompt: 'c85e8daf84ef4d6f', tts: 'f0da90696682069a', turn: 'f5b2229cc620b177' },
       sam: { prompt: '455eaa24e9d45b35', tts: '63159e2880527025', turn: 'f6acbfc49fa3d135' },
-      tess: { prompt: 'fb9cb45eba024605', tts: 'fa9fbd31881dd6fb', turn: 'f5b2229cc620b177' },
+      tess: { prompt: '6e358101081cb0ed', tts: 'fa9fbd31881dd6fb', turn: 'f5b2229cc620b177' },
     },
   }
 

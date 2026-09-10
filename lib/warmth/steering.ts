@@ -32,7 +32,7 @@ import {
 import { bandDirectiveParts, bandPermissionParts, type DirectiveContext } from './bands'
 import { postureClause, type Posture } from './affect'
 import { reciprocityClauses, type UserTurnShape } from './reciprocity'
-import { isLeaving, type SceneExit } from './leaving'
+import { isLeaving, type ClosingDecision, type SceneExit } from './leaving'
 
 export interface SteeringContext extends DirectiveContext {
   persona: Persona
@@ -114,6 +114,14 @@ export interface SteeringContext extends DirectiveContext {
    * stayed, twice, and the rep ran to the clock.
    */
   exit?: SceneExit
+  /**
+   * What the wind-down decided, once `exit` has left `'present'`.
+   *
+   * `'number'` is the one moment the product is built around, and it needs to
+   * hold for more than the single turn `NUMBER_DIRECTIVE` is reinforced on. See
+   * `leavingClauses`.
+   */
+  closing?: ClosingDecision
 }
 
 /**
@@ -258,9 +266,31 @@ const GREETING_CLAUSE = [
  */
 export function leavingClauses(context: SteeringContext): string[] {
   const exit = context.exit ?? 'present'
+  if (exit === 'present') return []
+
+  // SHE HAS ALREADY OFFERED IT, AND SHE IS NOT TAKING IT BACK.
+  //
+  // The contract carries a standing refusal — "Not while this is still going...
+  // Never promise it for later" — which is right for the body of a rep and
+  // wrong the instant the wind-down has decided otherwise. It defers to this
+  // line in as many words: "If that changes, the direction in brackets will
+  // tell you so."
+  //
+  // It told her once. `NUMBER_DIRECTIVE` is reinforced on the turn the decision
+  // is taken and `closingHandover` stands the band down for that turn alone, so
+  // when he answered the offer by asking for the number, ordinary steering had
+  // resumed and the contract won. Measured on 10 September: she offered, he
+  // asked, she said not here. The one ending this product is built around,
+  // delivered as a contradiction.
+  //
+  // The no-digits half rides with it because it now applies for more than one
+  // turn, and it is the half rule 3 is absolute about.
+  if (context.closing === 'number') {
+    return ['You have offered him your number and you meant it. Do not take it back or put it off. Never say the digits out loud.']
+  }
+
   if (exit === 'wrapping') return ['You are done with this. Wind it up and go.']
-  if (exit === 'leaving') return ['This is your last line. Say it and leave.']
-  return []
+  return ['This is your last line. Say it and leave.']
 }
 
 /**
