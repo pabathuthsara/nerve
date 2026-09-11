@@ -13,7 +13,7 @@
  *
  * Server components with no data dependencies, so every route but `/` renders
  * statically. The one thing the header cannot know is whether you are signed
- * in — and it does not need to: `Start training` points at `/signup`, and
+ * in — and it does not need to: `Start training` points at `/start`, and
  * `enforceFrontendGuard` sends a signed-in visitor from there to `/train`.
  */
 
@@ -62,7 +62,7 @@ export function SiteHeader({ cta = 'Start training' }: { cta?: string }) {
           <Link href={SITE_LINKS.howItWorks} className="site-header__wide-link">How it works</Link>
           <Link href={SITE_LINKS.pricing}>Pricing</Link>
         </nav>
-        <Link href="/signup" className="arena-button arena-button--primary arena-button--sm">{cta}</Link>
+        <Link href="/start" className="arena-button arena-button--primary arena-button--sm">{cta}</Link>
       </div>
     </header>
   )
@@ -90,7 +90,7 @@ export function SiteFooter() {
             <Link href={SITE_LINKS.howItWorks}>How it works</Link>
             <Link href={SITE_LINKS.interviews}>Practice interviews</Link>
             <Link href={SITE_LINKS.pricing}>Pricing</Link>
-            <Link href="/signup">Start training</Link>
+            <Link href="/start">Start training</Link>
             <Link href="/login">Log in</Link>
           </div>
           <div>

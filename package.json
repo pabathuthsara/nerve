@@ -33,6 +33,7 @@
     "db:credits": "vite-node --config vitest.config.ts scripts/verify-credits.ts",
     "db:voice": "vite-node --config vitest.config.ts scripts/verify-voice-budget.ts",
     "db:billing": "vite-node --config vitest.config.ts scripts/verify-billing.ts",
+    "db:funnel": "vite-node --config vitest.config.ts scripts/verify-start.ts",
     "legal:pdf": "vite-node --config vitest.config.ts scripts/legal-pdf.ts",
     "brand:assets": "vite-node --config vitest.config.ts scripts/brand-assets.ts",
     "social:first-posts": "vite-node --config vitest.config.ts scripts/social-carousels.ts",

@@ -234,7 +234,7 @@ export function HowItWorks() {
         <h2 className="display-xl">Three minutes,<br />and then you know.</h2>
         <p>The first tier is nearly impossible to fail. That is deliberate, and it is stated in the brief, in those words.</p>
         <div className="hero__actions">
-          <Link href="/signup" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
+          <Link href="/start" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
           <Link href={SITE_LINKS.pricing} className="arena-button arena-button--secondary arena-button--lg">See pricing</Link>
         </div>
       </section>

@@ -264,7 +264,7 @@ export function PricingPage({ signedIn = false, packsOpen = false, foundingPlace
         <h2 className="display-xl">Talk to somebody<br />before you decide.</h2>
         <p>Sign-up includes one voice rep, no card. Three minutes with a real character is a better answer to &ldquo;is this for me&rdquo; than anything written on this page.</p>
         <div className="hero__actions">
-          <Link href="/signup" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
+          <Link href="/start" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
           <Link href={SITE_LINKS.howItWorks} className="arena-button arena-button--secondary arena-button--lg">How it works</Link>
         </div>
       </section>

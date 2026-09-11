@@ -109,8 +109,31 @@ the real world and log the outcome.
    terms clause 07 and refunds clause 04 — change it there and re-run
    `npm run legal:pdf`, never in one of the four.
 3. **`docs/LAUNCH-GAP.md` is what is blocking launch.** Ten numbered blockers,
-   the product-promise gaps, and nine pieces of spec drift that need a
-   decision rather than a ticket.
+   the product-promise gaps, and the spec drift that needs a decision rather
+   than a ticket.
+   **D21 is the newest and it is how customers now arrive.** Forty-two people
+   came from TikTok and Meta between 4 and 10 September and none of them made
+   an account — and nothing could say where they left, because every event in
+   `lib/analytics/events.ts` began at `brief_viewed`, which is past sign-up.
+   **`/start` is an eight-screen run that asks the three onboarding questions
+   BEFORE the account** and carries the answers into `signUpWithPassword`,
+   which writes them with the §16.4 date in one retried update. Every public
+   CTA points at it; `/` is untouched and stays the page a merchant-of-record
+   reviewer opens (B1); `/signup` keeps one caller, the pack purchase, because
+   that screen names what is being bought. Three things were refused on
+   purpose and each refusal is load-bearing: **no rep before the account**
+   (`maySpend` is keyed to a user id — rule 11 — so an anonymous rep is
+   uncapped voice spend with no owner, and §16.4 makes it a dating
+   conversation with an unverified age), **no paywall in the run** (the free
+   rep costs ~8¢ and is the most convincing thing we own; selling before the
+   first scorecard sells at the moment of lowest earned belief), and **no
+   statistic on the reframe screen** (every number about people avoiding
+   conversations is one clause from a prevalence claim — rule 12, terms clause
+   08). The questions are SHARED with the signed-in run rather than copied
+   (`onboarding-questions.tsx`), for the reason `PRESENTATION.name` exists.
+   **And read what 0/42 does not prove**: a true 3% rate produces zero on 42
+   visits about a quarter of the time, so two signups afterwards is not
+   evidence it worked — the per-step drop is.
    **Its §3b is the 8 September experience audit, Parts 1–8 — all shipped**,
    and it is the shortest description of what the product does now:
    the interview track is a **profile** you set once and a **run**
@@ -190,6 +213,7 @@ npm run db:spend      # the spend ceiling: rate limit, daily cap, both kill swit
 npm run db:credits    # the interview credit: hold, settle, release, refund, both expiry rules, multi-credit rounds
 npm run db:interview -- you@example.com   # open the interview track on an account, with credits
 npm run db:billing    # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
+npm run db:funnel     # /start's crossing: the answers, both flags, the age stamp, and that a plain /signup still resumes at question one
 npm run whop:setup       # creates the Whop product, plans and webhook (dry run without --apply)
 npm run whop:verify      # the money preflight: keys, plans, prices, trial, webhook
 npm run whop:probe       # the webhook route over HTTP: signature, account check, status codes

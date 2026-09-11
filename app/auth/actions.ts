@@ -21,6 +21,8 @@ import { headers } from 'next/headers'
 import { supabaseServer } from '@/lib/db/server'
 import { supabaseAdmin } from '@/lib/db/admin'
 import { checkAge } from '@/lib/safety/age'
+import type { TablesUpdate } from '@/lib/db/types'
+import { START_FIELD, decodeStartAnswers, startProfileWrite, type StartAnswers } from '@/lib/data/start-funnel'
 
 export interface AuthResult {
   ok: boolean
@@ -172,7 +174,9 @@ export async function signUpWithPassword(_prev: AuthResult, form: FormData): Pro
 
   if (error) return { ok: false, message: error.message }
 
-  if (data.user) await rememberAge(data.user.id, age.dob)
+  if (data.user && isNewAccount(data.user)) {
+    await stampNewAccount(data.user.id, age.dob, decodeStartAnswers(String(form.get(START_FIELD) ?? '')))
+  }
 
   // Confirmation off (or already confirmed): there is a session, so go
   // straight in. `/` decides between onboarding and training.
@@ -188,25 +192,91 @@ export async function signUpWithPassword(_prev: AuthResult, form: FormData): Pro
 }
 
 /**
- * The date the form was given, once the account exists.
+ * Whether `signUp` actually created something.
  *
- * With the service role, because there is usually no session yet: email
- * confirmation is on, and `signUp` hands back a user with no cookie attached
- * to it. Waiting for the confirmation link to be clicked would mean the gate
- * we just ran had nowhere to write its answer.
+ * Supabase deliberately does not tell a sign-up form that an address already
+ * has an account. With email confirmation ON it answers a *fabricated* user
+ * rather than an error, and the tell is an empty `identities` array. Nothing
+ * downstream of here may write a profile row on the strength of that id: the
+ * write below sets a display name, a track and a focus area, and doing it for
+ * an id somebody else owns would let a stranger with an email address edit
+ * another account by posting this form.
  *
- * Best-effort. The profile row is created by a trigger and this update can
- * lose the race with it — which costs nothing, because `/onboarding/age` asks
- * again for anybody with no stamp on file, and that is the same gate.
+ * In practice the fabricated id does not match a real row and the update
+ * affects nothing — which is an accident of how Supabase obfuscates, not a
+ * guarantee. Checked explicitly, and narrowly: only an array that is present
+ * and empty means "already registered". Anything else is treated as a real
+ * account, so the failure mode is an unstamped profile and one extra pass
+ * through `/onboarding/age`, never a silent write to somebody else's row.
  */
-async function rememberAge(userId: string, dateOfBirth: string): Promise<void> {
-  try {
-    await supabaseAdmin()
-      .from('profiles')
-      .update({ date_of_birth: dateOfBirth, age_confirmed_at: new Date().toISOString() })
-      .eq('id', userId)
-  } catch {
-    // See above. The onboarding gate is the backstop and it is not optional.
+function isNewAccount(user: { identities?: unknown }): boolean {
+  const identities = user.identities
+  return !(Array.isArray(identities) && identities.length === 0)
+}
+
+/**
+ * Everything a brand-new account knows about itself, in one write.
+ *
+ * ── WHY ONE WRITE AND NOT TWO ────────────────────────────────────────────
+ *
+ * This was `rememberAge`, and it wrote the date of birth alone. `/start` now
+ * arrives with three answers besides — the track, the focus area and a first
+ * name, collected before the account existed — and the obvious shape was a
+ * second update beside the first. It is one, because the thing being raced is
+ * the profile row itself: `handle_new_user` inserts it from a trigger on
+ * `auth.users`, and two updates would be two chances to lose the same race for
+ * two different halves of the same screenful of answers.
+ *
+ * ── AND WHY IT RETRIES, WHICH `rememberAge` DID NOT ──────────────────────
+ *
+ * Losing the race used to cost nothing: `/onboarding/age` asks for the date
+ * again, and that is the same gate. It is not nothing any more. Somebody who
+ * has just answered three questions and would then be asked all three again is
+ * the exact failure `/start` exists to prevent, so a write that affected no
+ * row is tried once more before giving up. Still best-effort at the end of it —
+ * `onboardingResumePath` remains the backstop and a sign-up must never fail
+ * because a preference did not stick.
+ *
+ * With the service role, because there may be no session: with confirmation on
+ * `signUp` hands back a user with no cookie attached to it, and waiting for the
+ * link to be clicked would mean the §16.4 gate we just ran had nowhere to write
+ * its answer. Nothing here is an entitlement (rule 11) — a track, a focus and a
+ * first name are all changeable from `/profile/settings` by their owner.
+ */
+async function stampNewAccount(userId: string, dateOfBirth: string, answers: StartAnswers): Promise<void> {
+  const stamp = new Date().toISOString()
+  /**
+   * The mapping itself is `startProfileWrite`, and it is pure so that it can
+   * be tested: get one flag wrong and `onboardingResumePath` asks all three
+   * questions again of somebody who has just answered them, with every screen
+   * still working. See `lib/data/start-funnel.test.ts`.
+   */
+  const { patch: answered, flags } = startProfileWrite(answers)
+  const patch: TablesUpdate<'profiles'> = {
+    date_of_birth: dateOfBirth,
+    age_confirmed_at: stamp,
+    ...answered,
+  }
+
+  // Set rather than merged: this row is seconds old and `handle_new_user`
+  // inserts it with the column default. There is nothing here to merge with,
+  // and reading it back first would add a round trip to the one write that is
+  // racing a trigger.
+  if (flags.length > 0) {
+    patch.ui_flags = flags.reduce<Record<string, string>>((carry, flag) => ({ ...carry, [flag]: stamp }), {})
+  }
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const { count } = await supabaseAdmin()
+        .from('profiles')
+        .update(patch, { count: 'exact' })
+        .eq('id', userId)
+      if (count !== 0) return
+    } catch {
+      // Fall through to the retry, then to the backstop.
+    }
+    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 150))
   }
 }
 

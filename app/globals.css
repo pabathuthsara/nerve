@@ -1124,28 +1124,87 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
    screen. Static, quiet, and never a live region — see components/mission.tsx. */
 .mission-live { min-height: 18px; color: var(--text-mute); letter-spacing: .07em; }
 
-/* THE GUIDED REP (`lib/data/guided.ts`). Tess only, and it stands where the
-   mission line stands rather than beside it — two objectives on one live screen
-   is the round-6 failure wearing an interface.
+/* THE GUIDED REP (`lib/data/guided.ts`). Cass only.
+
+   ── IT FLOATS NOW, AND FLOATING IS A POSITION RATHER THAN A MOVEMENT ─────
+
+   It used to be two centred lines sitting in the middle of the stack, in the
+   slot the mission line occupies — which made the one screen in the product
+   that hands somebody words look exactly like the nine that do not. It is
+   lifted out of the flow and anchored to the floor: its own surface, a
+   hairline, a blur, and a scrim under it so the card reads as sitting ABOVE
+   the room rather than inside it. That is also where a teleprompter belongs —
+   below the person you are looking at, out of the orb's way, and reachable by
+   a glance that does not leave her face for long.
+
+   The motion budget is unchanged. A step change cross-fades in place with six
+   pixels of rise, once, and `prefers-reduced-motion` removes even that.
 
    No volt. The live screen already spends its one accent on the orb and the
-   time arc, and a rail that glows would pull the eye off the person you are
-   supposed to be listening to. The line is Ink and the aim is Ink-3, which is
-   the reverse of their importance on purpose: the aim is what transfers, the
-   line is what gets you through the next ten seconds. */
-.guided-live { display: grid; gap: 4px; justify-items: center; min-height: 40px; text-align: center; padding: 0 18px; }
-.guided-live__aim { color: var(--text-mute); letter-spacing: .07em; }
-.guided-live__say { max-width: 30ch; color: var(--text); font-size: 15px; line-height: 1.35; }
+   time arc, and a rail that glowed would pull the eye off the person you are
+   supposed to be listening to. The three tiers run Ink-3 · Ink-2 · Ink, small
+   to large, which is their importance mid-rep read backwards on purpose: the
+   dimension orients, the aim transfers, the line gets you through the next ten
+   seconds. */
+.guided-live { position: absolute; z-index: 6; right: 0; bottom: 0; left: 0; display: grid; justify-items: center; gap: 9px; padding: 0 16px calc(16px + env(safe-area-inset-bottom)); pointer-events: none; }
+.guided-live::before { content: ''; position: absolute; z-index: -1; right: 0; bottom: 0; left: 0; height: 200%; background: linear-gradient(to top, var(--ground) 34%, rgba(11,12,10,.72) 62%, transparent); }
+.guided-live__card { width: 100%; max-width: 420px; display: grid; justify-items: center; gap: 5px; border: 1px solid var(--line); border-top-color: var(--line-bright); border-radius: 2px; padding: 12px 18px 14px; background: rgba(25,28,22,.88); backdrop-filter: blur(12px); text-align: center; }
+.guided-live__tag { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text-mute); }
+.guided-live__tag .label { color: var(--text-mute); font-size: 9.5px; }
+.guided-live__aim { margin: 0; color: var(--text-dim); font-size: 12.5px; line-height: 1.3; }
+.guided-live__say { max-width: 32ch; margin: 0; color: var(--text); font-size: 17px; line-height: 1.35; }
 .guided-live__say::before, .guided-live__say::after { content: '\201C'; color: var(--text-mute); }
 .guided-live__say::after { content: '\201D'; }
-/* A step change is a change of text in place and nothing more. §02 and the
-   reason this is a rail and never a pop-up. */
+/* The step that has no line (`composure`) promotes its direction into the
+   line's own slot. It is a direction and not a quotation, so it loses the
+   quote marks and keeps everything else. */
+.guided-live__say--direction { font-family: var(--font-display), sans-serif; font-size: 19px; font-weight: 700; letter-spacing: .025em; line-height: 1.1; text-transform: uppercase; }
+.guided-live__say--direction::before, .guided-live__say--direction::after { content: none; }
+/* The blank, drawn as a blank. `[her thing]` used to reach the screen as two
+   literal brackets with the convention explained on another screen. */
+.guided-slot { color: var(--text-mute); font-style: normal; text-decoration: underline dotted; text-underline-offset: 4px; }
+/* Position, not progress. Bars rather than dots: Arena's radius ceiling is 2px
+   and this is the same 10 x 2 rule the mic status already draws. */
+.guided-live__dots { display: flex; align-items: center; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.guided-live__dots li { width: 10px; height: 2px; background: var(--line-bright); }
+.guided-live__dots li.is-done { background: var(--text-mute); }
+.guided-live__dots li.is-now { width: 18px; background: var(--text); }
+/* The centred stack stops short of the floor the rail is anchored to. Set on
+   the one character who has a rail, so every other rep composes as before, and
+   kept on for the WHOLE rep rather than only while the rail is up: the card's
+   height changes between a step with a line and a step without one, and
+   anything that reserved space per-step would move the orb every time the
+   prompt changed. Enough to clear a short viewport, not so much that a tall one
+   reads as a hole — on a phone the stack still centres roughly where it does on
+   every other rep. */
+.rep-live--guided .rep-center { padding-bottom: 132px; }
 @media (prefers-reduced-motion: no-preference) {
-  .guided-live__say, .guided-live__aim { transition: opacity 140ms ease; }
+  .guided-live__card { animation: guided-step-in 280ms cubic-bezier(.2,0,0,1) both; }
+  .guided-live__dots li { transition: width 240ms ease, background-color 240ms ease; }
 }
+@keyframes guided-step-in { from { opacity: 0; transform: translateY(6px); } }
 
-.guided-brief { display: grid; gap: 12px; width: 100%; border: 1px solid var(--line); border-left: 2px solid var(--volt); border-radius: 2px; padding: 14px 16px; background: var(--surface); text-align: left; }
-.guided-brief__head .label { color: var(--text-mute); }
+/* THE SIGNIFIER, ON THE BRIEF. A badge, the six marks the scorecard will use,
+   one sentence and the line to open with — the rest is behind the disclosure.
+   See `components/guided.tsx` for why this is no longer the whole script. */
+.guided-note { display: grid; gap: 10px; width: 100%; border: 1px solid var(--line); border-left: 2px solid var(--volt); border-radius: 2px; padding: 14px 16px; background: var(--surface); text-align: left; }
+.guided-note__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.guided-note__head .label { color: var(--text); }
+.guided-note__marks { display: flex; align-items: center; gap: 6px; color: var(--text-mute); }
+.guided-note__lead { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.5; }
+.guided-note__first { display: grid; gap: 5px; margin: 0; border-left: 1px solid var(--line-bright); padding: 2px 0 2px 11px; }
+.guided-note__first .label { color: var(--text-mute); font-size: 9.5px; }
+.guided-note__first strong { color: var(--text); font-size: 15.5px; font-weight: 400; line-height: 1.4; }
+.guided-note__first strong::before, .guided-note__first strong::after { content: '\201C'; color: var(--text-mute); }
+.guided-note__first strong::after { content: '\201D'; }
+.guided-note__all { border-top: 1px solid var(--line); padding-top: 10px; }
+.guided-note__all > summary { display: flex; align-items: center; gap: 7px; min-height: 24px; cursor: pointer; list-style: none; }
+.guided-note__all > summary::-webkit-details-marker { display: none; }
+.guided-note__all > summary .label { color: var(--text-mute); }
+.guided-note__all > summary::after { content: ''; width: 7px; height: 7px; border-right: 1px solid var(--text-mute); border-bottom: 1px solid var(--text-mute); transform: translateY(-2px) rotate(45deg); }
+.guided-note__all[open] > summary::after { transform: translateY(1px) rotate(-135deg); }
+.guided-note__all[open] > summary { margin-bottom: 12px; }
+
 .guided-brief__steps { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; counter-reset: none; }
 .guided-brief__steps > li { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); gap: 10px; align-items: start; }
 .guided-brief__n { color: var(--text-mute); font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
@@ -1156,7 +1215,7 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .guided-brief__say::before { content: '\201C'; }
 .guided-brief__say::after { content: '\201D'; }
 .guided-brief__why { margin: 0; color: var(--text-mute); font-size: 12.5px; line-height: 1.45; }
-.guided-brief__foot { margin: 0; padding-top: 2px; border-top: 1px solid var(--line); color: var(--text-mute); font-size: 12.5px; line-height: 1.5; }
+.guided-brief__foot { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--text-mute); font-size: 12.5px; line-height: 1.5; }
 
 /* The exit beat. The whole screen dims and settles rather than the orb alone
    doing the work, so an ending reads as an ending. */
@@ -2651,3 +2710,66 @@ a.admin-chip { text-decoration: none; }
   .admin-users__who { grid-column: 1 / -1; }
   .admin-users__row--head { display: none; }
 }
+
+/* ------------------------------------------------------------------ *
+ * `/start` — the acquisition funnel (LAUNCH-GAP D20)
+ *
+ * It borrows the onboarding run's frame wholesale — `.onboarding-page`, the
+ * shell, the progress rail, the step transition, the question layout — because
+ * it IS that run, asked before the account instead of after it. What is added
+ * here is only the three screens that are not questions.
+ *
+ * Volt appears once per screen and it is always the primary button. The
+ * mechanism screen's three marks are Ink-2 (never `current`), and the build
+ * screen's plan rows are the same hairline table the brief uses.
+ * ------------------------------------------------------------------ */
+
+/* The funnel has no sign-out control, so the shell's top-right is empty and
+   the run can sit slightly higher than the signed-in one. */
+.start-page { padding-top: 92px; }
+
+.start-hook > .onboarding-sub, .start-claim > .onboarding-sub { max-width: 42ch; }
+.start-hook > h1 { max-width: 18ch; }
+
+/* The actions sit apart from the copy rather than in the stack with it: on
+   these three screens the button is a continue, not an answer. */
+.start-actions { display: grid; gap: 14px; margin-top: 28px; }
+/* The two ways out, and they are not volt.
+   `.volt-link` is right in body copy, where it is the only coloured thing on
+   the line. Under a volt button it is a second and third accent competing with
+   the action — and the design system's rule is that if volt appears twice on a
+   screen, one of them is wrong. These are underlined instead. */
+.start-foot { margin: 0; color: var(--text-mute); font-size: 13px; text-align: center; }
+.start-foot .volt-link { color: var(--text-dim); text-decoration: underline; text-underline-offset: 3px; transition: color 120ms; }
+.start-foot .volt-link:hover { color: var(--text); }
+
+.start-beats { display: grid; gap: 2px; margin: 22px 0 0; padding: 0; list-style: none; border-block: 1px solid var(--line); }
+.start-beats li { display: grid; grid-template-columns: 22px 1fr; align-items: start; gap: 14px; padding: 16px 0; border-top: 1px solid var(--line); }
+.start-beats li:first-child { border-top: 0; }
+.start-beats strong { display: block; margin-bottom: 4px; font-family: var(--font-mono), monospace; font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--text); }
+.start-beats p { margin: 0; color: var(--text-dim); font-size: 14.5px; line-height: 1.5; }
+
+/* The build screen. It reveals what the run already knows — see the note in
+   `start-screens.tsx` about why this is a stagger and not a progress bar. */
+.start-build { gap: 12px; }
+.start-plan { margin-top: 4px; }
+.start-plan > div { grid-template-columns: 1fr 1.6fr; }
+.start-note { max-width: 30ch; margin: 2px 0 10px; color: var(--text-mute); font-size: 13.5px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .start-build > * { animation: start-reveal 260ms cubic-bezier(.2,0,0,1) both; }
+  .start-build > *:nth-child(2) { animation-delay: 60ms; }
+  .start-build > *:nth-child(3) { animation-delay: 110ms; }
+  .start-build > *:nth-child(4) { animation-delay: 155ms; }
+  .start-build > *:nth-child(5) { animation-delay: 195ms; }
+  .start-build > *:nth-child(6) { animation-delay: 230ms; }
+  .start-build > *:nth-child(7) { animation-delay: 260ms; }
+}
+@keyframes start-reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* The one screen on the run that is a form. The heading block above it uses
+   the question layout, so the form needs the same top margin the option stack
+   gets rather than the question's own 10px gap. */
+.start-account .auth-form { margin-top: 22px; }
+.start-account .auth-fine { margin-top: 18px; }
+

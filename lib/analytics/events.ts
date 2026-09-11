@@ -28,8 +28,41 @@
  * `signed_up_at` and a rep count and nothing else.
  */
 
+/**
+ * ── THE FOUR ACQUISITION EVENTS, AND WHY THEY WERE ADDED ─────────────────
+ *
+ * The nine below start at `brief_viewed`, which is inside the product and past
+ * the account. That was the right shape while the only question was M5's
+ * retention gate — and it is why, when forty-two people arrived from paid
+ * social between 4 and 10 September 2026 and none of them signed up, there was
+ * no way to tell whether they had bounced on the hero, on the form, or
+ * somewhere between. The funnel that had to be debugged was the one half of
+ * the instrumentation could not see.
+ *
+ * So `/start` is measured per step. Four events rather than one per screen:
+ * `step` is a property, which is how PostHog builds a funnel you can break
+ * down, and eight event names would have to be edited here every time a screen
+ * moved.
+ *
+ * `start_answered` looks redundant beside `start_step_viewed` and is not — it
+ * is the same argument as `rep_first_user_turn` below. The drop *within* a
+ * step (seen it, did not answer it) is a different failure from never reaching
+ * it, and on a question screen it is the one that says the question is wrong.
+ *
+ * `start_account_submitted` fires from the browser immediately before the form
+ * posts, and there is no matching `created`. `signUpWithPassword` redirects on
+ * success, so the client that would raise it is already gone — the account is
+ * counted as created by the absence of `start_account_failed` and the presence
+ * of the `brief_viewed` that follows about a minute later. Instrumenting the
+ * server instead would mean a second analytics path, on the one route that
+ * takes a password.
+ */
 /** The funnel, in the order it happens. */
 export const FUNNEL_EVENTS = [
+  'start_step_viewed',
+  'start_answered',
+  'start_account_submitted',
+  'start_account_failed',
   'brief_viewed',
   'rep_started',
   'rep_first_user_turn',
@@ -50,6 +83,23 @@ export type FunnelEvent = (typeof FUNNEL_EVENTS)[number]
  * field-log note or a character's memory line — see `isSafeValue`.
  */
 export interface EventProps {
+  /** `step` is a `StartStep`; `index` is its position, so a reorder is visible. */
+  start_step_viewed: { step: string; index: number }
+  /**
+   * `answer` is the enum member chosen — a track, a focus area, `skipped` for
+   * the name step somebody declined, `english` for the track that does not
+   * exist yet. Never the name itself: that is prose, and `safeProps` would
+   * throw in development rather than let it leave the device.
+   */
+  start_answered: { step: string; answer: string }
+  start_account_submitted: { track: string; focus: string; named: boolean }
+  /**
+   * Why a sign-up did not happen. `server` covers everything Supabase refused
+   * — an address that already has an account is the common one, and it is a
+   * funnel leak rather than an error, because the person it happens to is a
+   * returning customer who took the ad.
+   */
+  start_account_failed: { reason: 'email' | 'password' | 'age' | 'server' }
   brief_viewed: { persona_id: string; level: number; track: string; mode: 'voice' | 'text' }
   rep_started: { persona_id: string; level: number; track: string; mode: 'voice' | 'text' }
   /** `ms_to_first_turn` is measured from the moment the connection opens. */

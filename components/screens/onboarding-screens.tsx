@@ -65,11 +65,21 @@ import { resetPerson } from '@/components/analytics'
 import { forgetCurrentUser } from '@/lib/data/session'
 import { PauseMeter, offsetFromPause } from '@/lib/voice/calibration'
 import { DEFAULT_CALIBRATION, resolveSilenceMs } from '@/lib/voice/types'
-import { Button, Chip, DateOfBirth, Input, Sheet } from '@/components/ui'
+import { Button, DateOfBirth, Sheet } from '@/components/ui'
+/**
+ * The three questions, shared with `/start` (`onboarding-questions.tsx`).
+ *
+ * They are asked twice now — once after sign-up over a `profiles` row, and
+ * once before it by the acquisition funnel — so they live in one file and
+ * both runs render the same components. `FOCUS_OPTIONS` is re-exported
+ * below because `/profile/settings` has always imported it from here.
+ */
+import { FOCUS_OPTIONS, FocusStep, NameStep, TrackStep } from './onboarding-questions'
 import { MIN_AGE } from '@/lib/safety/age'
 import { tap } from '@/lib/haptics'
 import { FluidPersona } from '@/components/fluid-persona'
-import { Mark, focusMark, type MarkName } from '@/components/marks'
+import { Mark } from '@/components/marks'
+import { RuleBlock } from './rep-format'
 import { chooseTodayPersona } from '@/lib/data/progression'
 import type { FirstRepCandidate } from '@/lib/data/first-rep'
 import type { FocusArea } from '@/lib/data/focus'
@@ -240,6 +250,7 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
           {route === '/onboarding/track'
             ? <TrackStep
                 value={track}
+                english={{ record: () => recordTrackWaitlist('english'), counted: true }}
                 onChoose={(value) => { setTrack(value); commit(() => saveOnboardingChoice({ track: value }), step, step + 1) }}
               />
             : null}
@@ -372,219 +383,6 @@ function AgeStep() {
       {message ? <div className="form-error" role="alert">{message}</div> : null}
       <Button fullWidth size="lg" loading={busy} onClick={submit}>Continue</Button>
     </section>
-  )
-}
-
-/* ------------------------------------------------------------------ *
- * The questions
- * ------------------------------------------------------------------ */
-
-function TrackStep({ value, onChoose }: { value: Track | null; onChoose: (value: Track) => void }) {
-  const [waitlisted, setWaitlisted] = useState(false)
-  const [recording, setRecording] = useState(false)
-  const heading = useRef<HTMLHeadingElement | null>(null)
-
-  // The waitlist replaces the question in place rather than navigating, so
-  // nothing would otherwise tell a screen reader the screen had changed.
-  useEffect(() => { if (waitlisted) heading.current?.focus() }, [waitlisted])
-
-  /**
-   * English is still M-something. Recording the demand is the honest version of
-   * a track that does not exist yet; switching them to it would not be.
-   *
-   * **Interview is no longer one of these** (LAUNCH-GAP D1). It was a waitlist
-   * because the track was screens over fixtures; it shipped on 7 September, and
-   * every account is granted a free five-minute screener at sign-up, so the
-   * honest answer to "job interviews" is now the interview track rather than a
-   * note that we counted the ask.
-   *
-   * The write is awaited here, unlike every other answer on the run. The screen
-   * it opens makes a claim about it, and a claim should not go up before the
-   * thing it describes has happened.
-   */
-  const askForEnglish = () => {
-    setRecording(true)
-    void recordTrackWaitlist('english')
-      .then(() => { setRecording(false); setWaitlisted(true) })
-      .catch(() => { setRecording(false); setWaitlisted(true) })
-  }
-
-  if (waitlisted) {
-    return (
-      <div className="onboarding-state">
-        <span className="label volt">Noted</span>
-        <h1 className="display-lg" ref={heading} tabIndex={-1} data-step-heading>English practice opens soon.</h1>
-        <p>We count who asks, and you have been counted. Both other tracks are live if you want to start building the same conversational control.</p>
-        <Button fullWidth size="lg" onClick={() => onChoose('dating')}>Try a dating rep meanwhile</Button>
-        <Button fullWidth variant="ghost" onClick={() => setWaitlisted(false)}>Choose something else</Button>
-      </div>
-    )
-  }
-
-  return (
-    <Question
-      eyebrow="Step one"
-      title="What are you training for?"
-      sub="It decides who you meet and what the reps are about. You can change it later."
-    >
-      <Option
-        label="Talking to people I'm attracted to"
-        sub="Approach, conversation, getting the number"
-        mark="state-roster"
-        selected={value === 'dating'}
-        onClick={() => onChoose('dating')}
-      />
-      {/* D1. This answer is now honoured: the run ends on `/interview` when it
-          is chosen, rather than at `/train` with a dating persona and a warmth
-          meter in front of somebody who said they came for interviews. */}
-      <Option
-        label="Job interviews"
-        sub="Behavioural, technical, panel — with one free five-minute round"
-        mark="kind-technique"
-        selected={value === 'interview'}
-        onClick={() => onChoose('interview')}
-      />
-      <Option label="Speaking English more naturally" sub="Coming soon" mark="dim-listening" busy={recording} aside={<Chip>Soon</Chip>} onClick={askForEnglish} />
-    </Question>
-  )
-}
-
-const FOCUS_OPTIONS: readonly { label: string; value: FocusArea }[] = [
-  { label: 'Starting the conversation', value: 'opening' },
-  { label: 'Keeping it going past two lines', value: 'sustaining' },
-  { label: 'Making it flirty without being weird', value: 'flirting' },
-  { label: "Handling it when she's not interested", value: 'rejection' },
-]
-
-/** Shared with `/profile/settings`, which is where this answer can be changed. */
-export { FOCUS_OPTIONS }
-
-/**
- * V19. The copy promised this answer "picks who you meet first" and then
- * showed nothing — while the run has already resolved her, two lines up, with
- * the same `chooseTodayPersona` the answer will actually be spent on.
- *
- * So the moment an option is chosen, she appears. It is the most compelling
- * image in the product, shown at the exact moment somebody is being asked to
- * care, and it costs one prop: the orb was already being rendered on the step
- * after this one.
- */
-function FocusStep({ value, firstRep, track, onChoose }: { value: FocusArea | null; firstRep: FirstRepCandidate | null; track: Track | null; onChoose: (value: FocusArea) => void }) {
-  /**
-   * D1's edge. Every account has both tracks now, and somebody who has just
-   * answered "job interviews" being asked about flirting with no explanation
-   * reads as the run having forgotten what they said one screen ago. The
-   * answer is still worth collecting — it steers the dating reps they also
-   * have — so the question stays and says which half it is about.
-   */
-  const interview = track === 'interview'
-  return (
-    <Question
-      eyebrow="Step two"
-      title={interview ? 'And on the dating reps?' : "What's the hard part?"}
-      sub={interview
-        ? 'Your account has both tracks. This one is only about the dating side — it picks who you meet there and your first challenge out in the world. Interviews are set up separately, on the next screen but one.'
-        : 'This one earns its keep: it picks who you meet first, your first challenge out in the world, and the technique on your brief.'}
-    >
-      {FOCUS_OPTIONS.map((option) => (
-        <Option key={option.value} label={option.label} mark={focusMark(option.value) ?? undefined} selected={value === option.value} onClick={() => onChoose(option.value)} />
-      ))}
-      {value && firstRep && !interview ? (
-        <p className="focus-preview" aria-live="polite">
-          <FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={18} size={42} />
-          <span><span className="label">First up</span> {firstRep.name} — {firstRep.setting.toLowerCase()}</span>
-        </p>
-      ) : null}
-    </Question>
-  )
-}
-
-/**
- * The cheapest personalisation in the product (§08's `usesYourName` gate).
- *
- * Every character already carries a dial for whether she may use your name,
- * and the steering item that opens it — "You may use his name." — has been
- * shipping into contracts that were never told what the name is. Nobody was
- * ever asked for one, so `/profile` rendered the local part of an email
- * address in display caps and called it a person.
- *
- * First name only, and the copy says why. Asking for a full name here would
- * be asking for identity; this is asking what a stranger in a bookshop would
- * end up calling you.
- *
- * Skippable, deliberately. A name is the one thing on this run somebody might
- * not want to give, and the alternative to a skip is a required field between
- * a new account and its first rep.
- */
-function NameStep({ value, onSubmit }: { value: string | null; onSubmit: (value: string | null) => void }) {
-  const [name, setName] = useState(value ?? '')
-  const trimmed = name.trim()
-  return (
-    <section className="onboarding-question">
-      <span className="label">Step three</span>
-      <h1 className="display-lg" tabIndex={-1} data-step-heading>What should she call you?</h1>
-      <p className="onboarding-sub">First name is plenty. She only uses it once a conversation has earned it — and never if you skip this.</p>
-      <form className="option-stack" onSubmit={(event) => { event.preventDefault(); onSubmit(trimmed || null) }}>
-        <Input label="First name" name="displayName" autoComplete="given-name" maxLength={40} placeholder="Sam" value={name} onChange={(event) => setName(event.target.value)} />
-        <Button type="submit" size="lg" fullWidth>Continue</Button>
-        <Button type="button" variant="ghost" fullWidth onClick={() => onSubmit(null)}>Skip this</Button>
-      </form>
-    </section>
-  )
-}
-
-function Question({ eyebrow, title, sub, children }: { eyebrow: string; title: string; sub?: string; children: React.ReactNode }) {
-  return (
-    <section className="onboarding-question">
-      <span className="label">{eyebrow}</span>
-      <h1 className="display-lg" tabIndex={-1} data-step-heading>{title}</h1>
-      {sub ? <p className="onboarding-sub">{sub}</p> : null}
-      <div className="option-stack">{children}</div>
-    </section>
-  )
-}
-
-/**
- * `selected` is a prop, not local state.
- *
- * It used to be local, which meant the back arrow returned to a question the
- * database had the answer to and drew it blank — so the only way forward from
- * a step somebody revisited was to answer it a second time.
- *
- * `busy` is the one place on the run that waits for a write, and it is the
- * card that says so rather than a spinner (§02).
- */
-function Option({ label, sub, mark, aside, disabled = false, selected = false, busy = false, onClick }: {
-  label: string
-  sub?: string
-  /**
-   * V18. The two answers that steer the whole product rendered as a stack of
-   * `<strong>` and `<small>` — a settings form, on the screen that decides who
-   * you meet and what every rep is about. The focus answers reuse the SIX
-   * DIMENSION MARKS deliberately: the vocabulary is learned here, in the first
-   * ninety seconds somebody spends in the product, and then means the same
-   * thing on the brief, the scorecard, Progress and the library.
-   */
-  mark?: MarkName
-  aside?: React.ReactNode
-  disabled?: boolean
-  selected?: boolean
-  busy?: boolean
-  onClick?: () => void
-}) {
-  return (
-    <button
-      type="button"
-      className={`option-card${selected ? ' option-card--selected' : ''}${busy ? ' option-card--busy' : ''}`}
-      disabled={disabled || busy}
-      aria-busy={busy}
-      aria-pressed={onClick ? selected : undefined}
-      onClick={onClick}
-    >
-      {mark ? <Mark name={mark} size={22} current={selected} /> : null}
-      <span><strong>{label}</strong>{sub ? <small>{sub}</small> : null}</span>
-      {aside}
-    </button>
   )
 }
 
@@ -961,41 +759,9 @@ function ReadyStep({ firstRep, name, track }: { firstRep: FirstRepCandidate | nu
   )
 }
 
-/**
- * The three facts about the format, on the brief.
- *
- * The interview row used to read `Time 8:00` — a number no round has had since
- * length became a property of the round (§5.7), which runs from five minutes to
- * twenty-five — and `It ends: When they've heard enough`, which is not how it
- * ends. It ends on the clock, like everything else here, and saying otherwise
- * makes a candidate answer as though they can be dismissed early.
- *
- * ── E1: THE GOAL ROW NAMED THE ONE THING WORTH ZERO ──────────────────────
- *
- * It read `Goal · Get her number` on the dating arm and `Goal · Answer well
- * enough to be called back` on the interview one. Rule 2 is the product —
- * **outcome is never scored** — and the landing page argues exactly that:
- * "whether she gave you a number, agreed to anything, or walked away
- * contributes exactly zero". This block is the last thing read before the
- * microphone opens, so it was not a copy inconsistency: it was an instruction,
- * at the moment of highest attention, to play for the result. Close and Signal
- * reading are the two dimensions that collapse when somebody does that, so the
- * screen was priming the failure and the grader was then scoring it.
- *
- * Both rows now name a MANNER rather than a result. The mechanic is untouched —
- * she still decides at the end, and the interview still ends on the clock — and
- * neither `lib/data/mission.ts` nor `lib/data/guided.ts` is edited, because both
- * are Tier 0 under rule 19 and neither is where this sentence lived.
- */
-export function RuleBlock({ interview, minutes }: { interview: boolean; minutes?: number }) {
-  const rows = interview
-    ? [['Time', `${minutes ?? 20}:00`], ['Goal', 'Answer like the person they should call back'], ['It ends', 'When time runs out']]
-    : [['Time', '3:00'], ['Goal', 'Have a conversation worth having'], ['She leaves', 'When time runs out']]
-  return <div className="rule-block">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
-}
-
 export function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
   return <Sheet open={open} onClose={onClose} title="How a rep works"><div className="how-list">{['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end. Nothing she decides is scored.'].map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet>
 }
 
+export { FOCUS_OPTIONS }
 export type { OnboardingRoute }

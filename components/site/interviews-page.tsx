@@ -56,7 +56,7 @@ export function InterviewsPage() {
           never on whether you got the job.
         </p>
         <div className="hero__actions">
-          <Link href="/signup" className="arena-button arena-button--primary arena-button--lg">Start with a free round</Link>
+          <Link href="/start?track=interview" className="arena-button arena-button--primary arena-button--lg">Start with a free round</Link>
           <Link href={SITE_LINKS.pricing} className="arena-button arena-button--secondary arena-button--lg">What it costs</Link>
         </div>
         <p className="hero__fine">Every account gets one free five-minute screen. No card.</p>
@@ -149,7 +149,7 @@ export function InterviewsPage() {
           The free screener is not a demo — same interviewer, same grading, five minutes
           instead of twenty. It is the shortest honest answer to &ldquo;is this any good&rdquo;.
         </p>
-        <Link href="/signup" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
+        <Link href="/start?track=interview" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
         <ul className="final-call__points">
           <li><Check size={14} strokeWidth={2} aria-hidden="true" /> A free five-minute interview with every account</li>
           <li><Check size={14} strokeWidth={2} aria-hidden="true" /> No card to start</li>

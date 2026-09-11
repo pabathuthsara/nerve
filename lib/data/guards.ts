@@ -2,6 +2,7 @@ import 'server-only'
 
 import { redirect } from 'next/navigation'
 import { currentUser, supabaseServer } from '@/lib/db/server'
+import { ONBOARDING_DEFERRED_FLAG, ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG } from './ui-flags'
 
 // `/text` is text mode (P1). Protected like every other training surface — it
 // costs no quota, which is not the same as being open to anybody.
@@ -202,15 +203,14 @@ export function onboardingResumePath(profile: { focus_area: string | null; ui_fl
   return '/onboarding/mic'
 }
 
-/** Stamped by the track step, read by the resume above. */
-export const ONBOARDING_TRACK_FLAG = 'onboarding:track'
-
-/** Stamped by the name step whether it was answered or skipped. */
-export const ONBOARDING_NAME_FLAG = 'onboarding:name'
-
 /**
- * Stamped by *Look around first* on the mic step. See the guard above: it
- * buys the same freedom of movement a finished run does without claiming the
- * run finished, which is what makes the step returnable.
+ * The three flag names, which now live in `lib/data/ui-flags.ts`.
+ *
+ * They were declared here and this file is `server-only`, which was fine while
+ * the guard and a Server Action were the only readers. `/start` asks the same
+ * three questions in the browser before an account exists, and has to know
+ * what each answer will become — so the names moved to the registry that
+ * exists for exactly this ("a `'use server'` module may only export async
+ * functions"), and are re-exported here so every importer is unchanged.
  */
-export const ONBOARDING_DEFERRED_FLAG = 'onboarding:deferred'
+export { ONBOARDING_DEFERRED_FLAG, ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG } from './ui-flags'

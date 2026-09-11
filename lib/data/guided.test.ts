@@ -18,6 +18,7 @@ import {
   assertGuidedStep,
   guidedScriptFor,
   guidedStepFor,
+  splitSay,
   type GuidedStep,
 } from './guided'
 import { MISSIONS, assertNoScript } from './mission'
@@ -149,9 +150,29 @@ describe('which step he is on', () => {
     const keys = [0, 1, 2, 3, 4, 6, 7, 12]
       .map((turns) => guidedStepFor(TESS_SCRIPT, at(turns))?.key)
     expect(keys).toEqual([
-      'opening', 'curiosity', 'listening', 'listening',
-      'signalReading', 'signalReading', 'composure', 'composure',
+      'opening', 'curiosity', 'curiosity', 'listening',
+      'listening', 'signalReading', 'signalReading', 'composure',
     ])
+  })
+
+  it('is still moving in the second half of the rep', () => {
+    // THE 11 SEPTEMBER DEFECT. The ladder was [0, 1, 2, 4, 7] against an arm
+    // that completes an exchange about every ten seconds, so four of the five
+    // steps were spent inside the first seventy seconds and the one with no
+    // line held the remaining eighty. A rail that stops changing halfway
+    // through a rep does not read as a last lesson; it reads as a broken
+    // feature — which is exactly what it was reported as.
+    //
+    // Asserted as the property rather than as a copy of the table: no step
+    // before the close may be reachable at the first exchange except the
+    // opening, and the last one before it may not be reachable in the first
+    // third of a rep's exchanges.
+    const reachableAtOne = TESS_SCRIPT
+      .filter((s) => guidedStepFor(TESS_SCRIPT, at(1)) === s)
+    expect(reachableAtOne.map((s) => s.key)).toEqual(['curiosity'])
+    for (const turns of [0, 1, 2, 3, 4]) {
+      expect(guidedStepFor(TESS_SCRIPT, at(turns))?.key, `@${turns}`).not.toBe('composure')
+    }
   })
 
   it('holds the step while she has not answered', () => {
@@ -193,5 +214,56 @@ describe('which step he is on', () => {
 
   it('never returns a step for an empty script', () => {
     expect(guidedStepFor([], at(4))).toBeNull()
+  })
+})
+
+describe('the blank he has to fill in', () => {
+  it('splits a line into what to read and what to supply', () => {
+    expect(splitSay('So you are a [her thing] person then.')).toEqual([
+      { text: 'So you are a ', slot: false },
+      { text: 'her thing', slot: true },
+      { text: ' person then.', slot: false },
+    ])
+  })
+
+  it('leaves a line with no blank in one piece', () => {
+    expect(splitSay('What is that like?')).toEqual([{ text: 'What is that like?', slot: false }])
+  })
+
+  it('loses nothing, whatever the line', () => {
+    // The renderer draws these parts and nothing else, so a split that dropped
+    // a character would silently edit a sentence the product puts in somebody's
+    // mouth. Round-trips every authored line rather than a contrived one.
+    for (const s of TESS_SCRIPT) {
+      if (!s.say) continue
+      const rebuilt = splitSay(s.say)
+        .map((part) => (part.slot ? `[${part.text}]` : part.text))
+        .join('')
+      expect(rebuilt, s.key).toBe(s.say)
+    }
+  })
+
+  it('handles a blank at either end', () => {
+    expect(splitSay('[x] then.')).toEqual([{ text: 'x', slot: true }, { text: ' then.', slot: false }])
+    expect(splitSay('Then [x]')).toEqual([{ text: 'Then ', slot: false }, { text: 'x', slot: true }])
+  })
+})
+
+describe('what the lines may not coach', () => {
+  it('never hands him a line whose honest answer is her leaving', () => {
+    // THE 11 SEPTEMBER DEFECT, the content half. `signalReading` read "You look
+    // like you are in a hurry." to a woman who has decided to stay until she
+    // finds one painting she likes — false in her room, and false in the one
+    // direction that costs: `lib/warmth/reciprocity.ts` prices a dead end above
+    // what a good question earns, so the single authored line most likely to
+    // lose a beginner their first rep was one of ours.
+    //
+    // A rep is three minutes and every prompt is a thing said to somebody who
+    // is choosing whether to stay. None of them may suggest she should not.
+    for (const s of TESS_SCRIPT) {
+      if (!s.say) continue
+      if (s.key === 'close') continue
+      expect(s.say, s.key).not.toMatch(/\b(hurry|busy|rush|get going|let you go|in your way|bothering|leave|going)\b/i)
+    }
   })
 })

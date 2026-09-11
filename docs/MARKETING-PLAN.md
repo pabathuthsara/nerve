@@ -218,6 +218,66 @@ capture in the same change so creator and affiliate links attribute.
 
 This is `LAUNCH-GAP.md` B7 (PostHog and Sentry specified, not installed).
 
+**Half of it shipped on 11 September, and the half that shipped is the half
+this section was actually about.** `lib/analytics/events.ts` had nine events
+and every one of them began at `brief_viewed` — *inside* the product, past the
+account. So the only stages instrumented were the ones after somebody had
+already converted, and the four in front of them were invisible. Four
+acquisition events now sit ahead of the nine, and `events.test.ts` asserts that
+ordering so they cannot be dropped later as noise:
+
+| Event | Answers |
+|---|---|
+| `start_step_viewed` | which of the eight screens they reached (`step` is a property, so one funnel, broken down) |
+| `start_answered` | seen it and did not answer it — a different failure from never reaching it, and on a question screen it is the one that says the question is wrong |
+| `start_account_submitted` | the form was posted |
+| `start_account_failed` | and why it did not take. `server` is mostly *this address already has an account*, which is a funnel leak rather than an error: it is a returning customer who took the ad |
+
+There is deliberately no `account_created`. `signUpWithPassword` redirects on
+success, so the browser that would raise it is already gone; a creation is
+`submitted` minus `failed`, confirmed by the `brief_viewed` that follows about
+a minute later. Instrumenting the server instead would mean a second analytics
+path on the one route that takes a password.
+
+**Still owed:** `?ref` capture for creator and affiliate attribution, pricing
+view, checkout start, paid. And `NEXT_PUBLIC_POSTHOG_KEY` must actually be set
+in Vercel — the SDK is imported behind that key check, so an unkeyed
+deployment fetches nothing and records nothing, which is indistinguishable from
+a funnel nobody walked.
+
+### 4.5a · The door itself was the problem — **11 September**
+
+The first paid traffic arrived between 4 and 10 September: **27 from TikTok, 15
+from Meta, and zero accounts**. The table in §1 assumes 20% of bio-link clicks
+become free signups. The measured number was 0 of 42.
+
+What those forty-two met: a landing page whose primary action, **Start training
+free**, opened a form asking for an email address. The three questions that
+make this product feel like it is about *them* — what you are training for,
+what the hard part is, what she should call you — were all on the other side of
+that form, doing no work at all.
+
+`/start` inverts it. Eight screens: a hook, the three questions, three screens
+that say what the product is, a build screen naming the character they are
+about to meet, and the account last. The answers ride into `signUpWithPassword`
+on a hidden field and land on the profile in the same write as the date of
+birth, so nobody is asked anything twice. Full argument and everything that was
+deliberately refused: `LAUNCH-GAP.md` D21.
+
+**Every public CTA now points at it** — the landing hero and foot, the header,
+the footer, `/how-it-works`, `/pricing`, the plan board, and `/interviews`
+(which sends `?track=interview`, so somebody who has just read a page about
+interviews is not asked what they came for). `/signup` keeps one caller,
+`pack-buy.tsx`, because that screen names the pack being bought. One door, one
+conversion rate.
+
+**Read this before believing the next number.** 0 of 42 is a smaller fact than
+it feels: a true 3% signup rate produces zero on 42 visits about a quarter of
+the time. This is a bet on a diagnosis, not a measurement of one — and 2
+signups on the next 42 is not evidence it worked either. The honest test is the
+per-step drop in `start_step_viewed`, which is now recordable and was not
+before. **Gate 2 on Day 21 is the one that reads it.**
+
 ### 4.6 · Zero reviews on a store page strangers land on
 
 Whop shows reviews prominently and buyers read them. The first ten customers

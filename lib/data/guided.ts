@@ -45,8 +45,15 @@
  *
  * `composure` has no line, on purpose. Its whole skill is not filling a pause,
  * and handing somebody a sentence to say when the lesson is "say nothing" is
- * self-defeating. `say: null` renders the aim alone. If a later author wants a
- * line there, the thing to change is the lesson, not this field.
+ * self-defeating. If a later author wants a line there, the thing to change is
+ * the lesson, not this field.
+ *
+ * **What `say: null` DRAWS changed on 11 September, and only the drawing.** It
+ * used to leave the live rail holding a dim six-word label alone in the space a
+ * line normally fills — which, on the step that now holds the last third of the
+ * rep, is indistinguishable from the rail having stopped. The direction is
+ * promoted into the line's own slot instead: same words, same rule, rendered as
+ * something rather than as the absence of something. See `components/guided.tsx`.
  *
  * Content is authored here and reviewed in a pull request (rule 10). Nothing
  * in this file is generated at runtime.
@@ -65,7 +72,8 @@ export interface GuidedStep {
    * Square brackets mark the one word the user has to supply himself —
    * "[her thing]" — because the useful version of a follow-up depends on what
    * she just said, and a scripted line that names a fact she has not mentioned
-   * is worse than no line at all.
+   * is worse than no line at all. `splitSay` is what turns that convention into
+   * a visible blank rather than two literal brackets on screen.
    */
   say: string | null
   /** One sentence for the brief, saying what it is for. Never shown live. */
@@ -78,11 +86,24 @@ export interface GuidedStep {
  * One entry per step except the last: the close is owned by the wind-down and
  * is unreachable by progression. See `guidedStepFor`.
  *
- * The spacing assumes the twelve-to-fourteen exchanges a three-minute rep
- * actually contains, so the middle steps are not raced through and the last
- * one before the close is not held for half the rep either.
+ * ── IT WAS [0, 1, 2, 4, 7] AND IT RAN OUT IN THE FIRST MINUTE ────────────
+ *
+ * 11 September. The spacing was authored against "the twelve-to-fourteen
+ * exchanges a three-minute rep contains", and the arm that ships reaches an
+ * exchange about every ten seconds — the same measurement `guidedStepFor`
+ * records below, where six user turns arrived at 0:63. So four of the five
+ * steps were spent inside the first seventy seconds and `composure`, the only
+ * one with no line, then held the rail for the remaining eighty. A guided rep
+ * whose rail stops changing halfway through does not read as a rail that has
+ * arrived at its last lesson. It reads as a feature that broke.
+ *
+ * Spread over the rep the rep actually is: roughly a step every twenty-five
+ * seconds, with `composure` landing in the last third, which is also the only
+ * part of a rep where a silence is a live risk rather than a hypothetical. The
+ * gate is still EXCHANGES and never the clock — that is the 6 September fix and
+ * it does not move — the numbers are just no longer bunched at the start.
  */
-const STEP_AT: readonly number[] = [0, 1, 2, 4, 7]
+const STEP_AT: readonly number[] = [0, 1, 3, 5, 9]
 
 /**
  * The script, in the order a three-minute conversation actually goes.
@@ -128,8 +149,21 @@ export const TESS_SCRIPT: readonly GuidedStep[] = [
   },
   {
     key: 'signalReading',
+    // THE ONE LINE THAT COACHED A DEAD END (11 September).
+    //
+    // It read "You look like you are in a hurry." Cass has decided to stay
+    // until she finds one painting she likes; it is false in her room, and it
+    // is false in the worst direction — a beginner reading it verbatim tells a
+    // stranger she looks like she wants to leave, and the honest answer to
+    // that is to leave. `lib/warmth/reciprocity.ts` prices a dead end above
+    // what a good question earns, so the one authored line that could lose a
+    // rep warmth was this one.
+    //
+    // A read of her REACTION does the same teaching and opens instead of
+    // closing: it is specific to the room, it invites an answer either way,
+    // and `why` below already says the skill works whether you were right.
     aim: 'Read her, then adjust.',
-    say: 'You look like you are in a hurry.',
+    say: 'You did not love that one, did you.',
     why: 'Naming what you notice, out loud, is the skill. It works whether you were right or wrong.',
   },
   {
@@ -210,6 +244,49 @@ export function assertGuidedStep(step: GuidedStep): void {
 
 function words(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length
+}
+
+/**
+ * One piece of a suggested line: something to read, or a blank to fill.
+ *
+ * `slot` is the bracketed word — "[her thing]" — and it is the one part of a
+ * line the user has to supply himself.
+ */
+export interface SayPart {
+  text: string
+  slot: boolean
+}
+
+/**
+ * A suggested line, split into what to read and what to fill in.
+ *
+ * ── THE BRACKETS USED TO REACH THE SCREEN AS BRACKETS ────────────────────
+ *
+ * Both surfaces rendered `say` as a plain string, so the live rail printed
+ * **"So you are a [her thing] person then."** at a nervous first-timer who has
+ * about a second to look at it — and the only place the convention was ever
+ * explained was a footnote at the bottom of the brief, under six steps, which
+ * is the half of that screen that is being cut.
+ *
+ * A punctuation convention that needs a paragraph of explanation is not a
+ * convention, it is a defect with a note attached. Drawn as a BLANK instead —
+ * the renderer styles a slot as something visibly missing — it explains itself
+ * at a glance and needs no footnote at all.
+ *
+ * Pure, and tested here, because it is the shape of a string the product puts
+ * in somebody's mouth; the components only choose the styling.
+ */
+export function splitSay(say: string): readonly SayPart[] {
+  const parts: SayPart[] = []
+  const pattern = /\[([^\]]+)\]/g
+  let cursor = 0
+  for (let match = pattern.exec(say); match; match = pattern.exec(say)) {
+    if (match.index > cursor) parts.push({ text: say.slice(cursor, match.index), slot: false })
+    parts.push({ text: match[1] ?? '', slot: true })
+    cursor = match.index + match[0].length
+  }
+  if (cursor < say.length) parts.push({ text: say.slice(cursor), slot: false })
+  return parts
 }
 
 /** Checked at module load, so a bad line cannot reach a build. */

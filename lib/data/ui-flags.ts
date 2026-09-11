@@ -56,3 +56,30 @@ export const libraryReadFlag = (slug: string) => `${LIBRARY_READ_PREFIX}${slug}`
  * M4 is scheduled.
  */
 export const trackWaitlistFlag = (track: 'interview' | 'english') => `waitlist:track:${track}` as const
+
+/* ------------------------------------------------------------------ *
+ * The onboarding run's own flags
+ *
+ * These lived in `lib/data/guards.ts`, which is `server-only` — correct while
+ * the only things that read them were the guard and a Server Action, and wrong
+ * the moment `/start` needed the same three names on the client to say what a
+ * pre-auth answer will become. `guards.ts` re-exports them, so nothing that
+ * imported them from there has changed.
+ *
+ * Same class as everything above: a note about what has been *asked*, not
+ * about anything earned. The worst a user can do by clearing one is answer a
+ * question they had already answered.
+ * ------------------------------------------------------------------ */
+
+/** Stamped by the track step, read by `onboardingResumePath`. */
+export const ONBOARDING_TRACK_FLAG = 'onboarding:track'
+
+/** Stamped by the name step whether it was answered or skipped. */
+export const ONBOARDING_NAME_FLAG = 'onboarding:name'
+
+/**
+ * Stamped by *Look around first* on the mic step. See the guard: it buys the
+ * same freedom of movement a finished run does without claiming the run
+ * finished, which is what makes the step returnable.
+ */
+export const ONBOARDING_DEFERRED_FLAG = 'onboarding:deferred'

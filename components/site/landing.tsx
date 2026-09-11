@@ -162,7 +162,7 @@ function Hero() {
           ))}
         </div>
         <div className="hero__actions">
-          <Link href="/signup" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
+          <Link href="/start" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
           <Link href={SITE_LINKS.howItWorks} className="arena-button arena-button--secondary arena-button--lg">How it works</Link>
         </div>
         <p className="hero__fine">Sign-up includes a voice rep. No card.</p>
@@ -525,7 +525,7 @@ function FinalCall() {
         You will probably be bad at it. That is the entire reason the simulator exists,
         and it is the last time being bad at it costs you nothing.
       </p>
-      <Link href="/signup" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
+      <Link href="/start" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
       <ul className="final-call__points">
         <li><Check size={14} strokeWidth={2} aria-hidden="true" /> A voice rep included with sign-up</li>
         <li><Check size={14} strokeWidth={2} aria-hidden="true" /> No card to start, and none to stay free</li>

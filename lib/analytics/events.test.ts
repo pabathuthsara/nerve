@@ -31,6 +31,10 @@ describe('the event catalogue', () => {
     // The order is the funnel. PostHog reads these as a sequence, so a
     // reordering here is a reordering of the chart M5's gate is read off.
     expect(FUNNEL_EVENTS).toEqual([
+      'start_step_viewed',
+      'start_answered',
+      'start_account_submitted',
+      'start_account_failed',
       'brief_viewed',
       'rep_started',
       'rep_first_user_turn',
@@ -41,6 +45,15 @@ describe('the event catalogue', () => {
       'field_challenge_accepted',
       'field_challenge_logged',
     ])
+  })
+
+  it('starts before the account, because that is where the drop was', () => {
+    // The nine product events begin at `brief_viewed`, which is past sign-up.
+    // Paid traffic that never signs up is invisible to all nine of them, which
+    // is the hole `/start` was built to close and this is the assertion that
+    // stops the acquisition half being dropped as noise later.
+    expect(FUNNEL_EVENTS.indexOf('start_step_viewed')).toBeLessThan(FUNNEL_EVENTS.indexOf('brief_viewed'))
+    expect(FUNNEL_EVENTS.indexOf('start_account_submitted')).toBeLessThan(FUNNEL_EVENTS.indexOf('brief_viewed'))
   })
 
   it('keeps the step that measures the freeze', () => {

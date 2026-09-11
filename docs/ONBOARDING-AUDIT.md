@@ -8,6 +8,14 @@ user would meet it, then measured against the rules in `CLAUDE.md` and §02.
 > a browser — one of them a redirect loop that would have shut every Google
 > sign-up out of the product. §1 and §2 are left as written, because a fix list
 > is worth less than the reasoning that produced it.
+>
+> **§8 is what changed on 11 September 2026, and it changes the premise of
+> this document.** This audit reads "the run between the sign-up form and the
+> first spoken word". For anybody arriving from a link, three of its questions
+> now happen *before* the sign-up form, on `/start`. Nothing here is wrong —
+> the run still exists, still resumes, and is still what an account created any
+> other way walks — but §1's "seven screens between create account and the
+> first word spoken" is now four for most new accounts.
 
 Everything below is a finding against the code as it stands on
 `elevenlabs-pipeline`. Line references are to the files as read, not to a
@@ -662,3 +670,56 @@ Nothing in the onboarding work reads a persona file.
    rewrites its `aria-label` every frame. It is the same defect as O13 in a
    different file, was not in scope, and is a five-line change whenever somebody
    is next in `profile-screens.tsx`.
+
+---
+
+## 8 · The questions moved in front of the account — **11 September 2026**
+
+`/start` asks track, focus and name before an account exists and carries the
+answers into `signUpWithPassword`. The argument for the reordering is
+`LAUNCH-GAP.md` D21 and `MARKETING-PLAN.md` §4.5a — it is a conversion change,
+not an onboarding one — but three things about it belong in this document,
+because they are about this run.
+
+**The questions are shared, not copied.** `TrackStep`, `FocusStep`, `NameStep`,
+`Question` and `Option` moved out of `onboarding-screens.tsx` into
+`onboarding-questions.tsx` and both runs render the same components. The
+alternative was a second authored copy of three questions, and
+`PRESENTATION.name` is what that looks like a month later: rung 1 was renamed
+from Tess to Cass everywhere except the landing page, because one fact had two
+homes. Nothing about the questions changed in the move except `TrackStep`,
+which learned that it is sometimes asked by somebody with no row to stamp — see
+`EnglishWaitlist` below.
+
+**A `/start` account resumes at `/onboarding/mic`, and that is the whole
+contract.** `signUpWithPassword` stamps `ONBOARDING_TRACK_FLAG` and
+`ONBOARDING_NAME_FLAG` alongside the columns, so `onboardingResumePath` reads
+it exactly as it reads an account that answered the questions in here. Get one
+flag wrong and somebody who has just answered three questions is asked all
+three again — with every screen still working, which is why it is asserted
+twice rather than reviewed: `startProfileWrite` is pure and unit-tested, and
+`npm run db:funnel` checks the row against the real database, including that a
+`/signup` with no funnel behind it still resumes at question one.
+
+**The English waitlist could not simply be reused.** `recordTrackWaitlist`
+stamps `ui_flags`, and there is no row to stamp before sign-up. `TrackStep`
+takes the recorder as a prop now, and takes the *sentence* separately: the
+signed-in arm says "we count who asks, and you have been counted", which is
+true when it is read; the pre-auth arm does not say it, because a stranger who
+then closes the tab was never counted. The ask is carried in the funnel's
+answers and written with everything else once the account exists, so
+`waitlist:track:english` still means one thing and is still one count.
+
+**The three flag names moved.** They were declared in `lib/data/guards.ts`,
+which is `server-only` — correct while the guard and a Server Action were the
+only readers, and wrong the moment the browser needed to know what a pre-auth
+answer would become. They live in `lib/data/ui-flags.ts` now, which exists for
+exactly this reason, and `guards.ts` re-exports them so every importer is
+unchanged.
+
+**Still owed by hand.** The run has not been walked on a real phone on mobile
+data. `/start` is 205 kB of first-load JS against `/`'s 106 kB — better than
+the 351 kB `/signup` door it replaces, and still the heaviest thing a cold
+visitor is asked to download. The obvious lever, lazy-loading the persona orb,
+was measured at 8 kB and reverted as not worth the moving part; the remaining
+weight is the shared UI module and the marks registry.

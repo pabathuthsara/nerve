@@ -211,7 +211,7 @@ function PlanColumn({ plan, period }: { plan: PublicPlan; period: BillingPeriod 
           account, after the sign-up rep, because that is the rep the decision
           is actually made on. Only the lead card is volt (Arena). */}
       <Link
-        href="/signup"
+        href="/start"
         className={`arena-button arena-button--${lead ? 'primary' : 'secondary'} arena-button--full`}
       >
         {plan.id === 'free'
