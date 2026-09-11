@@ -35,6 +35,9 @@ import {
   type TurnMark,
 } from '@/lib/voice/types'
 import { WarmthSession } from '@/lib/warmth/session'
+// Read-only, and it is the same reader `turn-kind.ts` uses to decide whether
+// HIS turn asked something. The guided rail asks it about hers.
+import { asksSomething } from '@/lib/warmth/turn-kind'
 import { bindVoiceSteering } from '@/lib/warmth/voice-steering'
 import { HttpSlowScorer } from '@/lib/warmth/slow'
 import {
@@ -247,6 +250,24 @@ export interface RepSessionState {
    * script still instead of marching a user through a monologue.
    */
   agentTurns: number
+  /**
+   * Whether her most recent committed turn put a question to him.
+   *
+   * The guided rail's one reading of what she actually said (D13, 11
+   * September). The ladder is otherwise blind — it counts exchanges and knows
+   * nothing about their content — which is fine for a lesson plan and wrong at
+   * the one moment the lesson plan talks over her: she has asked him something
+   * and the rail is telling him to ask a follow-up.
+   *
+   * A BOOLEAN and never her text. `asksSomething` is the recall-tuned reader
+   * `turn-kind.ts` already uses for the same question about his turns, and
+   * nothing downstream of this is allowed to compose a sentence out of what she
+   * said — rule 10, and `ANSWER_HER` carries no line for exactly that reason.
+   *
+   * Read off committed turns, so a reply that was generated and never heard
+   * cannot make the rail answer a question nobody was asked.
+   */
+  herLastTurnAsked: boolean
   /**
    * Why this rep ended, once it has. Null while it is still running.
    *
@@ -1497,6 +1518,19 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     recorderRef.current?.dispose()
   }, [clearLoops])
 
+  // Her last word, in one boolean. Recomputed on every render off the same
+  // committed transcript the interview caption reads, rather than held in
+  // state — a second copy is a second thing that can disagree with it.
+  //
+  // **It asks whether she is WAITING, not whether she ever asked.** The last
+  // turn in the transcript has to be hers: her question stays the most recent
+  // agent turn until she speaks again, so reading the last AGENT turn would
+  // leave the rail telling him to answer something he has already answered,
+  // for the whole of the following exchange — the same prompt standing too
+  // long, which is half of what this change exists to fix.
+  const lastTurn = turnsRef.current[turnsRef.current.length - 1]
+  const herLastTurnAsked = lastTurn?.speaker === 'agent' && asksSomething(lastTurn.text)
+
   // The rail's own reading of where he is. Recomputed on every render rather
   // than held in state: it is two counters and a transcript scan, and a second
   // copy in state is a second thing that can disagree with the transcript.
@@ -1526,6 +1560,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
     heardUser,
     userTurns,
     agentTurns,
+    herLastTurnAsked,
     endReason,
     error,
     refusal,

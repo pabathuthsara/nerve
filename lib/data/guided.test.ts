@@ -16,6 +16,8 @@ import {
   TESS_SCRIPT,
   UnsafeGuidedStep,
   assertGuidedStep,
+  ANSWER_HER,
+  guidedPromptFor,
   guidedScriptFor,
   guidedStepFor,
   splitSay,
@@ -28,10 +30,13 @@ import { PERSONAS } from '@/lib/personas'
 const step = (over: Partial<GuidedStep> = {}): GuidedStep => ({
   key: 'opening',
   aim: 'Open early. Rough is fine.',
-  say: 'Sunday afternoon in a launderette.',
+  says: ['Sunday afternoon in a launderette.'],
   why: 'The first ten seconds are the whole skill.',
   ...over,
 })
+
+/** One-line override, for the guard cases that are about a single sentence. */
+const saying = (say: string): Partial<GuidedStep> => ({ says: [say] })
 
 describe('the exception is exactly one character wide', () => {
   it('is claimed by one persona on the roster, and it is Tess', () => {
@@ -82,19 +87,34 @@ describe('the script teaches what the scorecard grades', () => {
     }
   })
 
-  it('has no line for composure, and that is the point', () => {
+  it('has no line for composure on its first beat, and that is the point', () => {
     // Its whole skill is not filling a pause. Handing somebody a sentence to
     // say when the lesson is "say nothing" teaches the opposite.
+    //
+    // The SECOND beat has a line, and that was a deliberate change to the
+    // lesson rather than a relaxation of the rule (11 September): composure is
+    // not filling a silence AND then coming back into the conversation without
+    // apologising for it, and the second half has a sentence. Without it this
+    // step held the last third of the rep and never changed.
     const composure = TESS_SCRIPT.find((s) => s.key === 'composure')
-    expect(composure?.say).toBeNull()
+    expect(composure?.says[0]).toBeNull()
     expect(composure?.aim).toBeTruthy()
+    expect(composure?.says.length).toBeGreaterThan(1)
+  })
+
+  it('gives the prompt with no line the same shape everywhere it happens', () => {
+    // Two prompts render as the aim alone and neither is padding: composure's
+    // first beat, and the reactive one, where the right sentence is the answer
+    // to a question we have not read and will not write for him (rule 10).
+    expect(ANSWER_HER.says).toEqual([])
+    expect(() => assertGuidedStep(ANSWER_HER)).not.toThrow()
   })
 
   it('never asks her for anything the format owns', () => {
     // The close is `lib/data/rep-rules.ts`'s and she never speaks digits, so a
     // suggested line that asks for a number is the product fighting itself.
-    for (const s of TESS_SCRIPT) {
-      expect(`${s.aim} ${s.say ?? ''}`, s.key).not.toMatch(/number|digits|go out|take you out|buy you a/i)
+    for (const s of [...TESS_SCRIPT, ANSWER_HER]) {
+      expect(`${s.aim} ${s.says.join(' ')}`, s.key).not.toMatch(/number|digits|go out|take you out|buy you a/i)
     }
   })
 })
@@ -104,19 +124,19 @@ describe('the guard refuses rather than trimming', () => {
     // §16, and the merchant-of-record reviewer §14 says opens the site. This is
     // the failure mode that closes a payment account.
     for (const say of ['You look gorgeous today', 'Nice legs', 'You are so hot']) {
-      expect(() => assertGuidedStep(step({ say })), say).toThrow(UnsafeGuidedStep)
+      expect(() => assertGuidedStep(step(saying(say))), say).toThrow(UnsafeGuidedStep)
     }
   })
 
   it('refuses a pickup line, in the vocabulary a reviewer would search for', () => {
     for (const say of ['Best pickup line I have', 'Want to hook up later', 'Are you single']) {
-      expect(() => assertGuidedStep(step({ say })), say).toThrow(UnsafeGuidedStep)
+      expect(() => assertGuidedStep(step(saying(say))), say).toThrow(UnsafeGuidedStep)
     }
   })
 
   it('refuses anything that asks her out or asks for contact details', () => {
     for (const say of ['Can I get your number', 'What is your instagram', 'Let me buy you a coffee', 'Email me at a@b.com']) {
-      expect(() => assertGuidedStep(step({ say })), say).toThrow(UnsafeGuidedStep)
+      expect(() => assertGuidedStep(step(saying(say))), say).toThrow(UnsafeGuidedStep)
     }
   })
 
@@ -129,8 +149,8 @@ describe('the guard refuses rather than trimming', () => {
 
   it('refuses a line nobody could read out loud while nervous', () => {
     const long = Array.from({ length: MAX_SAY_WORDS + 1 }, () => 'word').join(' ')
-    expect(() => assertGuidedStep(step({ say: long }))).toThrow(UnsafeGuidedStep)
-    expect(() => assertGuidedStep(step({ say: '   ' }))).toThrow(UnsafeGuidedStep)
+    expect(() => assertGuidedStep(step(saying(long)))).toThrow(UnsafeGuidedStep)
+    expect(() => assertGuidedStep(step(saying('   ')))).toThrow(UnsafeGuidedStep)
   })
 
   it('checks the brief copy too, not only what he says', () => {
@@ -234,12 +254,12 @@ describe('the blank he has to fill in', () => {
     // The renderer draws these parts and nothing else, so a split that dropped
     // a character would silently edit a sentence the product puts in somebody's
     // mouth. Round-trips every authored line rather than a contrived one.
-    for (const s of TESS_SCRIPT) {
-      if (!s.say) continue
-      const rebuilt = splitSay(s.say)
+    for (const line of TESS_SCRIPT.flatMap((s) => s.says)) {
+      if (!line) continue
+      const rebuilt = splitSay(line)
         .map((part) => (part.slot ? `[${part.text}]` : part.text))
         .join('')
-      expect(rebuilt, s.key).toBe(s.say)
+      expect(rebuilt, line).toBe(line)
     }
   })
 
@@ -261,9 +281,112 @@ describe('what the lines may not coach', () => {
     // A rep is three minutes and every prompt is a thing said to somebody who
     // is choosing whether to stay. None of them may suggest she should not.
     for (const s of TESS_SCRIPT) {
-      if (!s.say) continue
       if (s.key === 'close') continue
-      expect(s.say, s.key).not.toMatch(/\b(hurry|busy|rush|get going|let you go|in your way|bothering|leave|going)\b/i)
+      for (const line of s.says) {
+        if (!line) continue
+        expect(line, s.key).not.toMatch(/\b(hurry|busy|rush|get going|let you go|in your way|bothering|leave|going)\b/i)
+      }
     }
   })
 })
+
+describe('what the rail is actually showing', () => {
+  const at = (userTurns: number, agentTurns = userTurns) => ({ userTurns, agentTurns })
+  const shown = (turns: number, options = {}) =>
+    guidedPromptFor(TESS_SCRIPT, at(turns), options)
+
+  it('offers a step\'s lines one per exchange and then holds', () => {
+    // Curiosity opens on the room — at the first exchange she has answered an
+    // opener about a painting and nothing else, so a line asking what something
+    // is LIKE has nothing to attach to — and moves to the canonical follow-up
+    // once she has offered something of her own.
+    expect(shown(1)?.say).toBe('What made you stop at this one?')
+    expect(shown(2)?.say).toBe('What is that like?')
+    // Signal reading is the longest stretch and carries three.
+    expect(shown(5)?.say).toBe('You did not love that one, did you.')
+    expect(shown(6)?.say).toBe('You keep coming back to that one.')
+    expect(shown(7)?.say).toBe('You know more about this than you are saying.')
+    expect(shown(8)?.say).toBe('You know more about this than you are saying.')
+  })
+
+  it('changes on most exchanges of a rep rather than four times in the first minute', () => {
+    // THE 11 SEPTEMBER REPORT, as a property: "staying at one hint for a long
+    // time". One line per step meant five prompts over a whole rep, four of
+    // them spent inside the first seventy seconds. This asserts the CADENCE
+    // rather than the table — how many distinct things the rail says across
+    // the exchanges a real rep contains.
+    const seen = new Set<string>()
+    for (let turns = 0; turns <= 12; turns += 1) {
+      const prompt = shown(turns)
+      seen.add(`${prompt?.step.key}:${prompt?.say ?? ''}`)
+    }
+    expect(seen.size).toBeGreaterThanOrEqual(9)
+  })
+
+  it('never shows a line a step does not have', () => {
+    // `lineAt` holds on the last rather than running off the end, and a step
+    // with no lines at all renders its aim. Walked far past any real rep.
+    for (let turns = 0; turns <= 60; turns += 1) {
+      const prompt = shown(turns)
+      expect(prompt, `@${turns}`).not.toBeNull()
+      if (prompt?.say !== null) {
+        expect(prompt?.step.says, `@${turns}`).toContain(prompt?.say)
+      }
+    }
+  })
+
+  it('renders composure as a direction first and a line second', () => {
+    expect(shown(9)?.step.key).toBe('composure')
+    expect(shown(9)?.say).toBeNull()
+    expect(shown(10)?.say).toBe('Let me think about that for a second.')
+  })
+})
+
+describe('when she has just asked him something', () => {
+  const at = (userTurns: number, agentTurns = userTurns) => ({ userTurns, agentTurns })
+
+  it('stops telling him to ask and tells him to answer', () => {
+    // THE FLOW DEFECT, 11 September. The ladder counts exchanges and knows
+    // nothing about their content, which is fine for a lesson plan and wrong at
+    // the one moment the lesson plan talks over her: she has put a question to
+    // him and the rail is telling him to ask a follow-up.
+    const prompt = guidedPromptFor(TESS_SCRIPT, at(5), { herLastTurnAsked: true })
+    expect(prompt?.step).toBe(ANSWER_HER)
+    expect(prompt?.reactive).toBe(true)
+    // No line, deliberately: what he should say is the answer to a question we
+    // have not read, and rule 10 forbids writing one at runtime.
+    expect(prompt?.say).toBeNull()
+  })
+
+  it('leaves the position dots where the ladder left them', () => {
+    // The ladder has not moved. The dots answer "where are we in the rep", not
+    // "what is on the card", and a reactive prompt that shunted them would be
+    // reporting progress that did not happen.
+    const ladder = guidedPromptFor(TESS_SCRIPT, at(5))
+    const reactive = guidedPromptFor(TESS_SCRIPT, at(5), { herLastTurnAsked: true })
+    expect(reactive?.index).toBe(ladder?.index)
+    expect(reactive?.total).toBe(ladder?.total)
+  })
+
+  it('never outranks the wind-down', () => {
+    // Thirty seconds out the only thing worth saying is how to leave, whatever
+    // she just asked. The 6 September rule, and it stays first.
+    const prompt = guidedPromptFor(TESS_SCRIPT, at(5), { wrapping: true, herLastTurnAsked: true })
+    expect(prompt?.step.key).toBe('close')
+    expect(prompt?.reactive).toBe(false)
+  })
+
+  it('is suppressed on the opening, where she has not spoken at all', () => {
+    // Nothing of hers has been committed yet, so a true here can only be a
+    // stale read — and "answer it" is nonsense before she has said a word.
+    const prompt = guidedPromptFor(TESS_SCRIPT, at(0), { herLastTurnAsked: true })
+    expect(prompt?.step.key).toBe('opening')
+    expect(prompt?.reactive).toBe(false)
+  })
+
+  it('returns nothing at all for an empty script', () => {
+    expect(guidedPromptFor([], at(4))).toBeNull()
+    expect(guidedPromptFor([], at(4), { herLastTurnAsked: true })).toBeNull()
+  })
+})
+

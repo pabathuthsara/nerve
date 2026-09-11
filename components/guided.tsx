@@ -70,7 +70,7 @@
  * milliseconds.
  */
 
-import { splitSay, type GuidedStep } from '@/lib/data/guided'
+import { splitSay, type GuidedPrompt, type GuidedStep } from '@/lib/data/guided'
 import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
 import { Mark, dimensionMark, type MarkName } from '@/components/marks'
 
@@ -120,30 +120,35 @@ function SayLine({ say }: { say: string }) {
  *   · the AIM — the direction, which is the half that transfers
  *   · the LINE, largest — what gets you through the next ten seconds
  *
- * A step with no line promotes its aim into the line's slot rather than
- * leaving the space empty. `composure` is the only one, it holds the last third
- * of the rep now, and a rail that goes blank there reads as a broken feature
- * rather than as a lesson about silence.
+ * A prompt with no line promotes its aim into the line's slot rather than
+ * leaving the space empty. Two things arrive that way and neither is padding:
+ * `composure`'s first beat, whose whole lesson is that there is nothing to say,
+ * and `ANSWER_HER`, where the right sentence is the answer to a question we
+ * have not read and are not going to write for him.
  *
  * The dots are position, not progress: six prompts, this is the one you are on.
- * No volt — the live screen spends its one accent on the orb and the time arc,
- * and a rail that glowed would pull the eye off the person you are supposed to
- * be listening to.
+ * They keep showing the LADDER's position while a reactive prompt is up,
+ * because the ladder has not moved — they answer "where are we in the rep",
+ * not "what is on the card". No volt — the live screen spends its one accent on
+ * the orb and the time arc, and a rail that glowed would pull the eye off the
+ * person you are supposed to be listening to.
  */
-export function GuidedLine({ step, index, total }: { step: GuidedStep; index: number; total: number }) {
+export function GuidedLine({ prompt }: { prompt: GuidedPrompt }) {
+  const { step, say, index, total } = prompt
   return (
     <div className="guided-live" aria-hidden="true">
-      {/* Keyed on the step so the cross-fade replays when the prompt changes,
-          and only then. Nothing about the card moves between steps. */}
-      <div className="guided-live__card" key={step.key}>
+      {/* Keyed on what is actually being shown, so the cross-fade replays when
+          the prompt changes and only then. A step whose line advances is a new
+          prompt; a re-render that changes nothing is not. */}
+      <div className="guided-live__card" key={`${step.key}:${say ?? ''}`}>
         <p className="guided-live__tag">
           <Mark name={stepMark(step)} size={13} />
           <span className="label">{stepLabel(step)}</span>
         </p>
-        {step.say ? (
+        {say ? (
           <>
             <p className="guided-live__aim">{step.aim}</p>
-            <p className="guided-live__say"><SayLine say={step.say} /></p>
+            <p className="guided-live__say"><SayLine say={say} /></p>
           </>
         ) : (
           <p className="guided-live__say guided-live__say--direction">{step.aim}</p>
@@ -166,7 +171,7 @@ export function GuidedLine({ step, index, total }: { step: GuidedStep; index: nu
  * script any more.
  */
 export function GuidedBrief({ script }: { script: readonly GuidedStep[] }) {
-  const first = script[0]
+  const firstLine = script[0]?.says[0] ?? null
   return (
     <section className="guided-note">
       <div className="guided-note__head">
@@ -179,10 +184,10 @@ export function GuidedBrief({ script }: { script: readonly GuidedStep[] }) {
         A prompt appears under her, one at a time, for each of the six things you are scored on. Read it or say
         it your way — Cass is the only rep that gives you the words.
       </p>
-      {first?.say ? (
+      {firstLine ? (
         <p className="guided-note__first">
           <span className="label">Start with</span>
-          <strong>{first.say}</strong>
+          <strong>{firstLine}</strong>
         </p>
       ) : null}
       <details className="guided-note__all">
@@ -196,7 +201,9 @@ export function GuidedBrief({ script }: { script: readonly GuidedStep[] }) {
                   <Mark name={stepMark(step)} size={15} />
                   <span>{step.aim}</span>
                 </p>
-                {step.say ? <p className="guided-brief__say"><SayLine say={step.say} /></p> : null}
+                {step.says.filter((line): line is string => Boolean(line)).map((line) => (
+                  <p key={line} className="guided-brief__say"><SayLine say={line} /></p>
+                ))}
                 <p className="guided-brief__why">{step.why}</p>
               </div>
             </li>

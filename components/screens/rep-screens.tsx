@@ -28,7 +28,7 @@ import { FluidPersona } from '@/components/fluid-persona'
 import { capture } from '@/components/analytics'
 import { MissionLine, MissionNote } from '@/components/mission'
 import { GuidedBrief, GuidedLine } from '@/components/guided'
-import { guidedScriptFor, guidedStepFor } from '@/lib/data/guided'
+import { guidedPromptFor, guidedScriptFor } from '@/lib/data/guided'
 import { missionFor } from '@/lib/data/mission'
 import { useRepProduction } from '@/lib/hooks/use-rep-production'
 import { sceneId } from '@/lib/voice/types'
@@ -469,18 +469,18 @@ export function RepLiveScreen({
   // reply — so a rail that is meant to teach following an answer can never
   // point at one that has not arrived. The wind-down owns the close outright
   // and is the only way to reach it. See `guidedStepFor`.
-  const guidedStep = guidedScript
-    ? guidedStepFor(
+  //
+  // `herLastTurnAsked` is the one thing the rail reads about the CONVERSATION
+  // rather than about its length, and it outranks the ladder everywhere except
+  // the wind-down: a prompt telling him to ask a follow-up while she is waiting
+  // on an answer is not a prompt that fits badly, it is one that talks over her.
+  const guidedPrompt = guidedScript
+    ? guidedPromptFor(
       guidedScript,
       { userTurns: session.userTurns, agentTurns: session.agentTurns },
-      { wrapping: wrapCue },
+      { wrapping: wrapCue, herLastTurnAsked: session.herLastTurnAsked },
     )
     : null
-  // Where that step sits in the script, for the rail's position dots. The
-  // identity comparison is safe because `guidedStepFor` returns a member of the
-  // array it was handed, never a copy — and `-1` simply lights no dot, which is
-  // the right way for a future refactor of that function to fail.
-  const guidedIndex = guidedScript && guidedStep ? guidedScript.indexOf(guidedStep) : -1
   // F-10. "Listening" was a label, not a signal: a whole rep could run with a
   // muted headset, the wrong input device or a permission the browser quietly
   // withheld, and the interface said the same thing throughout.
@@ -497,7 +497,18 @@ export function RepLiveScreen({
   // The guided rail is lifted out of the centred stack and anchored to the
   // floor of the screen, so the composition above it has to know to stop
   // short. One class, set only on the one character who has a rail.
-  return <main className={`rep-live${guidedScript ? ' rep-live--guided' : ''}${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}${session.outcome ? ' rep-live--over' : ''}${production.arming ? ' rep-live--arming' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label={interview ? 'Leave interview' : 'End rep'} disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{production.count !== null ? <div className="rep-arm" role="status" aria-live="assertive"><span className="rep-arm__count data" key={production.count}>{production.count}</span><span className="rep-arm__label label">{subject.name} is about to speak</span></div> : null}{interview && captionsEnabled && session.question ? <p className="interview-question">{session.question}</p> : null}<section className="rep-center">{caption && subject ? <div className="rep-caption"><strong>{subject.name}</strong><span>{interview ? interviewer?.styleLabel : persona?.settingShort}</span></div> : null}<div className="orb-stage"><FluidPersona name={subject.name} personaId={subject.id} warmth={visualWarmth} announceWarmth speaking={loss ? 'thinking' : session.speaking} userLevel={session.userLevel} personaLevel={session.personaLevel} status={session.status === 'connecting' ? 'connecting' : 'live'} interactive fill /></div>{connecting && !production.arming ? <span className="label rep-connecting">Connecting · she can’t hear you yet</span> : null}{!connecting && level < 4 && !session.outcome ? <div className="band-readout"><span className="label" style={{ color: bandCss(session.band) }}>{displayBand}</span>{session.trainingWheels ? <strong className="data"><small>Warmth</small>{session.warmth}<i>/ {session.threshold}</i></strong> : null}</div> : null}{!connecting && !session.outcome && !production.arming ? (guidedStep && guidedScript ? <GuidedLine step={guidedStep} index={guidedIndex} total={guidedScript.length} /> : <MissionLine mission={liveMission} />) : null}{wrapCue ? <span className="wrap-cue label">30 seconds · land the conversation</span> : null}{session.outcome?.won && session.outcome.phoneNumber ? <PhoneNumberCard number={session.outcome.phoneNumber} /> : null}{loss ? <p className="exit-line">“{session.outcome?.exitLine}”</p> : null}{unheard ? <p className="silence-nudge" role="status"><MicOff size={15} strokeWidth={1.5} /> We can&apos;t hear you. Check your microphone and input device.</p> : null}<div className="mic-status" aria-live="polite">{statusLine}</div><div className="sr-only" aria-live="polite">{wrapCue ? 'Thirty seconds left. Land the conversation.' : bandAnnouncement(session.band, interview)}</div></section>{interview ? <span className="question-count data">Q{session.questionIndex} / {session.questionTotal}</span> : null}{resumeCount ? <div className="resume-count data">{resumeCount}</div> : null}{/* The back arrow reaches this too, including on a rep that never started.
+  return <main className={`rep-live${guidedScript ? ' rep-live--guided' : ''}${connecting ? ' rep-live--connecting' : ''}${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}${session.outcome ? ' rep-live--over' : ''}${production.arming ? ' rep-live--arming' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label={interview ? 'Leave interview' : 'End rep'} disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{production.count !== null ? <div className="rep-arm" role="status" aria-live="assertive"><span className="rep-arm__count data" key={production.count}>{production.count}</span><span className="rep-arm__label label">{subject.name} is about to speak</span></div> : null}{/* THE WAIT, GIVEN A SCREEN (11 September).
+      It was a 9px label under a fully-drawn avatar, so the first thing a new
+      account saw was her — present, rendered, apparently listening — while the
+      transport was still opening and nothing they said was reaching anything.
+      An interface that draws somebody before she can hear you is telling a
+      small lie at the one moment a nervous person is deciding whether this
+      works. She is not drawn until she can hear you; until then the screen is
+      a skeleton of her, which is §02's answer to a spinner, and it says whose
+      ears are not open yet by name rather than as "she". Under the count
+      rather than beside it: `onGo` fires at the TOP of the 3·2·1, so most
+      connections are open before the last tick and this is never seen at all. */}
+{connecting && !production.arming ? <div className="rep-connect" role="status" aria-live="polite"><div className="rep-connect__orb" /><span className="rep-connect__label label">Connecting</span><p className="rep-connect__line">{subject.name} can&apos;t hear you yet</p></div> : null}{interview && captionsEnabled && session.question ? <p className="interview-question">{session.question}</p> : null}<section className="rep-center">{caption && subject ? <div className="rep-caption"><strong>{subject.name}</strong><span>{interview ? interviewer?.styleLabel : persona?.settingShort}</span></div> : null}<div className="orb-stage"><FluidPersona name={subject.name} personaId={subject.id} warmth={visualWarmth} announceWarmth speaking={loss ? 'thinking' : session.speaking} userLevel={session.userLevel} personaLevel={session.personaLevel} status={session.status === 'connecting' ? 'connecting' : 'live'} interactive fill /></div>{!connecting && level < 4 && !session.outcome ? <div className="band-readout"><span className="label" style={{ color: bandCss(session.band) }}>{displayBand}</span>{session.trainingWheels ? <strong className="data"><small>Warmth</small>{session.warmth}<i>/ {session.threshold}</i></strong> : null}</div> : null}{!connecting && !session.outcome && !production.arming ? (guidedPrompt ? <GuidedLine prompt={guidedPrompt} /> : <MissionLine mission={liveMission} />) : null}{wrapCue ? <span className="wrap-cue label">30 seconds · land the conversation</span> : null}{session.outcome?.won && session.outcome.phoneNumber ? <PhoneNumberCard number={session.outcome.phoneNumber} /> : null}{loss ? <p className="exit-line">“{session.outcome?.exitLine}”</p> : null}{unheard ? <p className="silence-nudge" role="status"><MicOff size={15} strokeWidth={1.5} /> We can&apos;t hear you. Check your microphone and input device.</p> : null}<div className="mic-status" aria-live="polite">{statusLine}</div><div className="sr-only" aria-live="polite">{wrapCue ? 'Thirty seconds left. Land the conversation.' : bandAnnouncement(session.band, interview)}</div></section>{interview ? <span className="question-count data">Q{session.questionIndex} / {session.questionTotal}</span> : null}{resumeCount ? <div className="resume-count data">{resumeCount}</div> : null}{/* The back arrow reaches this too, including on a rep that never started.
       `session.error` is only ever set by a failed start, so it is the exact
       test for "there is no rep here to finish" — and on that path ending has
       to navigate, because there will be no outcome to navigate on. */}

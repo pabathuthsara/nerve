@@ -67,7 +67,28 @@ export interface GuidedStep {
   /** The direction. Six words at most, and it is still a direction. */
   aim: string
   /**
-   * An example line, or null when a line would teach the wrong thing.
+   * The example lines for this step, in the order they are offered — one per
+   * exchange spent on the step, holding on the last once they run out.
+   *
+   * ── IT WAS ONE LINE PER STEP, AND THAT WAS TWO DEFECTS ───────────────
+   *
+   * **It did not change often enough.** Five reachable steps over the fifteen
+   * or so exchanges a three-minute rep contains means a prompt that stands for
+   * twenty-five seconds at best and, on the last step, for the rest of the rep.
+   * Reported on 11 September as *"staying at one hint for a long time"*, which
+   * is what it was.
+   *
+   * **And one line cannot fit a conversation it knows nothing about.** A single
+   * authored sentence per lesson has to be general enough to survive anything
+   * she might have said, which makes it general enough to fit nothing in
+   * particular. Two or three ANGLES on the same lesson, offered in the order
+   * the conversation tends to earn them, is a much better bet: the first is
+   * written for a rep with almost nothing in it yet, the later ones assume she
+   * has given him something to work with.
+   *
+   * `null` is a beat with no line, rendering the aim alone, promoted. It is not
+   * padding — see `composure`, where the first beat's whole lesson is that
+   * there is nothing to say.
    *
    * Square brackets mark the one word the user has to supply himself —
    * "[her thing]" — because the useful version of a follow-up depends on what
@@ -75,7 +96,7 @@ export interface GuidedStep {
    * is worse than no line at all. `splitSay` is what turns that convention into
    * a visible blank rather than two literal brackets on screen.
    */
-  say: string | null
+  says: readonly (string | null)[]
   /** One sentence for the brief, saying what it is for. Never shown live. */
   why: string
 }
@@ -132,19 +153,31 @@ export const TESS_SCRIPT: readonly GuidedStep[] = [
   {
     key: 'opening',
     aim: 'Open early. Rough is fine.',
-    say: 'I have been standing here a while and I still have no idea.',
+    says: ['I have been standing here a while and I still have no idea.'],
     why: 'The first ten seconds are the whole skill. It does not have to be good, it has to be early.',
   },
   {
     key: 'curiosity',
     aim: 'Follow one answer twice.',
-    say: 'What is that like?',
+    // The room first, then her. At the first exchange she has answered an
+    // opener about a painting and nothing more, so a line that asks what
+    // something is LIKE has nothing to attach to; one about the picture they
+    // are both looking at always does. By the second she has usually offered
+    // something of her own — Cass is `earnest` and volunteers — and that is
+    // when the canonical follow-up finally has an answer to follow.
+    says: [
+      'What made you stop at this one?',
+      'What is that like?',
+    ],
     why: 'Most conversations die because the second question changes the subject. Stay on her answer and go one layer down.',
   },
   {
     key: 'listening',
     aim: 'Say her detail back.',
-    say: 'So you are a [her thing] person then.',
+    says: [
+      'So you are a [her thing] person then.',
+      'You said [her word]. What is that about?',
+    ],
     why: 'Repeating one specific thing she said is the fastest way a stranger decides you were actually listening.',
   },
   {
@@ -159,27 +192,80 @@ export const TESS_SCRIPT: readonly GuidedStep[] = [
     // what a good question earns, so the one authored line that could lose a
     // rep warmth was this one.
     //
-    // A read of her REACTION does the same teaching and opens instead of
-    // closing: it is specific to the room, it invites an answer either way,
-    // and `why` below already says the skill works whether you were right.
+    // All three below are reads of her that OPEN: each one invites her to
+    // agree, correct or protest, and `why` already says the skill works
+    // whether you were right. This is the longest stretch of the ladder, which
+    // is why it carries three.
     aim: 'Read her, then adjust.',
-    say: 'You did not love that one, did you.',
+    says: [
+      'You did not love that one, did you.',
+      'You keep coming back to that one.',
+      'You know more about this than you are saying.',
+    ],
     why: 'Naming what you notice, out loud, is the skill. It works whether you were right or wrong.',
   },
   {
     key: 'composure',
     aim: 'Let the pause sit.',
-    // No line, deliberately. See the header.
-    say: null,
-    why: 'Three seconds of silence feels like thirty. Not filling it is the thing being trained here.',
+    // TWO BEATS, AND THE FIRST ONE STILL HAS NO LINE.
+    //
+    // The header's argument is untouched and is the reason `null` leads:
+    // handing somebody a sentence to say when the lesson is "say nothing" is
+    // self-defeating, so the first beat renders the direction alone.
+    //
+    // What changed on 11 September is the LESSON, which is what that argument
+    // says to change if a line is ever wanted here. Composure is two skills,
+    // not one: not filling a silence, and then coming back into the
+    // conversation without apologising for it. The second has a line, it is
+    // the most useful sentence a nervous person can own, and it makes a pause
+    // legitimate out loud rather than something to be rescued from. Without it
+    // this step — which holds the last third of the rep — never changed at all.
+    says: [null, 'Let me think about that for a second.'],
+    why: 'Three seconds of silence feels like thirty. Not filling it, and then picking it back up without apologising, is the thing being trained here.',
   },
   {
     key: 'close',
     aim: 'Leave warmly, on purpose.',
-    say: 'I will let you get round the rest of it. Good to meet you.',
+    // ONE LINE, DELIBERATELY. The close is reachable only through the
+    // wind-down and lasts thirty seconds; a prompt that changed inside it
+    // would be changing the instruction at the one moment there is no time to
+    // read a second one.
+    says: ['I will let you get round the rest of it. Good to meet you.'],
     why: 'Ending it yourself, before it runs out, is worth more to the score than anything she decides.',
   },
 ]
+
+/**
+ * The one prompt that is not on the ladder: she just asked HIM something.
+ *
+ * ── WHY A REACTIVE PROMPT EXISTS AT ALL ──────────────────────────────────
+ *
+ * The ladder is blind. It knows how many exchanges have completed and nothing
+ * whatever about what was said in them, which is fine for a lesson plan and
+ * wrong for the single moment where the lesson plan is actively harmful: she
+ * has asked him a question, and the rail is telling him to ask one. Reported
+ * on 11 September as the rail not flowing with what she is actually saying,
+ * and this is the sharpest case of it — every other mismatch is a prompt that
+ * does not quite fit, and this one is a prompt that talks over her.
+ *
+ * **It has no line, and that is the whole point.** What he should say is the
+ * answer to HER question, and we do not know what she asked. A generated line
+ * would break rule 10 and a generic one would be worse than the direction. So
+ * this renders as the aim alone, promoted — the same shape `composure`'s first
+ * beat takes, for the same reason: there is a right thing to do here and no
+ * right sentence we are in a position to write.
+ *
+ * Keyed `listening`, because answering what you were actually asked is the
+ * listening dimension and not a seventh one. The rail's position dots keep
+ * showing the LADDER's position while this is up: the ladder has not moved,
+ * and the dots answer "where are we in the rep", not "what is on the card".
+ */
+export const ANSWER_HER: GuidedStep = {
+  key: 'listening',
+  aim: 'Answer it, then give it back.',
+  says: [],
+  why: 'A question you talk over is the one thing a stranger always notices. Answer it first, properly, then hand it back.',
+}
 
 export class UnsafeGuidedStep extends Error {}
 
@@ -224,15 +310,19 @@ export function assertGuidedStep(step: GuidedStep): void {
   if (words(step.aim) > MAX_AIM_WORDS) {
     throw new UnsafeGuidedStep(`guided ${step.key}.aim is longer than ${MAX_AIM_WORDS} words. It is read at a glance, mid-conversation.`)
   }
-  if (step.say !== null) {
-    if (words(step.say) > MAX_SAY_WORDS) {
-      throw new UnsafeGuidedStep(`guided ${step.key}.say is longer than ${MAX_SAY_WORDS} words. Nobody reads a paragraph out loud while nervous.`)
+  for (const say of step.says) {
+    if (say === null) continue
+    if (words(say) > MAX_SAY_WORDS) {
+      throw new UnsafeGuidedStep(`guided ${step.key} line is longer than ${MAX_SAY_WORDS} words. Nobody reads a paragraph out loud while nervous.`)
     }
-    if (step.say.trim().length === 0) {
-      throw new UnsafeGuidedStep(`guided ${step.key}.say is empty. Use null, which renders the aim alone.`)
+    if (say.trim().length === 0) {
+      throw new UnsafeGuidedStep(`guided ${step.key} line is empty. Use null, which renders the aim alone.`)
     }
   }
-  for (const field of [step.aim, step.say, step.why]) {
+  // Every line a step can ever show, plus the two strings that describe it.
+  // The loop walks `says` rather than one field because the set grew and a
+  // guard that checked the first line would be a guard with a hole in it.
+  for (const field of [step.aim, step.why, ...step.says]) {
     if (field === null) continue
     for (const rule of FORBIDDEN) {
       if (rule.pattern.test(field)) {
@@ -291,6 +381,7 @@ export function splitSay(say: string): readonly SayPart[] {
 
 /** Checked at module load, so a bad line cannot reach a build. */
 for (const step of TESS_SCRIPT) assertGuidedStep(step)
+assertGuidedStep(ANSWER_HER)
 
 /**
  * Every guided character, by slug.
@@ -371,4 +462,99 @@ export function guidedStepFor(
     if (exchanges >= at) chosen = step
   }
   return chosen
+}
+
+/**
+ * Which step he is on, as an index into the script.
+ *
+ * The same decision `guidedStepFor` makes, expressed as a position, because
+ * the rail draws position dots and the line chosen within a step depends on
+ * how many exchanges have been spent on it. Returns `script.length - 1` for the
+ * close, which is the only step the wind-down can reach.
+ */
+export function guidedStepIndexFor(
+  script: readonly GuidedStep[],
+  progress: GuidedProgress,
+  options: { wrapping?: boolean } = {},
+): number {
+  if (script.length === 0) return -1
+  if (options.wrapping) return script.length - 1
+  const exchanges = Math.min(progress.userTurns, progress.agentTurns)
+  let chosen = 0
+  for (let index = 0; index < script.length - 1; index += 1) {
+    if (exchanges >= (STEP_AT[index] ?? index)) chosen = index
+  }
+  return chosen
+}
+
+/** What the live rail is showing right now. */
+export interface GuidedPrompt {
+  /** The step it came from — its mark, its label and its aim. */
+  step: GuidedStep
+  /** The line to offer, or null to render the aim alone, promoted. */
+  say: string | null
+  /**
+   * Position on the LADDER, for the dots. Unchanged while `reactive` is true:
+   * the ladder has not moved, and the dots answer "where are we in the rep"
+   * rather than "what is on the card".
+   */
+  index: number
+  /** How many steps the ladder has. */
+  total: number
+  /** True when `step` is `ANSWER_HER` rather than a step on the ladder. */
+  reactive: boolean
+}
+
+/**
+ * The whole decision: which step, which of its lines, and whether she has just
+ * put a question to him that outranks both.
+ *
+ * ── THREE THINGS DECIDE IT, IN THIS ORDER ────────────────────────────────
+ *
+ * **The wind-down wins outright.** Thirty seconds out the only thing worth
+ * saying is how to leave, and that is true whatever she just asked. This is the
+ * 6 September rule and it is first for the same reason it was written.
+ *
+ * **Then her question.** A rail that tells him to ask a follow-up while she is
+ * waiting on an answer is not a prompt that fits badly, it is a prompt that
+ * talks over her — see `ANSWER_HER`. Suppressed on the opening step, where she
+ * has not spoken at all and `herLastTurnAsked` can only be a stale read.
+ * `herLastTurnAsked` means **she is waiting**, not that she once asked: the
+ * caller requires hers to be the last turn in the transcript, so the prompt
+ * clears the moment he answers rather than standing for another exchange.
+ *
+ * **Then the ladder, and which of its lines.** A step's lines are offered one
+ * per exchange spent on it and hold on the last, so the rail changes on most
+ * exchanges of a rep rather than four times in the first seventy seconds.
+ *
+ * Pure, so the whole of it is testable without a microphone; the caller reads
+ * `herLastTurnAsked` off the committed transcript (`lib/data/rep.ts`), which is
+ * the same source the interview caption is taken from.
+ */
+export function guidedPromptFor(
+  script: readonly GuidedStep[],
+  progress: GuidedProgress,
+  options: { wrapping?: boolean; herLastTurnAsked?: boolean } = {},
+): GuidedPrompt | null {
+  if (script.length === 0) return null
+  const total = script.length
+  const index = guidedStepIndexFor(script, progress, options)
+  const step = script[index]
+  if (!step) return null
+
+  if (!options.wrapping && options.herLastTurnAsked && index > 0) {
+    return { step: ANSWER_HER, say: lineAt(ANSWER_HER, 0), index, total, reactive: true }
+  }
+
+  // Exchanges spent on this step. The close is reached by the clock rather
+  // than by a count, so it opens at its first line and stays there.
+  const exchanges = Math.min(progress.userTurns, progress.agentTurns)
+  const spent = options.wrapping ? 0 : Math.max(0, exchanges - (STEP_AT[index] ?? index))
+  return { step, say: lineAt(step, spent), index, total, reactive: false }
+}
+
+/** The nth line of a step, holding on the last. No lines renders the aim. */
+function lineAt(step: GuidedStep, nth: number): string | null {
+  if (step.says.length === 0) return null
+  return step.says[Math.min(nth, step.says.length - 1)] ?? null
 }
