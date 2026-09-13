@@ -29,7 +29,7 @@
  * be minted from here — see the handover note at the bottom of the output.
  */
 
-import { INTERVIEW_PACKS, OFFERS, PUBLIC_PLANS, ROUND_COST_NOTE, TRIAL_DAYS, periodLabel, periodNoun, periodTabLabel, planById } from '@/lib/site/plans'
+import { INTERVIEW_PACKS, OFFERS, PUBLIC_PLANS, ROUND_COST_NOTE, TRIAL_DAYS, periodLabel, periodNoun, periodTabLabel, planById, type PlanOffer } from '@/lib/site/plans'
 import { apiBase, apiVersionDate, isLiveBase } from '@/lib/billing/plans'
 import { AFFILIATE_RATES } from '@/lib/billing/economics'
 
@@ -75,16 +75,6 @@ const ACCOUNT = {
  * plain: `global_affiliate_percentage`, `global_affiliate_status`,
  * `member_affiliate_percentage`, `member_affiliate_status`.
  *
- * **Why 40 and not Whop's default 30.** Affiliates are the only part of the
- * acquisition machine that keeps running when the one person posting stops,
- * and the plan's highest-severity risk is precisely that he is the whole
- * engine. 30% is the default every other seller offers, so it is the rate a
- * faceless creator scrolls past. 40% recurring on a $19 subscription is a
- * legible offer to somebody who already knows what those numbers mean.
- *
- * **50% for members**, because a member who converts has used the product and
- * their recommendation carries what an unpaid stranger's cannot.
- *
  * The cost is zero until it earns: an affiliate is paid out of revenue that
  * would not exist without them. This is the one growth lever in the plan with
  * no cash outlay and no ceiling set by available hours.
@@ -93,9 +83,22 @@ const ACCOUNT = {
  * the product was created with both statuses off because there was nothing to
  * affiliate for. Turning them on is a deliberate change, which is why it is
  * here and reviewed rather than clicked.
- */
-/**
- * ── WHY 30 AND 35 RATHER THAN 40 AND 50 (13 September) ───────────────────
+ *
+ * ── WHY 30 AND 30, DOWN FROM 40 AND 50 (13 September) ────────────────────
+ *
+ * The argument these replaced ran: 30% is the default every other seller
+ * offers, so it is the rate a creator scrolls past; 40% *recurring* on a $19
+ * subscription is a legible offer. Both halves turned out to be wrong. The
+ * rate was unaffordable — see below — and **nothing recurs**: the account pays
+ * on the FIRST payment only, confirmed at the provider, which no payload this
+ * script can read exposes. So the pitch was never the trailing monthly cut it
+ * described, and what actually makes a referral worth having is the buyer
+ * choosing the YEAR: $5.70 on a month against $44.70 on a year, once, either
+ * way. `earningsLine` says exactly that, and says it in numbers it computes.
+ *
+ * **Members get the same 30% and are no longer named separately.** The premium
+ * was the intention and the year cannot pay for it; two rates two points apart
+ * would only read as a catch.
  *
  * These two numbers are not marketing. They are the second half of a
  * subtraction whose first half is the price, and they were chosen together so
@@ -162,20 +165,39 @@ const AFFILIATES = {
  */
 function earningsLine(): string {
   const rate = AFFILIATES.global_affiliate_percentage
-  const member = AFFILIATES.member_affiliate_percentage
   const packs = INTERVIEW_PACKS
     .map((pack) => `$${pack.priceUsd} for ${pack.credits}`)
     .join(', ')
+  const cutOf = (offer: PlanOffer) => (offer.priceUsd * rate) / 100
   const best = OFFERS.reduce((a, b) => (b.priceUsd > a.priceUsd ? b : a))
-  const cut = (best.priceUsd * rate) / 100
+  const monthly = OFFERS.find((offer) => offer.plan === 'pro' && offer.period === 'monthly')
   const subscriptions = OFFERS
     .map((offer) => `${planById(offer.plan).name} at ${offer.price} ${periodLabel(offer.period).replace('/ ', 'a ')}`)
     .join(', ')
   return [
-    `${rate}% of every payment, for as long as your referral keeps paying.`,
-    `${member}% if you are a Nerve member yourself.`,
+    /**
+     * **First payment, not every payment**, confirmed at the provider on
+     * 13 September. This sentence read *"${rate}% of every payment, for as long
+     * as your referral keeps paying"* — a recurring promise the account does
+     * not pay, in the one document a creator reads before they post. An
+     * affiliate who works that out from their own statement is an affiliate
+     * who tells the others.
+     *
+     * The member rate is no longer named because it is the same number; two
+     * identical rates described separately reads as a catch.
+     */
+    `${rate}% of the first payment your referral makes. One payment, paid once — not a trailing monthly cut.`,
     `The plans are ${subscriptions}.`,
-    `The one to lead with is the year: ${best.price} pays you $${cut.toFixed(2)} on a single referral, once, on the day it happens — rather than a few dollars a month against a subscription that may not see the summer.`,
+    /**
+     * The honest consequence, and it happens to be the pitch. Because nothing
+     * recurs, what a referral is worth is decided entirely by which plan they
+     * pick — so the year is not marginally better than the month, it is several
+     * times better, and a creator sending people to the wrong one is working
+     * for a fraction of the money.
+     */
+    monthly
+      ? `Which plan they pick is therefore the whole of your cheque: the month pays you $${cutOf(monthly).toFixed(2)}, once, and the year pays $${cutOf(best).toFixed(2)}, once — about ${Math.round(cutOf(best) / cutOf(monthly))}x for the same referral. Send people to the year.`
+      : `The year pays $${cutOf(best).toFixed(2)} on a single referral, once, on the day it happens.`,
     `Interview credits are also sold outright — ${packs} — and those pay the same rate on a purchase somebody makes the week before an interview.`,
   ].join(' ')
 }
@@ -525,7 +547,10 @@ async function main(): Promise<void> {
   } else {
     done(briefNow ? 'update the affiliate brief' : 'write the affiliate brief (currently empty)')
   }
-  note('whether commission recurs on renewals is not exposed on any payload this script can read — confirm it once in the dashboard')
+  // Answered 13 September, in the dashboard: it does NOT recur. Kept as a
+  // printed fact rather than deleted, because it is invisible in every payload
+  // this script can read and the brief's whole pitch is built on it.
+  note('commission is paid on the FIRST payment only and does not recur (confirmed in the dashboard, 13 Sep) — the brief says so')
 
   // ── one vendor plan per OFFER ────────────────────────────────────────────
   //

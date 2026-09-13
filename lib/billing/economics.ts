@@ -93,7 +93,20 @@ export function maxCostToServe(offer: PlanOffer): number {
   return reps * COST_PER_REP_USD + offerPeriodCredits(offer) * COST_PER_CREDIT_USD
 }
 
-/** What is left on a sale after fees, cost of goods and a given commission. */
+/**
+ * What is left on a sale after fees, cost of goods and a given commission.
+ *
+ * **This models the FIRST billing period, which is the worst one**, and that is
+ * deliberate rather than incidental. Commission at the provider is paid on the
+ * first payment only (confirmed 13 September; no payload the repo can read
+ * exposes it), so period one bears a full period of cost of goods *and* the
+ * entire commission, while every renewal afterwards bears only the cost. A
+ * floor computed here is therefore a floor for the life of the subscription.
+ *
+ * It would still be the right sum if commission ever became recurring, which is
+ * the second reason not to "correct" it: the conservative reading is safe under
+ * both provider behaviours, and the optimistic one is safe under only one.
+ */
 export function marginAt(offer: PlanOffer, commissionPercent: number): number {
   return netOfFees(offer.priceUsd)
     - offer.priceUsd * (commissionPercent / 100)

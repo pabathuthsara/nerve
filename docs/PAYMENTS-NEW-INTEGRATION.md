@@ -1287,17 +1287,52 @@ it wasn't — which is the thing to expect when adding a third value anywhere.
 `profile-screens.tsx` carried two more of the same ternary. There are none left
 in the repo.
 
-### Still owed by hand
+### In production
 
-1. **`WHOP_PLAN_PRO_YEARLY=plan_E8OcPxQVpSptW` in Vercel production, then a
-   redeploy.** A variable added after a build starts is not in that build
-   (rule 15).
-2. **`CRON_SECRET`** set, or `/api/cron/interview-credits` answers 401 and the
-   drip never runs. It is empty in `.env.local`.
-3. **Whether commission recurs on renewals**, confirmed once in the dashboard —
-   no payload this repo can read exposes it, and on a yearly plan it is the
-   difference between paying a creator $44.70 once and paying it again next year
-   for a referral they made twelve months ago.
-4. **What adaptive pricing does.** `adaptive_pricing_enabled: true` on every
-   plan, and no non-LK purchase exists to read its behaviour off. It decides
-   whether "$44.70 a referral" is a number we can put in an affiliate brief.
+`dpl_GcLYxzVr8NqhtS3uwYsX5SJ2VLk8` off `ae3a1b8`, git-linked with no
+`gitDirty`, aliased to `www.hellonerve.com`. `/pricing` serves three tabs with
+`$149` and the "Billed once a year" note; `/api/cron/interview-credits` answers
+401 unauthenticated; `whop:verify` reads back 0 failed with the classification
+intact after the product write. `CRON_SECRET` was already set in production and
+had been for weeks — the preflight warning was about the blank in `.env.local`,
+not about the deployment.
+
+### The two provider facts, confirmed by hand
+
+Both were on the "owed" list and both changed something.
+
+**Commission does not recur. It is paid on the first payment only.** Nothing in
+any payload this repo can read says so, which is exactly why it sat unanswered —
+and the generated brief was meanwhile promising *"30% of every payment, for as
+long as your referral keeps paying"* in the one document a creator reads before
+they post. An affiliate who works that out from their own statement is an
+affiliate who tells the others.
+
+The correction is the better pitch. With nothing trailing, what a referral is
+worth is decided **entirely** by which plan the buyer picks:
+
+| referral converts on | affiliate earns, once |
+|---|---|
+| Pro monthly $19 | $5.70 |
+| **Pro yearly $149** | **$44.70** |
+
+About **8x for the same referral**, which is a sentence the brief now computes
+rather than asserts. It also settles what `marginAt` is modelling: period one
+bears a full period of cost of goods *and* the whole commission, every renewal
+bears only the cost — so the floor it computes is a floor for the life of the
+subscription, and it would still be the right sum if the provider ever made
+commission recurring. The conservative reading is safe under both behaviours;
+the optimistic one is safe under only one.
+
+**Adaptive pricing stays on.** The audience is US-first, so list price is what
+most buyers meet. The $2.00 charge that first suggested a steep
+purchasing-power discount was a hand-set test price, not the feature — the LKR
+presentment on it was currency display at the market rate (669.47 ÷ 2.00 ≈ 335),
+which is the thing that made it look like PPP. No conclusion about adaptive
+pricing should be drawn from that payment.
+
+### Still owed
+
+Nothing on this work. The plan is hidden, like every other plan on the account,
+so none of it is on sale until the product is unhidden — which stays a separate
+and deliberate decision (`MARKETING-PLAN.md` §4).
