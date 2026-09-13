@@ -89,29 +89,49 @@ So a technical or system design round adds a **seventh scored dimension**,
 the same six it has always been, pinned by
 `lib/characterization/dating-arm.test.ts`.
 
-## Text mode is the same character without the microphone
+## Texting is its own section, with its own roster
 
-`/text/[personaId]`. The same compiled contract, the same steering vocabulary,
-the same one line she carries between reps — typed.
+`/texting`. Shipped 14 September 2026, replacing text mode — which was the same
+dating characters typed at, on `/text/[personaId]`, and is gone.
 
-- **No microphone, no clock, no meter, no score, and no quota.** It is the
-  on-ramp for somebody who is not ready to speak out loud yet, and it is what is
-  still open when the day's voice reps are gone. When they are, `/train`'s
-  primary action becomes this rather than a dead OUT OF REPS.
-- **It can never produce a number.** Warmth in text follows the character's own
-  authored trajectory and is capped below `ARM_THRESHOLD`
-  (`lib/text/warmth.ts`), so she cannot be armed and there is no win to take.
-  The offer is the voice rep's payoff, and a payoff farmable in a mode with no
-  cost is a payoff worth nothing.
-- **It does not judge what was said.** Neither warmth pass runs: the model one
-  costs money in a mode that promises not to, and the local one reads pause
-  length, filler rate and hesitation off timings a typed message does not have.
-  Text tracks only that the conversation is continuing, which is the one thing
-  it can honestly observe.
-- **She remembers, and start fresh is two promises, not one.** The memory line
-  is shown at the top. Start fresh clears the conversation, and offers
-  separately to clear what she remembers — restarting a chat that went badly is
-  not the same as asking her to forget the bookshop.
+- **Its own characters.** Immy, Noor, Cleo and Wren (`lib/personas/texting/`).
+  Not the dating roster, and the reason is the dials rather than the fiction:
+  every dating trajectory was tuned against ~15 user turns inside three minutes,
+  and a thread runs twenty to forty with no clock. Reusing them would mean
+  retuning Tier 0 persona files for a texting reason, which rule 19 forbids.
+- **A real meter.** `lib/texting/meter.ts` folds the whole transcript through
+  the real fast scorer and `WarmthEngine` on every message. The old text mode's
+  meter was `start + turns × gain` — blind to what was said, so charm and abuse
+  raised it identically.
+- **Timing is the signal.** `lib/texting/presence.ts` turns the band into a read
+  delay, a typing lead and a typing duration. She reads a warm thread in 0.4
+  seconds and a cold one in fourteen, so **the delay cools before the words do**
+  — which is the one channel texting has that speech does not.
+- **Three endings, two of them silent.** `lib/texting/exit.ts` owns them as a
+  monotonic state, never as something the model remembers to say. **Left on
+  read** is the cold one: `Seen 11:04`, and nothing under it, ever. Nothing is
+  generated at all, so a faded thread costs less than a warm one.
+- **A debrief, never a scorecard.** Her interest curve, the three turns that
+  moved it most in the scorer's own words, and what ended it. No composite, no
+  `sessions` row, no streak, no unlock — §07 says outcome is worth zero, so a
+  warm ending and a cold one get the same debrief shape.
+- **It can never produce a number.** `TEXTING_WARMTH_CEILING` is
+  `ARM_THRESHOLD - 5`, so she cannot be armed and there is no win to take. The
+  offer is the voice rep's payoff, and a payoff farmable in a section with a
+  daily allowance is a payoff worth nothing.
+- **One conversation a day on free, unlimited on paid.** The gate is on
+  *starting* a thread and never mid-conversation: a message counter that cut
+  somebody off would be indistinguishable, from the inside, from the character
+  losing interest — which is the one signal the section teaches. Start fresh
+  **ends** a thread and never deletes one, because once metered a deletable
+  thread is a resettable quota (rule 11).
+- **She is never waiting for you.** `assertTextingScene` refuses an authored
+  evening that reads as a companion app, walked over the real roster by a test.
+  §14 is explicit that a companion-app framing is a payment account waiting to
+  be closed.
+
+The whole argument, what shipped and what the audition harness found is
+`docs/TEXTING-PLAN.md`.
 
 ## Voice is sold by the account, not by the day
 

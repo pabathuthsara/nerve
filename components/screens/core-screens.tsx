@@ -227,7 +227,18 @@ export function PersonaDetailScreen({ personaId }: { personaId: string }) {
  * that running out must never read as losing the account.
  */
 function DetailAction({ persona, canStart, voiceLocked }: { persona: Persona; canStart: boolean; voiceLocked: boolean }) {
-  const textHref = `/text/${persona.id}`
+  /**
+   * TEXTING IS ITS OWN SECTION WITH ITS OWN ROSTER, so this no longer offers
+   * to text THIS character — she is a dating character and she is not in it.
+   * `TEXTING-PLAN.md` §2.1 is the argument: the dating trajectories were tuned
+   * for fifteen turns in three minutes and a thread runs twenty to forty, so
+   * reusing them means retuning Tier 0 persona files for a texting reason.
+   *
+   * What survives is the JOB the link was doing — §14's "running out must never
+   * read as losing the account" — which the section as a whole does better than
+   * one character ever did.
+   */
+  const textHref = '/texting'
 
   if (persona.locked) {
     return <div className="detail-action"><div className="locked-action"><LockKeyhole size={18} strokeWidth={1.5} /><span>{persona.unlockRequirement}</span></div></div>
@@ -237,7 +248,7 @@ function DetailAction({ persona, canStart, voiceLocked }: { persona: Persona; ca
     return (
       <div className="detail-action">
         <Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href={`/rep/${persona.id}/brief`}>Start rep</Link>
-        <Link className="arena-button arena-button--ghost arena-button--sm arena-button--full" href={textHref}>Or talk to her in text</Link>
+        <Link className="arena-button arena-button--ghost arena-button--sm arena-button--full" href={textHref}>Or go and text somebody</Link>
       </div>
     )
   }
@@ -252,15 +263,15 @@ function DetailAction({ persona, canStart, voiceLocked }: { persona: Persona; ca
     return (
       <div className="detail-action">
         <Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href="/profile/subscription">Unlock voice reps — {TRIAL_DAYS} days free</Link>
-        <Link className="arena-button arena-button--ghost arena-button--sm arena-button--full" href={textHref}>Talk to her in text — always free</Link>
+        <Link className="arena-button arena-button--ghost arena-button--sm arena-button--full" href={textHref}>Texting is still open</Link>
       </div>
     )
   }
 
   return (
     <div className="detail-action">
-      <Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href={textHref}>Talk to her in text</Link>
-      <span className="label mute">Voice reps reset tonight. Text does not use one.</span>
+      <Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href={textHref}>Go and text somebody</Link>
+      <span className="label mute">Voice reps reset tonight. Texting is its own thing.</span>
     </div>
   )
 }

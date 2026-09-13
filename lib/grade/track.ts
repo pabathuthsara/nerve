@@ -68,6 +68,24 @@ const INTERVIEW: GradeRubric = {
 const BY_TRACK: Record<TrackId, GradeRubric> = {
   dating: DATING,
   interview: INTERVIEW,
+  /**
+   * TEXTING IS NEVER GRADED, AND THIS ENTRY IS NOT A GRADER.
+   *
+   * A texting thread produces no `sessions` row, no `scores` row, no composite
+   * and no rank movement — `TEXTING-PLAN.md` §16 lists that under what is
+   * deliberately out of scope, and the `text_threads` migration's own header is
+   * the argument: ungraded rows in `sessions` would reach every progress chart,
+   * every unlock count and every history read in the product.
+   *
+   * What a thread produces instead is a DEBRIEF (`lib/texting/debrief.ts`),
+   * built from the fast scorer's own reasons, with no model call at all.
+   *
+   * This entry exists solely because `Record<TrackId, _>` requires a key, and
+   * it points at the dating rubric so that a future caller who ignores the
+   * paragraph above gets sensible output rather than a crash. Nothing in the
+   * texting path calls it.
+   */
+  texting: DATING,
   // Specified and unbuilt (§01). It reads the dating rubric until it has one.
   language: DATING,
 }

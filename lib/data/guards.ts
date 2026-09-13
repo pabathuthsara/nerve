@@ -6,7 +6,7 @@ import { ONBOARDING_DEFERRED_FLAG, ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG }
 
 // `/text` is text mode (P1). Protected like every other training surface — it
 // costs no quota, which is not the same as being open to anybody.
-const protectedPrefixes = ['/train', '/roster', '/field', '/library', '/progress', '/profile', '/rep', '/text', '/session', '/interview', '/onboarding']
+const protectedPrefixes = ['/train', '/roster', '/field', '/library', '/progress', '/profile', '/rep', '/text', '/texting', '/session', '/interview', '/onboarding']
 
 /**
  * Signed in and these are pointless — except /reset-password, which is only

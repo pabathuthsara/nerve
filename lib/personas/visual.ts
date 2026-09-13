@@ -90,6 +90,18 @@ export const PERSONA_VISUAL: Record<string, AuthoredVisual> = {
   'aisha-rahman': { mode: 2, petals: 6, layers: 3, tube: 0.24, tilt: [0.18, -0.10, 0.14], deep: '#44363d', core: '#974970', sheen: '#d4c4cc' },
   'marcus-vance': { mode: 7, petals: 3, layers: 2, tube: 0.31, tilt: [-0.24, -0.14, 0.10], deep: '#364441', core: '#499788', sheen: '#c4d4d1' },
   'elena-kovac': { mode: 4, petals: 8, layers: 3, tube: 0.22, tilt: [0.26, 0.18, -0.16], deep: '#3a3644', core: '#5e4997', sheen: '#c8c4d4' },
+
+  // The texting track. Its own arc of the ramp so a texting character is never
+  // mistaken for a dating one at a glance, and the same bounds apply — the
+  // hues below avoid the 60-115deg band Volt lives in, and `visual.test.ts`
+  // asserts every distance rather than trusting this comment.
+  //
+  // Chroma still rises with warmth across the four rungs, which is the reason
+  // the carve-out is allowed to exist at all: the colour is the meter.
+  immy: { mode: 1, petals: 5, layers: 2, tube: 0.32, tilt: [0.14, -0.08, 0.12], deep: '#47333d', core: '#b03e78', sheen: '#d7c1cd' },
+  noor: { mode: 3, petals: 4, layers: 3, tube: 0.27, tilt: [-0.18, 0.14, -0.10], deep: '#37334a', core: '#5548a8', sheen: '#c5c1d7' },
+  cleo: { mode: 5, petals: 7, layers: 3, tube: 0.25, tilt: [0.22, -0.18, 0.16], deep: '#443831', core: '#9c4a2e', sheen: '#d4c6bd' },
+  wren: { mode: 7, petals: 4, layers: 3, tube: 0.24, tilt: [-0.26, -0.12, 0.22], deep: '#363f44', core: '#4d6b7a', sheen: '#c6ced3' },
 }
 
 /** FNV-1a. Stable across sessions and machines, which is the whole point. */

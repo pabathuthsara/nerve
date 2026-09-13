@@ -11,7 +11,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/api/', '/rep/', '/text/', '/session/', '/progress/', '/profile/', '/onboarding/', '/interview/', '/auth/'],
+      disallow: ['/api/', '/rep/', '/texting/', '/session/', '/progress/', '/profile/', '/onboarding/', '/interview/', '/auth/'],
     },
     sitemap: `${SITE_ORIGIN}/sitemap.xml`,
   }

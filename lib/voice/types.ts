@@ -508,6 +508,21 @@ export interface Persona {
   memorySummary?: string
 
   /**
+   * How he has her number, for a character who is texted rather than met.
+   *
+   * TEXTING ONLY, and absent everywhere else — which is why it is optional
+   * rather than required. It is compiled into the contract under
+   * "# How you know him" by the `texting` branch of `compileInstructions`, and
+   * it is ALSO shown on the roster card, exactly as `scene` is shown in both
+   * places: one authored line, two audiences, no second copy to drift.
+   *
+   * `assertTextingPremise` refuses one that asserts a relationship. See
+   * `lib/texting/scene.ts` for why that guard is a payment-account concern
+   * rather than a taste one.
+   */
+  premise?: string
+
+  /**
    * What the user is called (§08's `usesYourName` gate).
    *
    * First name only, and absent when they never gave one — the onboarding step
@@ -529,11 +544,16 @@ export interface Persona {
  * label means one engine and a lookup. The UI reads the label, the engine reads
  * the variable, and they never meet.
  */
-export type TrackId = 'dating' | 'interview' | 'language'
+export type TrackId = 'dating' | 'interview' | 'texting' | 'language'
 
 export const TRACK_LABELS: Record<TrackId, string> = {
   dating: 'Warmth',
   interview: 'Impression',
+  // The same engine variable under a third label. Texting measures the same
+  // thing the dating arm does — how much she likes him — so the word is the
+  // same word; it is listed rather than aliased because a `Record<TrackId, _>`
+  // with a missing key is a compile error, which is the point of the map.
+  texting: 'Warmth',
   language: 'Engagement',
 }
 

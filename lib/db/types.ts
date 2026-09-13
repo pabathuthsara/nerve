@@ -49,6 +49,8 @@ export type Database = {
           reps_used_today: number
           spend_halt_reason: string | null
           spend_halted_at: string | null
+          texting_messages_per_day: number
+          texting_threads_per_day: number
           updated_at: string
           user_id: string
         }
@@ -62,6 +64,8 @@ export type Database = {
           reps_used_today?: number
           spend_halt_reason?: string | null
           spend_halted_at?: string | null
+          texting_messages_per_day?: number
+          texting_threads_per_day?: number
           updated_at?: string
           user_id: string
         }
@@ -75,6 +79,8 @@ export type Database = {
           reps_used_today?: number
           spend_halt_reason?: string | null
           spend_halted_at?: string | null
+          texting_messages_per_day?: number
+          texting_threads_per_day?: number
           updated_at?: string
           user_id?: string
         }
@@ -981,6 +987,45 @@ export type Database = {
           id?: string
           persona_slug?: string
           started_at?: string
+          turns?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      texting_threads: {
+        Row: {
+          ended_at: string | null
+          ending: string | null
+          exit_state: string
+          id: string
+          persona_slug: string
+          started_at: string
+          state: string
+          turns: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ended_at?: string | null
+          ending?: string | null
+          exit_state?: string
+          id?: string
+          persona_slug: string
+          started_at?: string
+          state?: string
+          turns?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ended_at?: string | null
+          ending?: string | null
+          exit_state?: string
+          id?: string
+          persona_slug?: string
+          started_at?: string
+          state?: string
           turns?: Json
           updated_at?: string
           user_id?: string

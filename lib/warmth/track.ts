@@ -36,6 +36,14 @@ import {
   type UserTurnShape,
 } from './reciprocity'
 import { INTERVIEW_BRIEF_WORD_CAP, interviewWordCapFor, type InterviewTurnKind } from './interview/bands'
+import { textingSentenceCapFor, textingWordCapFor } from './texting/bands'
+import {
+  textingMayAsk,
+  textingMayVolunteer,
+  textingMirrorCap,
+  type TextingTurnShape,
+} from './texting/reciprocity'
+import { composeTextingSteering, type TextingSteeringContext } from './texting/steering'
 import { composeInterviewSteering, type InterviewSteeringContext } from './interview/steering'
 import {
   interviewMayAsk,
@@ -175,6 +183,42 @@ const INTERVIEW: TrackJudgement = {
 }
 
 /**
+ * The texting arm.
+ *
+ * A third directory and one more case, which is exactly what this file's header
+ * specifies and the only thing it asks of the two existing arms: nothing.
+ *
+ * Three of the entries differ from the dating arm in ways worth reading:
+ *
+ *   maySayNothing   ALWAYS FALSE, and it is not the interview arm's reason.
+ *                   There, silence was indistinguishable from a dropped call.
+ *                   Here, silence is the single most important signal the
+ *                   medium has — but it is owned by `lib/texting/exit.ts` as a
+ *                   scene STATE ("left on read"), not by a per-turn gate. Two
+ *                   systems deciding whether she answers would eventually
+ *                   disagree, and the one that ends the thread has to win.
+ *
+ *   maxQuestionShare  the dating 0.4, unchanged. A person who asks something in
+ *                   every message is interrogating in any medium, and unlike an
+ *                   interviewer she has no job that requires it.
+ *
+ *   wordCap         the mirror is tighter (1.2 against 1.3), because a thread
+ *                   shows both sides' message lengths side by side, permanently.
+ */
+const TEXTING: TrackJudgement = {
+  track: 'texting',
+  steer: (context) => composeTextingSteering(context as TextingSteeringContext),
+  wordCap: (value, his) => textingMirrorCap(value, his as TextingTurnShape | null),
+  bandCap: textingWordCapFor,
+  sentenceCap: textingSentenceCapFor,
+  mayAsk: (value, his) => textingMayAsk(value, his as TextingTurnShape | null),
+  // See the note above: leaving is a state, never a turn-level gate.
+  maySayNothing: () => false,
+  mayVolunteer: (value, his) => textingMayVolunteer(value, his as TextingTurnShape | null),
+  maxQuestionShare: 0.4,
+}
+
+/**
  * The sentence ceiling for an interviewer.
  *
  * A runaway guard rather than a rule: `interviewWordCapFor` owns her length and
@@ -191,6 +235,7 @@ const INTERVIEW_SENTENCE_CAP = 5
 const BY_TRACK: Record<TrackId, TrackJudgement> = {
   dating: DATING,
   interview: INTERVIEW,
+  texting: TEXTING,
   language: DATING,
 }
 

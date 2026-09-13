@@ -72,6 +72,19 @@ export const FUNNEL_EVENTS = [
   'focused_rep_started',
   'field_challenge_accepted',
   'field_challenge_logged',
+  // The texting section. The funnel it answers is the one D21 could not see at
+  // all: whether somebody who will not open a microphone will open a thread,
+  // and where they stop.
+  //
+  // **NOT ONE OF THESE CARRIES A MESSAGE.** `safeProps` refuses anything that
+  // is not an id, an enum, a number or a boolean, which is the guard that makes
+  // that structural rather than remembered — and a texting product is precisely
+  // where somebody would be tempted to log the text.
+  'texting_thread_started',
+  'texting_message_sent',
+  'texting_thread_ended',
+  'texting_debrief_viewed',
+  'texting_allowance_reached',
 ] as const
 
 export type FunnelEvent = (typeof FUNNEL_EVENTS)[number]
@@ -117,6 +130,20 @@ export interface EventProps {
   focused_rep_started: { persona_id: string; focus: string }
   field_challenge_accepted: { challenge_id: string; tier: number; predicted_anxiety: number }
   field_challenge_logged: { challenge_id: string; tier: number; predicted_anxiety: number; actual_anxiety: number; asked: boolean }
+  texting_thread_started: { persona_id: string; level: number }
+  /** `messages` is his running count in this thread, so pacing is visible. */
+  texting_message_sent: { persona_id: string; messages: number }
+  /**
+   * How it finished and how long it lasted.
+   *
+   * `ending` is the one field that makes the section legible: a product where
+   * most threads fade is a product whose rung 1 is too hard, and a product
+   * where none do is one that is not teaching anything.
+   */
+  texting_thread_ended: { persona_id: string; ending: 'warm' | 'faded' | 'dismissed'; exchanges: number }
+  texting_debrief_viewed: { persona_id: string; ending: 'warm' | 'faded' | 'dismissed' | 'open' }
+  /** The free wall, which is the only place this section asks for money. */
+  texting_allowance_reached: { per_day: number }
 }
 
 /**

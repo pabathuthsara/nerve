@@ -636,3 +636,52 @@ describe('the founding allocation', () => {
     }
   })
 })
+
+describe('the texting allowance (TEXTING-PLAN §13)', () => {
+  /**
+   * NAMES AND PRICES DO NOT MOVE, and this is the assertion that says so.
+   *
+   * The texting section was added to what each plan INCLUDES. Nothing about
+   * what any of them costs or is called changed, and a public price is very
+   * hard to raise again — `CLAUDE.md` is emphatic that the credits dial turns
+   * freely in both directions while the price only turns down. Pinned here so
+   * that a later change to either has to be deliberate.
+   */
+  it('the names and the prices are exactly what they were', () => {
+    expect(PUBLIC_PLANS.map((plan) => [plan.id, plan.name, plan.price])).toEqual([
+      ['free', 'Free', null],
+      ['pro', 'Pro', '$19'],
+      ['elite', 'Elite', '$49'],
+    ])
+  })
+
+  it('the rep counts are exactly what they were', () => {
+    expect(PUBLIC_PLANS.map((plan) => plan.repsPerDay)).toEqual([0, 3, 6])
+  })
+
+  it('free gets one real conversation a day', () => {
+    expect(planById('free').textingThreadsPerDay).toBe(1)
+  })
+
+  it('paid is a runaway guard rather than a limit on a person', () => {
+    for (const plan of ['pro', 'elite'] as const) {
+      expect(planById(plan).textingThreadsPerDay).toBeGreaterThan(20)
+    }
+  })
+
+  it('every plan states its texting position', () => {
+    // Free names the number because one a day is a real constraint somebody
+    // should know before signing up; paid says unlimited because for any human
+    // it is.
+    expect(planById('free').features.join(' ')).toMatch(/one texting conversation a day/i)
+    expect(planById('pro').features.join(' ')).toMatch(/unlimited texting/i)
+  })
+
+  it('never promises texting is scored', () => {
+    // §07: outcome is never scored, and texting is never graded at all. A
+    // feature line implying otherwise would be a promise the product refuses.
+    for (const plan of PUBLIC_PLANS) {
+      expect(plan.features.join(' ')).not.toMatch(/texting[^.]*\b(?:score|scored|grade|graded|rank)\b/i)
+    }
+  })
+})

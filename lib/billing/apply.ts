@@ -287,6 +287,11 @@ export async function applyBillingEvent(event: BillingEvent): Promise<ApplyResul
       user_id: userId,
       plan: target,
       reps_per_day: planById(target).repsPerDay,
+      // The texting allowance rides the same write, for the same reason
+      // `reps_per_day` does: it is the section's paywall rather than a copy
+      // decision, and a plan change that moved one number and not the other
+      // would leave a paying account metered like a free one.
+      texting_threads_per_day: planById(target).textingThreadsPerDay,
       // A plan change is not a refill, the same rule `scripts/set-plan.ts`
       // follows: today's counter stands, so upgrading mid-afternoon does not
       // hand back the reps already spent.

@@ -1,0 +1,153 @@
+{"kind":"deck","id":"pr/ku1rl4","name":"Deck"}
+{"kind":"layout","layoutId":"900efcf8-a3e3-45c1-a27b-2f3e67459d01","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"0599576a-2148-41ab-b43c-f72a7bb78f86","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/vudoa7","slide":1,"title":"NERVE","textShapes":5}
+{"kind":"textbox","id":"sh/xgvqlsv6","slide":1,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[70,202,750,105]}
+{"kind":"textbox","id":"sh/wf2psnel","slide":1,"text":"An AI conversation gym","textPreview":"An AI conversation gym","textChars":22,"textLines":1,"bbox":[76,322,1000,65]}
+{"kind":"textbox","id":"sh/jid8nidw","slide":1,"text":"Helping young adults speak with confidence in dating and job interviews.","textPreview":"Helping young adults speak with confidence in dating and job interviews.","textChars":72,"textLines":1,"bbox":[77,406,960,106]}
+{"kind":"shape","id":"sh/yh47uxwr","slide":1,"bbox":[77,590,1122,0]}
+{"kind":"textbox","id":"sh/l4vqpsv2","slide":1,"text":"Pabath Wedamuhandirama","textPreview":"Pabath Wedamuhandirama","textChars":22,"textLines":1,"bbox":[77,615,600,34]}
+{"kind":"textbox","id":"sh/kjmpwnuh","slide":1,"text":"hellonerve.com","textPreview":"hellonerve.com","textChars":14,"textLines":1,"bbox":[930,615,270,34]}
+{"kind":"image","id":"im/7i1gnydo","slide":1,"name":"","alt":"Nerve brand mark","bbox":[72,62,115,115]}
+{"kind":"notes","id":"nt/vudoa7","slide":1,"text":"Company and founder details from the OpenVC dashboard screenshot supplied by the user. The one-sentence description reflects docs/PRODUCT.md and the current product code."}
+{"kind":"slide","id":"sl/isb481","slide":2,"title":"NERVE","textShapes":6}
+{"kind":"textbox","id":"sh/98ni1kzy","slide":2,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/m5wjq5g7","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/7650zahs","slide":2,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/k3u1ovy1","slide":2,"text":"The problem","textPreview":"The problem","textChars":11,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/l43ix0zm","slide":2,"text":"The conversations that matter most are the hardest to rehearse.","textPreview":"The conversations that matter most are the hardest to rehearse.","textChars":63,"textLines":1,"bbox":[75,215,1110,175]}
+{"kind":"textbox","id":"sh/y1czm5gb","slide":2,"text":"A first date or job interview changes with every answer. Practice alone cannot reproduce hesitation, interruption, or rejection.","textPreview":"A first date or job interview changes with every answer. Practice alone cannot reproduce hesitation, interruption, or rejection.","textChars":128,"textLines":1,"bbox":[79,432,1070,136]}
+{"kind":"textbox","id":"sh/z2l0vqhg","slide":2,"text":"NERVE STARTS WITH REALISTIC VOICE PRACTICE","textPreview":"NERVE STARTS WITH REALISTIC VOICE PRACTICE","textChars":42,"textLines":1,"bbox":[79,620,700,30]}
+{"kind":"notes","id":"nt/isb481","slide":2,"text":"Nerve positioning and product hypothesis from docs/NERVE-SPEC.md and app/page.tsx. This is a customer problem statement, not a quantified prevalence claim."}
+{"kind":"slide","id":"sl/9q9iy8","slide":3,"title":"NERVE","textShapes":6}
+{"kind":"textbox","id":"sh/pc32x47m","slide":3,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/2ps3m98v","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/3q1kvepg","slide":3,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/cfulsj6x","slide":3,"text":"A conversation gym","textPreview":"A conversation gym","textChars":18,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/dg3m1o7i","slide":3,"text":"VOICE REPS","textPreview":"VOICE REPS","textChars":10,"textLines":1,"bbox":[78,204,400,30]}
+{"kind":"textbox","id":"sh/qdc3q9o7","slide":3,"text":"Speak out loud with an AI character who responds in the moment.","textPreview":"Speak out loud with an AI character who responds in the moment.","textChars":63,"textLines":1,"bbox":[78,247,398,170]}
+{"kind":"textbox","id":"sh/relkzepc","slide":3,"text":"The dating rep lasts three minutes. The character can lose interest, get distracted, or say no.","textPreview":"The dating rep lasts three minutes. The character can lose interest, get distracted, or say no.","textChars":95,"textLines":1,"bbox":[78,449,405,132]}
+{"kind":"image","id":"im/9wratkfu","slide":3,"name":"","alt":"Nerve dating practice screen","bbox":[542,183,664,474]}
+{"kind":"notes","id":"nt/9q9iy8","slide":3,"text":"Product behavior from docs/PRODUCT.md. Screenshot: public/shots/train.webp, a product UI image in the repository. UI values shown in the screenshot are demonstration content and are not traction."}
+{"kind":"slide","id":"sl/4o89ar","slide":4,"title":"NERVE","textShapes":6}
+{"kind":"textbox","id":"sh/d4fu983e","slide":4,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/q1ovydkn","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/r2xc7yl8","slide":4,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/07qd4n25","slide":4,"text":"Interview practice","textPreview":"Interview practice","textChars":18,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/18zeds3a","slide":4,"text":"SECOND USE CASE","textPreview":"SECOND USE CASE","textChars":15,"textLines":1,"bbox":[78,204,400,30]}
+{"kind":"textbox","id":"sh/e58v2dkz","slide":4,"text":"Candidates practice with an interviewer who has read their CV and role.","textPreview":"Candidates practice with an interviewer who has read their CV and role.","textChars":71,"textLines":1,"bbox":[78,245,412,172]}
+{"kind":"textbox","id":"sh/z6hwbilk","slide":4,"text":"Rounds run 5 to 25 minutes. Technical rounds can assess answer accuracy as well as delivery.","textPreview":"Rounds run 5 to 25 minutes. Technical rounds can assess answer accuracy as well as delivery.","textChars":92,"textLines":1,"bbox":[78,449,412,132]}
+{"kind":"image","id":"im/10be50zu","slide":4,"name":"","alt":"Nerve interview practice screen","bbox":[542,183,664,474]}
+{"kind":"notes","id":"nt/4o89ar","slide":4,"text":"Interview features and pricing from docs/PRODUCT.md and app/interviews/page.tsx. Screenshot: public/shots/interview-home.webp, a product UI image in the repository. Screenshot fields are illustrative product content, not customer data."}
+{"kind":"slide","id":"sl/fhcvpi","slide":5,"title":"NERVE","textShapes":6}
+{"kind":"textbox","id":"sh/698bex0j","slide":5,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/tczupcja","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/8bqtg7ip","slide":5,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/vy1cr21g","slide":5,"text":"Feedback on what users can improve","textPreview":"Feedback on what users can improve","textChars":34,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/uxsvih0v","slide":5,"text":"AFTER EACH REP","textPreview":"AFTER EACH REP","textChars":14,"textLines":1,"bbox":[78,205,400,30]}
+{"kind":"textbox","id":"sh/h0jutcz6","slide":5,"text":"A scorecard identifies the moment the conversation changed.","textPreview":"A scorecard identifies the moment the conversation changed.","textChars":59,"textLines":1,"bbox":[78,246,405,136]}
+{"kind":"textbox","id":"sh/gzadk7i1","slide":5,"text":"Nerve grades how the user spoke, including questions, listening, and composure. A rejection can still be a strong rep.","textPreview":"Nerve grades how the user spoke, including questions, listening, and composure. A rejection can still be a strong rep.","textChars":118,"textLines":1,"bbox":[78,414,405,169]}
+{"kind":"image","id":"im/6pw369oz","slide":5,"name":"","alt":"Nerve session scorecard","bbox":[542,183,664,474]}
+{"kind":"notes","id":"nt/fhcvpi","slide":5,"text":"Scoring behavior from docs/PRODUCT.md, sections on dating and interview tracks. Screenshot: public/shots/scorecard.webp, a product UI image in the repository. Screenshot score is illustrative UI content."}
+{"kind":"slide","id":"sl/ljg738","slide":6,"title":"NERVE","textShapes":15}
+{"kind":"textbox","id":"sh/nax8nu9w","slide":6,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/8b6pwzqh","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/9cfqp4r2","slide":6,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/y547qp8f","slide":6,"text":"The practice loop","textPreview":"The practice loop","textChars":17,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/z6doja9k","slide":6,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[78,215,80,50]}
+{"kind":"textbox","id":"sh/07mpsfq5","slide":6,"text":"Voice rep","textPreview":"Voice rep","textChars":9,"textLines":1,"bbox":[171,215,360,50]}
+{"kind":"textbox","id":"sh/l8v6lkrq","slide":6,"text":"A timed conversation creates a real attempt.","textPreview":"A timed conversation creates a real attempt.","textChars":44,"textLines":1,"bbox":[550,218,600,65]}
+{"kind":"shape","id":"sh/i1o7298j","slide":6,"bbox":[78,295,1127,0]}
+{"kind":"textbox","id":"sh/j2h8ve94","slide":6,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[78,327,80,50]}
+{"kind":"textbox","id":"sh/ra9kryt4","slide":6,"text":"Scorecard","textPreview":"Scorecard","textChars":9,"textLines":1,"bbox":[171,327,360,50]}
+{"kind":"textbox","id":"sh/690jitsj","slide":6,"text":"The user sees one concrete behavior to improve.","textPreview":"The user sees one concrete behavior to improve.","textChars":47,"textLines":1,"bbox":[550,330,600,65]}
+{"kind":"shape","id":"sh/tcb2t8ba","slide":6,"bbox":[78,407,1127,0]}
+{"kind":"textbox","id":"sh/sbi1k3ap","slide":6,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[78,439,80,50]}
+{"kind":"textbox","id":"sh/fytkvytg","slide":6,"text":"Next mission","textPreview":"Next mission","textChars":12,"textLines":1,"bbox":[171,439,360,50]}
+{"kind":"textbox","id":"sh/exkjmdsv","slide":6,"text":"The next rep targets that behavior.","textPreview":"The next rep targets that behavior.","textChars":35,"textLines":1,"bbox":[550,442,600,65]}
+{"kind":"shape","id":"sh/10b2x8b6","slide":6,"bbox":[78,519,1127,0]}
+{"kind":"textbox","id":"sh/gz21o3a1","slide":6,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[78,551,80,50]}
+{"kind":"textbox","id":"sh/32tkzitc","slide":6,"text":"Real-world challenge","textPreview":"Real-world challenge","textChars":20,"textLines":1,"bbox":[171,551,360,50]}
+{"kind":"textbox","id":"sh/21kjqdsr","slide":6,"text":"The user tries the skill outside the app and logs what happened.","textPreview":"The user tries the skill outside the app and logs what happened.","textChars":64,"textLines":1,"bbox":[550,554,600,65]}
+{"kind":"notes","id":"nt/ljg738","slide":6,"text":"Current product loop synthesized from docs/PRODUCT.md and docs/RETENTION-AUDIT.md. No outcome or retention rate is claimed."}
+{"kind":"slide","id":"sl/tg65j3","slide":7,"title":"NERVE","textShapes":14}
+{"kind":"textbox","id":"sh/nq1gn65k","slide":7,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/oruxgb65","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/ps3ypgna","slide":7,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/atcfilov","slide":7,"text":"Business model","textPreview":"Business model","textChars":14,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/bulgrq5g","slide":7,"text":"SUBSCRIPTION VOICE PRACTICE","textPreview":"SUBSCRIPTION VOICE PRACTICE","textChars":27,"textLines":1,"bbox":[78,206,550,30]}
+{"kind":"textbox","id":"sh/cvuhkb61","slide":7,"text":"$19","textPreview":"$19","textChars":3,"textLines":1,"bbox":[78,251,235,92]}
+{"kind":"textbox","id":"sh/xw3ytgnm","slide":7,"text":"Pro / month","textPreview":"Pro / month","textChars":11,"textLines":1,"bbox":[264,278,350,52]}
+{"kind":"textbox","id":"sh/qx8f6hor","slide":7,"text":"3 dating voice reps per day","textPreview":"3 dating voice reps per day","textChars":27,"textLines":1,"bbox":[78,346,480,50]}
+{"kind":"shape","id":"sh/ryhgfm5c","slide":7,"bbox":[78,420,1126,0]}
+{"kind":"textbox","id":"sh/bedwfm1c","slide":7,"text":"$49","textPreview":"$49","textChars":3,"textLines":1,"bbox":[78,445,235,92]}
+{"kind":"textbox","id":"sh/ad4f6h0r","slide":7,"text":"Elite / month","textPreview":"Elite / month","textChars":13,"textLines":1,"bbox":[264,472,350,52]}
+{"kind":"textbox","id":"sh/xgvehwji","slide":7,"text":"6 dating voice reps per day","textPreview":"6 dating voice reps per day","textChars":27,"textLines":1,"bbox":[78,540,480,50]}
+{"kind":"textbox","id":"sh/wfmx8rix","slide":7,"text":"INTERVIEW PACKS","textPreview":"INTERVIEW PACKS","textChars":15,"textLines":1,"bbox":[678,214,440,34]}
+{"kind":"textbox","id":"sh/natwbm1g","slide":7,"text":"$6  /  $20  /  $45","textPreview":"$6  /  $20  /  $45","textChars":18,"textLines":1,"bbox":[678,273,530,70]}
+{"kind":"textbox","id":"sh/m9kv2h0v","slide":7,"text":"2, 8, or 20 one-time credits","textPreview":"2, 8, or 20 one-time credits","textChars":28,"textLines":1,"bbox":[678,354,465,50]}
+{"kind":"textbox","id":"sh/9cvedcj6","slide":7,"text":"Every account starts with one free dating rep and a five-minute interview screener.","textPreview":"Every account starts with one free dating rep and a five-minute interview screener.","textChars":83,"textLines":1,"bbox":[678,474,480,126]}
+{"kind":"notes","id":"nt/tg65j3","slide":7,"text":"Pricing from docs/PRODUCT.md and docs/LAUNCH-GAP.md D18-D19, checked against app/pricing/page.tsx and lib/billing/plans.ts. Prices are current repository configuration as inspected 12 Sep 2026, not a claim about revenue."}
+{"kind":"slide","id":"sl/havr5a","slide":8,"title":"NERVE","textShapes":10}
+{"kind":"textbox","id":"sh/dczy9cz2","slide":8,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/q9ofexgb","slide":8,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/bahg72hw","slide":8,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/0fqhk7yd","slide":8,"text":"Early evidence","textPreview":"Early evidence","textChars":14,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/lgzydczy","slide":8,"text":"89","textPreview":"89","textChars":2,"textLines":1,"bbox":[78,224,300,118]}
+{"kind":"textbox","id":"sh/yd8zixgn","slide":8,"text":"dating sessions","textPreview":"dating sessions","textChars":15,"textLines":1,"bbox":[83,341,365,45]}
+{"kind":"textbox","id":"sh/zehgb2h8","slide":8,"text":"Across 17 user accounts in an internal product audit.","textPreview":"Across 17 user accounts in an internal product audit.","textChars":53,"textLines":1,"bbox":[83,408,447,115]}
+{"kind":"shape","id":"sh/gj6x8ny9","slide":8,"bbox":[633,217,0,328]}
+{"kind":"textbox","id":"sh/hkfy1szu","slide":8,"text":"0 / 42","textPreview":"0 / 42","textChars":6,"textLines":1,"bbox":[704,224,468,118]}
+{"kind":"textbox","id":"sh/h4bq543q","slide":8,"text":"visit-to-account conversions","textPreview":"visit-to-account conversions","textChars":28,"textLines":1,"bbox":[709,341,488,74]}
+{"kind":"textbox","id":"sh/wj2pcz2l","slide":8,"text":"TikTok and Meta visits, 4–10 Sep. The sign-up flow was then instrumented and changed.","textPreview":"TikTok and Meta visits, 4–10 Sep. The sign-up flow was then instrumented and changed.","textChars":85,"textLines":1,"bbox":[709,431,484,118]}
+{"kind":"textbox","id":"sh/vit83ul0","slide":8,"text":"These are learning signals, not proof of repeat paid demand.","textPreview":"These are learning signals, not proof of repeat paid demand.","textChars":60,"textLines":1,"bbox":[79,613,1110,54]}
+{"kind":"notes","id":"nt/havr5a","slide":8,"text":"Internal product snapshot: docs/INTERVIEW-PLAN.md §15 and docs/LAUNCH-GAP.md D21. 89 sessions across 17 users at the 7 Sep 2026 track-filter audit; 42 visits from TikTok and Meta from 4–10 Sep with 0 new accounts. These figures are dated, include possible tests, and do not establish retention, paying conversion, or product-market fit."}
+{"kind":"slide","id":"sl/n7cxln","slide":9,"title":"NERVE","textShapes":9}
+{"kind":"textbox","id":"sh/s7qxcbuh","slide":9,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/76hwj6dw","slide":9,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/658fa1cb","slide":9,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/l4fehwv6","slide":9,"text":"Customer focus","textPreview":"Customer focus","textChars":14,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/kj6x8rul","slide":9,"text":"ENTRY SEGMENT","textPreview":"ENTRY SEGMENT","textChars":13,"textLines":1,"bbox":[78,215,400,30]}
+{"kind":"textbox","id":"sh/jixwfmd0","slide":9,"text":"Young adults who avoid starting conversations","textPreview":"Young adults who avoid starting conversations","textChars":45,"textLines":1,"bbox":[78,270,504,154]}
+{"kind":"textbox","id":"sh/yhof61cf","slide":9,"text":"The dating track offers short, repeatable practice and a real-world challenge.","textPreview":"The dating track offers short, repeatable practice and a real-world challenge.","textChars":78,"textLines":1,"bbox":[78,482,496,104]}
+{"kind":"shape","id":"sh/p0jyt0ba","slide":9,"bbox":[635,206,0,385]}
+{"kind":"textbox","id":"sh/4faxkvup","slide":9,"text":"ADJACENT SEGMENT","textPreview":"ADJACENT SEGMENT","textChars":16,"textLines":1,"bbox":[698,215,400,30]}
+{"kind":"textbox","id":"sh/29oj6x4b","slide":9,"text":"Candidates preparing for early career interviews","textPreview":"Candidates preparing for early career interviews","textChars":48,"textLines":1,"bbox":[698,270,505,154]}
+{"kind":"textbox","id":"sh/nahkf2lw","slide":9,"text":"The interview track adds rounds tailored to a CV and a one-time credit purchase.","textPreview":"The interview track adds rounds tailored to a CV and a one-time credit purchase.","textChars":80,"textLines":1,"bbox":[698,482,494,104]}
+{"kind":"notes","id":"nt/n7cxln","slide":9,"text":"Customer segments are Nerve’s current product positioning in docs/PRODUCT.md and docs/MARKETING-PLAN.md. This slide intentionally makes no quantified TAM claim because no defensible bottom-up market estimate was available in the supplied materials."}
+{"kind":"slide","id":"sl/ft1k1x","slide":10,"title":"NERVE","textShapes":9}
+{"kind":"textbox","id":"sh/bi1s7e50","slide":10,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/cja9gjml","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/dkja9on6","slide":10,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/ylsri94b","slide":10,"text":"Go-to-market test","textPreview":"Go-to-market test","textChars":17,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/zm1sbe5w","slide":10,"text":"US LAUNCH EXPERIMENT","textPreview":"US LAUNCH EXPERIMENT","textChars":20,"textLines":1,"bbox":[78,201,500,30]}
+{"kind":"textbox","id":"sh/kna9kjmh","slide":10,"text":"Short-form content","textPreview":"Short-form content","textChars":18,"textLines":1,"bbox":[78,269,480,60]}
+{"kind":"textbox","id":"sh/lo3adon2","slide":10,"text":"Show one recognizable conversation mistake and the rep that corrects it.","textPreview":"Show one recognizable conversation mistake and the rep that corrects it.","textChars":72,"textLines":1,"bbox":[78,342,498,128]}
+{"kind":"shape","id":"sh/ep8r6p47","slide":10,"bbox":[635,230,0,345]}
+{"kind":"textbox","id":"sh/fqh8zu5s","slide":10,"text":"Creator referrals","textPreview":"Creator referrals","textChars":17,"textLines":1,"bbox":[699,269,465,60]}
+{"kind":"textbox","id":"sh/nepsb21c","slide":10,"text":"Test small paid creators while measuring each step from visit to first rep and purchase.","textPreview":"Test small paid creators while measuring each step from visit to first rep and purchase.","textChars":88,"textLines":1,"bbox":[699,342,482,128]}
+{"kind":"shape","id":"sh/mdgbix0r","slide":10,"bbox":[78,544,1126,0]}
+{"kind":"textbox","id":"sh/907adcji","slide":10,"text":"The planned 60-day budget is $340. The decision metric is paid, repeat use.","textPreview":"The planned 60-day budget is $340. The decision metric is paid, repeat use.","textChars":75,"textLines":1,"bbox":[78,579,1100,68]}
+{"kind":"notes","id":"nt/ft1k1x","slide":10,"text":"Proposed 60-day US launch plan and $340 budget from docs/MARKETING-PLAN.md. The /start funnel instrumentation shipped 11 Sep 2026 per docs/LAUNCH-GAP.md D21. The plan is a test, not achieved traction."}
+{"kind":"slide","id":"sl/vzp07u","slide":11,"title":"NERVE","textShapes":7}
+{"kind":"textbox","id":"sh/6d8val07","slide":11,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/tgzu5gzy","slide":11,"text":"11","textPreview":"11","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/sfqdcbid","slide":11,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/fihc7qho","slide":11,"text":"Founder","textPreview":"Founder","textChars":7,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/eh8vel0j","slide":11,"text":"Pabath","textPreview":"Pabath","textChars":6,"textLines":1,"bbox":[78,236,690,92]}
+{"kind":"textbox","id":"sh/1kju90zu","slide":11,"text":"Wedamuhandirama","textPreview":"Wedamuhandirama","textChars":15,"textLines":1,"bbox":[78,318,1032,93]}
+{"kind":"textbox","id":"sh/gjadgvi9","slide":11,"text":"Solo founder based in Sri Lanka","textPreview":"Solo founder based in Sri Lanka","textChars":31,"textLines":1,"bbox":[82,450,990,53]}
+{"kind":"shape","id":"sh/vmxcv6hk","slide":11,"bbox":[82,533,1112,0]}
+{"kind":"textbox","id":"sh/alob210z","slide":11,"text":"Nerve is live with voice reps, scorecards, billing, and an interview track.","textPreview":"Nerve is live with voice reps, scorecards, billing, and an interview track.","textChars":75,"textLines":1,"bbox":[82,568,1082,71]}
+{"kind":"notes","id":"nt/vzp07u","slide":11,"text":"Founder name, team size and Sri Lanka location from the supplied OpenVC dashboard screenshot. Product status from docs/PRODUCT.md. No education, work history, or unsupported personal credentials are claimed."}
+{"kind":"slide","id":"sl/xmgtvo","slide":12,"title":"NERVE","textShapes":7}
+{"kind":"textbox","id":"sh/j2l87m10","slide":12,"text":"NERVE","textPreview":"NERVE","textChars":5,"textLines":1,"bbox":[72,24,150,35]}
+{"kind":"textbox","id":"sh/43u9gr2l","slide":12,"text":"12","textPreview":"12","textChars":2,"textLines":1,"bbox":[1160,30,50,24]}
+{"kind":"shape","id":"sh/543a9wjq","slide":12,"bbox":[72,69,1136,0]}
+{"kind":"textbox","id":"sh/uxsrahk3","slide":12,"text":"The ask","textPreview":"The ask","textChars":7,"textLines":1,"bbox":[72,99,1130,84]}
+{"kind":"textbox","id":"sh/vyl83m1o","slide":12,"text":"Raising $100k","textPreview":"Raising $100k","textChars":13,"textLines":1,"bbox":[77,208,1077,127]}
+{"kind":"textbox","id":"sh/wzu9cr29","slide":12,"text":"Capital to test whether voice practice becomes repeat paid behavior.","textPreview":"Capital to test whether voice practice becomes repeat paid behavior.","textChars":68,"textLines":1,"bbox":[81,361,1050,95]}
+{"kind":"shape","id":"sh/h03q5wju","slide":12,"bbox":[81,495,1121,0]}
+{"kind":"textbox","id":"sh/m9sr6xk7","slide":12,"text":"MILESTONES FOR THIS ROUND","textPreview":"MILESTONES FOR THIS ROUND","textChars":25,"textLines":1,"bbox":[81,525,600,30]}
+{"kind":"textbox","id":"sh/7u18z21s","slide":12,"text":"Validate the acquisition funnel. Prove paid conversion and retention. Improve voice quality and reliability with real users.","textPreview":"Validate the acquisition funnel. Prove paid conversion and retention. Improve voice quality and reliability with real users.","textChars":124,"textLines":1,"bbox":[81,567,1080,100]}
+{"kind":"notes","id":"nt/xmgtvo","slide":12,"text":"Raise target of $100k from the user-supplied OpenVC dashboard screenshot. Milestones are a proposed use-of-funds framework, not a representation of an approved budget or guaranteed outcome."}

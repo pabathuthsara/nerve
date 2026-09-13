@@ -245,9 +245,9 @@ function PractiseThis({ card, personas, repsLeft }: { card: LibraryCard; persona
             `focus` is the card's first target, which is the same key the
             scorecard used to recommend the card in the first place. */}
         {spent
-          ? <Link className="arena-button arena-button--primary" href={`/text/${slug}`} onClick={() => capture('focused_rep_started', { persona_id: slug, focus: card.targets[0] ?? 'none' })}>Run it in text</Link>
+          ? <Link className="arena-button arena-button--primary" href="/texting" onClick={() => capture('focused_rep_started', { persona_id: slug, focus: card.targets[0] ?? 'none' })}>Try it in texting</Link>
           : <Link className="arena-button arena-button--primary" href={`/rep/${slug}/brief`} onClick={() => capture('focused_rep_started', { persona_id: slug, focus: card.targets[0] ?? 'none' })}>Run a rep on this</Link>}
-        <Link className="arena-button arena-button--ghost" href={spent ? '/train' : `/text/${slug}`}>{spent ? 'Back to training' : 'Or try it in text'}</Link>
+        <Link className="arena-button arena-button--ghost" href={spent ? '/train' : '/texting'}>{spent ? 'Back to training' : 'Or try it in texting'}</Link>
       </div>
     </section>
   )

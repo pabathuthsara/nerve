@@ -60,6 +60,17 @@ export interface PublicPlan {
   price: string | null
   /** Reps a day, matching `entitlements.reps_per_day`. */
   repsPerDay: number
+  /**
+   * Texting conversations a day, matching
+   * `entitlements.texting_threads_per_day`.
+   *
+   * ENFORCEMENT, NOT COPY — exactly like `repsPerDay`. The Server Action that
+   * opens a thread refuses at zero remaining and there is deliberately no
+   * second gate in a screen. One on free; on paid it is a runaway guard rather
+   * than a limit on a person, which is why the feature line says unlimited and
+   * means it (`TEXTING-PLAN.md` §13).
+   */
+  textingThreadsPerDay: number
   /** One line on who it is for. Never a feature list in disguise. */
   tagline: string
   features: readonly string[]
@@ -537,10 +548,27 @@ export const PUBLIC_PLANS: readonly PublicPlan[] = [
     // at zero and `mayOpenSession` refuses to mint a credential, so this number
     // IS the voice lock. See the module note above.
     repsPerDay: 0,
+    /**
+     * ONE A DAY, AND THE NARROWING WAS SPENT DELIBERATELY.
+     *
+     * This was unmetered and unlimited, against a text mode with no meter
+     * behind it. Narrowing it is a TAKEAWAY, which is the same class of move as
+     * a price rise and just as hard to reverse — so it was made in the only
+     * window where it is free: no paying customers, no volume, and a texting
+     * section nobody has yet formed an expectation about. Identical reasoning
+     * to the 9 September price cut (`LAUNCH-GAP.md` D19).
+     *
+     * The cost case for it does not exist — a texting conversation is about
+     * 1.3 cents and a free account costs roughly $0.40 a month. The conversion
+     * case is the whole case: a free, unlimited, EASIER mode beside a paid,
+     * scarier one is the worst possible configuration, because voice carries a
+     * tax texting does not.
+     */
+    textingThreadsPerDay: 1,
     tagline: 'The outside half of the work, and every record of it. No voice.',
     features: [
       'Every field challenge, the log and the predicted-versus-actual chart',
-      'Text mode against the same characters, unmetered and unlimited',
+      'One texting conversation a day, against the texting roster',
       'Streaks, ranks, session history and the Sunday review letter',
       'Every tier you open by scoring — the roster never opens by paying',
       'One voice rep when you sign up, so you know what you are deciding about',
@@ -553,9 +581,11 @@ export const PUBLIC_PLANS: readonly PublicPlan[] = [
     name: 'Pro',
     price: '$19',
     repsPerDay: 3,
+    textingThreadsPerDay: 40,
     tagline: 'The training volume the arc actually needs: fail, adjust, succeed.',
     features: [
       'Three voice reps a day',
+      'Unlimited texting — every character, as many conversations as you want',
       'Enough to fail one, change something, and go again in a sitting',
       // A real plan difference since Phase D, and the only one besides volume.
       // Stated as a number because "included" is what a page says when it does
@@ -579,6 +609,7 @@ export const PUBLIC_PLANS: readonly PublicPlan[] = [
     name: 'Elite',
     price: '$49',
     repsPerDay: 6,
+    textingThreadsPerDay: 40,
     tagline: 'For the stretch where you are doing this every evening.',
     features: [
       'Six voice reps a day',

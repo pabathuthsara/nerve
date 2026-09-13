@@ -2822,3 +2822,94 @@ a.admin-chip { text-decoration: none; }
 .start-account .auth-form { margin-top: 22px; }
 .start-account .auth-fine { margin-top: 18px; }
 
+
+/* ── Texting ──────────────────────────────────────────────────────────────
+   The section's own surfaces. Arena throughout: hairlines not shadows, 2px
+   radius at most, tabular-nums on every digit, and volt exactly once per
+   screen — the inbox spends it on YOUR TURN or on the offer when the day's
+   conversation is gone, and the debrief spends it on her interest line. */
+
+.texting-home { display: grid; align-content: start; gap: 18px; width: min(100%, 680px); margin: 0 auto; padding: 24px 16px 40px; }
+.texting-home__top { display: grid; gap: 6px; }
+.texting-home__top p { margin: 0; font-size: 14px; }
+
+.texting-gate { display: grid; gap: 8px; border: 1px solid var(--line-bright); border-radius: 2px; padding: 16px; background: var(--surface); }
+.texting-gate p { margin: 0; color: var(--text-dim); font-size: 14px; }
+.texting-gate .arena-button { justify-self: start; margin-top: 4px; }
+
+.texting-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.texting-list li { border-bottom: 1px solid var(--line); }
+.texting-list__row { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: start; gap: 12px; padding: 14px 4px; text-decoration: none; color: inherit; }
+a.texting-list__row:hover { background: var(--surface); }
+.texting-list__row--shut { opacity: .5; cursor: default; }
+.texting-list__body { display: grid; gap: 3px; min-width: 0; }
+.texting-list__name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.texting-list__name strong { font-weight: 500; }
+.texting-list__when { flex: none; font-family: var(--font-mono), monospace; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-mute); }
+.texting-list__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 14px; }
+.texting-list__state { color: var(--text-mute); }
+/* The one volt element on the inbox. */
+.texting-list__state--turn { color: var(--volt); }
+
+.texting-thread { min-height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ground); }
+.texting-thread__top { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 6px 12px 6px 0; background: color-mix(in srgb, var(--ground) 92%, transparent); backdrop-filter: blur(8px); }
+.texting-thread__who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.texting-thread__who > span { display: grid; min-width: 0; }
+.texting-thread__who strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Status, never an action — so never volt. Absent entirely once she has gone. */
+.texting-thread__presence { color: var(--text-mute); }
+.texting-thread__fresh { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: transparent; color: var(--text-dim); padding: 7px 10px; border-radius: 2px; cursor: pointer; }
+.texting-thread__fresh:hover { border-color: var(--line-bright); color: var(--text); }
+
+.texting-thread__body { overflow-y: auto; display: grid; align-content: start; gap: 10px; width: min(100%, 640px); margin: 0 auto; padding: 20px 16px 28px; }
+.texting-thread__memory { margin-bottom: 8px; }
+.texting-thread__opener { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 2px; padding: 18px; }
+.texting-thread__scene { margin: 0; color: var(--text); line-height: 1.6; }
+.texting-thread__opener p.muted { margin: 0; font-size: 14px; }
+
+.texting-turn { display: grid; gap: 4px; }
+/* A real gap in the conversation gets a real marker. The presence delays
+   generate these on their own, which is what makes a cold thread LOOK cold on
+   scroll-back rather than only read as cold. */
+.texting-thread__when { display: grid; place-items: center; margin: 6px 0 2px; }
+.texting-thread__when span { font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .06em; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+/* The receipt. `Delivered` means she has not looked; `Seen 11:04` with nothing
+   under it, forever, is left on read. */
+.texting-receipt { justify-self: end; margin: 0; font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .04em; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+
+.texting-ending { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 2px; padding: 16px; margin-top: 10px; }
+.texting-ending p { margin: 0; color: var(--text-dim); font-size: 14px; }
+.texting-ending__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+.texting-compose { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; width: min(100%, 640px); margin: 0 auto; border-top: 1px solid var(--line); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+.texting-compose textarea { width: 100%; min-height: 46px; max-height: 180px; resize: none; border: 1px solid var(--line-bright); border-radius: 2px; background: var(--surface); color: var(--text); font-family: inherit; font-size: 15px; line-height: 1.5; padding: 12px 13px; }
+.texting-compose textarea:focus-visible { outline: 1px solid var(--volt); outline-offset: -1px; }
+.texting-compose textarea:disabled { color: var(--text-mute); }
+.texting-compose button { width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid var(--volt); border-radius: 2px; background: var(--volt); color: var(--ground); cursor: pointer; }
+.texting-compose button:disabled { border-color: var(--line-bright); background: transparent; color: var(--text-mute); cursor: not-allowed; }
+
+.texting-debrief { display: grid; align-content: start; gap: 20px; width: min(100%, 640px); margin: 0 auto; padding: 16px 16px 40px; }
+.texting-debrief__top { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 4px; }
+.texting-debrief__top h1 { margin: 0; }
+.texting-debrief__block { display: grid; gap: 10px; }
+.texting-debrief__block p { margin: 0; color: var(--text-dim); line-height: 1.6; }
+.texting-debrief__thin { margin: 0; }
+/* The one volt element on this screen. */
+.texting-curve { width: 100%; height: 96px; overflow: visible; }
+.texting-debrief__axis { display: flex; justify-content: space-between; gap: 8px; margin: 0; font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+
+.texting-movers { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.texting-movers li { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 12px; align-items: start; border-left: 1px solid var(--line-bright); padding-left: 12px; }
+.texting-movers__delta { font-family: var(--font-mono), monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--text); }
+.texting-movers__delta--down { color: var(--text-dim); }
+.texting-movers__body { display: grid; gap: 3px; min-width: 0; }
+.texting-movers__text { color: var(--text); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.texting-movers__why { color: var(--text-mute); font-size: 12.5px; }
+.texting-debrief__note { margin: 0; font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The dots stop moving but the words stay — "typing" with nothing rendered
+     at all would be the indicator silently disappearing for the people most
+     likely to need it. */
+  .text-bubble--typing i { animation: none; }
+}

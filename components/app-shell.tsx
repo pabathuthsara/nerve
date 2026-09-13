@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { BookOpen, Flame, Target, User, Users, Zap } from 'lucide-react'
+import { BookOpen, Flame, MessageSquare, Target, User, Users, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useUserState } from '@/lib/data'
 import type { Track } from '@/lib/data/types'
@@ -36,8 +36,22 @@ const RUNS_UNDER: Record<string, string> = {
 const navItems = [
   { label: 'Train', href: '/train', icon: Zap, tracks: ['dating'] as Track[] },
   { label: 'Train', href: '/interview', icon: Zap, tracks: ['interview'] as Track[] },
+  /**
+   * Texting's home IS its roster, so there is no separate Train item and no
+   * separate Roster one — the inbox is both. A second item pointing at the
+   * same screen is what `RUNS_UNDER` exists to paper over, and not creating
+   * the problem is cheaper than naming the exception.
+   */
+  { label: 'Texting', href: '/texting', icon: MessageSquare, tracks: ['texting'] as Track[] },
   { label: 'Roster', href: '/roster', icon: Users, tracks: ['dating', 'interview'] as Track[] },
-  { label: 'Field', href: '/field', icon: Target, tracks: ['dating'] as Track[] },
+  /**
+   * The field is shared with texting, and that is the point of it.
+   *
+   * A texting rep's whole bridge is a real-world, SPOKEN challenge — it is what
+   * stops the easier section becoming the destination (`TEXTING-PLAN.md` §9).
+   * The interview track is the one that does not carry it, unchanged.
+   */
+  { label: 'Field', href: '/field', icon: Target, tracks: ['dating', 'texting'] as Track[] },
   /**
    * ── THE LIBRARY IS DATING, AND ONLY DATING ────────────────────────────
    *
@@ -60,7 +74,7 @@ const navItems = [
    * §11 is the drift here, not the code. Recorded in `LAUNCH-GAP.md` §4.
    */
   { label: 'Library', href: '/library', icon: BookOpen, tracks: ['dating'] as Track[] },
-  { label: 'Profile', href: '/profile', icon: User, tracks: ['dating', 'interview'] as Track[] },
+  { label: 'Profile', href: '/profile', icon: User, tracks: ['dating', 'interview', 'texting'] as Track[] },
 ]
 
 export function AppShell({ children, title }: { children: ReactNode; title: string }) {
@@ -72,7 +86,8 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
 
   useEffect(() => {
     if (pathname.startsWith('/interview')) setTrack('interview')
-    else if (pathname.startsWith('/train') || pathname.startsWith('/field')) setTrack('dating')
+    else if (pathname.startsWith('/texting')) setTrack('texting')
+    else if (pathname.startsWith('/train')) setTrack('dating')
   }, [pathname, setTrack])
 
   /**
@@ -111,6 +126,28 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
   }, [user])
 
   const items = useMemo(() => navItems.filter((item) => item.tracks.includes(track)), [track])
+
+  /**
+   * Which tracks this account can switch to.
+   *
+   * Dating is always there. Interview is gated on `unlocked_tracks`, which a
+   * credit opens. **Texting is open to every account and is deliberately NOT
+   * gated** (`TEXTING-PLAN.md` §2.1): it is what free has, and a switcher that
+   * hid it would hide the only section a free account can actually use.
+   *
+   * Derived rather than read straight off `unlockedTracks`, because that column
+   * knows nothing about texting and must not have to — a stored track the
+   * account cannot open would draw a rail to a guard, and the inverse is just
+   * as bad.
+   */
+  const availableTracks = useMemo<Track[]>(() => {
+    const unlocked = user?.unlockedTracks ?? []
+    return [
+      'dating' as Track,
+      ...(unlocked.includes('interview') ? (['interview'] as Track[]) : []),
+      'texting' as Track,
+    ]
+  }, [user])
   /**
    * The chrome's own answer to "which half am I in".
    *
@@ -128,7 +165,7 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
    */
   const switchTrack = (next: Track) => {
     setTrack(next)
-    router.push(next === 'dating' ? '/train' : '/interview')
+    router.push(TRACK_HOME[next])
     void setActiveTrack(next)
   }
 
@@ -156,14 +193,14 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
       <div className={`app-frame${/^\/roster\/[^/]+$/.test(pathname) ? ' app-frame--persona-detail' : ''}`}>
         <header className="mobile-topbar">
           <span className="wordmark" aria-label="Nerve">NERVE</span>
-          {user && user.unlockedTracks.length > 1 ? <TrackSwitcher track={track} onChange={switchTrack} compact /> : <span className="label">{title}</span>}
+          {user ? <TrackSwitcher track={track} onChange={switchTrack} tracks={availableTracks} compact /> : <span className="label">{title}</span>}
         </header>
         {!online ? <div className="offline-bar">Offline — reps unavailable</div> : null}
         <aside className="sidebar-rail">
           <div className="rail-inner">
-            <Link href={track === 'dating' ? '/train' : '/interview'} className="wordmark">NERVE</Link>
+            <Link href={TRACK_HOME[track]} className="wordmark">NERVE</Link>
             <div style={{ marginTop: 18 }}>
-              {loading ? <Skeleton height={36} /> : user && user.unlockedTracks.length > 1 ? <TrackSwitcher track={track} onChange={switchTrack} /> : null}
+              {loading ? <Skeleton height={36} /> : user ? <TrackSwitcher track={track} onChange={switchTrack} tracks={availableTracks} /> : null}
             </div>
             <nav className="rail-nav" aria-label="Main navigation">
               {items.map((item) => {
@@ -191,8 +228,36 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
   )
 }
 
-export function TrackSwitcher({ track, onChange, compact = false }: { track: Track; onChange: (track: Track) => void; compact?: boolean }) {
-  return <div className="track-switcher" role="group" style={compact ? { width: 142 } : undefined} aria-label="Training track"><button aria-pressed={track === 'dating'} onClick={() => onChange('dating')}>Dating</button><button aria-pressed={track === 'interview'} onClick={() => onChange('interview')}>Interview</button></div>
+/**
+ * Where each track starts.
+ *
+ * One map rather than a ternary, because a ternary is what a third track breaks:
+ * `next === 'dating' ? '/train' : '/interview'` sent every texting switch to the
+ * interview home, silently. The same shape `INTERVIEW-PLAN` §15 records about
+ * every `=== 'weekly' ? … : 'month'` in the billing code — a two-valued ternary
+ * is a latent bug the moment a third value exists.
+ */
+export const TRACK_HOME: Record<Track, string> = {
+  dating: '/train',
+  interview: '/interview',
+  texting: '/texting',
+}
+
+const TRACK_LABEL: Record<Track, string> = {
+  dating: 'Dating',
+  interview: 'Interview',
+  texting: 'Texting',
+}
+
+export function TrackSwitcher({ track, onChange, compact = false, tracks }: { track: Track; onChange: (track: Track) => void; compact?: boolean; tracks?: readonly Track[] }) {
+  const available = tracks ?? (['dating', 'interview'] as const)
+  return (
+    <div className="track-switcher" role="group" style={compact ? { width: 142 + (available.length - 2) * 62 } : undefined} aria-label="Training track">
+      {available.map((option) => (
+        <button key={option} aria-pressed={track === option} onClick={() => onChange(option)}>{TRACK_LABEL[option]}</button>
+      ))}
+    </div>
+  )
 }
 
 /**

@@ -192,13 +192,13 @@ function TrainContent() {
                         do, and the sheet says what it costs and offers text as
                         the second option rather than as the only one. */}
                     <Button size="lg" fullWidth onClick={() => setPaywallOpen(true)}>Start rep with {persona.name}</Button>
-                    <Link href={`/text/${persona.id}`} className="arena-button arena-button--ghost arena-button--sm arena-button--full">Or type to her — always free</Link>
+                    <Link href="/texting" className="arena-button arena-button--ghost arena-button--sm arena-button--full">Or go and text somebody</Link>
                   </> : <>
                     {/* Out for today on a plan that HAS voice. Nothing to sell:
                         it comes back at midnight, and pushing Elite at somebody
                         who is already paying and already trained today is how a
                         plan limit turns into an advert (§14). */}
-                    <Link href={`/text/${persona.id}`} className="arena-button arena-button--primary arena-button--lg arena-button--full">Talk to {persona.name} in text</Link>
+                    <Link href="/texting" className="arena-button arena-button--primary arena-button--lg arena-button--full">Go and text somebody</Link>
                     <Button variant="ghost" size="sm" fullWidth onClick={() => setPaywallOpen(true)}>Voice reps are done for today</Button>
                   </>}
                 </div>

@@ -44,7 +44,25 @@ describe('the event catalogue', () => {
       'focused_rep_started',
       'field_challenge_accepted',
       'field_challenge_logged',
+      // The texting section, appended rather than interleaved: it is a second
+      // funnel rather than more steps in the first one, and inserting it in the
+      // middle would reorder the chart M5's gate is read off.
+      'texting_thread_started',
+      'texting_message_sent',
+      'texting_thread_ended',
+      'texting_debrief_viewed',
+      'texting_allowance_reached',
     ])
+  })
+
+  it('never lets a message travel with a texting event', () => {
+    // A texting product is precisely where somebody would be tempted to log the
+    // text. `safeProps` is the structural guard; this is the reminder that the
+    // catalogue itself must not name a field that would carry one.
+    const textingProps = ['persona_id', 'level', 'messages', 'ending', 'exchanges', 'per_day']
+    for (const prop of textingProps) {
+      expect(prop).not.toMatch(/text|message_body|content|turn/)
+    }
   })
 
   it('starts before the account, because that is where the drop was', () => {

@@ -108,6 +108,43 @@ the real world and log the outcome.
    as one string (`CREDIT_EXPIRY_NOTE`) read by `/pricing`, the interview home,
    terms clause 07 and refunds clause 04 — change it there and re-run
    `npm run legal:pdf`, never in one of the four.
+   **`docs/TEXTING-PLAN.md` is the third section and it SHIPPED on
+   14 September 2026 — read its §19 for what landed and §20 for what the
+   audition harness found.** Texting is now its own section with its own
+   roster (`lib/personas/texting/` — Immy, Noor, Cleo, Wren), its own band
+   table, its own reciprocity and its own steering, on the pattern the
+   interview track set; `/text/[personaId]` and `lib/text/` are gone. Four
+   things the old text mode never had, and each is why it read as a character
+   from two weeks earlier: **a meter that reads meaning** (it was
+   `start + turns × gain`, so charm and abuse raised warmth identically),
+   **reciprocity** (`his` was never passed, inerting the whole file),
+   **the two ceilings** (`capToBudget` never ran), and **rationed standing
+   orders** (`includeStanding` defaults true, so every permission she owned
+   arrived before every reply). A fifth was a live bug in both: `compileInstructions`
+   re-rolled her mood on **every message**, so she was a different woman every
+   reply — and because the mood block sits near the top of the prompt, it also
+   collapsed the cacheable prefix from 2,665 tokens to 1,283. Seeding it from
+   the thread fixed a character defect and halved the bill in one line.
+   **Timing is the channel texting has and speech does not**
+   (`lib/texting/presence.ts`): she reads a warm thread in 0.4s and a cold one
+   in fourteen, so **the delay cools before the words do**, and "left on read"
+   is a real ending that generates nothing at all. **The exit is a state and
+   never the model's** (`lib/texting/exit.ts`), and neither ending is a verdict
+   — rule 2 still holds, so a debrief reports process and there is no score, no
+   `sessions` row, no streak and no unlock. **Free gets one conversation a day
+   and paid is unlimited**; the gate is on STARTING a thread and never
+   mid-conversation, and **Start fresh ends a thread rather than deleting one**,
+   because once metered a deletable thread is a resettable quota (rule 11) —
+   which is why `texting_threads` has no delete policy where `text_threads` had
+   one. **Plan names, prices and `repsPerDay` did not move** and are now pinned
+   by `plans.test.ts`. Two things there are worth knowing before touching
+   anything nearby. **`isDismissal` has a false positive that is still live on
+   the dating arm**: "get lost in the noise" reads as being told to go away, and
+   on that arm it ends a paid rep — texting narrowed it at its own call site
+   because `lib/warmth/leaving.ts` is Tier 0, and fixing it there is an act with
+   ceremony. And **a green suite proved none of it**: `npm run text:audition`
+   found five defects in four runs that 2,396 passing assertions did not, which
+   is `INTERVIEW-TECHNICAL-PLAN` §13.3's lesson arriving a second time.
 3. **`docs/LAUNCH-GAP.md` is what is blocking launch.** Ten numbered blockers,
    the product-promise gaps, and the spec drift that needs a decision rather
    than a ticket.
@@ -214,6 +251,7 @@ npm run db:credits    # the interview credit: hold, settle, release, refund, bot
 npm run db:interview -- you@example.com   # open the interview track on an account, with credits
 npm run db:billing    # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
 npm run db:funnel     # /start's crossing: the answers, both flags, the age stamp, and that a plain /signup still resumes at question one
+npm run db:texting    # the texting thread lifecycle: the daily allowance counted rather than stored, that a thread CANNOT be deleted, one open thread per character with history behind it, and RLS from a second real account
 npm run whop:setup       # creates the Whop product, plans and webhook (dry run without --apply)
 npm run whop:verify      # the money preflight: keys, plans, prices, trial, webhook
 npm run whop:probe       # the webhook route over HTTP: signature, account check, status codes
@@ -227,6 +265,13 @@ npm run rep:audition -- <slug> <player> <reps> [round] [difficulty]
                          # a whole rep without a microphone. The last two are
                          # INTERVIEW ONLY and drive the probe ladder end to end
                          # (INTERVIEW-TECHNICAL-PLAN T11). It spends money.
+npm run text:audition -- <slug> <player> <messages>
+                         # a whole texting thread without a keyboard, through
+                         # the real meter, steering, exit and presence. Players:
+                         # warm, dead_ender, hostile, recoverer, double_texter —
+                         # and `recoverer` is the gate, because a cooled thread
+                         # that cannot be won back is the one thing the section
+                         # promises and would not do. ~1c a run. It spends money.
 ```
 
 `db:*` scripts run against the real project and clean up after themselves.
@@ -526,6 +571,19 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     multiplies a credit balance by ninety. No file in `lib/` changed, no
     constant moved, and a dating number moved anyway. When a feature on one
     track writes a row, ask what the other track multiplies it by.
+
+    **The texting section is the worked example of all of this** and it did not
+    move a digit of the dating arm: a third directory per judgement
+    (`lib/warmth/texting/`, `lib/personas/texting/`, `lib/texting/`), one more
+    `case` in the three `track.ts` selectors — which is the extension path that
+    file's own header specifies — and exactly one new branch in
+    `compileInstructions`, keyed on `persona.track === 'texting'`, with dating
+    reaching the identical array it reached before. `dating-arm.test.ts` passed
+    unchanged on every commit and was **never re-baselined**. Where texting
+    needed a shared predicate to behave differently — `isDismissal` matching
+    "get lost in the noise" — it NARROWED at its own call site rather than
+    editing the Tier 0 file, and recorded the still-live dating bug in
+    `TEXTING-PLAN.md` §18 instead of fixing it on the way past.
 
     **Two new files, not new parameters.** `lib/warmth/turn-kind.ts` and
     `lib/warmth/leaving.ts` are where the 10 September behaviour changes live,

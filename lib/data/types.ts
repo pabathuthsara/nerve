@@ -1,4 +1,4 @@
-export type Track = 'dating' | 'interview'
+export type Track = 'dating' | 'interview' | 'texting'
 import type { Rank } from './rank'
 import type { BillingPeriod } from '@/lib/site/plans'
 

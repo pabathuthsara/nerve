@@ -153,7 +153,7 @@ export function PaywallSheet({
           {locked ? `Start the ${TRIAL_DAYS}-day trial` : 'Upgrade'}
         </Link>
         {locked && personaId
-          ? <Link className="arena-button arena-button--ghost arena-button--full" href={`/text/${personaId}`}>Type to her instead — always free</Link>
+          ? <Link className="arena-button arena-button--ghost arena-button--full" href="/texting">Texting is still open</Link>
           : null}
         <Button variant="ghost" fullWidth onClick={onClose}>Maybe later</Button>
       </div>

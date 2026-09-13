@@ -275,7 +275,7 @@ export function RepBriefScreen({
           deciding whether to grant it (P1). Same character, no permission, no
           quota — a link rather than a button now, because a person hesitating
           here should not be handed a second thing that looks like the action. */}
-      {!interview ? <Link className="brief-alt" href={`/text/${personaId}`}>Not ready to talk? Type instead</Link> : null}
+      {!interview ? <Link className="brief-alt" href="/texting">Not ready to talk? Try texting</Link> : null}
       {!interview && !firstEver ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}
     </section>
     <HowItWorksSheet open={how} onClose={() => setHow(false)} interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} />

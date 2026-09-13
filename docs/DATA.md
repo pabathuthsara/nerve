@@ -42,7 +42,8 @@ eleventh anything.
 | `interview_credit_entries` | credit movement | **Append-only, service-role write, owner read.** The balance an interview is bought out of (§5.2: a daily rate cannot hold a twenty-minute item). Every row carries a `source` and **the expiry of the lot it belongs to, spends included** — see below |
 | `interview_credit_holds` | connected interview rep | One credit promised to a rep that is running, **keyed on the session id**, which is what makes "two connects for one rep cannot spend two" true by construction rather than by care |
 | `rate_limits` | user × bucket | The spend ceiling's counter. **No policies at all** — see below |
-| `text_threads` | user × character | Text mode's one rolling conversation. Owner-writable, unmetered, and never reaches `sessions` — see below |
+| `texting_threads` | user × character, plus history | The texting section. One **open** thread per character behind a partial unique index, finished ones kept. Owner-writable but **not owner-deletable** — once the section is metered, a deletable thread is a resettable quota (rule 11). Never reaches `sessions` |
+| ~~`text_threads`~~ | user × character | **Retired 14 Sep 2026** with `/text/`. Left in place with its data; nothing reads it |
 
 `profiles.rank` is a mirror, not an authority: `lib/data/rank.ts` derives the
 rank from the same qualifying counts that drive the unlocks, and `syncLevel`
