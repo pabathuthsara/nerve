@@ -79,7 +79,7 @@ import { MIN_AGE } from '@/lib/safety/age'
 import { tap } from '@/lib/haptics'
 import { FluidPersona } from '@/components/fluid-persona'
 import { Mark } from '@/components/marks'
-import { RuleBlock } from './rep-format'
+import { RuleBlock, repGoal } from './rep-format'
 import { chooseTodayPersona } from '@/lib/data/progression'
 import type { FirstRepCandidate } from '@/lib/data/first-rep'
 import type { FocusArea } from '@/lib/data/focus'
@@ -748,12 +748,22 @@ function ReadyStep({ firstRep, name, track }: { firstRep: FirstRepCandidate | nu
       <FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={18} size={132} />
       <h1 className="display-lg" tabIndex={-1} data-step-heading>{firstRep.name}</h1>
       <span className="label">{firstRep.setting}</span>
+      {/* D23 · THE SCREEN A FIRST REP ACTUALLY MEETS.
+          `RepBriefScreen` is the brief for somebody who picked a character off
+          the roster. A brand-new account never reaches it: this step goes
+          straight to `/rep/<id>/live`, so this is the last thing read before
+          the microphone opens, for the one user who has never seen any of it.
+          The goal was promoted to a headline over there and this screen kept
+          only the table — which, once the goal row left the table, meant a
+          first-time user was shown LESS than before. Both screens read
+          `repGoal` now, for the same reason both read `RuleBlock`. */}
+      <p className="brief-goal">{repGoal(false)}</p>
+      <button type="button" className="brief-how" onClick={() => setOpen(true)}>How does this work?</button>
       <p className="brief-hook">{firstRep.hook}</p>
       <RuleBlock interview={false} />
       <Button size="lg" fullWidth loading={starting} onClick={() => void start(`/rep/${firstRep.id}/live`)}>
         {name ? `Start, ${name}` : 'Start'}
       </Button>
-      <Button variant="ghost" fullWidth onClick={() => setOpen(true)}>How does this work?</Button>
       <HowItWorks open={open} onClose={() => setOpen(false)} />
     </section>
   )

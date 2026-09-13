@@ -57,7 +57,7 @@ import { FluidPersona } from '@/components/fluid-persona'
 import { Mark } from '@/components/marks'
 import { Button, DateOfBirth, Input } from '@/components/ui'
 import { FocusStep, NameStep, TrackStep } from './onboarding-questions'
-import { RuleBlock } from './rep-format'
+import { RuleBlock, repGoal } from './rep-format'
 import { tap } from '@/lib/haptics'
 import { MIN_AGE, checkAge } from '@/lib/safety/age'
 import {
@@ -384,6 +384,7 @@ function BuildStep({ answers, firstRep, onNext }: {
           Five minutes with a recruiter, free on every account. You pick the role, the interviewer and the
           round after you are in — it takes about a minute.
         </p>
+        <p className="brief-goal">{repGoal(true, 5)}</p>
         <RuleBlock interview minutes={5} />
         <Button size="lg" fullWidth onClick={onNext}>{answers.displayName ? `Create your account, ${answers.displayName}` : 'Create your account'}</Button>
       </section>

@@ -1131,7 +1131,11 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
    most load-bearing sentence on the screen, shown in the one moment that
    cannot be tapped past. It carries the goal now. Wider and wrapping, because
    it is a sentence rather than a word. */
-.rep-arm__label { max-width: 260px; color: var(--text-mute); text-align: center; text-wrap: balance; }
+.rep-arm__label { max-width: 280px; color: var(--text-dim); font-size: 17px; line-height: 1.3; text-align: center; text-wrap: balance; }
+/* The same sentence, held through the connect screen so a slow transport
+   cannot swallow it. Quieter than the countdown's, because by now it has
+   already been read once. */
+.rep-connect__goal { max-width: 260px; margin-top: 10px; color: var(--text-mute); font-size: 15px; line-height: 1.3; text-align: center; text-wrap: balance; }
 @keyframes arm-count { 0% { opacity: 0; transform: scale(1.24); } 32% { opacity: 1; transform: scale(1); } 100% { opacity: .5; transform: scale(.97); } }
 
 /* The entrance. When the count clears AND she can hear you, the room fades up
