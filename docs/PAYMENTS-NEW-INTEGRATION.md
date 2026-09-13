@@ -1336,3 +1336,58 @@ pricing should be drawn from that payment.
 Nothing on this work. The plan is hidden, like every other plan on the account,
 so none of it is on sale until the product is unhidden — which stays a separate
 and deliberate decision (`MARKETING-PLAN.md` §4).
+
+---
+
+## 18 · Regional pricing off the year, and the plans unhidden — 13 September 2026
+
+### Three switches, not two
+
+The repo had treated plan visibility and marketplace listing as one thing. They
+are three, and only the last invites a compliance review:
+
+| switch | what it controls | state |
+|---|---|---|
+| `plan.visibility` | whether a plan can be **seen and bought** | **visible** (was hidden) |
+| `product.visibility` | whether the product page is discoverable | hidden, unchanged |
+| `product.marketplace_status` | whether Whop **reviews and lists** it | `not_available`, untouched |
+
+Hiding the plans bought nothing. Checkout always worked — our own pricing page
+addresses a plan id directly, which is why real money settled through hidden
+plans — but the **affiliate flow does not**, and affiliates are the whole
+acquisition plan. Proof, from the public plan read (no credentials, returns only
+visible plans): it now returns all seven; before, it returned nothing. A buyer
+arriving on a creator's link would have found a page with nothing to buy.
+
+Marketplace listing stays off deliberately and, as it happens, could not be done
+today anyway: the publish endpoint requires a logo, a headline **and at least one
+gallery image**, and the product has zero gallery images. Do it once the brief
+and the moderation rules have been in place for a week.
+
+### Adaptive pricing: off on the year, on everywhere else
+
+`adaptivePricing` is authored per offer and asserted by `whop:verify`.
+
+The earlier reasoning here — *"the audience is US-first, so list price is what
+most buyers meet"* — was true of **direct** traffic and exactly wrong for
+**affiliate** traffic, which is the traffic the year exists to attract. Rizz and
+confidence creators have heavily international audiences: India, the
+Philippines, Brazil, Nigeria. So the single plan we recruit creators to sell is
+the plan whose referrals land hardest in discounted regions, and a **$44.70
+commission headline quoted against a discounted price is a number an affiliate
+discovers is false from their own statement**.
+
+The week and the month keep it. They are the cheap doors, nobody is recruited to
+sell them, and the discount is what puts the product within reach.
+
+**Whop has no setting that suppresses commission on a discounted purchase** —
+checked against both the plan and product update schemas; neither carries an
+affiliate field of that kind. Refusing the discount on that one plan is the only
+lever available, which is why the year takes it.
+
+### Still owed
+
+**The affiliate link has never been tested end to end.** Nobody has been
+recruited (zero affiliates, zero promo codes at the provider), and the enrolment
+path has not been walked. Do that with a burner account before any outreach: one
+email to a creator whose link does not work costs that creator permanently.

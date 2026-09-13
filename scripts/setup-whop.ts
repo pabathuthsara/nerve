@@ -625,10 +625,36 @@ async function main(): Promise<void> {
       // seven-day trial in front of a seven-day period charges on day 7 and
       // again on day 14, which is incoherent to read and worse to dispute.
       trial_period_days: offer.trialDays,
-      // Hidden, for the same reason the product is: this is sold from our
-      // pricing page, not from Whop's marketplace.
-      visibility: 'hidden',
+      /**
+       * ── VISIBLE SINCE 13 SEPTEMBER, AND IT IS NOT A MARKETPLACE LISTING ──
+       *
+       * These were hidden "for the same reason the product is", which conflated
+       * two switches that are not the same one. There are three:
+       *
+       *   plan.visibility            — whether a plan can be seen and bought
+       *   product.visibility         — whether the product page is discoverable
+       *   product.marketplace_status — whether Whop REVIEWS and lists it
+       *
+       * Only the third invites the compliance review this account is careful
+       * about, and it is reached through the product publish endpoint, which
+       * this script never calls. Hiding the plans bought nothing in exchange
+       * for that caution: measured on the live page, `whop.com/hellonerve`
+       * returns 200 and renders the description with **no plan on it**, so a
+       * buyer arriving on an affiliate's link found a page with nothing to buy.
+       * Checkout worked the whole time — real money settled through hidden
+       * plans — because our own pricing page addresses a plan id directly. The
+       * affiliate flow is the thing that does not, and affiliates are the whole
+       * acquisition plan.
+       *
+       * **The product stays hidden.** Only the plans open, which is the
+       * smallest change that makes a creator's link lead somewhere buyable.
+       */
+      visibility: 'visible',
       release_method: 'buy_now',
+      // Off on the year, on everywhere else. The argument is on `adaptivePricing`
+      // in `lib/site/plans.ts`, and it is about who SELLS the year rather than
+      // about who buys it.
+      adaptive_pricing_enabled: offer.adaptivePricing,
       unlimited_stock: true,
       metadata: { nerve_plan: offer.plan, nerve_period: offer.period },
     }
@@ -701,7 +727,10 @@ async function main(): Promise<void> {
       // The money is HERE on a one-time plan, and nowhere else.
       initial_price: pack.priceUsd,
       renewal_price: 0,
-      visibility: 'hidden',
+      // Visible for the same reason the subscriptions are, above. Packs keep
+      // adaptive pricing: nobody is recruited to sell them and no headline
+      // depends on what one pays out.
+      visibility: 'visible',
       release_method: 'buy_now',
       unlimited_stock: true,
       metadata: { nerve_pack: pack.id, nerve_credits: String(pack.credits) },

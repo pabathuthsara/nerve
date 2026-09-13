@@ -174,6 +174,37 @@ export interface PlanOffer {
    * Weekly and monthly are `1` and reach exactly the code they reach today.
    */
   creditGrants: number
+  /**
+   * Whether this offer accepts local-currency pricing at the provider.
+   *
+   * ── WHY THE YEAR IS THE ONE THAT SAYS NO (13 September) ──────────────────
+   *
+   * Whop's adaptive pricing discounts by country. On direct traffic that is a
+   * good trade — it is what puts the product within reach of a student in
+   * Manila, which is who the cheap rungs are for — and it stays ON for the week
+   * and the month for exactly that reason.
+   *
+   * The year is different because of who sends people to it. **The commission
+   * is 30% of the first payment and nothing recurs, so the year is the only
+   * rung worth a creator's video slot** ($44.70 against $5.70) — and the
+   * creators in this niche have heavily international audiences. India, the
+   * Philippines, Brazil, Nigeria. So the one plan we recruit creators to sell
+   * is the plan whose referrals land hardest in discounted regions: a $44.70
+   * headline quoted to traffic that pays a discounted price is a number we
+   * cannot honour, and an affiliate who discovers that from their own statement
+   * tells the others.
+   *
+   * Whop has **no** setting that suppresses commission on a discounted
+   * purchase — checked against the plan and product schemas, neither carries an
+   * affiliate field of that kind — so the only lever that makes the brief's
+   * number true is refusing the discount on that plan. The year is the
+   * commitment tier and full price is a reasonable thing to ask of it.
+   *
+   * Packs keep adaptive pricing: they are the cheap door to the interview
+   * track, nobody is recruited to sell them specifically, and their commission
+   * is small enough either way that no headline depends on it.
+   */
+  adaptivePricing: boolean
   /** The environment variable holding this offer's vendor plan id. */
   env: string
 }
@@ -190,6 +221,7 @@ export const OFFERS: readonly PlanOffer[] = [
     // None, deliberately (C2). A weekly grant is a grant every seven days.
     interviewCredits: 0,
     creditGrants: 1,
+    adaptivePricing: true,
     env: 'WHOP_PLAN_PRO_WEEKLY',
   },
   {
@@ -201,6 +233,7 @@ export const OFFERS: readonly PlanOffer[] = [
     trialDays: TRIAL_DAYS,
     interviewCredits: 2,
     creditGrants: 1,
+    adaptivePricing: true,
     env: 'WHOP_PLAN_PRO',
   },
   /**
@@ -245,6 +278,7 @@ export const OFFERS: readonly PlanOffer[] = [
     // Two a month, twelve times — never twenty-four at once. See `creditGrants`.
     interviewCredits: 2,
     creditGrants: 12,
+    adaptivePricing: false,
     env: 'WHOP_PLAN_PRO_YEARLY',
   },
   {
@@ -256,6 +290,7 @@ export const OFFERS: readonly PlanOffer[] = [
     trialDays: TRIAL_DAYS,
     interviewCredits: 6,
     creditGrants: 1,
+    adaptivePricing: true,
     env: 'WHOP_PLAN_ELITE',
   },
 ]

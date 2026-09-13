@@ -91,6 +91,8 @@ interface WhopPlan {
   currency: string
   trial_period_days: number | null
   visibility: string
+  /** Absent on older plans; Whop's default is enabled, so `?? true` reads it. */
+  adaptive_pricing_enabled?: boolean | null
   tax_type: string
   product: { id: string } | null
   /** Free-form provenance. Packs carry `nerve_pack` and `nerve_credits`. */
@@ -305,11 +307,37 @@ async function main(): Promise<void> {
     check(vendor.tax_type !== 'inclusive',
       `tax is not inclusive, so we keep the full ${offer.price} (${vendor.tax_type})`)
 
-    // We sell from our own pricing page through a checkout configuration. A
-    // visible plan is a listing on Whop's public marketplace, which §16 and
-    // PAYMENTS-APPROVAL.md both want us off.
-    check(vendor.visibility !== 'visible',
-      `it is not listed on Whop's public marketplace (${vendor.visibility})`)
+    /**
+     * Visible, and the comment this replaced had the mechanism wrong.
+     *
+     * It read *"a visible plan is a listing on Whop's public marketplace"*. It
+     * is not. Marketplace listing is `product.marketplace_status`, reached only
+     * by publishing the product for Whop's review, and nothing in this repo
+     * calls it. `plan.visibility` decides whether a plan can be SEEN AND
+     * BOUGHT — and with it hidden, `whop.com/hellonerve` served a 200 with the
+     * description and no plan on it, so an affiliate's referral landed on a
+     * page with nothing to buy.
+     *
+     * So the assertion is inverted rather than deleted: a plan silently
+     * reverting to hidden would break every creator link at once, quietly, and
+     * this preflight is the only thing that reads the vendor back.
+     */
+    check(vendor.visibility === 'visible',
+      `it is buyable — visible at the provider (${vendor.visibility})`)
+
+    /**
+     * Adaptive pricing, per offer (13 September).
+     *
+     * Off on the year because that is the plan creators are recruited to sell
+     * and their audiences sit in the regions it discounts hardest — a $44.70
+     * commission headline quoted against a discounted price is one an affiliate
+     * discovers is false from their own statement. On everywhere else, where it
+     * is what puts the product within reach. Whop exposes no way to suppress
+     * commission on a discounted purchase, so this toggle is the only lever.
+     */
+    check((vendor.adaptive_pricing_enabled ?? true) === offer.adaptivePricing,
+      `adaptive pricing is ${offer.adaptivePricing ? 'ON' : 'OFF'} as authored `
+      + `(reads ${String(vendor.adaptive_pricing_enabled)})`)
 
     if (vendor.product?.id) productIds.add(vendor.product.id)
   }
@@ -391,8 +419,9 @@ async function main(): Promise<void> {
       `it has no trial (${vendor.trial_period_days ?? 0})`)
     check(vendor.tax_type !== 'inclusive',
       `tax is not inclusive, so we keep the full ${pack.price} (${vendor.tax_type})`)
-    check(vendor.visibility !== 'visible',
-      `it is not listed on Whop's public marketplace (${vendor.visibility})`)
+    // Visible for the same reason the subscriptions are — see the note above.
+    check(vendor.visibility === 'visible',
+      `it is buyable — visible at the provider (${vendor.visibility})`)
     /**
      * The pack the webhook will resolve, asserted at the vendor.
      *
