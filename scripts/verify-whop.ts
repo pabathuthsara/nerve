@@ -34,9 +34,11 @@
 
 import {
   FOUNDING_ACCOUNTS, INTERVIEW_PACKS, OFFERS, PRO_STANDARD_PRICE, PUBLIC_PLANS, TRIAL_DAYS,
+  periodNoun,
   foundingPlacesLeft, planById,
 } from '@/lib/site/plans'
 import { foundingAccountsTaken, forgetFoundingCount } from '@/lib/db/founding'
+import { AFFILIATE_RATES, maxCommissionPercent, tightestOffer } from '@/lib/billing/economics'
 import {
   apiBase,
   apiVersionDate,
@@ -234,7 +236,7 @@ async function main(): Promise<void> {
     const plan = planById(offer.plan)
     const variable = offer.env
     const id = process.env[variable]?.trim()
-    const periodWord = offer.period === 'weekly' ? 'week' : 'month'
+    const periodWord = periodNoun(offer.period)
     console.log(`\n  ${plan.name} ${offer.period} — ${variable}`)
     if (!id) {
       check(false, `${variable} is set`)
@@ -414,6 +416,49 @@ async function main(): Promise<void> {
   // and the packs on one receipt-facing listing.
   check(productIds.size <= 1,
     `every plan and pack belongs to one product (${productIds.size === 0 ? 'none resolved' : [...productIds].join(', ')})`)
+
+  /**
+   * ── THE COMMISSION, READ BACK OFF THE PROVIDER (D22) ─────────────────────
+   *
+   * The affiliate percentages are the only numbers at the provider that can
+   * turn a completed sale NEGATIVE, and until now nothing checked them. They
+   * live on the product, which is a Whop object this repo has watched revert
+   * itself more than once — rule 12's whole story is a field being silently
+   * re-derived after a write that did not touch it, caught by this preflight
+   * and by nothing else.
+   *
+   * So they are asserted the same way the classification is: against the
+   * authored number, read back from the live account. `economics.test.ts`
+   * proves the rate we INTEND is survivable; this proves the rate we are
+   * actually PAYING is the one we intended.
+   */
+  console.log('\nthe affiliate commission')
+
+  for (const productId of productIds) {
+    const productResponse = await get(`/products/${encodeURIComponent(productId)}`)
+    if (!productResponse.ok) {
+      check(false, `the product reads back (${productResponse.status})`)
+      continue
+    }
+    const product = (await productResponse.json()) as Record<string, unknown>
+    const rates: [string, number, unknown][] = [
+      ['global', AFFILIATE_RATES.global, product['global_affiliate_percentage']],
+      ['member', AFFILIATE_RATES.member, product['member_affiliate_percentage']],
+    ]
+    for (const [who, want, got] of rates) {
+      check(Number(got) === want, `the ${who} commission is ${want}% at the provider (reads ${String(got)}%)`)
+      /**
+       * The belt to the braces. A rate that is right but unsurvivable is a
+       * different failure from a rate that drifted, and this one would be
+       * invisible until the voice bill: every rung must still clear its cost
+       * of goods at the maximum usage it permits.
+       */
+      const tightest = tightestOffer()
+      check(Number(got) < maxCommissionPercent(tightest),
+        `${who} at ${String(got)}% stays under what ${tightest.plan} ${tightest.period} can carry `
+        + `(${maxCommissionPercent(tightest).toFixed(1)}%)`)
+    }
+  }
 
   console.log('\nthe webhook')
 

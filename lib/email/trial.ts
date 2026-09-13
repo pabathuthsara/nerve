@@ -19,7 +19,7 @@
  * buried in a network call. `lib/email/send.ts` does the sending.
  */
 
-import { TRIAL_DAYS } from '@/lib/site/plans'
+import { TRIAL_DAYS, periodNoun, type BillingPeriod } from '@/lib/site/plans'
 import type { Plan } from '@/lib/data/types'
 
 export interface TrialEmail {
@@ -58,6 +58,16 @@ export function trialEndingEmail(options: {
   plan: Exclude<Plan, 'free'>
   planName: string
   price: string
+  /**
+   * What the price is the price OF (D22).
+   *
+   * The sentence below said "the first month" as a literal, which was true of
+   * every offer that carried a trial for as long as the only one was a month.
+   * The year gave this email a $149 charge to describe as monthly — in the one
+   * message §14 asks for precisely because somebody should never learn the
+   * terms of a charge from their statement.
+   */
+  period: BillingPeriod
   periodEnd: string | null
   manageUrl: string | null
   subscriptionUrl: string
@@ -71,7 +81,7 @@ export function trialEndingEmail(options: {
     : `when your ${TRIAL_DAYS} days are up`
 
   const lines = [
-    `Your Nerve trial ends ${day ? `on ${day}` : `in a couple of days`}, and that is the day your card is charged ${options.price} for the first month of ${options.planName}.`,
+    `Your Nerve trial ends ${day ? `on ${day}` : `in a couple of days`}, and that is the day your card is charged ${options.price} for the first ${periodNoun(options.period)} of ${options.planName}.`,
     '',
     `Nothing has been charged so far.`,
     '',

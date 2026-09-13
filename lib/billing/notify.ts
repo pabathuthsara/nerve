@@ -17,10 +17,10 @@ import 'server-only'
 import { supabaseAdmin } from '@/lib/db/admin'
 import { sendEmail } from '@/lib/email/send'
 import { trialEndingEmail } from '@/lib/email/trial'
-import { planById } from '@/lib/site/plans'
+import { offerFor, planById } from '@/lib/site/plans'
 import { siteUrl } from '@/lib/site/origin'
 import type { BillingEvent } from './events'
-import { configuredPlanMap, planForWhopPlan } from './plans'
+import { configuredPeriodMap, configuredPlanMap, periodForWhopPlan, planForWhopPlan } from './plans'
 
 /**
  * The address to write to.
@@ -54,10 +54,23 @@ export async function notifyTrialEnding(event: BillingEvent, userId: string): Pr
   if (!address) return 'trial_ending_soon for an account with no readable address; no mail sent'
 
   const plan = planById(purchased)
+  /**
+   * The OFFER's price, not the plan's headline (D22).
+   *
+   * This read `plan.price`, which is Pro's $19 whatever was actually bought. On
+   * the year that put **$19** in the email announcing a **$149** charge — the
+   * §14 failure this message exists to prevent, committed by the message
+   * itself. The period is resolved the same way the credit grant resolves it,
+   * and falls back to the headline only when the plan id names no period at
+   * all, which is the misconfiguration case the whole map fails soft on.
+   */
+  const period = periodForWhopPlan(event.planId, configuredPeriodMap())
+  const offer = period ? offerFor(purchased, period) : undefined
   const { subject, body } = trialEndingEmail({
     plan: purchased,
     planName: plan.name,
-    price: plan.price ?? '',
+    price: offer?.price ?? plan.price ?? '',
+    period: offer?.period ?? 'monthly',
     periodEnd: event.currentPeriodEnd,
     manageUrl: event.manageUrl,
     subscriptionUrl: siteUrl('/profile/subscription'),

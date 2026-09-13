@@ -29,8 +29,9 @@
  * be minted from here — see the handover note at the bottom of the output.
  */
 
-import { INTERVIEW_PACKS, OFFERS, PUBLIC_PLANS, ROUND_COST_NOTE, TRIAL_DAYS, planById } from '@/lib/site/plans'
+import { INTERVIEW_PACKS, OFFERS, PUBLIC_PLANS, ROUND_COST_NOTE, TRIAL_DAYS, periodLabel, periodNoun, periodTabLabel, planById } from '@/lib/site/plans'
 import { apiBase, apiVersionDate, isLiveBase } from '@/lib/billing/plans'
+import { AFFILIATE_RATES } from '@/lib/billing/economics'
 
 /**
  * How the account describes itself to Whop.
@@ -93,10 +94,35 @@ const ACCOUNT = {
  * affiliate for. Turning them on is a deliberate change, which is why it is
  * here and reviewed rather than clicked.
  */
+/**
+ * ── WHY 30 AND 35 RATHER THAN 40 AND 50 (13 September) ───────────────────
+ *
+ * These two numbers are not marketing. They are the second half of a
+ * subtraction whose first half is the price, and they were chosen together so
+ * that **no sale on the roster can lose money at the usage it is allowed**.
+ *
+ * A rep costs about eight cents and `repsPerDay` is what a plan may physically
+ * consume. The year is the tight one: $149, less Whop's $0.37 + 5%, less
+ * commission, against three reps a day for 365 days — a ceiling of 1,095 reps.
+ *
+ * The 50% member rate this replaced was not a near miss — it sold the year
+ * about $25 underwater — and it was the quieter of the two failures: it also
+ * left monthly Pro netting pennies at full usage, on the rung most customers
+ * are on, with nothing anywhere reporting it.
+ *
+ * **The numbers themselves live in `lib/billing/economics.ts` and are imported,
+ * not typed here.** That file also holds the subtraction, and
+ * `economics.test.ts` asserts the property they were chosen for: no offer on
+ * the roster loses money at any rate we pay, at the maximum usage it permits.
+ * A rate raised past what the tightest rung can carry now fails a test that
+ * names the offer, rather than failing in a voice bill nine months later — and
+ * the hand version of this sum got it wrong once already, by forgetting that
+ * the year grants twenty-four interview credits as well as the reps.
+ */
 const AFFILIATES = {
-  global_affiliate_percentage: 40,
+  global_affiliate_percentage: AFFILIATE_RATES.global,
   global_affiliate_status: 'enabled',
-  member_affiliate_percentage: 50,
+  member_affiliate_percentage: AFFILIATE_RATES.member,
   member_affiliate_status: 'enabled',
 } as const
 
@@ -113,11 +139,52 @@ const AFFILIATES = {
  * whether an affiliate can post without talking to us first. Fill it in and
  * re-run.
  */
+/**
+ * What an affiliate earns, in the numbers this repo actually sells for.
+ *
+ * ── THE BUG THIS EXISTS FOR ──────────────────────────────────────────────
+ *
+ * This paragraph was hand-typed, and on 13 September it still read *"$9 for
+ * one, $29 for five, $59 for twelve"* — three prices and three credit counts,
+ * every one of them wrong. D18 doubled the credits to 2 / 8 / 20 and D19 cut
+ * the prices to $6 / $20 / $45 on 9 September; Whop's own plan records were
+ * updated by this very script the same day, and the sentence DESCRIBING them
+ * was not, because nothing connected the two.
+ *
+ * It is the `PRESENTATION.name` lesson on a surface nobody thought of as a
+ * surface: the affiliate brief is the document a creator reads before they
+ * post, so a stale price here is a stale price in somebody else's video, told
+ * to an audience, with our name on it.
+ *
+ * So it is computed. A repriced pack, a new plan or a moved commission rewrites
+ * this paragraph by existing, and `setup-whop.ts` has no opinion of its own
+ * about what anything costs.
+ */
+function earningsLine(): string {
+  const rate = AFFILIATES.global_affiliate_percentage
+  const member = AFFILIATES.member_affiliate_percentage
+  const packs = INTERVIEW_PACKS
+    .map((pack) => `$${pack.priceUsd} for ${pack.credits}`)
+    .join(', ')
+  const best = OFFERS.reduce((a, b) => (b.priceUsd > a.priceUsd ? b : a))
+  const cut = (best.priceUsd * rate) / 100
+  const subscriptions = OFFERS
+    .map((offer) => `${planById(offer.plan).name} at ${offer.price} ${periodLabel(offer.period).replace('/ ', 'a ')}`)
+    .join(', ')
+  return [
+    `${rate}% of every payment, for as long as your referral keeps paying.`,
+    `${member}% if you are a Nerve member yourself.`,
+    `The plans are ${subscriptions}.`,
+    `The one to lead with is the year: ${best.price} pays you $${cut.toFixed(2)} on a single referral, once, on the day it happens — rather than a few dollars a month against a subscription that may not see the summer.`,
+    `Interview credits are also sold outright — ${packs} — and those pay the same rate on a purchase somebody makes the week before an interview.`,
+  ].join(' ')
+}
+
 const AFFILIATE_INSTRUCTIONS = [
   'Nerve is confidence training for conversation and for interviews. Users take timed three-minute voice reps against AI characters, or a full practice interview against an interviewer who has read their CV, and get scored on how they handled it — never on whether they succeeded.',
   '',
   'WHAT YOU EARN',
-  '40% of every payment, for as long as your referral keeps paying. 50% if you are a Nerve member yourself. Pro is $19/month and Elite is $49/month, both with a 7-day free trial, so a single referral on Pro is $7.60 a month to you for as long as they stay. Interview credits are also sold outright — $9 for one, $29 for five, $59 for twelve — and those pay the same rate on a purchase somebody makes the week before an interview.',
+  earningsLine(),
   '',
   'WHAT WORKS',
   'Screen-record an actual rep and cut it. The warmth meter moving in real time is the product, and no other app in this category can show a real recording — everything else is fabricated text over B-roll. The strongest angle is the contradiction at the heart of the scoring: a conversation that ends in rejection can still score 92, because the score is for process and never for outcome.',
@@ -479,12 +546,16 @@ async function main(): Promise<void> {
     // does not, and it is what stops a second run creating a duplicate plan
     // beside the one somebody renamed.
     const key = `${offer.plan}-${offer.period}`
-    const periodWord = offer.period === 'weekly' ? 'week' : 'month'
+    const periodWord = periodNoun(offer.period)
 
     const body = {
       account_id: accountId,
       ...(productId ? { product_id: productId } : {}),
-      title: `Nerve ${plan.name} ${offer.period === 'weekly' ? 'Weekly' : 'Monthly'}`,
+      // `periodTabLabel`, not a weekly/monthly ternary. The ternary would have
+      // created the YEARLY plan at the provider titled "Nerve Pro Monthly" —
+      // a $149-a-year plan wearing the $19-a-month plan's name, on the buyer's
+      // checkout page and on their statement.
+      title: `Nerve ${plan.name} ${periodTabLabel(offer.period)}`,
       description: `${plan.repsPerDay} voice reps a day, billed by the ${periodWord}.`
         + (offer.trialDays === 0 ? ' No trial — the week is the trial.' : ` ${offer.trialDays} days free first.`),
       plan_type: 'renewal',

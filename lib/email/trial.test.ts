@@ -6,6 +6,7 @@ const BASE = {
   plan: 'pro' as const,
   planName: 'Pro',
   price: '$19',
+  period: 'monthly' as const,
   periodEnd: '2026-09-09T04:12:01.591Z',
   manageUrl: null,
   subscriptionUrl: 'https://hellonerve.com/profile/subscription',
@@ -110,5 +111,31 @@ describe('the email before the first charge', () => {
     expect(elite.subject).toContain('$49')
     expect(elite.body).toContain('Elite')
     expect(elite.body).not.toContain('$19')
+  })
+})
+
+describe('the period the price is the price of (D22)', () => {
+  /**
+   * The sentence read "the first month" as a literal. On the year that
+   * described a $149 charge as a monthly one, in the single message §14 exists
+   * to stop somebody learning the terms of a charge from their statement.
+   */
+  it('names the year on a yearly offer rather than calling it a month', () => {
+    const yearly = trialEndingEmail({ ...BASE, price: '$149', period: 'yearly' })
+    expect(yearly.body).toContain('charged $149 for the first year of Pro')
+    expect(yearly.body).not.toContain('first month')
+  })
+
+  it('still names the month on a monthly one', () => {
+    expect(trialEndingEmail(BASE).body).toContain('charged $19 for the first month of Pro')
+  })
+
+  /**
+   * The amount is the offer's, and the subject carries it too — a good share of
+   * people decide entirely from the inbox line and never open the mail.
+   */
+  it('puts the offer price in the subject, not the plan headline', () => {
+    expect(trialEndingEmail({ ...BASE, price: '$149', period: 'yearly' }).subject)
+      .toContain('$149')
   })
 })

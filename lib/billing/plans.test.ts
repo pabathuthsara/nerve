@@ -19,6 +19,7 @@ import {
 const ENV = {
   WHOP_PLAN_PRO: 'plan_pro_1',
   WHOP_PLAN_PRO_WEEKLY: 'plan_pro_week_1',
+  WHOP_PLAN_PRO_YEARLY: 'plan_pro_year_1',
   WHOP_PLAN_ELITE: 'plan_elite_1',
 }
 
@@ -36,6 +37,7 @@ describe('planMap', () => {
     expect(planMap(ENV)).toEqual({
       plan_pro_1: 'pro',
       plan_pro_week_1: 'pro',
+      plan_pro_year_1: 'pro',
       plan_elite_1: 'elite',
     })
   })

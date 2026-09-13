@@ -186,12 +186,13 @@ describe('billing periods', () => {
 
   it('orders the offers for a plan cheapest first', () => {
     const pro = offersFor('pro')
-    expect(pro.map((offer) => offer.period)).toEqual(['weekly', 'monthly'])
+    expect(pro.map((offer) => offer.period)).toEqual(['weekly', 'monthly', 'yearly'])
   })
 
   it('writes the period the way a price is read aloud', () => {
     expect(periodLabel('weekly')).toBe('/ week')
     expect(periodLabel('monthly')).toBe('/ month')
+    expect(periodLabel('yearly')).toBe('/ year')
   })
 
   it('makes every step of the ladder worth taking', () => {

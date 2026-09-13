@@ -117,7 +117,7 @@ export const TRIAL_DAYS = 7
  * contradicts what it is for, as well as putting a sixth price on a page that
  * has to stay readable.
  */
-export type BillingPeriod = 'weekly' | 'monthly'
+export type BillingPeriod = 'weekly' | 'monthly' | 'yearly'
 
 export interface PlanOffer {
   plan: Exclude<Plan, 'free'>
@@ -149,6 +149,31 @@ export interface PlanOffer {
    * one and Elite its four, so nothing about the plans anybody is on moves.
    */
   interviewCredits: number
+  /**
+   * How many times `interviewCredits` is handed over across one billing period.
+   *
+   * ── WHY THIS IS NOT JUST A BIGGER `interviewCredits` ─────────────────────
+   *
+   * Credits are granted by the webhook, on `payment.succeeded` — "one payment,
+   * one period, one grant". That rule is what makes weekly Pro grant nothing
+   * and monthly Pro grant two, and it breaks in the other direction the moment
+   * a period is longer than a month: a yearly plan pays ONCE, so a yearly
+   * `interviewCredits: 24` would hand over twenty-four credits on day one.
+   *
+   * Two things go wrong if it does. `voice_daily_cap_cents` adds ninety cents
+   * of headroom per credit HELD, so twenty-four of them lift a Pro account's
+   * daily spend ceiling from 300c to 2,460c for a year — the §19 "a shared dial
+   * is reached through DATA" trap, at twelve times the size that caught free's
+   * cap. And a card-backed trial emits a real `payment.succeeded` at $0, so the
+   * whole year's credits would be granted to somebody who has paid nothing and
+   * can cancel on day six.
+   *
+   * So the offer states what ONE grant is worth and how many grants the period
+   * gets. The webhook still writes the first one; `/api/cron/interview-credits`
+   * writes the rest, monthly, keyed to a reference that cannot double-grant.
+   * Weekly and monthly are `1` and reach exactly the code they reach today.
+   */
+  creditGrants: number
   /** The environment variable holding this offer's vendor plan id. */
   env: string
 }
@@ -164,6 +189,7 @@ export const OFFERS: readonly PlanOffer[] = [
     trialDays: 0,
     // None, deliberately (C2). A weekly grant is a grant every seven days.
     interviewCredits: 0,
+    creditGrants: 1,
     env: 'WHOP_PLAN_PRO_WEEKLY',
   },
   {
@@ -174,7 +200,52 @@ export const OFFERS: readonly PlanOffer[] = [
     billingDays: 30,
     trialDays: TRIAL_DAYS,
     interviewCredits: 2,
+    creditGrants: 1,
     env: 'WHOP_PLAN_PRO',
+  },
+  /**
+   * Pro by the year (LAUNCH-GAP D22).
+   *
+   * ── WHY A YEAR EXISTS AT ALL ─────────────────────────────────────────────
+   *
+   * Not for the buyer's discount — for the affiliate's cheque. A creator paid
+   * 30% of a $19 month earns $5.70 and has to keep earning it monthly against
+   * a subscription that realistically lives about a quarter; the same referral
+   * on a year pays $44.70 once, on the day it happens. Course affiliates in
+   * this niche make $200-400 on a single sale, and a cold email offering less
+   * than lunch is why the first round of them went unanswered. The year is the
+   * number that makes the outreach worth a creator's video slot.
+   *
+   * **$149 is loss-proof and that is arithmetic, not optimism.** After Whop
+   * ($0.37 + 5%) and a 30% commission, $96.48 is left. Pro is three reps a day
+   * and a rep costs about eight cents, so the ceiling a customer can physically
+   * reach in a year is 1,095 reps against a break-even of 1,206. There is no
+   * usage pattern that puts this sale underwater, which is the property the
+   * price and the commission were chosen together to have — see the note on
+   * `creditGrants` for the other half of it, and `setup-whop.ts`'s AFFILIATES
+   * for the rates this depends on. Moving either number without redoing that
+   * subtraction can reintroduce a loss that nothing in the suite would catch.
+   *
+   * It carries the same seven-day trial as the month, deliberately and against
+   * the obvious objection: a trial in front of a $149 charge is a larger
+   * dispute surface than one in front of $19. Three things pay for it — the
+   * trial grants two credits rather than twenty-four (`creditGrants`), the
+   * trial-ending email names the amount and the date before the card is
+   * touched (§14, `lib/email/trial.ts`), and the 14-day refund promise sits
+   * behind it. What it buys is the reason anybody picks the year over the
+   * month at the moment of choosing.
+   */
+  {
+    plan: 'pro',
+    period: 'yearly',
+    price: '$149',
+    priceUsd: 149,
+    billingDays: 365,
+    trialDays: TRIAL_DAYS,
+    // Two a month, twelve times — never twenty-four at once. See `creditGrants`.
+    interviewCredits: 2,
+    creditGrants: 12,
+    env: 'WHOP_PLAN_PRO_YEARLY',
   },
   {
     plan: 'elite',
@@ -184,6 +255,7 @@ export const OFFERS: readonly PlanOffer[] = [
     billingDays: 30,
     trialDays: TRIAL_DAYS,
     interviewCredits: 6,
+    creditGrants: 1,
     env: 'WHOP_PLAN_ELITE',
   },
 ]
@@ -243,12 +315,30 @@ export function periodAsideFor(period: BillingPeriod): string | null {
   const list = names.length === 1
     ? names[0]
     : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
-  const other: BillingPeriod = period === 'weekly' ? 'monthly' : 'weekly'
-  return `${list} ${names.length === 1 ? 'is' : 'are'} sold by the ${periodNoun(other)} — switch to ${periodTabLabel(other)} to see ${names.length === 1 ? 'it' : 'them'}.`
+  /**
+   * Where the missing plans actually ARE, rather than "the other tab".
+   *
+   * This read `period === 'weekly' ? 'monthly' : 'weekly'`, which was exactly
+   * right while there were two tabs and became a lie the moment there were
+   * three: on the yearly tab it sent a reader looking for Elite to the WEEKLY
+   * tab, which is the one period Elite has never been sold on. Derived from
+   * the missing plans' own offers now, so a fourth period cannot reintroduce
+   * it. Falls back to naming no tab at all when they are scattered, because
+   * "switch to X" has to be true of every plan in the sentence.
+   */
+  const elsewhere = [...new Set(
+    missing.flatMap((plan) => offersFor(plan.id).map((offer) => offer.period)),
+  )]
+  const verb = names.length === 1 ? 'is' : 'are'
+  if (elsewhere.length !== 1) {
+    return `${list} ${verb} sold on other billing periods — check the other tabs to see ${names.length === 1 ? 'it' : 'them'}.`
+  }
+  const other = elsewhere[0] as BillingPeriod
+  return `${list} ${verb} sold by the ${periodNoun(other)} — switch to ${periodTabLabel(other)} to see ${names.length === 1 ? 'it' : 'them'}.`
 }
 
 /** The periods anything is sold on, in the order the tabs show them. */
-export const BILLING_PERIODS: readonly BillingPeriod[] = ['weekly', 'monthly']
+export const BILLING_PERIODS: readonly BillingPeriod[] = ['weekly', 'monthly', 'yearly']
 
 /**
  * A period read back out of stored JSON (E3).
@@ -270,17 +360,20 @@ export function readBillingPeriod(value: unknown): BillingPeriod | null {
 
 /** How a period is written wherever a price is quoted. */
 export function periodLabel(period: BillingPeriod): string {
-  return period === 'weekly' ? '/ week' : '/ month'
+  if (period === 'weekly') return '/ week'
+  return period === 'yearly' ? '/ year' : '/ month'
 }
 
 /** The bare noun, for prose: "cancel before the week is out". */
 export function periodNoun(period: BillingPeriod): string {
-  return period === 'weekly' ? 'week' : 'month'
+  if (period === 'weekly') return 'week'
+  return period === 'yearly' ? 'year' : 'month'
 }
 
 /** The word on the tab that selects this period. */
 export function periodTabLabel(period: BillingPeriod): string {
-  return period === 'weekly' ? 'Weekly' : 'Monthly'
+  if (period === 'weekly') return 'Weekly'
+  return period === 'yearly' ? 'Yearly' : 'Monthly'
 }
 
 /**
@@ -309,6 +402,8 @@ export const PERIOD_NOTE: Readonly<Record<BillingPeriod, string>> = {
     'Billed every week, no trial and no commitment — the week is the trial. It works out dearer per month than the monthly price, which is what you are paying for the freedom to stop.',
   monthly:
     `Billed monthly after ${TRIAL_DAYS} free days. Cancel any time from your own subscription screen and access stays open to the end of the period you have paid for.`,
+  yearly:
+    `Billed once a year after ${TRIAL_DAYS} free days, and it is the cheapest way to buy a rep. Cancel any time from your own subscription screen and access stays open to the end of the year you have paid for.`,
 }
 
 /**
@@ -338,10 +433,11 @@ export function trialNoteFor(period: BillingPeriod): string | null {
 /**
  * The period a buyer should pick, and the one the tabs open on.
  *
- * Monthly, because it is the cheaper effective rate. A pricing control that
- * opens on the dearer option is one that hopes you do not do the arithmetic.
+ * Yearly, because it is the cheapest effective rate — $12.42 a month against
+ * $19 by the month and $30.33 by the week. A pricing control that opens on the
+ * dearer option is one that hopes you do not do the arithmetic.
  */
-export const BEST_VALUE_PERIOD: BillingPeriod = 'monthly'
+export const BEST_VALUE_PERIOD: BillingPeriod = 'yearly'
 
 /**
  * How much this period saves against the dearest way to buy the same plan, as
@@ -385,12 +481,16 @@ export function chargeLine(offer: PlanOffer): string {
 /**
  * What the weekly offer costs a month, for the comparison the page must show.
  *
- * Quoting $7 without this is the omission that would make the ladder dishonest.
- * 4.345 is 52/12 rather than 4, because a month is not four weeks and a buyer
- * who multiplies by four and then sees their statement is a support ticket.
+ * Quoting $7 without this is the omission that would make the ladder dishonest,
+ * and quoting $149 without it is the same omission pointing the other way — the
+ * year is the CHEAP end and a reader cannot see that from the biggest number on
+ * the page. 4.345 is 52/12 rather than 4, because a month is not four weeks and
+ * a buyer who multiplies by four and then sees their statement is a support
+ * ticket.
  */
 export function monthlyEquivalent(offer: PlanOffer): number {
-  return offer.period === 'weekly' ? offer.priceUsd * (52 / 12) : offer.priceUsd
+  if (offer.period === 'weekly') return offer.priceUsd * (52 / 12)
+  return offer.period === 'yearly' ? offer.priceUsd / 12 : offer.priceUsd
 }
 
 export const PUBLIC_PLANS: readonly PublicPlan[] = [
@@ -826,6 +926,40 @@ export function offerInterviewCredits(offer: PlanOffer): number {
 }
 
 /**
+ * What an offer grants across its WHOLE billing period.
+ *
+ * `offerInterviewCredits` answers "how many does one grant hand over", which is
+ * what the webhook and the drip cron need. This answers "how many does a year
+ * of this cost us", which is what a costing argument and a comparison line
+ * need. They are the same number on every offer that bills monthly or faster,
+ * and they differ by twelve on the year.
+ */
+export function offerPeriodCredits(offer: PlanOffer): number {
+  return offer.interviewCredits * offer.creditGrants
+}
+
+/**
+ * The noun a grant's CADENCE is written with, which is not the billing period.
+ *
+ * ── THE BUG THIS EXISTS FOR ──────────────────────────────────────────────
+ *
+ * `interviewsLine` printed `${credits} / ${periodNoun(offer.period)}`, which
+ * was right for as long as one payment meant one grant. On the year it printed
+ * **"2 / year"** — the true per-grant number against the wrong word, telling a
+ * buyer that $149 buys two interviews when it buys twenty-four. The number was
+ * correct and the sentence was a lie, which is the §15 failure the interview
+ * scorecard already made once: every figure right, the label from somewhere
+ * else.
+ *
+ * A multi-grant offer drips monthly because that is the cadence the cron runs
+ * at — one fact, asserted in `plans.test.ts` against `creditGrants` rather than
+ * restated here in prose.
+ */
+export function creditCadenceNoun(offer: PlanOffer): string {
+  return offer.creditGrants > 1 ? 'month' : periodNoun(offer.period)
+}
+
+/**
  * The grant for a plan bought on a period, for the code that only knows those.
  *
  * Falls back to the plan-level number when the period is unknown — a webhook
@@ -862,7 +996,7 @@ export function interviewsLine(plan: Plan, period?: BillingPeriod | null): strin
    * as something sold separately — which it is, at $6.
    */
   if (credits === 0) return 'Sold separately'
-  return `${credits} / ${periodNoun(offer?.period ?? 'monthly')}`
+  return `${credits} / ${offer ? creditCadenceNoun(offer) : 'month'}`
 }
 
 /**

@@ -1195,3 +1195,109 @@ found.
 
 No plan price except the pack correction above, no trial length, no
 `reps_per_day`, no new environment variable and no new vendor plan.
+
+---
+
+## 17 · Pro by the year, and the commission that pays for it — 13 September 2026
+
+`LAUNCH-GAP.md` **D22** is the decision; this is the record of what landed.
+
+### The offer
+
+**Pro yearly, $149, seven-day trial, `plan_E8OcPxQVpSptW`** — created hidden,
+like every other plan on the account, so nothing went on sale. `$12.42` a month
+effective against $19 monthly and $30.33 weekly, which makes it the cheapest
+rung and moves `BEST_VALUE_PERIOD` onto it: a pricing control that opens on the
+dearer option is one that hopes you do not do the arithmetic.
+
+It exists for the **affiliate cheque**, not the buyer's discount. 30% of a $19
+month is $5.70 dripped monthly against a subscription that lives about a
+quarter; $149 pays **$44.70 once, on the day it happens**. That is the number a
+creator will read.
+
+### The commission, which is the half that mattered
+
+**40% global / 50% member → 30% / 30%.** Not a marketing choice. Every rung has
+to clear its cost of goods at the usage it **permits** — `repsPerDay` is a
+promise already made, and a customer who takes all of it is entitled to.
+
+| rate | left on a $149 year | verdict |
+|---|---|---|
+| 50% | −$25 | sold underwater |
+| 40% | −$11 | loses inside its own cap |
+| 35% | −$3.61 | **looked safe by hand, is not** |
+| 30% | +$3.84 | clears |
+
+The 35% row is the one worth keeping. That subtraction was done by hand twice
+and the second one was wrong, because `reps × $0.08` silently omits the
+twenty-four interview credits the same plan grants. The year is the binding rung
+at a ceiling of **32.6%**, which is why the member premium was dropped rather
+than reduced — two rates two points apart are not worth the sentence in the
+affiliate brief explaining them.
+
+So it is computed. **`lib/billing/economics.ts`** holds the rates, the fee model
+($0.37 + 5%, read off a real payment per rule 14) and the ceiling;
+**`economics.test.ts`** asserts the property — *no offer loses money at any rate
+we pay, at the maximum usage it permits* — and **`whop:verify` reads the live
+percentages back off the product**. That last one closes a real gap: the
+commission is the one class of number at the provider that can turn a completed
+sale negative, and until now nothing checked it. Whop re-derives product fields
+on a delay (rule 12), so a rate is exactly the kind of thing that can move
+without a write.
+
+### The credits are dripped, and that is what makes the trial safe
+
+"One payment, one period, one grant" holds for a week and a month and **breaks
+on a year**. Granting twenty-four at once does two things:
+
+- `voice_daily_cap_cents` adds 90c of headroom **per credit held**, so a Pro
+  account's daily ceiling goes `300c → 2,460c` for twelve months. §19's shared
+  dial reached through DATA, at twelve times the size that caught free's cap.
+- A card-backed trial emits a real `payment.succeeded` at **$0**, so the whole
+  year's credits would go to somebody who has paid nothing and can cancel on
+  day six.
+
+`creditGrants` on the offer says how many grants a period holds. The webhook
+still writes the first, unchanged; **`/api/cron/interview-credits`** writes the
+rest, monthly. `dripsOwed` names **every** slot the period has reached rather
+than only the newest, so a missed run self-heals on the next pass and the
+ledger's unique reference refuses the duplicates.
+
+### Four latent bugs, all the same shape
+
+None is about the year. Each is a two-valued assumption that was correct until
+it wasn't — which is the thing to expect when adding a third value anywhere.
+
+- **`setup-whop.ts`** built the plan title from a weekly/monthly ternary, so it
+  would have created the annual plan at the provider titled **"Nerve Pro
+  Monthly"** — a $149-a-year plan wearing the $19 plan's name on a buyer's
+  checkout page and statement.
+- **`notify.ts`** passed `plan.price` to the one email sent before a card is
+  charged: it would have announced **$19** for a $149 charge. **`trial.ts`**
+  called it *"the first month"*. §14's exact failure, committed by the message
+  that exists to prevent it.
+- **`interviewsLine`** printed **"2 / year"** for a plan granting twenty-four —
+  every figure right, the wrong word beside it (§15's scorecard lesson).
+- **`billingDaysFor`** errs long deliberately, and its cost analysis was written
+  against a 30-day worst case. A year made that 365 without the file changing,
+  so a grant whose period could not be resolved would have lived twelve times
+  too long. It divides by `creditGrants` now and is unmoved by a period being
+  added above it.
+
+`profile-screens.tsx` carried two more of the same ternary. There are none left
+in the repo.
+
+### Still owed by hand
+
+1. **`WHOP_PLAN_PRO_YEARLY=plan_E8OcPxQVpSptW` in Vercel production, then a
+   redeploy.** A variable added after a build starts is not in that build
+   (rule 15).
+2. **`CRON_SECRET`** set, or `/api/cron/interview-credits` answers 401 and the
+   drip never runs. It is empty in `.env.local`.
+3. **Whether commission recurs on renewals**, confirmed once in the dashboard —
+   no payload this repo can read exposes it, and on a yearly plan it is the
+   difference between paying a creator $44.70 once and paying it again next year
+   for a referral they made twelve months ago.
+4. **What adaptive pricing does.** `adaptive_pricing_enabled: true` on every
+   plan, and no non-LK purchase exists to read its behaviour off. It decides
+   whether "$44.70 a referral" is a number we can put in an affiliate brief.

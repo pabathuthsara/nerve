@@ -112,19 +112,36 @@ export function grantExpiry(input: {
 }
 
 /**
- * The longest period this plan is sold on, in days.
+ * How long one GRANT covers on this plan, in days — not how long it bills for.
  *
- * The longest rather than the shortest: the two Pro offers are a week and a
- * month, the payload does not say which was bought when the period end is
- * missing, and erring short would expire a monthly subscriber's credit
- * twenty-three days early. Erring long costs at most one extra interview on an
- * account that has already been charged, and the account's own
- * `membership.deactivated` voids it the moment they stop paying.
+ * The longest rather than the shortest: the Pro offers are a week and a month,
+ * the payload does not say which was bought when the period end is missing, and
+ * erring short would expire a monthly subscriber's credit twenty-three days
+ * early. Erring long costs at most one extra interview on an account that has
+ * already been charged, and the account's own `membership.deactivated` voids it
+ * the moment they stop paying.
+ *
+ * ── WHY IT DIVIDES BY `creditGrants` ─────────────────────────────────────
+ *
+ * This read `Math.max(...offers.map((offer) => offer.billingDays))`, and the
+ * cost analysis above — "at most one extra interview" — was doing its sums
+ * against a 30-day worst case. Adding the year made that number 365 without
+ * touching this file: a grant whose period could not be resolved would have
+ * lived twelve times too long, accumulating two credits a month against an
+ * expiry that never arrived, which is the `voice_daily_cap_cents` hole the
+ * whole drip design exists to avoid.
+ *
+ * The mistake was the question, not the constant. A grant does not cover a
+ * billing period — it covers a billing period divided by the number of grants
+ * in it. On the year that is 365/12, which floors to the same 30 days a month
+ * has always meant, so the fallback is unmoved by a period being added above
+ * it. `Math.floor`, because a fallback is the case where we are guessing and
+ * the guess should not round upward.
  */
 function billingDaysFor(plan: Plan): number {
   const offers = offersFor(plan)
   if (offers.length === 0) return 30
-  return Math.max(...offers.map((offer) => offer.billingDays))
+  return Math.max(...offers.map((offer) => Math.floor(offer.billingDays / offer.creditGrants)))
 }
 
 /**

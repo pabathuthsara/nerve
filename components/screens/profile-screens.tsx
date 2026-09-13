@@ -23,7 +23,7 @@ import { recordLabel, type RepRecord } from '@/lib/data/records'
 import {
   BILLING_NOTE, CHECKOUT_UNCONFIGURED_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE, checkoutNoteFor,
   chargeLine, interviewsLine, offerFor, periodAsideFor, periodLabel, plansOn,
-  monthlyEquivalent, repsLine, repsPerDayLine,
+  monthlyEquivalent, periodNoun, repsLine, repsPerDayLine,
   type BillingPeriod, type PublicPlan,
 } from '@/lib/site/plans'
 import { CreditsPanel } from '@/components/interview/credits'
@@ -831,7 +831,7 @@ function PlanCard({ plan, current, checkoutOpen, period, boughtPeriod = null, en
             about money — which is §14's failure mode arriving as silence
             rather than as a wrong number. */}
         {current !== 'free' && !offersTrial
-          ? <p className="plan-card__equiv mute">Switching starts {plan.name} straight away, at {offer.price} every {offer.period === 'weekly' ? 'week' : 'month'} from then on. Our merchant of record settles the rest of the period you are in and itemises it on the receipt.</p>
+          ? <p className="plan-card__equiv mute">Switching starts {plan.name} straight away, at {offer.price} every {periodNoun(offer.period)} from then on. Our merchant of record settles the rest of the period you are in and itemises it on the receipt.</p>
           : null}
       </>
     }
@@ -858,7 +858,7 @@ function PlanCard({ plan, current, checkoutOpen, period, boughtPeriod = null, en
         trial is a property of the OFFER — weekly has none — and §14's failure
         is somebody learning the terms of a charge from their statement. */}
     {offer
-      ? <p className="plan-card__equiv mute">{offersTrial ? chargeLine(offer) : `${offer.price} every ${offer.period === 'weekly' ? 'week' : 'month'}. Cancel any time.`}</p>
+      ? <p className="plan-card__equiv mute">{offersTrial ? chargeLine(offer) : `${offer.price} every ${periodNoun(offer.period)}. Cancel any time.`}</p>
       : priceUnknown
         ? <p className="plan-card__equiv mute">What you pay and when it renews are on the card above.</p>
         : null}
@@ -873,8 +873,12 @@ function PlanCard({ plan, current, checkoutOpen, period, boughtPeriod = null, en
     <Stat label="Practice interviews" value={interviewsLine(plan.id, offer?.period ?? period)} />
     {/* The effective monthly rate, stated rather than left to be discovered on
         a statement. Weekly costs more per month than monthly does, and a ladder
-        that hides that is the trick this one is trying not to be. */}
-    {offer?.period === 'weekly'
+        that hides that is the trick this one is trying not to be. The year is
+        the same obligation pointing the other way: $149 is the biggest number
+        on the screen and the CHEAPEST way to buy a rep, which a reader cannot
+        see from the figure itself. So the rule is any period that is not a
+        month, rather than a list of the ones that happen to exist today. */}
+    {offer && offer.period !== 'monthly'
       ? <p className="plan-card__equiv mute">About ${monthlyEquivalent(offer).toFixed(0)} a month. Nothing is kept on file after you stop.</p>
       : null}
     <ul>{plan.features.map((feature) => <li key={feature}><Check size={15} strokeWidth={1.5} /> {feature}</li>)}</ul>
