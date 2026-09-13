@@ -29,7 +29,7 @@
  * be minted from here — see the handover note at the bottom of the output.
  */
 
-import { INTERVIEW_PACKS, OFFERS, PUBLIC_PLANS, ROUND_COST_NOTE, TRIAL_DAYS, periodLabel, periodNoun, periodTabLabel, planById, type PlanOffer } from '@/lib/site/plans'
+import { INTERVIEW_PACKS, OFFERS, PLAN_INTERVIEW_CREDITS, PUBLIC_PLANS, ROUND_COST_NOTE, TRIAL_DAYS, periodLabel, periodNoun, periodTabLabel, planById, type PlanOffer } from '@/lib/site/plans'
 import { apiBase, apiVersionDate, isLiveBase } from '@/lib/billing/plans'
 import { AFFILIATE_RATES } from '@/lib/billing/economics'
 
@@ -307,13 +307,42 @@ const WEBHOOK_EVENTS = [
  */
 const PRODUCT_HEADLINE = 'Timed voice reps and practice interviews, scored on how you handled it'
 
+/**
+ * The interview sentence of the storefront description, computed.
+ *
+ * ── THE BUG THIS EXISTS FOR, FOR THE SECOND TIME TODAY ───────────────────
+ *
+ * Hand-typed, it still read *"Pro includes 1 a month, Elite 4, and packs of 1,
+ * 5 or 12 cost $9, $29 and $59"* — every number in it superseded. D18 doubled
+ * the grants and the pack credits on 9 September and D19 cut the pack prices
+ * the same day; this script PATCHed the correct prices onto the plans and left
+ * the paragraph describing them untouched, because nothing connected the two.
+ *
+ * This is the same failure as `earningsLine`, found an hour later on a worse
+ * surface: the storefront description is what a merchant-of-record reviewer
+ * reads, and a page advertising prices the checkout does not charge is the
+ * specific thing §14 says closes a payment account.
+ *
+ * So it is derived. Note it is deliberately NOT a whole-description builder —
+ * the prose around it is an argument about what the product is and should be
+ * reviewed as prose. Only the numbers are computed, and only where they are
+ * numbers this repo already authors elsewhere.
+ */
+function interviewStoreLine(): string {
+  const grant = (plan: 'pro' | 'elite') =>
+    `${planById(plan).name} includes ${PLAN_INTERVIEW_CREDITS[plan]} a month`
+  const packs = INTERVIEW_PACKS.map((pack) => pack.credits).join(', ')
+  const prices = INTERVIEW_PACKS.map((pack) => `$${pack.priceUsd}`).join(', ')
+  return `${grant('pro')}, ${planById('elite').name} ${PLAN_INTERVIEW_CREDITS.elite}, and packs of ${packs} credits cost ${prices}.`
+}
+
 const PRODUCT_DESCRIPTION = `Nerve is confidence training for conversation and for interviews. You take timed voice reps against AI characters, or a practice interview against an interviewer who has read your CV, and are scored on how you handled it.
 
 The score is for process, never outcome. A rep that ends in a polite rejection can score in the nineties, and so can a candidate who does not get the callback.
 
 Voice reps are three minutes against characters who can lose interest and say no. A plan adds volume and nothing else — the roster opens by scoring, never by paying. Pro is 3 reps a day, Elite 6.
 
-Practice interviews run 10-25 minutes on a role you set, graded on seven dimensions. They are metered as credits rather than by the day: Pro includes 1 a month, Elite 4, and packs of 1, 5 or 12 cost $9, $29 and $59. Every account gets one free five-minute screen. Credits you buy never expire and survive cancelling; credits included with a plan are part of that month and do not roll over.
+Practice interviews run 10-25 minutes on a role you set, graded on seven dimensions. They are metered as credits rather than by the day: ${interviewStoreLine()} Every account gets one free five-minute screen. Credits you buy never expire and survive cancelling; credits included with a plan are part of that month and do not roll over.
 
 The free plan keeps everything that does not use a microphone, and needs no card.
 
