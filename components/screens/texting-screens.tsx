@@ -329,6 +329,15 @@ export function TextingThreadScreen({ persona, slug }: { persona: TextingPersona
   }
 
   const started = turns.length > 0
+  /**
+   * Whether ending this one can be followed by starting another today.
+   *
+   * A LIVE thread has already spent an allowance — the count is over
+   * `started_at`, so the open row is one of today's. On free that means
+   * restarting is not possible until tomorrow, and the sheet says so rather
+   * than offering a button the Server Action will refuse.
+   */
+  const canRestart = allowance === null || allowance.remaining > 0 || !started
   const lastUserIndex = turns.reduce((found, turn, index) => (turn.speaker === 'user' ? index : found), -1)
 
   return (
@@ -445,22 +454,35 @@ export function TextingThreadScreen({ persona, slug }: { persona: TextingPersona
         </button>
       </form>
 
-      <Sheet open={freshOpen} onClose={() => setFreshOpen(false)} title="Start fresh">
+      {/* THE SHEET KNOWS WHETHER A NEW ONE CAN ACTUALLY BE STARTED.
+          An open thread has already spent today's allowance, so on free the
+          honest answer is "this ends it, and the next one is tomorrow" — and a
+          button reading "Start a new one" that is then refused by the action is
+          the screen making a promise the server will not keep. */}
+      <Sheet
+        open={freshOpen}
+        onClose={() => setFreshOpen(false)}
+        title={canRestart ? 'Start fresh' : 'End this conversation'}
+      >
         <div className="sheet-stack">
-          <p>This ends the conversation and starts a new one from the top.</p>
-          <p className="muted">
-            It counts as one of today’s conversations. Your reps, scores, streak and record are
-            not touched — nothing you type here has ever reached them.
+          <p>
+            {canRestart
+              ? 'This ends the conversation and starts a new one from the top.'
+              : 'This ends the conversation. You have used today’s, so the next one opens tomorrow.'}
           </p>
-          <Button fullWidth loading={clearing} onClick={() => fresh(false)}>Start a new one</Button>
+          <p className="muted">
+            Your reps, scores, streak and record are not touched — nothing you type here has
+            ever reached them.
+          </p>
+          <Button fullWidth loading={clearing} onClick={() => fresh(false)}>
+            {canRestart ? 'Start a new one' : 'End it'}
+          </Button>
           <Button variant="secondary" fullWidth disabled={clearing} onClick={() => fresh(true)}>
-            {memory ? 'Start a new one and make her forget me' : 'Start a new one and forget everything'}
+            {memory ? 'End it and make her forget me' : 'End it and forget everything'}
           </Button>
           <Button variant="ghost" fullWidth disabled={clearing} onClick={() => setFreshOpen(false)}>Keep it</Button>
         </div>
       </Sheet>
-
-      {allowance && !allowance.mayStart && !gone ? null : null}
 
       <DistressModal open={distress} onClose={() => { window.location.href = '/texting' }} />
     </main>

@@ -140,8 +140,8 @@ export interface EventProps {
    * most threads fade is a product whose rung 1 is too hard, and a product
    * where none do is one that is not teaching anything.
    */
-  texting_thread_ended: { persona_id: string; ending: 'warm' | 'faded' | 'dismissed'; exchanges: number }
-  texting_debrief_viewed: { persona_id: string; ending: 'warm' | 'faded' | 'dismissed' | 'open' }
+  texting_thread_ended: { persona_id: string; ending: 'warm' | 'faded' | 'dismissed' | 'abandoned'; exchanges: number }
+  texting_debrief_viewed: { persona_id: string; ending: 'warm' | 'faded' | 'dismissed' | 'abandoned' | 'open' }
   /** The free wall, which is the only place this section asks for money. */
   texting_allowance_reached: { per_day: number }
 }

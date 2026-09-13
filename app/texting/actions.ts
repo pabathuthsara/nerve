@@ -440,7 +440,10 @@ export async function startFresh(input: {
     const supabase = await supabaseServer()
     const { error } = await supabase
       .from('texting_threads')
-      .update({ state: 'ended_cold', ending: 'faded', ended_at: new Date().toISOString() })
+      // `abandoned`, NOT `faded`. See `TextingEnding` — marking a thread he
+      // closed himself as one she walked away from would have the debrief
+      // report the opposite of what happened.
+      .update({ state: 'ended_cold', ending: 'abandoned', ended_at: new Date().toISOString() })
       .eq('id', row.id)
     if (error) return { ok: false, message: `Not cleared — ${error.message}` }
   }

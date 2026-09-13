@@ -90,3 +90,25 @@ describe('the debrief', () => {
     expect(warm.movers).toEqual(cold.movers)
   })
 })
+
+describe('a thread he closed himself is not a thread she left', () => {
+  /**
+   * `startFresh` used to mark a thread `faded`, which is the value that means
+   * SHE stopped replying — so the debrief on a conversation the user had ended
+   * himself said "She read your last message and did not answer it."
+   *
+   * A lie about the one signal this whole section teaches, on the screen whose
+   * job is to explain what happened.
+   */
+  it('says he started it over', () => {
+    expect(endingSentence('abandoned')).toMatch(/started this one over/i)
+  })
+
+  it('never blames her for it', () => {
+    expect(endingSentence('abandoned')).not.toMatch(/\bshe\b/i)
+  })
+
+  it('is still not a verdict', () => {
+    expect(endingSentence('abandoned')).not.toMatch(/\b(?:win|won|lost|fail|failed|score)\b/i)
+  })
+})

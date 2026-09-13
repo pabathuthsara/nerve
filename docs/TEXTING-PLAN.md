@@ -1264,7 +1264,20 @@ runs. Every one of these passed `npm test` first.
    fourteen-word cap, reported as uncapped. `capTextingReply` treats a newline
    as the message boundary it actually is; `capToBudget` is untouched.
 
-5. **The harness could not exercise its own `double_texter` archetype.** It sent
+5. **A thread the user closed himself was reported as one she walked away
+   from.** `startFresh` marked it `faded` — the value that means she stopped
+   replying — so the debrief said *"She read your last message and did not
+   answer it"* about a conversation he had ended. A lie about the one signal the
+   section teaches, on the screen whose job is to explain what happened. There
+   is a fourth ending now, `abandoned`, and a migration for it.
+
+6. **On free, Start fresh promised something the server would refuse.** An open
+   thread has already spent the day's allowance, because the count is over
+   `started_at`. So the sheet offered "Start a new one", the action refused it,
+   and the conversation was gone either way. The sheet reads the allowance now:
+   it offers to *end* the conversation and says the next one is tomorrow.
+
+7. **The harness could not exercise its own `double_texter` archetype.** It sent
    one message per turn, so `TextingTurnShape.messages` was always 1 and
    `isPressuring` could never fire on the bench. The player's newlines are
    separate messages now.
@@ -1282,3 +1295,7 @@ thing is any good. Four of these five were invisible at a desk.
 | `noor recoverer 14` | trough 32.7 → closed 56.0. **23.3 points back — the gate the whole section rests on** |
 | `wren hostile 6` | `dismissed` on turn one, zero generations, zero cost |
 | `cleo double_texter 8` | `pressured` fired; delays ~1.8× on the turns he sent three messages, warmth flat at ~24 |
+
+Findings 5 and 6 were found by walking the shipped screens rather than by the
+bench — which is `INTERVIEW-TECHNICAL-PLAN` §14's lesson arriving as well:
+looking at a track found scoring defects, not cosmetic ones.

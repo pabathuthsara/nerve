@@ -111,8 +111,15 @@ export function isTextingDismissal(text: string): boolean {
  * `null` while it is still running. Stored on the row rather than recomputed,
  * because the debrief has to be able to say what happened months later and the
  * transcript alone cannot distinguish "she faded" from "he stopped typing".
+ *
+ * **`abandoned` is not one the exit layer can produce**, and that is why it is
+ * here rather than inferred. Only `startFresh` writes it. It exists because
+ * marking a thread the user closed himself as `faded` had the debrief tell him
+ * *"She read your last message and did not answer it"* — a lie about the one
+ * signal this whole section teaches, on the screen whose job is to explain what
+ * happened.
  */
-export type TextingEnding = 'warm' | 'faded' | 'dismissed'
+export type TextingEnding = 'warm' | 'faded' | 'dismissed' | 'abandoned'
 
 /**
  * Warmth at or below which she is on her way out.

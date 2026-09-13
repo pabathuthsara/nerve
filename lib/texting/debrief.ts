@@ -85,6 +85,8 @@ export function endingSentence(ending: TextingEnding | null): string {
       return 'She read your last message and did not answer it.'
     case 'dismissed':
       return 'You told her to leave, and she did.'
+    case 'abandoned':
+      return 'You started this one over.'
     default:
       return 'This one is still going.'
   }
