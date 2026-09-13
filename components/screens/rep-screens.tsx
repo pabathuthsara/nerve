@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ChevronLeft, LockKeyhole, MicOff, WifiOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { useInterviewers, useLatestFocus, usePersona, usePersonaMemory, usePersonaProgress, useUserState } from '@/lib/data'
+import { useInterviewers, useLatestFocus, useLifetimeStats, usePersona, usePersonaMemory, usePersonaProgress, useUserState } from '@/lib/data'
 import { techniqueBySlug, techniqueForSubScore } from '@/lib/techniques/library'
 import { focusPlan } from '@/lib/data/focus'
 import { MemoryLine } from './memory-line'
@@ -19,7 +19,7 @@ import { INTERVIEW_BAND_LABEL } from '@/lib/warmth/interview/bands'
 import type { Band } from '@/lib/data/types'
 import { TOP_TIER } from '@/lib/data/progression'
 import { Button, Skeleton } from '@/components/ui'
-import { RuleBlock } from './rep-format'
+import { RuleBlock, repGoal, repGoalShort } from './rep-format'
 import { ConnectionLostModal, DistressModal, EndRepModal, HowItWorksSheet, MicBlockedSheet, MicLostModal, MicPrimerSheet, PaywallSheet, TrainingWheelsOffModal } from '@/components/modals'
 import { micPermission, type MicPermission } from '@/lib/data/mic'
 import { PhoneNumberCard, TimeArc } from '@/components/rep-visuals'
@@ -122,6 +122,18 @@ export function RepBriefScreen({
   // Dating only. An interviewer carrying a memory of your last attempt is a
   // different feature with different rules, and it is not this one (§08).
   const memory = usePersonaMemory(interview ? '' : personaId)
+  /**
+   * Whether this account has ever finished a rep (D23).
+   *
+   * **Lifetime, not per character.** `progress.attempts` is already on this
+   * screen and is the obvious thing to reach for, but it counts attempts
+   * against THIS persona — so an experienced user meeting a new character would
+   * be handed the stripped first-run layout and lose their technique card and
+   * their memory line. The question this screen is asking is "has anybody ever
+   * explained this to you", and that is answered once per account.
+   */
+  const { data: lifetime } = useLifetimeStats()
+  const firstEver = !interview && (lifetime?.totalReps ?? 0) === 0
   const online = useOnlineStatus()
   const interviewer = interviewers.find((item) => item.id === personaId)
   const subject = interview ? interviewer : persona
@@ -209,11 +221,68 @@ export function RepBriefScreen({
   // an interface. The live screen has always made that choice; this one had not.
   const briefScript = interview ? null : guidedScriptFor(personaId)
   const back = interview ? '/interview/interviewers' : `/roster/${personaId}`
-  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}><Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link><section className="brief-shell"><FluidPersona name={subject.name} personaId={subject.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={132} /><h1 className="display-lg">{subject.name}</h1><span className="label">{setting}</span><p className="brief-hook">{hook}</p>{!interview && progress && progress.attempts > 0 ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span> : null}{!interview ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} /> : null}<RuleBlock interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} />{!interview && !briefScript ? <MissionNote mission={mission} /> : null}{briefScript ? <GuidedBrief script={briefScript} /> : null}{!interview ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}{!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}<Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button>{/* The way out of the microphone, offered at the exact moment somebody
-    is deciding whether to grant it (P1). Same character, no permission,
-    no quota — and it is a link rather than a modal because a person
-    hesitating here should not have to answer another question. */}
-{!interview ? <Link className="arena-button arena-button--ghost arena-button--full" href={`/text/${personaId}`}>Not ready to talk? Type instead</Link> : null}<Button variant="ghost" fullWidth onClick={() => setHow(true)}>How does this work?</Button></section><HowItWorksSheet open={how} onClose={() => setHow(false)} interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={interview ? null : personaId} interview={interview} packsOpen={packsOpen} credits={credits} cost={cost} roundLabel={roundType(round).label} reason={interview ? creditNote : undefined} /><TrainingWheelsOffModal interview={interview} open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} /><MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} /></main>
+  /**
+   * ── THE BRIEF, RESTRUCTURED (D23) ─────────────────────────────────────
+   *
+   * Same blocks, three rules about them, all three learned from one real user
+   * who pressed Start without reading any of it and then sat in silence.
+   *
+   * 1. **The goal is a headline, not a table row.** `repGoal` and the note on
+   *    it carry the argument: E1 fixed what the goal said, this fixes where it
+   *    sat. It is the largest thing on the screen after her name.
+   *
+   * 2. **One primary action.** This screen ended in three stacked buttons —
+   *    Start, "type instead", "how does this work?" — which is a decision
+   *    rather than an action, on the ninth consecutive screen whose bottom
+   *    button the user has been trained to press. Start is the only button
+   *    now; the other two are links, and the explainer moved UP beside the
+   *    goal, where somebody who is confused is already looking, rather than
+   *    sitting at the bottom where only somebody who has finished reading
+   *    would find it.
+   *
+   * 3. **Continuity is hidden until there is something to continue.** `Your
+   *    best`, the memory line and the technique card are all answers to "what
+   *    happened last time", which is not a question a first rep has. Two were
+   *    already empty then; the technique card was not, and it was the live
+   *    half of a bug the guided brief had already fixed once — a first-timer
+   *    who answered the `/start` focus question got a guided SCRIPT and a
+   *    library CARD, two sets of objectives for the same three minutes, which
+   *    is exactly what `GuidedBrief` standing instead of `MissionNote` exists
+   *    to prevent. It renders below Start for everybody else, so it stops
+   *    competing with the script for the same attention.
+   */
+  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}>
+    <Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link>
+    <section className="brief-shell">
+      <FluidPersona name={subject.name} personaId={subject.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={132} />
+      <h1 className="display-lg">{subject.name}</h1>
+      <span className="label">{setting}</span>
+      <p className="brief-goal">{repGoal(interview, Math.round(interviewDurationMs(round) / 60_000))}</p>
+      <button type="button" className="brief-how" onClick={() => setHow(true)}>How does this work?</button>
+      <p className="brief-hook">{hook}</p>
+      {!firstEver && !interview && progress && progress.attempts > 0
+        ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span>
+        : null}
+      {!firstEver && !interview
+        ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} />
+        : null}
+      <RuleBlock interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} />
+      {!interview && !briefScript ? <MissionNote mission={mission} /> : null}
+      {briefScript ? <GuidedBrief script={briefScript} /> : null}
+      {!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}
+      <Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button>
+      {/* The way out of the microphone, offered at the exact moment somebody is
+          deciding whether to grant it (P1). Same character, no permission, no
+          quota — a link rather than a button now, because a person hesitating
+          here should not be handed a second thing that looks like the action. */}
+      {!interview ? <Link className="brief-alt" href={`/text/${personaId}`}>Not ready to talk? Type instead</Link> : null}
+      {!interview && !firstEver ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}
+    </section>
+    <HowItWorksSheet open={how} onClose={() => setHow(false)} interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} />
+    <PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={interview ? null : personaId} interview={interview} packsOpen={packsOpen} credits={credits} cost={cost} roundLabel={roundType(round).label} reason={interview ? creditNote : undefined} />
+    <TrainingWheelsOffModal interview={interview} open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} />
+    <MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} />
+  </main>
 }
 
 export function RepLiveScreen({
@@ -454,7 +523,10 @@ export function RepLiveScreen({
   const connecting = session.status === 'connecting'
   const statusLine = connecting
     ? null
-    : speakingLabel(session.speaking, subject?.name ?? (interview ? 'interviewer' : 'her'), session.band, session.userLevel)
+    // `userTurns` is turns WITH WORDS IN THEM, which is the honest reading of
+    // "has he opened yet": a dead microphone leaves it at zero, and the rail
+    // should still be telling him it is his turn.
+    : speakingLabel(session.speaking, subject?.name ?? (interview ? 'interviewer' : 'her'), session.band, session.userLevel, session.userTurns > 0)
   const loss = session.outcome && !session.outcome.won
   // Thirty seconds out — the same instant she is told to wind down. Gone once
   // the clock reads zero, because at that point she is finishing, not being
@@ -497,7 +569,7 @@ export function RepLiveScreen({
   // The guided rail is lifted out of the centred stack and anchored to the
   // floor of the screen, so the composition above it has to know to stop
   // short. One class, set only on the one character who has a rail.
-  return <main className={`rep-live${guidedScript ? ' rep-live--guided' : ''}${connecting ? ' rep-live--connecting' : ''}${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}${session.outcome ? ' rep-live--over' : ''}${production.arming ? ' rep-live--arming' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label={interview ? 'Leave interview' : 'End rep'} disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{production.count !== null ? <div className="rep-arm" role="status" aria-live="assertive"><span className="rep-arm__count data" key={production.count}>{production.count}</span><span className="rep-arm__label label">{subject.name} is about to speak</span></div> : null}{/* THE WAIT, GIVEN A SCREEN (11 September).
+  return <main className={`rep-live${guidedScript ? ' rep-live--guided' : ''}${connecting ? ' rep-live--connecting' : ''}${loss ? ' rep-live--loss' : ''}${session.outcome?.won ? ' rep-live--win' : ''}${session.outcome ? ' rep-live--over' : ''}${production.arming ? ' rep-live--arming' : ''}`}><div className={`rep-top${chromeDim ? ' rep-top--dim' : ''}`}><button className="rep-back" aria-label={interview ? 'Leave interview' : 'End rep'} disabled={Boolean(session.outcome)} onClick={() => { if (!session.outcome) setEndOpen(true) }}><ChevronLeft size={25} strokeWidth={1.5} /></button><TimeArc msRemaining={session.msRemaining} durationMs={durationMs} /></div>{production.count !== null ? <div className="rep-arm" role="status" aria-live="assertive"><span className="rep-arm__count data" key={production.count}>{production.count}</span><span className="rep-arm__label label">{repGoalShort(interview)}</span></div> : null}{/* THE WAIT, GIVEN A SCREEN (11 September).
       It was a 9px label under a fully-drawn avatar, so the first thing a new
       account saw was her — present, rendered, apparently listening — while the
       transport was still opening and nothing they said was reaching anything.
@@ -526,13 +598,23 @@ function BriefGate({ title, description, href, locked = false }: { title: string
 /** How long a rep may hear nothing before it says so (F-10). */
 const SILENCE_NUDGE_MS = 15_000
 
-function speakingLabel(speaking: SpeakingState, name: string, band: Band, level: number) {
+/**
+ * `opened` is whether HE has said anything yet in this rep (D23).
+ *
+ * Before he has, the idle state reads **"your turn"** rather than "listening".
+ * A dating rep is an approach — she is written to respond and never to open —
+ * so the first thing that happens after the count is silence, and "listening"
+ * describes the microphone rather than telling anybody what to do with it. It
+ * is also ambiguous about WHO is listening.
+ *
+ * It reverts the moment he speaks, so it costs an experienced user nothing and
+ * needs no first-run flag: it is true of every rep, every time, until it isn't.
+ */
+function speakingLabel(speaking: SpeakingState, name: string, band: Band, level: number, opened: boolean) {
   if (speaking === 'thinking') return null
   if (speaking === 'persona') return <><b style={{ background: bandCss(band) }} /> {name.toLowerCase()}</>
-  // "Listening" used to be a word beside a dot that never moved. It is now the
-  // input stream itself — the same analyser the avatar reads — so a
-  // microphone that is not working is visible rather than merely claimed.
-  return <><InputMeter level={level} /> {speaking === 'user' ? 'you' : 'listening'}</>
+  if (speaking === 'user') return <><InputMeter level={level} /> you</>
+  return <><InputMeter level={level} /> {opened ? 'listening' : 'your turn'}</>
 }
 
 /**

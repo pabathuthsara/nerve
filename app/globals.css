@@ -710,6 +710,21 @@ a.record-card:hover { border-color: var(--line-bright); background: var(--surfac
 .device-picker select { min-height: 44px; border: 1px solid var(--line); border-radius: 2px; padding: 0 10px; background: var(--ground); color: var(--text-dim); }
 .brief-shell { width: min(100%, 380px); display: grid; justify-items: center; gap: 14px; text-align: center; }
 .brief-hook { max-width: 320px; margin: 4px 0 8px; color: var(--text-dim); font-size: 16px; }
+/* D23 · the goal, promoted out of the rule block. The largest thing on the
+   screen after her name, because it is the one fact a first-time user was
+   missing and a table row is scanned rather than read. Display face, sentence
+   case rather than the uppercase the display font usually takes — this is a
+   sentence somebody reads, not a label they recognise. */
+.brief-goal { max-width: 340px; margin: 6px 0 0; font-family: var(--font-display), sans-serif; font-weight: 700; font-size: 23px; line-height: 1.24; color: var(--text); text-wrap: balance; }
+/* Beside the goal rather than at the bottom of the screen: somebody who does
+   not understand what they are about to do is looking here, not past three
+   more blocks and a button. A link, so it never competes with Start. */
+.brief-how { margin: 0; padding: 2px 0; border: 0; background: none; color: var(--text-mute); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.brief-how:hover { color: var(--text-dim); }
+/* The microphone escape hatch (P1), demoted from a full-width ghost button so
+   that Start is the only thing on this screen shaped like the action. */
+.brief-alt { margin-top: 2px; color: var(--text-mute); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+.brief-alt:hover { color: var(--text-dim); }
 .brief-offline { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--amber); font-size: 12px; }
 .brief-gate > svg { color: var(--text-mute); }
 .rule-block { width: 100%; margin: 10px 0 14px; border-block: 1px solid var(--line); }
@@ -1111,7 +1126,12 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 /* The arm. 3·2·1, full-bleed, over everything including the orb. */
 .rep-arm { position: absolute; z-index: 30; inset: 0; display: grid; place-items: center; align-content: center; gap: 10px; background: radial-gradient(circle at 50% 45%, rgba(19,21,17,.82), rgba(11,12,10,.97) 62%); }
 .rep-arm__count { color: var(--volt); font-size: clamp(5rem, 26vw, 9rem); line-height: 1; font-variant-numeric: tabular-nums; animation: arm-count 700ms cubic-bezier(.16,1,.3,1) both; }
-.rep-arm__label { color: var(--text-mute); }
+/* D23 · this read "<name> is about to speak", which was false on the dating
+   arm — she is written to respond and never to open — and it was the single
+   most load-bearing sentence on the screen, shown in the one moment that
+   cannot be tapped past. It carries the goal now. Wider and wrapping, because
+   it is a sentence rather than a word. */
+.rep-arm__label { max-width: 260px; color: var(--text-mute); text-align: center; text-wrap: balance; }
 @keyframes arm-count { 0% { opacity: 0; transform: scale(1.24); } 32% { opacity: 1; transform: scale(1); } 100% { opacity: .5; transform: scale(.97); } }
 
 /* The entrance. When the count clears AND she can hear you, the room fades up
