@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import './globals.css'
 import { displayFont, monoFont, sansFont } from '@/lib/fonts'
 import { ProductProvider } from '@/components/product-provider'
+import { ShellFrame } from '@/components/app-shell'
 import { ToastProvider } from '@/components/ui'
 import { Analytics } from '@/components/analytics'
 import { SITE_ORIGIN } from '@/lib/site/origin'
@@ -44,7 +45,29 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${displayFont.variable} ${sansFont.variable} ${monoFont.variable}`}>
-      <body><ProductProvider><ToastProvider>{children}</ToastProvider><Analytics /></ProductProvider></body>
+      {/*
+        THE APP CHROME IS MOUNTED HERE, AND HERE IS THE ONLY PLACE IT CAN BE.
+
+        It used to be rendered by each screen, and `RouteView` returns a
+        different component type per path — so React unmounted the whole shell
+        and mounted a fresh one on every navigation. `useAsync` has no
+        cross-mount cache, so each new shell refetched the user state and the
+        track switcher, the rep pill and the account row all dropped to
+        skeletons and came back. Going from Field to Profile read as a full page
+        reload because to the eye it was one.
+
+        Moving it into `app/[...slug]/layout.tsx` did NOT fix that, and the
+        reason is worth writing down: a layout under a DYNAMIC segment is a
+        layout per param value. Changing the slug changes the segment instance,
+        so Next remounted it exactly as before — measured at one fresh mount per
+        navigation with a counter in the browser.
+
+        The ROOT layout is the one that never remounts, whatever the URL does.
+        `ShellFrame` reads the pathname and draws the chrome only on the
+        sections that wear it, so `/`, the auth run, the onboarding run and a
+        live rep are all still bare.
+      */}
+      <body><ProductProvider><ToastProvider><ShellFrame>{children}</ShellFrame></ToastProvider><Analytics /></ProductProvider></body>
     </html>
   )
 }

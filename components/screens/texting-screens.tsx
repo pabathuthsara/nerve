@@ -21,6 +21,8 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, RotateCcw, SendHorizontal } from 'lucide-react'
 import {
+  loadDebrief,
+  loadInbox,
   openThread,
   sendTextingTurn,
   startFresh,
@@ -32,10 +34,9 @@ import { textingRefusal, type TextingAllowance } from '@/lib/texting/allowance'
 import { TEXTING_MISSION, railVisible, textingCueRail } from '@/lib/texting/cues'
 import type { TextingEnding } from '@/lib/texting/exit'
 import { readableReasons, type Debrief } from '@/lib/texting/debrief'
-import type { InboxRow, TextingPersonaView } from '@/lib/texting/queries'
+import type { InboxRow, TextingPersonaView, ThreadDebrief } from '@/lib/texting/queries'
 import { capture } from '@/components/analytics'
-import { AppShell } from '@/components/app-shell'
-import { Button, Sheet, Skeleton, useToast } from '@/components/ui'
+import { Button, EmptyState, Sheet, Skeleton, useToast } from '@/components/ui'
 import { FluidPersona } from '@/components/fluid-persona'
 import { DistressModal } from '@/components/modals'
 
@@ -76,23 +77,43 @@ function stateLabel(row: InboxRow): string {
 }
 
 /**
- * EVERY TEXTING SCREEN LIVES INSIDE `AppShell`, and that is not a detail.
+ * THE CHROME IS NOT DRAWN HERE, and that is not a detail.
  *
- * The section shipped without it, so switching tracks into texting took the
- * sidebar rail, the bottom tabs and the track switcher off the screen — the
- * product's entire navigation, on the one section a free account can actually
- * use. There was no way back except the browser's own back button.
+ * The section shipped as three standalone files under `app/texting/`, which
+ * put it outside the catch-all and outside the shell entirely: switching into
+ * texting took the sidebar rail, the bottom tabs and the track switcher off the
+ * screen — the product's whole navigation, on the one section a free account
+ * can actually use, with no way back but the browser's own button.
  *
- * The old `/text/[personaId]` had no shell either and got away with it, because
- * it was reached from a dating screen and returned to one. A section HOME
- * cannot: it is the place the rail is pointing at.
+ * These screens are rendered by `RouteView` now, like every other section, and
+ * the chrome is mounted once by the root layout (`ShellFrame`). The old
+ * `/text/[personaId]` got away with having no shell because it was reached from
+ * a dating screen and returned to one. A section HOME cannot: it is the place
+ * the rail is pointing at.
  */
-export function TextingInbox({ rows, allowance }: { rows: InboxRow[]; allowance: TextingAllowance }) {
-  return (
-    <AppShell title="Texting">
-      <TextingInboxContent rows={rows} allowance={allowance} />
-    </AppShell>
-  )
+export function TextingInbox() {
+  const [inbox, setInbox] = useState<{ rows: InboxRow[]; allowance: TextingAllowance } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    void loadInbox()
+      .then((result) => { if (!cancelled) { setInbox(result); setLoading(false) } })
+      .catch(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  if (loading || !inbox) {
+    return (
+      <div className="texting-home">
+        <header className="screen-heading"><div><Skeleton width={200} height={38} /></div></header>
+        <div className="texting-list-skeleton">
+          {[0, 1, 2, 3].map((n) => <Skeleton key={n} height={78} />)}
+        </div>
+      </div>
+    )
+  }
+  return <TextingInboxContent rows={inbox.rows} allowance={inbox.allowance} />
 }
 
 function TextingInboxContent({ rows, allowance }: { rows: InboxRow[]; allowance: TextingAllowance }) {
@@ -187,16 +208,9 @@ interface Pending {
  * compiled server-side from a slug and never travels. `TextingPersonaView` is
  * the four display fields and nothing else.
  */
-export function TextingThreadScreen({ persona, slug }: { persona: TextingPersonaView; slug: string }) {
-  return (
-    <AppShell title={persona.name}>
-      <TextingThreadContent persona={persona} slug={slug} />
-    </AppShell>
-  )
-}
-
-function TextingThreadContent({ persona, slug }: { persona: TextingPersonaView; slug: string }) {
+export function TextingThreadScreen({ slug }: { slug: string }) {
   const toast = useToast()
+  const [persona, setPersona] = useState<TextingPersonaView | null>(null)
   const [turns, setTurns] = useState<TextingTurn[]>([])
   const [memory, setMemory] = useState<string | null>(null)
   const [ending, setEnding] = useState<TextingEnding | null>(null)
@@ -229,6 +243,7 @@ function TextingThreadContent({ persona, slug }: { persona: TextingPersonaView; 
     setEnding(state.ending)
     setWarmth(state.warmth)
     if (state.allowance) setAllowance(state.allowance)
+    if (state.persona) setPersona(state.persona)
     if (state.distress) setDistress(true)
 
     if (state.pending) {
@@ -329,7 +344,7 @@ function TextingThreadContent({ persona, slug }: { persona: TextingPersonaView; 
         // carries a message — `safeProps` refuses anything that is not an id,
         // an enum, a number or a boolean.
         if (state.ok) {
-          if (firstMessage) capture('texting_thread_started', { persona_id: slug, level: persona.level })
+          if (firstMessage) capture('texting_thread_started', { persona_id: slug, level: state.persona?.level ?? 0 })
           const sent = (state.turns ?? []).filter((turn) => turn.speaker === 'user').length
           capture('texting_message_sent', { persona_id: slug, messages: sent })
           if (state.ending) {
@@ -365,7 +380,7 @@ function TextingThreadContent({ persona, slug }: { persona: TextingPersonaView; 
       .finally(() => setClearing(false))
   }
 
-  if (loading) {
+  if (loading || !persona) {
     return (
       <div className="texting-thread">
         <div className="texting-thread__body">
@@ -606,13 +621,40 @@ function EndingCard({
  *
  * Her interest line is the one volt element here.
  */
-export function TextingDebriefScreen({
-  persona, debrief, open, ending,
-}: { persona: TextingPersonaView; debrief: Debrief; open: boolean; ending: TextingEnding | null }) {
+export function TextingDebriefScreen({ slug }: { slug: string }) {
+  const [result, setResult] = useState<ThreadDebrief | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    void loadDebrief(slug)
+      .then((found) => { if (!cancelled) { setResult(found); setLoading(false) } })
+      .catch(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [slug])
+
+  if (loading) {
+    return <div className="texting-debrief"><Skeleton height={38} width={220} /><Skeleton height={210} /><Skeleton height={260} /></div>
+  }
+  if (!result) {
+    return (
+      <div className="texting-debrief">
+        <EmptyState
+          mark="state-session"
+          title="Nothing to look back on"
+          description="You have not texted her yet, so there is no conversation to read."
+          action={<Link className="arena-button arena-button--primary" href="/texting">Back to texting</Link>}
+        />
+      </div>
+    )
+  }
   return (
-    <AppShell title={persona.name}>
-      <TextingDebriefContent persona={persona} debrief={debrief} open={open} ending={ending} />
-    </AppShell>
+    <TextingDebriefContent
+      persona={result.persona}
+      debrief={result.debrief}
+      open={result.open}
+      ending={result.ending}
+    />
   )
 }
 

@@ -26,7 +26,6 @@ import {
   useSessionHistory,
   useUserState,
 } from '@/lib/data'
-import { AppShell } from '@/components/app-shell'
 import {
   Button,
   Card,
@@ -114,7 +113,7 @@ export function InterviewScreen({ route, packsOpen = false }: { route: Interview
 function CreditsStore({ packsOpen }: { packsOpen: boolean }) {
   const { data: user, loading } = useUserState()
   return (
-    <AppShell title="Interview credits">
+    <>
       <div className="setup-page credits-store">
         <Link className="text-action" href="/interview">Back to interviews</Link>
         <h1 className="display-lg">Interview credits</h1>
@@ -131,7 +130,7 @@ function CreditsStore({ packsOpen }: { packsOpen: boolean }) {
               returnTo="/interview/credits"
             />}
       </div>
-    </AppShell>
+    </>
   )
 }
 
@@ -213,13 +212,13 @@ function InterviewHome() {
    * One number, and one sentence explaining what it cannot buy.
    */
 
-  return <AppShell title="Interview"><div className="train-grid interview-home"><section>{loading ? <Skeleton height={520} /> : setup?.complete && interviewer ? <article className="interview-hero"><div className="interview-hero__top"><span className="label">Next interview</span><span className="interview-hero__meta"><Chip tone="volt">{round.label}</Chip><span className="label">{round.credits === 0 ? 'Free' : `${round.credits} credit${round.credits === 1 ? '' : 's'}`} · {user?.interviewCredits ?? 0} in the account</span></span></div><div className="interview-role"><span className="label">Role</span><h1 className="display-xl">{setup.roleTitle}</h1><p>{setup.company}</p></div><div className="interviewer-strip"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} size={72} /><div><strong>{interviewer.name}</strong><span className="label">{interviewer.styleLabel}</span></div></div>{/* A RUN STARTS AT THE INTERVIEWER (A1). It used to start at a Start
+  return <><div className="train-grid interview-home"><section>{loading ? <Skeleton height={520} /> : setup?.complete && interviewer ? <article className="interview-hero"><div className="interview-hero__top"><span className="label">Next interview</span><span className="interview-hero__meta"><Chip tone="volt">{round.label}</Chip><span className="label">{round.credits === 0 ? 'Free' : `${round.credits} credit${round.credits === 1 ? '' : 's'}`} · {user?.interviewCredits ?? 0} in the account</span></span></div><div className="interview-role"><span className="label">Role</span><h1 className="display-xl">{setup.roleTitle}</h1><p>{setup.company}</p></div><div className="interviewer-strip"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} size={72} /><div><strong>{interviewer.name}</strong><span className="label">{interviewer.styleLabel}</span></div></div>{/* A RUN STARTS AT THE INTERVIEWER (A1). It used to start at a Start
       button over whatever was last saved, with the picker bolted on after a
       three-step wizard — so the two dials worth changing per interview were
       the two hardest to reach. Interviewer → setup → go, every time. */}
 <Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href="/interview/interviewers">Start an interview</Link>{refusal ? <p className="interview-hero__note label mute">{refusal}</p> : null}</article> : <SetupPrompt />}</section><aside className="side-stack">{/* B6: ordered by what somebody does, because on a phone this whole rail
       is a screen-height below a full-height hero. */}
-<CreditsSummary credits={user?.interviewCredits ?? 0} screener={screenerCredits} /><Card className="interview-stats"><Stat label="Role" value={setup?.roleTitle || 'Not set'} /><Stat label="Company" value={setup?.company || 'Not set'} /><Stat label="Field" value={interviewField(setup?.field ?? DEFAULT_FIELD).label} /><Stat label="CV" value={setup?.cvFileName || 'Not added'} /><Stat label="Questions added" value={setup?.customQuestions.length ?? 0} /></Card><Link className="arena-button arena-button--secondary arena-button--full" href="/interview/setup/role">Edit your profile</Link><ReadinessPanel />{last ? <Card><span className="label">Last interview</span><div className="interview-last"><span><strong>{last.personaName}</strong><small>{last.compositeScore === null ? 'Not graded' : 'Graded'}</small></span><span className="data">{last.compositeScore ?? '—'}</span></div></Card> : null}</aside></div></AppShell>
+<CreditsSummary credits={user?.interviewCredits ?? 0} screener={screenerCredits} /><Card className="interview-stats"><Stat label="Role" value={setup?.roleTitle || 'Not set'} /><Stat label="Company" value={setup?.company || 'Not set'} /><Stat label="Field" value={interviewField(setup?.field ?? DEFAULT_FIELD).label} /><Stat label="CV" value={setup?.cvFileName || 'Not added'} /><Stat label="Questions added" value={setup?.customQuestions.length ?? 0} /></Card><Link className="arena-button arena-button--secondary arena-button--full" href="/interview/setup/role">Edit your profile</Link><ReadinessPanel />{last ? <Card><span className="label">Last interview</span><div className="interview-last"><span><strong>{last.personaName}</strong><small>{last.compositeScore === null ? 'Not graded' : 'Graded'}</small></span><span className="data">{last.compositeScore ?? '—'}</span></div></Card> : null}</aside></div></>
 }
 
 /**
@@ -281,7 +280,7 @@ const SETUP_STEPS = ['Role', 'CV', 'Questions'] as const
 
 function SetupLayout({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
   const total = SETUP_STEPS.length
-  return <AppShell title="Interview setup"><div className="setup-page"><div className="setup-kicker"><span className="label">Your profile</span><span className="data">{String(step).padStart(2, '0')} / {String(total).padStart(2, '0')}</span></div><ProgressBar value={step / total * 100} /><h1 className="display-lg">{title}</h1>{children}</div></AppShell>
+  return <><div className="setup-page"><div className="setup-kicker"><span className="label">Your profile</span><span className="data">{String(step).padStart(2, '0')} / {String(total).padStart(2, '0')}</span></div><ProgressBar value={step / total * 100} /><h1 className="display-lg">{title}</h1>{children}</div></>
 }
 
 /**
@@ -556,13 +555,13 @@ export function InterviewerPicker({ inRun = true }: { inRun?: boolean }) {
     void saveInterviewSetup({ interviewerSlug: id })
     if (inRun) router.push('/interview/start')
   }
-  return <AppShell title={inRun ? 'Interviewers' : 'Roster'}>{/* TWO DIALS, AND THIS SCREEN IS ONLY ONE OF THEM (§5.1).
+  return <>{/* TWO DIALS, AND THIS SCREEN IS ONLY ONE OF THEM (§5.1).
       It used to say "Style changes the questions", which was true when the
       interviewer was the only dial and is now the exact confusion the two-axis
       design exists to avoid: she decides how warm, how patient and how hard to
       please, and the difficulty slider on the run setup decides how hard the
       questions are. Saying so here is what makes the other control legible. */}
-<div className="screen-heading"><span className="label">{inRun ? 'Step one of two' : 'Choose the pressure'}</span><h1 className="display-lg">Your interviewer</h1><p>Who is in the room: how warm they are, how patient, how hard to please. How hard the <em>questions</em> are is the next screen. All four are open — pick the one you are actually walking into.</p></div>{!loading && interviewers.length === 0 ? <EmptyState mark="state-roster" title="No interviewers yet" description="The next interviewer is being prepared." /> : <div className="interviewer-grid">{loading ? Array.from({ length: 4 }, (_, index) => <Skeleton key={index} height={300} />) : interviewers.map((interviewer) => <button key={interviewer.id} className={`interviewer-card${selectedInterviewerId === interviewer.id ? ' selected' : ''}`} aria-pressed={selectedInterviewerId === interviewer.id} onClick={() => choose(interviewer.id)}><div className="interviewer-portrait"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} fill /></div><div><Chip tone="volt">{interviewer.styleLabel}</Chip><h2 className="display-md">{interviewer.name}</h2><p>{interviewer.blurb}</p></div><span className="select-line"><Check size={15} strokeWidth={1.5} /> {selectedInterviewerId === interviewer.id ? (inRun ? 'Selected' : 'Your interviewer') : 'Select'}</span></button>)}</div>}</AppShell>
+<div className="screen-heading"><span className="label">{inRun ? 'Step one of two' : 'Choose the pressure'}</span><h1 className="display-lg">Your interviewer</h1><p>Who is in the room: how warm they are, how patient, how hard to please. How hard the <em>questions</em> are is the next screen. All four are open — pick the one you are actually walking into.</p></div>{!loading && interviewers.length === 0 ? <EmptyState mark="state-roster" title="No interviewers yet" description="The next interviewer is being prepared." /> : <div className="interviewer-grid">{loading ? Array.from({ length: 4 }, (_, index) => <Skeleton key={index} height={300} />) : interviewers.map((interviewer) => <button key={interviewer.id} className={`interviewer-card${selectedInterviewerId === interviewer.id ? ' selected' : ''}`} aria-pressed={selectedInterviewerId === interviewer.id} onClick={() => choose(interviewer.id)}><div className="interviewer-portrait"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} fill /></div><div><Chip tone="volt">{interviewer.styleLabel}</Chip><h2 className="display-md">{interviewer.name}</h2><p>{interviewer.blurb}</p></div><span className="select-line"><Check size={15} strokeWidth={1.5} /> {selectedInterviewerId === interviewer.id ? (inRun ? 'Selected' : 'Your interviewer') : 'Select'}</span></button>)}</div>}</>
 }
 
 /**
@@ -643,16 +642,16 @@ function RunSetup({ packsOpen }: { packsOpen: boolean }) {
     })
   }
 
-  if (loading) return <AppShell title="Interview setup"><div className="setup-page"><Skeleton height={480} /></div></AppShell>
+  if (loading) return <><div className="setup-page"><Skeleton height={480} /></div></>
   if (!interviewer) {
-    return <AppShell title="Interview setup"><div className="setup-page"><EmptyState mark="state-roster" title="No interviewers yet" description="The next interviewer is being prepared." /></div></AppShell>
+    return <><div className="setup-page"><EmptyState mark="state-roster" title="No interviewers yet" description="The next interviewer is being prepared." /></div></>
   }
   if (!setup?.complete) {
-    return <AppShell title="Interview setup"><div className="setup-page"><EmptyState mark="state-roster" title="Tell us about the job first" description="The interviewer needs the role before there is a round to set up." action={<Link className="arena-button arena-button--primary" href="/interview/setup/role">Set up your profile</Link>} /></div></AppShell>
+    return <><div className="setup-page"><EmptyState mark="state-roster" title="Tell us about the job first" description="The interviewer needs the role before there is a round to set up." action={<Link className="arena-button arena-button--primary" href="/interview/setup/role">Set up your profile</Link>} /></div></>
   }
 
   return (
-    <AppShell title="Interview setup">
+    <>
       <div className="setup-page">
         <div className="setup-kicker"><span className="label">Step two of two</span><span className="data">{spec.credits === 0 ? 'Free' : `${spec.credits} credit${spec.credits === 1 ? '' : 's'}`}</span></div>
         <h1 className="display-lg">Set up this interview</h1>
@@ -753,6 +752,6 @@ function RunSetup({ packsOpen }: { packsOpen: boolean }) {
             : <Button size="lg" fullWidth disabled={saving} onClick={go}>{saving ? 'Saving' : 'Start interview'}</Button>}
         </div>
       </div>
-    </AppShell>
+    </>
   )
 }

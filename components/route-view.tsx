@@ -8,6 +8,7 @@ import { BaselineScreen } from './screens/baseline-screen'
 import { ProfileScreen, type ProfileRoute } from './screens/profile-screens'
 import { SessionScreen, type SessionView } from './screens/session-screens'
 import { InterviewScreen, type InterviewRoute } from './screens/interview-screens'
+import { TextingDebriefScreen, TextingInbox, TextingThreadScreen } from './screens/texting-screens'
 import NotFound from '@/app/not-found'
 import Link from 'next/link'
 import { AlertTriangle } from 'lucide-react'
@@ -154,6 +155,21 @@ export function RouteView({ path, query = {}, auth, onboarding, billing }: { pat
   if (path === '/roster') return <RosterScreen />
   if (path.startsWith('/roster/')) return <PersonaDetailScreen personaId={path.split('/')[2] ?? ''} />
   if (path === '/field') return <FieldScreen />
+  /**
+   * THE TEXTING SECTION IS ROUTED LIKE EVERY OTHER SECTION.
+   *
+   * It shipped as three standalone files under `app/texting/`, which put it
+   * outside the catch-all — and therefore outside `app/[...slug]/layout.tsx`,
+   * the layout that keeps the chrome mounted. Every move between texting and
+   * anything else tore the rail down and rebuilt it.
+   *
+   * Its screens fetch their own data through Server Actions now, the way every
+   * screen here does; the two that were page-level server reads are
+   * `loadInbox` and `loadDebrief`.
+   */
+  if (path === '/texting') return <TextingInbox />
+  if (/^\/texting\/[^/]+\/debrief$/.test(path)) return <TextingDebriefScreen slug={path.split('/')[2] ?? ''} />
+  if (/^\/texting\/[^/]+$/.test(path)) return <TextingThreadScreen slug={path.split('/')[2] ?? ''} />
   if (path === '/library') return <LibraryScreen />
   if (path.startsWith('/library/')) return <LibraryCardScreen slug={path.split('/')[2] ?? ''} />
   if (path === '/progress/baseline') return <BaselineScreen />

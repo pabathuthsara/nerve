@@ -31,7 +31,6 @@ import { markUiFlag } from '@/app/profile/actions'
 import { libraryReadFlag } from '@/lib/data/ui-flags'
 import { personaForCard } from '@/lib/techniques/scenario'
 import { groupLibrary } from '@/lib/techniques/grouping'
-import { AppShell } from '@/components/app-shell'
 import { Card, Chip, EmptyState, Skeleton } from '@/components/ui'
 import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
 import { capture } from '@/components/analytics'
@@ -65,17 +64,17 @@ export function LibraryScreen() {
   const unread = cards.length - cards.filter((card) => read.includes(card.slug)).length
 
   if (loading) {
-    return <AppShell title="Library"><div className="library-grid">{[1, 2, 3, 4].map((n) => <Skeleton key={n} height={132} />)}</div></AppShell>
+    return <><div className="library-grid">{[1, 2, 3, 4].map((n) => <Skeleton key={n} height={132} />)}</div></>
   }
 
   // Seeded content, so an empty list means `npm run db:content` has not run
   // rather than that the user has nothing yet. Say the true thing.
   if (cards.length === 0) {
-    return <AppShell title="Library"><EmptyState mark="state-library" title="The library is empty" description="Technique cards are authored in the repo and seeded. None have reached this database yet." /></AppShell>
+    return <><EmptyState mark="state-library" title="The library is empty" description="Technique cards are authored in the repo and seeded. None have reached this database yet." /></>
   }
 
   return (
-    <AppShell title="Library">
+    <>
       <div className="screen-heading">
         <span className="label">Technique</span>
         <h1 className="display-lg">Library</h1>
@@ -104,7 +103,7 @@ export function LibraryScreen() {
           </section>
         ))}
       </div>
-    </AppShell>
+    </>
   )
 }
 
@@ -165,13 +164,13 @@ export function LibraryCardScreen({ slug }: { slug: string }) {
   const previous = index > 0 ? siblings[index - 1] : undefined
   const next = index >= 0 && index < siblings.length - 1 ? siblings[index + 1] : undefined
 
-  if (loading) return <AppShell title="Library"><Skeleton height={420} /></AppShell>
+  if (loading) return <><Skeleton height={420} /></>
   if (!card) {
-    return <AppShell title="Library"><EmptyState mark="state-library" title="No such card" description="This technique is not in the library." action={<Link className="arena-button arena-button--primary" href="/library">Back to the library</Link>} /></AppShell>
+    return <><EmptyState mark="state-library" title="No such card" description="This technique is not in the library." action={<Link className="arena-button arena-button--primary" href="/library">Back to the library</Link>} /></>
   }
 
   return (
-    <AppShell title={card.title}>
+    <>
       <div className="library-detail">
         <Link href="/library" className="label volt-link library-detail__back"><ArrowLeft size={14} strokeWidth={1.6} /> Library</Link>
         <div className="screen-heading">
@@ -207,7 +206,7 @@ export function LibraryCardScreen({ slug }: { slug: string }) {
         <PractiseThis card={card} personas={personas} repsLeft={user?.repsRemainingToday ?? null} />
         <CardPager previous={previous} next={next} />
       </div>
-    </AppShell>
+    </>
   )
 }
 

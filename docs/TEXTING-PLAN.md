@@ -1347,3 +1347,37 @@ any of it. §14's lesson a third time.
 9. **The empty state was shoved to the floor** by the same bottom-anchoring that
    fixed the thread, and its copy still said the conversation "does not use a
    rep" after the section had been metered.
+
+### §20.2 — And then somebody navigated
+
+Every section screen rendered its own `<AppShell>`, and `RouteView` returns a
+**different component type per path**. React therefore unmounted the whole
+chrome and mounted a fresh one on every navigation, and `useAsync` has no
+cross-mount cache — so each new shell refetched the user state and the track
+switcher, the rep pill and the account row all dropped to skeletons and came
+back. Going from Field to Profile read as a full page reload because to the eye
+it was one. Texting was worse: it lived in its own files outside the catch-all,
+so it was outside any shared layout at all.
+
+**The first fix did not work, and the reason is the part worth keeping.** The
+chrome was moved to `app/[...slug]/layout.tsx` — beside the catch-all that
+serves every section — on the reasoning that a Next layout is the one thing
+guaranteed to survive a navigation. Measured with a mount counter in the
+browser: **one fresh mount per navigation, exactly as before.** A layout under a
+DYNAMIC segment is a layout per param value, so changing the slug changes the
+segment instance and Next remounts it.
+
+The ROOT layout is the only one that never remounts, whatever the URL does.
+`ShellFrame` lives there now, reads the pathname, and draws the chrome only on
+the sections that wear it — so `/`, the auth run, the onboarding run and a live
+rep stay bare. The same counter reads **zero** across Field → Profile → Texting
+→ Field.
+
+Two things followed:
+
+- **Texting is routed like every other section.** Its three standalone files
+  under `app/texting/` are gone; `RouteView` renders it and the two page-level
+  server reads are `loadInbox` and `loadDebrief` Server Actions.
+- **Forty-four `<AppShell>` wrappers came out of eight screens**, and the
+  component with them. The chrome has one owner now, and `lib/data/shell-routes.ts`
+  is the one place that knows which paths wear it.

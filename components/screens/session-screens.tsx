@@ -10,7 +10,6 @@ import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
 import { LEVEL_NAMES, nextUnlockProgress, qualifyingByLevel, unlockProgressLabel, type UnlockProgress } from '@/lib/data/progression'
 import { pointsShort, resultReading } from '@/lib/data/rep-rules'
 import { lifetimeLine } from '@/lib/data/counters'
-import { AppShell } from '@/components/app-shell'
 import { Button, Card, Chip, EmptyState, Skeleton, Tabs } from '@/components/ui'
 import { GRADE_REFUSAL_COPY, gradeEligibility } from '@/lib/grade/eligibility'
 import { FirstLossSheet, FirstWinSheet, LevelUnlockedSheet, PaywallSheet, ScorecardExplainerSheet } from '@/components/modals'
@@ -34,7 +33,7 @@ export type SessionView = 'result' | 'scorecard' | 'transcript'
 export function SessionScreen({ sessionId, view, packsOpen = false }: { sessionId: string; view: SessionView; packsOpen?: boolean }) {
   const { data: session, loading } = useSession(sessionId)
   if (loading) return <SessionLoading view={view} />
-  if (!session) return <AppShell title="Session"><EmptyState mark="state-session" title="Session not found" description="That session does not exist or is no longer available." action={<Link className="arena-button arena-button--primary" href="/profile/history">View history</Link>} /></AppShell>
+  if (!session) return <><EmptyState mark="state-session" title="Session not found" description="That session does not exist or is no longer available." action={<Link className="arena-button arena-button--primary" href="/profile/history">View history</Link>} /></>
   if (view === 'result') return <ResultScreen session={session} />
   if (view === 'transcript') return <TranscriptScreen session={session} />
   return <ScorecardScreen session={session} packsOpen={packsOpen} />
@@ -42,7 +41,7 @@ export function SessionScreen({ sessionId, view, packsOpen = false }: { sessionI
 
 function SessionLoading({ view }: { view: SessionView }) {
   if (view === 'result') return <main className="result-page"><Skeleton width={80} height={80} style={{ borderRadius: '50%' }} /><Skeleton width={300} height={52} /><Skeleton width={140} height={44} /></main>
-  return <AppShell title={view === 'scorecard' ? 'Scorecard' : 'Transcript'}><div className="scorecard-grid"><Skeleton height={490} /><Skeleton height={490} /></div></AppShell>
+  return <><div className="scorecard-grid"><Skeleton height={490} /><Skeleton height={490} /></div></>
 }
 
 /**
@@ -501,7 +500,7 @@ function ScorecardScreen({ session, packsOpen }: { session: SessionSummary; pack
     setDismissed(true)
     if (unlock.data) void acknowledgeUnlock(unlock.data.kind, unlock.data.ref)
   }
-  if (loading) return <AppShell title="Scorecard"><div className="scorecard-grid"><Skeleton height={490} /><Skeleton height={490} /></div></AppShell>
+  if (loading) return <><div className="scorecard-grid"><Skeleton height={490} /><Skeleton height={490} /></div></>
   // Grading runs once, after the rep, on a model call that can fail. A rep
   // with no grade says so; it does not draw an empty card that reads as zero.
   // WHY IT WAS NOT GRADED, which used to be a question this screen could not
@@ -522,15 +521,15 @@ function ScorecardScreen({ session, packsOpen }: { session: SessionSummary; pack
         return verdict.ok ? null : GRADE_REFUSAL_COPY[verdict.reason]
       })()
     : null
-  if (!scorecard && refusal) return <AppShell title="Scorecard"><EmptyState mark="state-session" title={refusal.title} description={refusal.body} action={<div className="empty-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link><Link className="arena-button arena-button--ghost" href={`/session/${session.id}/transcript`}>Read the transcript</Link></div>} /></AppShell>
-  if (!scorecard) return <AppShell title="Scorecard"><EmptyState mark="state-session" title={session.track === 'interview' ? 'This interview was not graded' : 'This rep was not graded'} description={session.track === 'interview'
+  if (!scorecard && refusal) return <><EmptyState mark="state-session" title={refusal.title} description={refusal.body} action={<div className="empty-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link><Link className="arena-button arena-button--ghost" href={`/session/${session.id}/transcript`}>Read the transcript</Link></div>} /></>
+  if (!scorecard) return <><EmptyState mark="state-session" title={session.track === 'interview' ? 'This interview was not graded' : 'This rep was not graded'} description={session.track === 'interview'
     // A CREDIT IS NOT A DAILY REP, and this line was claiming it was. An
     // interview credit is spent when the scorecard is written and held until
     // then, so a grade that never completed leaves the hold outstanding rather
     // than handing anything back — telling somebody their money is returned
     // when it is not is the one sentence on this screen that can cost trust.
     ? 'Grading runs once after an interview and did not complete for this one. The transcript is still here, and the credit is not settled against a scorecard that does not exist.'
-    : 'Grading runs once after a rep and did not complete for this one. Your rep has been given back — run another and this page will have something to say.'} action={<div className="empty-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link><Link className="arena-button arena-button--ghost" href={`/session/${session.id}/transcript`}>Read the transcript</Link></div>} /></AppShell>
+    : 'Grading runs once after a rep and did not complete for this one. Your rep has been given back — run another and this page will have something to say.'} action={<div className="empty-actions"><Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link><Link className="arena-button arena-button--ghost" href={`/session/${session.id}/transcript`}>Read the transcript</Link></div>} /></>
   /**
    * R16. The word, and it climbs with the number rather than sitting finished
    * above it — `Sloppy → Solid → Sharp` resolving in nine hundred milliseconds
@@ -570,7 +569,7 @@ function ScorecardScreen({ session, packsOpen }: { session: SessionSummary; pack
   const signalLabel = session.track === 'interview' ? 'Impression' : 'Warmth'
   const personaLevel = personas.find((item) => item.id === session.personaId)?.level ?? null
   const levelLabel = session.track === 'interview' ? 'Interview' : personaLevel ? `${String(personaLevel).padStart(2, '0')} — ${LEVEL_NAMES[personaLevel]}` : '—'
-  return <AppShell title="Scorecard"><header className="scorecard-title"><span className="label">Process score · {session.personaName}</span><h1 className="display-lg">Session breakdown</h1></header><div className="scorecard-grid"><div className="scorecard-left"><Card className="composite-card"><div>{/* R16. The word is the hero and the number is the footnote, which is
+  return <><header className="scorecard-title"><span className="label">Process score · {session.personaName}</span><h1 className="display-lg">Session breakdown</h1></header><div className="scorecard-grid"><div className="scorecard-left"><Card className="composite-card"><div>{/* R16. The word is the hero and the number is the footnote, which is
       the way round they were built. `Sloppy / Solid / Sharp / Clean` is the
       most human thing on this screen and it rendered at `display-md` beneath a
       five-rem numeral: a number is a measurement, a word is a verdict, and
@@ -600,7 +599,7 @@ function ScorecardScreen({ session, packsOpen }: { session: SessionSummary; pack
     every metric, both moments, the transcript — is theirs either way. */}
 {user?.voiceLocked && session.track === 'dating'
   ? <Button onClick={() => setPaywall(true)}>Run it back</Button>
-  : <Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>}<Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link><Link className="arena-button arena-button--ghost" href={session.track === 'interview' ? '/interview/interviewers' : '/roster'}>{session.track === 'interview' ? 'Another interviewer' : 'Next persona'}</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div>{session.track === 'interview' && creditsAreLow(user?.interviewCredits ?? 0) ? <LowCredits packsOpen={packsOpen} /> : null}<ReportButton sessionId={session.id} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={session.track === 'dating' ? session.personaId : null} /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet interview={session.track === 'interview'} open={explainer} onClose={() => setExplainer(false)} /></AppShell>
+  : <Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>}<Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link><Link className="arena-button arena-button--ghost" href={session.track === 'interview' ? '/interview/interviewers' : '/roster'}>{session.track === 'interview' ? 'Another interviewer' : 'Next persona'}</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div>{session.track === 'interview' && creditsAreLow(user?.interviewCredits ?? 0) ? <LowCredits packsOpen={packsOpen} /> : null}<ReportButton sessionId={session.id} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={session.track === 'dating' ? session.personaId : null} /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet interview={session.track === 'interview'} open={explainer} onClose={() => setExplainer(false)} /></>
 }
 
 /**
@@ -808,7 +807,7 @@ function TranscriptScreen({ session }: { session: SessionSummary }) {
   // under a header printing this session's final warmth, so the one screen
   // stated two different numbers for the same rep.
   const silent = !loading && turns.length === 0
-  return <AppShell title="Transcript"><div className="screen-heading compact"><span className="label">Turn by turn</span><h1 className="display-lg">Transcript</h1><p>{session.personaName} · {formatDuration(session.durationMs)}{silent ? ' · nothing was said' : ` · ${signalLabel} ${session.finalWarmth}`}</p></div>{silent ? <EmptyState mark="state-transcript" title="This rep has no transcript" description="No speech was recorded on either side, so there is nothing to read back. Your rep was not counted — run it again." action={<Link className="arena-button arena-button--primary" href={repHref}>Run it back</Link>} /> : <><Card className="sparkline-card"><WarmthSparkline turns={turns} label={signalLabel} onPoint={scrollToTurn} /></Card><Tabs items={['ALL', 'BIG MOVES'] as const} value={filter} onChange={setFilter} label="Transcript filter" />{loading ? <div className="transcript-list">{Array.from({ length: 7 }, (_, index) => <Skeleton key={index} height={96} />)}</div> : filtered.length ? <div className="transcript-list">{filtered.map((turn) => <div key={turn.index} ref={(node) => { refs.current[turn.index] = node }}><TranscriptTurnRow turn={turn} persona={session.personaName} /></div>)}</div> : <EmptyState mark="state-filter" title="No turns match" description="Every turn is in the full transcript — switch back to ALL." action={<Button variant="secondary" onClick={() => setFilter('ALL')}>Show all turns</Button>} />}<div className="transcript-sticky"><Link className="arena-button arena-button--primary arena-button--full" href={repHref}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Link></div></>}<ReportButton sessionId={session.id} /></AppShell>
+  return <><div className="screen-heading compact"><span className="label">Turn by turn</span><h1 className="display-lg">Transcript</h1><p>{session.personaName} · {formatDuration(session.durationMs)}{silent ? ' · nothing was said' : ` · ${signalLabel} ${session.finalWarmth}`}</p></div>{silent ? <EmptyState mark="state-transcript" title="This rep has no transcript" description="No speech was recorded on either side, so there is nothing to read back. Your rep was not counted — run it again." action={<Link className="arena-button arena-button--primary" href={repHref}>Run it back</Link>} /> : <><Card className="sparkline-card"><WarmthSparkline turns={turns} label={signalLabel} onPoint={scrollToTurn} /></Card><Tabs items={['ALL', 'BIG MOVES'] as const} value={filter} onChange={setFilter} label="Transcript filter" />{loading ? <div className="transcript-list">{Array.from({ length: 7 }, (_, index) => <Skeleton key={index} height={96} />)}</div> : filtered.length ? <div className="transcript-list">{filtered.map((turn) => <div key={turn.index} ref={(node) => { refs.current[turn.index] = node }}><TranscriptTurnRow turn={turn} persona={session.personaName} /></div>)}</div> : <EmptyState mark="state-filter" title="No turns match" description="Every turn is in the full transcript — switch back to ALL." action={<Button variant="secondary" onClick={() => setFilter('ALL')}>Show all turns</Button>} />}<div className="transcript-sticky"><Link className="arena-button arena-button--primary arena-button--full" href={repHref}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Link></div></>}<ReportButton sessionId={session.id} /></>
 }
 
 function WarmthSparkline({ turns, label, onPoint }: { turns: TranscriptTurn[]; label: string; onPoint: (index: number) => void }) {

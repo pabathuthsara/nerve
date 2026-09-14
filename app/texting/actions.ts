@@ -57,6 +57,14 @@ import {
   visibleTurns,
   type TextingTurn,
 } from '@/lib/texting/thread'
+import {
+  personaView,
+  textingDebrief,
+  textingInbox,
+  type Inbox,
+  type TextingPersonaView,
+  type ThreadDebrief,
+} from '@/lib/texting/queries'
 
 export interface TextingResult {
   ok: boolean
@@ -100,6 +108,15 @@ export interface ThreadState extends TextingResult {
   distress: boolean
   /** What may still be started today. */
   allowance: TextingAllowance | null
+  /**
+   * The character, narrowed to what a screen may see.
+   *
+   * Resolved here rather than by a page, because the texting screens are
+   * rendered by `RouteView` under the catch-all now — which is what puts them
+   * inside the shared chrome layout. `Persona.contract` is the authored
+   * character prompt and still never travels: this is four display fields.
+   */
+  persona: TextingPersonaView | null
 }
 
 const UNREAD: ThreadState = {
@@ -115,6 +132,7 @@ const UNREAD: ThreadState = {
   warmth: 0,
   distress: false,
   allowance: null,
+  persona: null,
 }
 
 interface ThreadRow {
@@ -180,7 +198,7 @@ export async function openThread(slug: string): Promise<ThreadState> {
     return {
       ok: true, message: null, turns: [], memory: context.memorySummary ?? null,
       exit: 'present', ending: null, nextRevealAt: null, pending: null, presence: null,
-      warmth: persona.trajectory.start, distress: false, allowance,
+      warmth: persona.trajectory.start, distress: false, allowance, persona: personaView(persona),
     }
   }
 
@@ -204,6 +222,7 @@ export async function openThread(slug: string): Promise<ThreadState> {
     warmth: meter.warmth,
     distress: false,
     allowance,
+    persona: personaView(persona),
   }
 }
 
@@ -302,6 +321,7 @@ export async function sendTextingTurn(input: {
       ok: true, message: null, turns: visibleTurns(withUser, now),
       memory: context.memorySummary ?? null, exit: 'leaving', ending: 'faded',
       nextRevealAt: null, pending: null, presence: null, warmth: meter.warmth, distress: true, allowance,
+      persona: personaView(persona),
     }
   }
 
@@ -328,6 +348,7 @@ export async function sendTextingTurn(input: {
       ok: true, message: null, turns: visibleTurns(withUser, now),
       memory: context.memorySummary ?? null, exit, ending: ending ?? 'faded',
       nextRevealAt: null, pending: null, presence: null, warmth: meter.warmth, distress: false, allowance,
+      persona: personaView(persona),
     }
   }
 
@@ -348,6 +369,7 @@ export async function sendTextingTurn(input: {
       ok: false, message: reply.message, turns: visibleTurns(withUser, now),
       memory: context.memorySummary ?? null, exit, ending: null,
       nextRevealAt: null, pending: null, presence: null, warmth: meter.warmth, distress: false, allowance,
+      persona: personaView(persona),
     }
   }
 
@@ -362,7 +384,7 @@ export async function sendTextingTurn(input: {
       ok: false, message: 'She did not answer. Try that again in a moment.',
       turns: visibleTurns(withUser, now), memory: context.memorySummary ?? null,
       exit, ending: null, nextRevealAt: null, pending: null, presence: null,
-      warmth: meter.warmth, distress: false, allowance,
+      warmth: meter.warmth, distress: false, allowance, persona: personaView(persona),
     }
   }
 
@@ -412,7 +434,25 @@ export async function sendTextingTurn(input: {
     warmth: meter.warmth,
     distress: false,
     allowance,
+    persona: personaView(persona),
   }
+}
+
+/**
+ * The inbox and the debrief, as Server Actions.
+ *
+ * They were page-level server reads. The screens are rendered by `RouteView`
+ * under the catch-all now — which is what puts them inside the shared chrome
+ * layout so the rail stops remounting — and a client screen cannot await a
+ * server module, so the reads come across the same seam every other texting
+ * mutation already uses.
+ */
+export async function loadInbox(): Promise<Inbox | null> {
+  return textingInbox()
+}
+
+export async function loadDebrief(slug: string): Promise<ThreadDebrief | null> {
+  return textingDebrief(slug)
 }
 
 /**

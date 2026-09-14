@@ -11,6 +11,7 @@ import { Avatar, Skeleton } from './ui'
 import { useOnlineStatus } from '@/lib/hooks/use-online-status'
 import { identifyPerson } from './analytics'
 import { setActiveTrack } from '@/app/profile/actions'
+import { isShelledRoute, shellTitleFor } from '@/lib/data/shell-routes'
 
 /**
  * Paths that belong to a rail item other than the one their URL implies.
@@ -77,7 +78,46 @@ const navItems = [
   { label: 'Profile', href: '/profile', icon: User, tracks: ['dating', 'interview', 'texting'] as Track[] },
 ]
 
-export function AppShell({ children, title }: { children: ReactNode; title: string }) {
+/**
+ * The app chrome, mounted once by the ROOT layout and never again.
+ *
+ * ── THE DEFECT THIS EXISTS FOR ───────────────────────────────────────────
+ *
+ * Every screen used to render its own `<AppShell>`, and `RouteView` returns a
+ * DIFFERENT component type per path — `<FieldScreen/>` for `/field`,
+ * `<ProfileScreen/>` for `/profile`. React therefore unmounted one shell and
+ * mounted another on every navigation, and `useAsync` has no cross-mount cache,
+ * so each one refetched the whole user state from scratch: the track switcher,
+ * the rep pill and the account row all dropped to skeletons and came back.
+ *
+ * It looked exactly like a full page reload, because in every way that matters
+ * to the eye it was one.
+ *
+ * ── AND A LAYOUT UNDER A DYNAMIC SEGMENT DOES NOT FIX IT ─────────────────
+ *
+ * The obvious fix is a Next layout, which is the one thing guaranteed to
+ * survive a navigation. The first attempt put it at `app/[...slug]/layout.tsx`
+ * — beside the catch-all that serves every section — and it changed nothing,
+ * measured: a counter in the browser showed one fresh mount per navigation,
+ * exactly as before. **A layout under a DYNAMIC segment is a layout per param
+ * value**, so changing the slug changes the segment instance and Next remounts
+ * it.
+ *
+ * The root layout is the only one that never remounts, whatever the URL does.
+ * That is where this is mounted, and the same counter now reads zero across
+ * Field → Profile → Texting → Field.
+ *
+ * Bare on the routes that wear no chrome — the marketing pages, the auth run,
+ * the onboarding run and a live rep. `isShelledRoute` is the one place that
+ * knows which is which.
+ */
+export function ShellFrame({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
+  if (!isShelledRoute(pathname)) return <>{children}</>
+  return <AppShellChrome title={shellTitleFor(pathname)}>{children}</AppShellChrome>
+}
+
+function AppShellChrome({ children, title }: { children: ReactNode; title: string }) {
   const pathname = usePathname()
   const router = useRouter()
   const { data: user, loading } = useUserState()
@@ -355,7 +395,7 @@ export function RepsRemaining({ count, resetAt, locked = false, track = 'dating'
   if (locked) {
     return <Link className="reps-pill reps-pill--locked" href="/profile/subscription">Voice on Pro</Link>
   }
-  return <Link className={`reps-pill${count === 0 ? ' amber' : ''}`} href="/profile/subscription">{count > 0 ? <><strong>{count}</strong> reps left</> : <>Resets {remaining}</>}</Link>
+  return <Link className={`reps-pill${count === 0 ? ' amber' : ''}`} href="/profile/subscription">{count > 0 ? <><strong>{count}</strong> rep{count === 1 ? '' : 's'} left</> : <>Resets {remaining}</>}</Link>
 }
 
 export function StreakCounter({ days }: { days: number }) {

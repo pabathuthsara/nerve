@@ -2825,8 +2825,9 @@ a.admin-chip { text-decoration: none; }
 
 
 /* ── Texting ──────────────────────────────────────────────────────────────
-   Every texting screen renders INSIDE `AppShell`, so `.app-content` already
-   supplies the page padding and `.content-shell` the max width. Nothing here
+   Every texting screen renders inside the root layout's chrome, so
+   `.app-content` already supplies the page padding and `.content-shell` the
+   max width. Nothing here
    sets its own page gutter or centres itself a second time — the section
    shipped doing both, which is half of why it read as a bolted-on surface.
 

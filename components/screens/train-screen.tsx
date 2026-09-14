@@ -12,7 +12,7 @@ import { daysBetween, localDay } from '@/lib/data/day'
 import { FieldActions, FieldSheets, useFieldFlow } from '@/components/field/flow'
 import { MilestoneSheet } from '@/components/field/milestone-sheet'
 import { REJECTION_MILESTONES, type Milestone } from '@/lib/field/milestones'
-import { AppShell, RepsRemaining, StreakCounter, useResetCountdown } from '@/components/app-shell'
+import { RepsRemaining, StreakCounter, useResetCountdown } from '@/components/app-shell'
 import { Button, Card, Chip, Skeleton, Stat } from '@/components/ui'
 import { PaywallSheet } from '@/components/modals'
 import { TRIAL_DAYS, planById } from '@/lib/site/plans'
@@ -23,7 +23,7 @@ import { missionFor } from '@/lib/data/mission'
 import { Mark, fieldTierMark, rankMark } from '@/components/marks'
 
 export function TrainScreen() {
-  return <AppShell title="Train"><TrainContent /></AppShell>
+  return <><TrainContent /></>
 }
 
 /**

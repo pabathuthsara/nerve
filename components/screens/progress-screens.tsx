@@ -18,7 +18,6 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { useBaseline, useProgress, useWeeklyReviews } from '@/lib/data'
 import type { WeeklyReview } from '@/lib/data/types'
-import { AppShell } from '@/components/app-shell'
 import { Card, EmptyState, Skeleton, Stat } from '@/components/ui'
 import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
 import { dayCount } from '@/lib/data/rank'
@@ -42,11 +41,11 @@ export function ProgressScreen() {
   const { data: baseline } = useBaseline()
 
   if (loading) {
-    return <AppShell title="Progress"><div className="progress-stack"><Skeleton height={220} /><Skeleton height={280} /></div></AppShell>
+    return <><div className="progress-stack"><Skeleton height={220} /><Skeleton height={280} /></div></>
   }
 
   if (points.length === 0) {
-    return <AppShell title="Progress"><EmptyState mark="state-chart" title="Nothing to plot yet" description="Every graded rep adds a point to these lines. The first one is the hardest and the only one that has to happen today." action={<Link className="arena-button arena-button--primary" href="/train">Run a rep</Link>} /></AppShell>
+    return <><EmptyState mark="state-chart" title="Nothing to plot yet" description="Every graded rep adds a point to these lines. The first one is the hardest and the only one that has to happen today." action={<Link className="arena-button arena-button--primary" href="/train">Run a rep</Link>} /></>
   }
 
   const composites = points.map((point) => point.composite)
@@ -55,7 +54,7 @@ export function ProgressScreen() {
     values.length === 0 ? null : Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
 
   return (
-    <AppShell title="Progress">
+    <>
       <div className="screen-heading">
         <span className="label">Last {points.length} graded {points.length === 1 ? 'rep' : 'reps'}</span>
         <h1 className="display-lg">Progress</h1>
@@ -141,7 +140,7 @@ export function ProgressScreen() {
             : <div className="review-list">{reviews.map((review) => <ReviewTile key={review.weekStart} review={review} />)}</div>}
         </section>
       </div>
-    </AppShell>
+    </>
   )
 }
 
@@ -220,15 +219,15 @@ function ReviewTile({ review }: { review: WeeklyReview }) {
 /** One stored Sunday letter (§11 `/progress/week/[id]`). */
 export function WeeklyReviewScreen({ weekStart }: { weekStart: string }) {
   const { data: reviews, loading } = useWeeklyReviews()
-  if (loading) return <AppShell title="Weekly review"><Skeleton height={280} /></AppShell>
+  if (loading) return <><Skeleton height={280} /></>
 
   const review = reviews.find((entry) => entry.weekStart === weekStart)
   if (!review) {
-    return <AppShell title="Weekly review"><EmptyState mark="state-letter" title="No review for that week" description="Reviews are written on Sunday, for weeks with something in them." action={<Link className="arena-button arena-button--primary" href="/progress">All reviews</Link>} /></AppShell>
+    return <><EmptyState mark="state-letter" title="No review for that week" description="Reviews are written on Sunday, for weeks with something in them." action={<Link className="arena-button arena-button--primary" href="/progress">All reviews</Link>} /></>
   }
 
   return (
-    <AppShell title="Weekly review">
+    <>
       <div className="library-detail">
         <Link href="/progress" className="label volt-link library-detail__back"><ArrowLeft size={14} strokeWidth={1.6} /> Progress</Link>
         <div className="screen-heading">
@@ -246,6 +245,6 @@ export function WeeklyReviewScreen({ weekStart }: { weekStart: string }) {
           <Stat label="Streak" value={dayCount(review.stats.streak)} />
         </div>
       </div>
-    </AppShell>
+    </>
   )
 }
