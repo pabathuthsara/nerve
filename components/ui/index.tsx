@@ -6,7 +6,7 @@ import Image from 'next/image'
 // styled tag, and the rules it runs on live in `lib/safety/dob-field.ts`.
 export { DateOfBirth } from './date-of-birth'
 
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useDragControls, useReducedMotion } from 'framer-motion'
 import { FileText, Inbox, LockKeyhole, Upload, X } from 'lucide-react'
 import {
   createContext,
@@ -45,13 +45,14 @@ export function Button({ variant = 'primary', size = 'md', loading = false, full
       aria-busy={loading}
       {...props}
     >
-      {loading ? <span className="loading-dots" aria-label="Working"><i /><i /><i /></span> : children}
+      <span className={`arena-button__content${loading ? ' arena-button__content--loading' : ''}`}>{children}</span>
+      {loading ? <span className="loading-dots arena-button__spinner" aria-hidden="true"><i /><i /><i /></span> : null}
     </button>
   )
 }
 
 export function IconButton({ label, children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
-  return <button className={`arena-icon-button ${className}`} aria-label={label} {...props}>{children}</button>
+  return <button className={`arena-icon-button ${className}`} aria-label={label} title={label} {...props}>{children}</button>
 }
 
 export function Card({ className = '', children, ...props }: HTMLAttributes<HTMLDivElement>) {
@@ -141,14 +142,16 @@ interface FieldProps {
 export function Input({ label, error, hint, adornment, id: providedId, className = '', ...props }: InputHTMLAttributes<HTMLInputElement> & FieldProps) {
   const generated = useId()
   const id = providedId ?? generated
-  const input = <input id={id} className={`arena-input${error ? ' arena-input--error' : ''} ${className}`} {...props} />
-  return <label className="field" htmlFor={id}><span className="label">{label}</span>{adornment ? <span className="field__control">{input}{adornment}</span> : input}{hint ? <span className="field__hint">{hint}</span> : null}{error ? <span className="field__error">{error}</span> : null}</label>
+  const describedBy = [props['aria-describedby'], hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined
+  const input = <input id={id} className={`arena-input${error ? ' arena-input--error' : ''} ${className}`} {...props} aria-invalid={error ? true : props['aria-invalid']} aria-describedby={describedBy} />
+  return <div className="field"><label className="label" htmlFor={id}>{label}</label>{adornment ? <span className="field__control">{input}{adornment}</span> : input}{hint ? <span id={`${id}-hint`} className="field__hint">{hint}</span> : null}{error ? <span id={`${id}-error`} className="field__error" role="alert">{error}</span> : null}</div>
 }
 
 export function Textarea({ label, error, hint, id: providedId, className = '', ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & FieldProps) {
   const generated = useId()
   const id = providedId ?? generated
-  return <label className="field" htmlFor={id}><span className="label">{label}</span><textarea id={id} className={`arena-input arena-textarea${error ? ' arena-input--error' : ''} ${className}`} {...props} />{hint ? <span className="field__hint">{hint}</span> : null}{error ? <span className="field__error">{error}</span> : null}</label>
+  const describedBy = [props['aria-describedby'], hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined
+  return <div className="field"><label className="label" htmlFor={id}>{label}</label><textarea id={id} className={`arena-input arena-textarea${error ? ' arena-input--error' : ''} ${className}`} {...props} aria-invalid={error ? true : props['aria-invalid']} aria-describedby={describedBy} />{hint ? <span id={`${id}-hint`} className="field__hint">{hint}</span> : null}{error ? <span id={`${id}-error`} className="field__error" role="alert">{error}</span> : null}</div>
 }
 
 /* ------------------------------------------------------------------ *
@@ -232,8 +235,8 @@ export function Select<T extends string>({
   // Opening lands the highlight on what is already chosen, which is the only
   // starting position that does not make the first arrow key a surprise.
   useEffect(() => {
-    if (open) setActive(selectedIndex >= 0 ? selectedIndex : 0)
-  }, [open, selectedIndex])
+    if (open) setActive(selectedIndex >= 0 && !options[selectedIndex]?.disabled ? selectedIndex : Math.max(0, options.findIndex((option) => !option.disabled)))
+  }, [open, selectedIndex, options])
 
   useEffect(() => {
     if (!open) return
@@ -287,8 +290,8 @@ export function Select<T extends string>({
     if (event.key === 'Tab') { setOpen(false); return }
     if (event.key === 'ArrowDown') { event.preventDefault(); step(1); return }
     if (event.key === 'ArrowUp') { event.preventDefault(); step(-1); return }
-    if (event.key === 'Home') { event.preventDefault(); setActive(0); return }
-    if (event.key === 'End') { event.preventDefault(); setActive(options.length - 1); return }
+    if (event.key === 'Home') { event.preventDefault(); setActive(Math.max(0, options.findIndex((option) => !option.disabled))); return }
+    if (event.key === 'End') { event.preventDefault(); setActive(Math.max(0, options.map((option) => !option.disabled).lastIndexOf(true))); return }
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); commit(active) }
   }
 
@@ -312,6 +315,9 @@ export function Select<T extends string>({
         // absent rather than missing.
         aria-controls={`${id}-list`}
         aria-labelledby={`${id}-label ${id}`}
+        aria-activedescendant={open ? `${id}-option-${active}` : undefined}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={[hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
         className={`arena-select__trigger${error ? ' arena-select__trigger--error' : ''}`}
         onClick={() => setOpen((was) => !was)}
         onKeyDown={onKeyDown}
@@ -357,8 +363,8 @@ export function Select<T extends string>({
         </div>
       ) : null}
       </div>
-      {hint ? <span className="field__hint">{hint}</span> : null}
-      {error ? <span className="field__error">{error}</span> : null}
+      {hint ? <span id={`${id}-hint`} className="field__hint">{hint}</span> : null}
+      {error ? <span id={`${id}-error`} className="field__error" role="alert">{error}</span> : null}
     </div>
   )
 }
@@ -379,18 +385,43 @@ export function FileDrop({ file, onFile, accept = '.pdf,.docx', error }: { file:
 function formatBytes(bytes: number) { return bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB` }
 
 export function Tabs<T extends string>({ items, value, onChange, label = 'Section' }: { items: readonly T[]; value: T; onChange: (value: T) => void; label?: string }) {
-  return <div className="arena-tabs" role="tablist" aria-label={label}>{items.map((item) => <button key={item} role="tab" aria-selected={item === value} onClick={() => onChange(item)}>{item.replaceAll('_', ' ')}</button>)}</div>
+  return <div className="arena-tabs" role="tablist" aria-label={label}>{items.map((item, index) => <button type="button" key={item} role="tab" tabIndex={item === value ? 0 : -1} aria-selected={item === value} onClick={() => onChange(item)} onKeyDown={(event) => {
+    const next = event.key === 'ArrowRight' ? (index + 1) % items.length : event.key === 'ArrowLeft' ? (index - 1 + items.length) % items.length : event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : -1
+    if (next < 0) return
+    event.preventDefault()
+    const nextValue = items[next]
+    if (nextValue === undefined) return
+    onChange(nextValue)
+    const target = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }}>{item.replaceAll('_', ' ')}</button>)}</div>
 }
 
 export function Sheet({ open, onClose, title, children, dismissible = true }: { open: boolean; onClose: () => void; title?: string; children: ReactNode; dismissible?: boolean }) {
   const { isDesktop } = useBreakpoint()
+  const reducedMotion = useReducedMotion()
+  const dragControls = useDragControls()
   const dialogRef = useRef<HTMLElement>(null)
   const closeRef = useRef(onClose)
   useEffect(() => { closeRef.current = onClose }, [onClose])
   useEffect(() => {
     if (!open) return
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const focusable = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])
+    // Keep the page behind the sheet out of both the tab order and the
+    // accessibility tree. Restore only attributes this sheet changed.
+    const background: HTMLElement[] = []
+    let branch = dialogRef.current?.parentElement ?? null
+    while (branch && branch !== document.body) {
+      for (const sibling of Array.from(branch.parentElement?.children ?? [])) {
+        if (sibling !== branch && sibling instanceof HTMLElement && !sibling.inert && !['SCRIPT', 'STYLE', 'LINK'].includes(sibling.tagName) && !sibling.matches('.toast-stack')) {
+          sibling.inert = true
+          background.push(sibling)
+        }
+      }
+      branch = branch.parentElement
+    }
+    const focusable = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? []).filter((item) => item.tabIndex >= 0 && item.getClientRects().length > 0 && !item.closest('[inert]'))
     const focusFrame = window.requestAnimationFrame(() => (focusable()[0] ?? dialogRef.current)?.focus())
     const keydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && dismissible) { event.preventDefault(); closeRef.current(); return }
@@ -400,13 +431,13 @@ export function Sheet({ open, onClose, title, children, dismissible = true }: { 
       const first = items[0]
       const last = items[items.length - 1]
       if (!first || !last) return
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
-      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last.focus() }
+      if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) { event.preventDefault(); first.focus() }
     }
     document.addEventListener('keydown', keydown)
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    return () => { window.cancelAnimationFrame(focusFrame); document.removeEventListener('keydown', keydown); document.body.style.overflow = previous; previousFocus?.focus() }
+    return () => { window.cancelAnimationFrame(focusFrame); document.removeEventListener('keydown', keydown); document.body.style.overflow = previous; background.forEach((element) => { element.inert = false }); previousFocus?.focus({ preventScroll: true }) }
   }, [dismissible, open])
 
   return (
@@ -419,16 +450,18 @@ export function Sheet({ open, onClose, title, children, dismissible = true }: { 
           aria-modal="true"
           aria-label={title ?? 'Dialog'}
           tabIndex={-1}
-          initial={isDesktop ? { opacity: 0, scale: .98 } : { y: '100%' }}
+          initial={reducedMotion ? false : isDesktop ? { opacity: 0, scale: .98 } : { y: '100%' }}
           animate={isDesktop ? { opacity: 1, scale: 1 } : { y: 0 }}
-          exit={isDesktop ? { opacity: 0, scale: .98 } : { y: '100%' }}
-          transition={{ duration: .24, ease: [0.2, 0, 0, 1] }}
+          exit={reducedMotion ? { opacity: 0 } : isDesktop ? { opacity: 0, scale: .98 } : { y: '100%' }}
+          transition={{ duration: reducedMotion ? 0 : .24, ease: [0.2, 0, 0, 1] }}
           drag={!isDesktop && dismissible ? 'y' : false}
+          dragControls={dragControls}
+          dragListener={false}
           dragConstraints={{ top: 0, bottom: 0 }}
           dragElastic={{ top: 0, bottom: .6 }}
           onDragEnd={(_, info) => { if (info.offset.y > 90 && dismissible) onClose() }}
         >
-          {!isDesktop ? <div className="sheet__handle" /> : null}
+          {!isDesktop ? <div className="sheet__drag-area" aria-hidden="true" onPointerDown={dismissible ? (event) => dragControls.start(event) : undefined}><div className="sheet__handle" /></div> : null}
           <div className="sheet__head">{title ? <h2 className="display-md">{title}</h2> : <span />}{dismissible ? <IconButton label="Close" onClick={onClose}><X size={19} strokeWidth={1.5} /></IconButton> : null}</div>
           <div className="sheet__body">{children}</div>
         </motion.section>

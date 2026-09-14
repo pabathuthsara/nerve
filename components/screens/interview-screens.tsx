@@ -329,11 +329,12 @@ function RoleSetup() {
       const chosen = selectableFields.length > 1
         ? field
         : selectableFields[0]?.id ?? DEFAULT_FIELD
-      void saveInterviewSetup({ roleTitle: role, company, jobDescription: description, field: chosen })
+      return saveInterviewSetup({ roleTitle: role, company, jobDescription: description, field: chosen })
         .then((result) => {
           if (result.ok) router.push('/interview/setup/cv')
           else setError(result.message)
         })
+        .catch(() => setError('Could not save. Check your connection and try again.'))
     })
   }
 
@@ -376,7 +377,7 @@ function RoleSetup() {
 
         <div className="textarea-tools">
           <Textarea label="Job description" rows={8} value={description} onChange={(event) => setDescription(event.target.value.slice(0, JOB_DESCRIPTION_LIMIT))} hint="The more you paste, the sharper the questions." />
-          <button type="button" onClick={() => navigator.clipboard.readText().then(setDescription)} className="paste-action">Paste</button>
+          <button type="button" onClick={async () => { try { const text = await navigator.clipboard.readText(); setDescription(text.slice(0, JOB_DESCRIPTION_LIMIT)) } catch { setError('Clipboard access is unavailable. Paste directly into the job description field.') } }} className="paste-action">Paste</button>
           <span className="char-count data">{description.length} / {JOB_DESCRIPTION_LIMIT}</span>
         </div>
 
@@ -523,14 +524,14 @@ function QuestionsSetup() {
   const finish = () => {
     setError(null)
     start(() => {
-      void saveInterviewSetup({ customQuestions: questions }).then((result) => {
+      return saveInterviewSetup({ customQuestions: questions }).then((result) => {
         if (result.ok) router.push('/interview/interviewers')
         else setError(result.message)
-      })
+      }).catch(() => setError('Could not save. Check your connection and try again.'))
     })
   }
   if (loading) return <SetupLayout step={3} title="What should they ask?"><Skeleton height={420} /></SetupLayout>
-  return <SetupLayout step={3} title="What should they ask?"><div className="question-editor">{questions.length === 0 ? <p className="question-empty">No custom questions yet. Your interviewer will still use the role brief.</p> : null}{questions.map((question, index) => <div className="question-row" key={`${question}-${index}`}><GripVertical size={17} strokeWidth={1.5} /><input aria-label={`Custom question ${index + 1}`} value={question} onChange={(event) => setQuestions((items) => items.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /><button aria-label="Delete question" onClick={() => setQuestions((items) => items.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={17} strokeWidth={1.5} /></button></div>)}{adding ? <input className="question-add-input" aria-label="New custom question" autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') commit(); if (event.key === 'Escape') { setDraft(''); setAdding(false) } }} placeholder="Type a question, then press Enter" /> : <Button variant="secondary" onClick={() => setAdding(true)}><Plus size={17} strokeWidth={1.5} /> Add question</Button>}<div className="suggested-questions"><span className="label">Suggested</span>{suggestions.map((suggestion) => <button key={suggestion} onClick={() => { if (!questions.includes(suggestion)) setQuestions((items) => [...items, suggestion]) }}><Plus size={14} strokeWidth={1.5} /> {suggestion}</button>)}</div>{error ? <p className="field__error">{error}</p> : null}<Button size="lg" fullWidth disabled={saving} onClick={finish}>{saving ? 'Saving' : 'Finish setup'}</Button></div></SetupLayout>
+  return <SetupLayout step={3} title="What should they ask?"><div className="question-editor">{questions.length === 0 ? <p className="question-empty">No custom questions yet. Your interviewer will still use the role brief.</p> : null}{questions.map((question, index) => <div className="question-row" key={index}><GripVertical size={17} strokeWidth={1.5} /><input aria-label={`Custom question ${index + 1}`} value={question} onChange={(event) => setQuestions((items) => items.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /><button aria-label="Delete question" onClick={() => setQuestions((items) => items.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={17} strokeWidth={1.5} /></button></div>)}{adding ? <input className="question-add-input" aria-label="New custom question" autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') commit(); if (event.key === 'Escape') { setDraft(''); setAdding(false) } }} placeholder="Type a question, then press Enter" /> : <Button variant="secondary" onClick={() => setAdding(true)}><Plus size={17} strokeWidth={1.5} /> Add question</Button>}<div className="suggested-questions"><span className="label">Suggested</span>{suggestions.map((suggestion) => <button key={suggestion} onClick={() => { if (!questions.includes(suggestion)) setQuestions((items) => [...items, suggestion]) }}><Plus size={14} strokeWidth={1.5} /> {suggestion}</button>)}</div>{error ? <p className="field__error">{error}</p> : null}<Button size="lg" fullWidth disabled={saving} onClick={finish}>{saving ? 'Saving' : 'Finish setup'}</Button></div></SetupLayout>
 }
 
 export function InterviewerPicker({ inRun = true }: { inRun?: boolean }) {
@@ -633,11 +634,12 @@ function RunSetup({ packsOpen }: { packsOpen: boolean }) {
     if (!interviewer) return
     setError(null)
     start(() => {
-      void saveInterviewSetup({ round: chosenRound, difficulty, captions })
+      return saveInterviewSetup({ round: chosenRound, difficulty, captions })
         .then((result) => {
           if (result.ok) router.push(`/interview/rep/${interviewer.id}/brief`)
           else setError(result.message)
         })
+        .catch(() => setError('Could not save. Check your connection and try again.'))
     })
   }
 

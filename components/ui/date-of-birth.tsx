@@ -120,7 +120,7 @@ export function DateOfBirth({ label = 'Date of birth', hint, error, name, value,
         {hint ? <span className="field__hint">{hint}</span> : <span />}
         <span className="dob__echo" aria-live="polite">{echo ?? ''}</span>
       </div>
-      {error ? <span className="field__error">{error}</span> : null}
+      {error ? <span id={`${groupId}-error`} className="field__error" role="alert">{error}</span> : null}
       {name ? <input type="hidden" name={name} value={dob} readOnly /> : null}
     </div>
   )
@@ -233,6 +233,8 @@ function DateBoxes({ parts, prefix, bounds, error, labelledBy, onParts, onPrefix
             value={shown(segment)}
             placeholder={PLACEHOLDER[segment]}
             aria-label={NAMES[segment]}
+            aria-invalid={error || undefined}
+            aria-describedby={error ? `${labelledBy}-error` : undefined}
             inputMode="numeric"
             autoComplete={`bday-${segment}`}
             spellCheck={false}

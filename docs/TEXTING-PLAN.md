@@ -1299,3 +1299,51 @@ thing is any good. Four of these five were invisible at a desk.
 Findings 5 and 6 were found by walking the shipped screens rather than by the
 bench — which is `INTERVIEW-TECHNICAL-PLAN` §14's lesson arriving as well:
 looking at a track found scoring defects, not cosmetic ones.
+
+### §20.1 — And then somebody opened it in a browser
+
+The section shipped, the suite was green, and none of the below was visible in
+any of it. §14's lesson a third time.
+
+1. **Switching into texting took the whole navigation off the screen.** Every
+   section screen wraps itself in `AppShell`; these three did not, so the rail,
+   the bottom tabs and the track switcher all vanished on the one section a free
+   account can use. The old `/text/[personaId]` got away with it because it was
+   reached from a dating screen and returned to one — a section HOME cannot.
+
+2. **`profiles_active_track_check` refused `'texting'`, silently.** `Track` was
+   widened in TypeScript and the CHECK constraint was not, so the switcher's
+   `active_track` write failed — and it is deliberately not awaited, with the
+   failure deliberately swallowed ("a toast about a preference nobody asked to
+   save would be noise"). Switching worked for the session, persisted nothing,
+   and the next cold load served dating. **`LAUNCH-GAP` E2's exact failure,
+   arriving through a constraint instead of a missing read.**
+
+3. **The chrome's pill said "1 rep left" in a section that spends no reps**, and
+   linked to the subscription screen. The interview track had already forced
+   this component to learn that there are two meters; there are three now, and
+   texting is counted in conversations.
+
+4. **Messages stacked from the top.** `align-content: start` left a short thread
+   sitting under the header with the evening empty below it, which reads as a
+   page that failed to load rather than as a conversation. Every thread anybody
+   has read anchors to the floor.
+
+5. **Both bubbles were a dark panel with a hairline**, so at a glance the thread
+   was one column of identical boxes and who said what was carried by alignment
+   alone. His are filled and borderless now; hers are the ground with a hairline.
+
+6. **The cue rail wrapped onto three rows at 420px**, ate a third of the
+   transcript and collided with the compose box. It is one line that scrolls,
+   and below the tablet breakpoint it shows only the cue it is pointing at.
+
+7. **The interest curve was scaled against a floor of zero**, so a thread that
+   ran between 43 and 50 drew a flat line pinned to the top of an empty box —
+   the shape, which is the entire point of the chart, invisible.
+
+8. **The debrief printed the scorer's telemetry format** — `open-question +3.5
+   (asked an open question)` — on the one screen whose job is plain English.
+
+9. **The empty state was shoved to the floor** by the same bottom-anchoring that
+   fixed the thread, and its copy still said the conversation "does not use a
+   rep" after the section had been metered.

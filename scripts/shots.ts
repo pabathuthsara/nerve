@@ -91,6 +91,13 @@ const SHOTS: Shot[] = [
   { name: 'field-mobile', path: '/field', ready: '.today-field', width: 420, height: 860, settle: 1200 },
   { name: 'progress', path: '/progress', ready: '.progress-stack', width: 1280, height: 900, settle: 600 },
   { name: 'library', path: '/library', ready: '.library-grid', width: 1280, height: 900, settle: 400 },
+  // The texting section. Read-only like everything else here: opening the
+  // inbox starts no thread and spends no allowance (`openThread` creates
+  // nothing), and the thread route only reads.
+  { name: 'texting', path: '/texting', ready: '.texting-list', width: 1280, height: 900, settle: 1200 },
+  { name: 'texting-mobile', path: '/texting', ready: '.texting-list', width: 420, height: 860, settle: 1200 },
+  { name: 'texting-thread', path: '/texting/immy', ready: '.texting-thread__body', width: 1280, height: 900, settle: 1400 },
+  { name: 'texting-thread-mobile', path: '/texting/immy', ready: '.texting-thread__body', width: 420, height: 860, settle: 1400 },
 ]
 
 /* ------------------------------------------------------------------ CDP -- */

@@ -53,6 +53,8 @@ export interface UserState {
    * balance itself.
    */
   interviewCredits: number
+  /** Texting conversations that may still be started today. */
+  textingRemaining: number
   /**
    * How many of those are the free screener (§5.6).
    *

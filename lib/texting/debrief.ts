@@ -112,6 +112,25 @@ export function moversFrom(events: readonly WarmthEvent[]): Mover[] {
     .slice(0, MAX_MOVERS)
 }
 
+/**
+ * The scorer's reasons, in the words a person wrote.
+ *
+ * `WarmthEvent.detail` is formatted for TELEMETRY — `open-question +3.5 (asked
+ * an open question)` — and it was being printed straight onto the one screen
+ * whose job is to explain what happened in plain English. The machine code and
+ * the signed points are already carried by the delta beside it; what is wanted
+ * here is the sentence inside the brackets.
+ *
+ * A reason that does not match the telemetry shape is passed through unchanged
+ * rather than dropped: a missing explanation is worse than an ugly one, and the
+ * format belongs to a file this one does not own.
+ */
+export function readableReasons(reasons: readonly string[]): string {
+  return reasons
+    .map((reason) => reason.match(/\(([^)]+)\)\s*$/)?.[1] ?? reason)
+    .join(' · ')
+}
+
 export function buildDebrief(
   meter: TextingMeterState,
   ending: TextingEnding | null,

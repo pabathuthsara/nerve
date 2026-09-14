@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getTextingPersona } from '@/lib/personas/texting'
 import { runMeter } from './meter'
-import { buildDebrief, endingSentence, moversFrom, MAX_MOVERS } from './debrief'
+import { buildDebrief, endingSentence, moversFrom, readableReasons, MAX_MOVERS } from './debrief'
 import type { TextingTurn } from './thread'
 
 const noor = getTextingPersona('noor')!
@@ -110,5 +110,35 @@ describe('a thread he closed himself is not a thread she left', () => {
 
   it('is still not a verdict', () => {
     expect(endingSentence('abandoned')).not.toMatch(/\b(?:win|won|lost|fail|failed|score)\b/i)
+  })
+})
+
+describe('the reasons are printed in the words a person wrote', () => {
+  it('drops the telemetry code and the points', () => {
+    // The delta beside it already carries the number; the screen wants the
+    // sentence. This was printing `open-question +3.5 (asked an open question)`.
+    expect(readableReasons(['open-question +3.5 (asked an open question)'])).toBe('asked an open question')
+  })
+
+  it('joins several with a separator', () => {
+    expect(readableReasons([
+      'open-question +3.5 (asked an open question)',
+      'engaged-length +2.3 (11 words)',
+    ])).toBe('asked an open question · 11 words')
+  })
+
+  it('passes through anything that is not telemetry-shaped', () => {
+    // A missing explanation is worse than an ugly one, and the format belongs
+    // to a file the debrief does not own.
+    expect(readableReasons(['something new'])).toBe('something new')
+  })
+
+  it('survives the real scorer’s output', () => {
+    const meter = runMeter(noor, THREAD, 'seed')
+    for (const mover of moversFrom(meter.events)) {
+      const text = readableReasons(mover.reasons)
+      expect(text.length).toBeGreaterThan(0)
+      expect(text).not.toMatch(/[+-]\d+(\.\d+)?\s*\(/)
+    }
   })
 })

@@ -19,7 +19,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, RotateCcw, SendHorizontal } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RotateCcw, SendHorizontal } from 'lucide-react'
 import {
   openThread,
   sendTextingTurn,
@@ -31,9 +31,10 @@ import { presenceLabel, presenceText } from '@/lib/texting/presence'
 import { textingRefusal, type TextingAllowance } from '@/lib/texting/allowance'
 import { TEXTING_MISSION, railVisible, textingCueRail } from '@/lib/texting/cues'
 import type { TextingEnding } from '@/lib/texting/exit'
-import type { Debrief } from '@/lib/texting/debrief'
+import { readableReasons, type Debrief } from '@/lib/texting/debrief'
 import type { InboxRow, TextingPersonaView } from '@/lib/texting/queries'
 import { capture } from '@/components/analytics'
+import { AppShell } from '@/components/app-shell'
 import { Button, Sheet, Skeleton, useToast } from '@/components/ui'
 import { FluidPersona } from '@/components/fluid-persona'
 import { DistressModal } from '@/components/modals'
@@ -74,19 +75,45 @@ function stateLabel(row: InboxRow): string {
   return 'Open'
 }
 
+/**
+ * EVERY TEXTING SCREEN LIVES INSIDE `AppShell`, and that is not a detail.
+ *
+ * The section shipped without it, so switching tracks into texting took the
+ * sidebar rail, the bottom tabs and the track switcher off the screen — the
+ * product's entire navigation, on the one section a free account can actually
+ * use. There was no way back except the browser's own back button.
+ *
+ * The old `/text/[personaId]` had no shell either and got away with it, because
+ * it was reached from a dating screen and returned to one. A section HOME
+ * cannot: it is the place the rail is pointing at.
+ */
 export function TextingInbox({ rows, allowance }: { rows: InboxRow[]; allowance: TextingAllowance }) {
   return (
-    <main className="texting-home">
-      <header className="texting-home__top">
-        <h1 className="display-lg">Texting</h1>
-        <p className="muted">
-          {allowance.perDay === 1
-            ? 'One conversation a day. Nothing here is scored.'
-            : 'Nothing here is scored. It is practice, and it keeps no record.'}
-        </p>
+    <AppShell title="Texting">
+      <TextingInboxContent rows={rows} allowance={allowance} />
+    </AppShell>
+  )
+}
+
+function TextingInboxContent({ rows, allowance }: { rows: InboxRow[]; allowance: TextingAllowance }) {
+  const open = rows.filter((row) => row.state === 'open').length
+  return (
+    <div className="texting-home">
+      <header className="screen-heading">
+        <div>
+          <h1 className="display-lg">Texting</h1>
+          <p className="screen-heading__sub">
+            {allowance.perDay === 1
+              ? 'One conversation a day. Nothing here is scored.'
+              : 'As many as you want. Nothing here is scored.'}
+          </p>
+        </div>
+        <span className="texting-home__count label">
+          {open > 0 ? `${open} open` : `${allowance.remaining} left today`}
+        </span>
       </header>
 
-      {!allowance.mayStart ? (
+      {!allowance.mayStart && open === 0 ? (
         <div className="texting-gate">
           <span className="label">That’s today’s conversation</span>
           <p>{textingRefusal(allowance)}</p>
@@ -103,13 +130,15 @@ export function TextingInbox({ rows, allowance }: { rows: InboxRow[]; allowance:
           const openable = row.state === 'open' || allowance.mayStart
           const body = (
             <>
-              <FluidPersona name={row.persona.name} personaId={row.persona.slug} warmth={30} size={38} />
+              <span className="texting-list__avatar">
+                <FluidPersona name={row.persona.name} personaId={row.persona.slug} warmth={34} size={44} />
+              </span>
               <span className="texting-list__body">
                 <span className="texting-list__name">
                   <strong>{row.persona.name}</strong>
-                  {row.lastMessage ? (
-                    <span className="texting-list__when">{relative(row.lastMessage.at)}</span>
-                  ) : null}
+                  <span className="texting-list__when">
+                    {row.lastMessage ? relative(row.lastMessage.at) : `Rung ${row.persona.level}`}
+                  </span>
                 </span>
                 <span className="texting-list__preview">
                   {row.lastMessage
@@ -117,9 +146,10 @@ export function TextingInbox({ rows, allowance }: { rows: InboxRow[]; allowance:
                     : row.persona.scene}
                 </span>
                 <span className={`texting-list__state label${row.yourTurn ? ' texting-list__state--turn' : ''}`}>
-                  {openable ? stateLabel(row) : 'Tomorrow'}
+                  {openable ? stateLabel(row) : 'Opens tomorrow'}
                 </span>
               </span>
+              {openable ? <ChevronRight className="texting-list__chevron" size={16} strokeWidth={1.5} /> : null}
             </>
           )
           return (
@@ -133,7 +163,7 @@ export function TextingInbox({ rows, allowance }: { rows: InboxRow[]; allowance:
           )
         })}
       </ul>
-    </main>
+    </div>
   )
 }
 
@@ -158,6 +188,14 @@ interface Pending {
  * the four display fields and nothing else.
  */
 export function TextingThreadScreen({ persona, slug }: { persona: TextingPersonaView; slug: string }) {
+  return (
+    <AppShell title={persona.name}>
+      <TextingThreadContent persona={persona} slug={slug} />
+    </AppShell>
+  )
+}
+
+function TextingThreadContent({ persona, slug }: { persona: TextingPersonaView; slug: string }) {
   const toast = useToast()
   const [turns, setTurns] = useState<TextingTurn[]>([])
   const [memory, setMemory] = useState<string | null>(null)
@@ -177,6 +215,13 @@ export function TextingThreadScreen({ persona, slug }: { persona: TextingPersona
 
   const endRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.style.height = 'auto'
+    input.style.height = `${Math.min(input.scrollHeight, 180)}px`
+  }, [draft])
 
   const absorb = useCallback((state: ThreadState) => {
     if (state.turns !== null) setTurns(state.turns)
@@ -322,9 +367,15 @@ export function TextingThreadScreen({ persona, slug }: { persona: TextingPersona
 
   if (loading) {
     return (
-      <main className="texting-thread">
-        <div className="texting-thread__body"><Skeleton height={54} /><Skeleton height={54} /><Skeleton height={54} /></div>
-      </main>
+      <div className="texting-thread">
+        <div className="texting-thread__body">
+          {/* Skeletons shaped like the arriving content, never a spinner (§02).
+              Alternating sides, because that is what a thread looks like. */}
+          <Skeleton height={44} width="62%" />
+          <Skeleton height={44} width="48%" style={{ justifySelf: 'end' }} />
+          <Skeleton height={44} width="70%" />
+        </div>
+      </div>
     )
   }
 
@@ -341,27 +392,40 @@ export function TextingThreadScreen({ persona, slug }: { persona: TextingPersona
   const lastUserIndex = turns.reduce((found, turn, index) => (turn.speaker === 'user' ? index : found), -1)
 
   return (
-    <main className="texting-thread">
+    <div className="texting-thread">
       <header className="texting-thread__top">
-        <Link className="rep-back" href="/texting" aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link>
+        <Link className="texting-thread__back" href="/texting" aria-label="Back to texting">
+          <ChevronLeft size={20} strokeWidth={1.6} />
+        </Link>
         <div className="texting-thread__who">
-          <FluidPersona name={persona.name} personaId={persona.slug} warmth={warmth} size={34} />
-          <span>
+          <FluidPersona name={persona.name} personaId={persona.slug} warmth={warmth} size={36} />
+          <span className="texting-thread__ident">
             <strong>{persona.name}</strong>
             {/* THE PRESENCE LINE. Never volt — it is status, not an action —
                 and it disappears entirely once she has gone, because a frozen
                 "Active 40m ago" on a finished thread reads as a bug. */}
-            {presence ? <span className="label texting-thread__presence">{presence}</span> : null}
+            <span className={`texting-thread__presence label${typing ? ' texting-thread__presence--typing' : ''}`}>
+              {presence ?? '\u00a0'}
+            </span>
           </span>
         </div>
         {started ? (
-          <button type="button" className="texting-thread__fresh label" onClick={() => setFreshOpen(true)}>
-            <RotateCcw size={13} strokeWidth={1.5} /> Start fresh
+          <button
+            type="button"
+            className="texting-thread__fresh"
+            onClick={() => setFreshOpen(true)}
+            aria-label={canRestart ? 'Start fresh' : 'End this conversation'}
+          >
+            <RotateCcw size={15} strokeWidth={1.6} />
           </button>
         ) : <span />}
       </header>
 
-      <div className="texting-thread__body">
+      {/* BOTTOM-ANCHORED ONCE THERE IS A CONVERSATION, CENTRED BEFORE THERE IS.
+          `align-content: end` is right for a thread and wrong for an opener —
+          it pushed the scene card onto the floor with an empty evening above
+          it, which reads as a page that failed to load. */}
+      <div className={`texting-thread__body${started ? '' : ' texting-thread__body--empty'}`}>
         {memory ? (
           <div className="memory-line texting-thread__memory">
             <span className="label">She remembers</span>
@@ -376,7 +440,12 @@ export function TextingThreadScreen({ persona, slug }: { persona: TextingPersona
             {/* No coaching and no examples to copy. Sending the first message
                 is the skill being trained; handing over an opening line would
                 be training the wrong one. */}
-            <p className="muted">Text her. No timer, no score, and this one does not use a rep.</p>
+            {/* It DOES spend something now — one of the day's conversations —
+                and the old line said the opposite. A screen that undersells the
+                cost is the screen the refusal contradicts two taps later. */}
+            <p className="muted">
+              No timer and no score. Sending the first message opens one of today’s conversations.
+            </p>
           </div>
         ) : null}
 
@@ -446,7 +515,7 @@ export function TextingThreadScreen({ persona, slug }: { persona: TextingPersona
           aria-label={`Message ${persona.name}`}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send() }
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); send() }
           }}
         />
         <button type="submit" aria-label="Send" disabled={!draft.trim() || gone}>
@@ -485,7 +554,7 @@ export function TextingThreadScreen({ persona, slug }: { persona: TextingPersona
       </Sheet>
 
       <DistressModal open={distress} onClose={() => { window.location.href = '/texting' }} />
-    </main>
+    </div>
   )
 }
 
@@ -540,17 +609,30 @@ function EndingCard({
 export function TextingDebriefScreen({
   persona, debrief, open, ending,
 }: { persona: TextingPersonaView; debrief: Debrief; open: boolean; ending: TextingEnding | null }) {
+  return (
+    <AppShell title={persona.name}>
+      <TextingDebriefContent persona={persona} debrief={debrief} open={open} ending={ending} />
+    </AppShell>
+  )
+}
+
+function TextingDebriefContent({
+  persona, debrief, open, ending,
+}: { persona: TextingPersonaView; debrief: Debrief; open: boolean; ending: TextingEnding | null }) {
   useEffect(() => {
     capture('texting_debrief_viewed', { persona_id: persona.slug, ending: ending ?? 'open' })
   }, [ending, persona.slug])
 
   return (
-    <main className="texting-debrief">
-      <header className="texting-debrief__top">
-        <Link className="rep-back" href={`/texting/${persona.slug}`} aria-label="Back">
-          <ChevronLeft size={24} strokeWidth={1.5} />
-        </Link>
-        <h1 className="display-md">{persona.name}</h1>
+    <div className="texting-debrief">
+      <header className="screen-heading">
+        <div>
+          <Link className="texting-debrief__back label" href={`/texting/${persona.slug}`}>
+            <ChevronLeft size={14} strokeWidth={1.8} /> Back to the thread
+          </Link>
+          <h1 className="display-lg">{persona.name}</h1>
+          <p className="screen-heading__sub">{debrief.ending}</p>
+        </div>
       </header>
 
       {debrief.thin ? (
@@ -564,11 +646,11 @@ export function TextingDebriefScreen({
           <section className="texting-debrief__block">
             <span className="label">Her interest</span>
             <InterestCurve points={debrief.curve} />
-            <p className="texting-debrief__axis">
-              <span>opened {debrief.opened}</span>
-              <span>peak {debrief.peak}</span>
-              <span>{open ? 'now' : 'she left'} {debrief.closed}</span>
-            </p>
+            <dl className="texting-debrief__axis">
+              <div><dt>Opened</dt><dd>{debrief.opened}</dd></div>
+              <div><dt>Peak</dt><dd>{debrief.peak}</dd></div>
+              <div><dt>{open ? 'Now' : 'At the end'}</dt><dd>{debrief.closed}</dd></div>
+            </dl>
           </section>
 
           <section className="texting-debrief__block">
@@ -584,7 +666,7 @@ export function TextingDebriefScreen({
                     </span>
                     <span className="texting-movers__body">
                       <span className="texting-movers__text">{mover.text}</span>
-                      <span className="texting-movers__why">{mover.reasons.join(' · ')}</span>
+                      <span className="texting-movers__why">{readableReasons(mover.reasons)}</span>
                     </span>
                   </li>
                 ))}
@@ -594,19 +676,15 @@ export function TextingDebriefScreen({
         </>
       )}
 
-      <section className="texting-debrief__block">
-        <span className="label">How it ended</span>
-        <p>{debrief.ending}</p>
-      </section>
-
-      <p className="texting-debrief__note muted">
-        Texting is not scored. Nothing here moves your record, your streak or your rank.
-      </p>
-
-      {/* The bridge. Texting practice pointing at spoken practice is what stops
-          texting becoming the destination. */}
-      <Link className="arena-button arena-button--primary" href="/field">Take one outside</Link>
-    </main>
+      <div className="texting-debrief__foot">
+        <p className="texting-debrief__note">
+          Texting is not scored. Nothing here moves your record, your streak or your rank.
+        </p>
+        {/* The bridge. Texting practice pointing at spoken practice is what
+            stops texting becoming the destination. */}
+        <Link className="arena-button arena-button--primary" href="/field">Take one outside</Link>
+      </div>
+    </div>
   )
 }
 
@@ -621,13 +699,32 @@ function InterestCurve({ points }: { points: Debrief['curve'] }) {
   if (points.length < 2) return null
   const width = 320
   const height = 96
-  const max = Math.max(...points.map((p) => p.warmth), 10)
-  const min = Math.min(...points.map((p) => p.warmth), 0)
-  const span = Math.max(1, max - min)
+  /**
+   * SCALED TO THE DATA, NOT TO ZERO.
+   *
+   * It was `Math.min(..., 0)`, so a thread that ran between 43 and 50 was drawn
+   * against a 0-50 axis: a flat line pinned to the top of an empty box, with
+   * the shape — which is the entire point of the chart — invisible.
+   *
+   * A floor of ten points keeps a genuinely flat thread from being rendered as
+   * dramatic noise, and the 12% padding stops the line touching either edge.
+   */
+  const values = points.map((point) => point.warmth)
+  const high = Math.max(...values)
+  const low = Math.min(...values)
+  const range = high - low
+  const span = Math.max(10, range)
+  const pad = span * 0.12
+  // CENTRED WHEN THE RANGE IS SMALLER THAN THE FLOOR. Without this the extra
+  // headroom the floor adds all lands underneath, and a seven-point thread is
+  // drawn in the top two thirds of the box with dead space below it.
+  const slack = (span - range) / 2
+  const top = high + slack + pad
+  const scale = span + pad * 2
   const path = points
     .map((point, index) => {
       const x = (index / (points.length - 1)) * width
-      const y = height - ((point.warmth - min) / span) * height
+      const y = ((top - point.warmth) / scale) * height
       return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`
     })
     .join(' ')

@@ -231,7 +231,7 @@ export function FieldSheets({ flow, title }: { flow: FieldFlow; title: string })
             <span className="label">What happened</span>
             <div className="chip-row" style={{ marginTop: 10 }}>
               {OUTCOMES.map((option) => (
-                <button key={option.value} type="button" className="chip-button" onClick={() => setOutcome(option.value)}>
+                <button key={option.value} type="button" className="chip-button" aria-pressed={outcome === option.value} onClick={() => setOutcome(option.value)}>
                   <Chip tone={outcome === option.value ? 'volt' : 'neutral'}>{option.label}</Chip>
                 </button>
               ))}
@@ -267,7 +267,7 @@ export function FieldSheets({ flow, title }: { flow: FieldFlow; title: string })
           <p>Logging it honestly is worth doing. It stays on your list for tomorrow.</p>
           <div className="chip-row">
             {COULD_NOT_REASONS.map((reason) => (
-              <button key={reason} type="button" className="chip-button" onClick={() => setNote(reason)}>
+              <button key={reason} type="button" className="chip-button" aria-pressed={note === reason} onClick={() => setNote(reason)}>
                 <Chip tone={note === reason ? 'volt' : 'neutral'}>{reason}</Chip>
               </button>
             ))}

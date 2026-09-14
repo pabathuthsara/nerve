@@ -184,6 +184,8 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
    */
   const active = (href: string) => {
     if (RUNS_UNDER[pathname] === href) return true
+    if (href === '/profile' && (pathname.startsWith('/progress') || pathname.startsWith('/session/'))) return true
+    if (href === '/interview' && pathname.startsWith('/interview/setup/')) return true
     return href === '/train' || href === '/interview'
       ? pathname === href
       : pathname === href || pathname.startsWith(`${href}/`)
@@ -191,11 +193,12 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
 
   return (
       <div className={`app-frame${/^\/roster\/[^/]+$/.test(pathname) ? ' app-frame--persona-detail' : ''}`}>
+        <a className="skip-link" href="#main-content">Skip to content</a>
         <header className="mobile-topbar">
           <span className="wordmark" aria-label="Nerve">NERVE</span>
           {user ? <TrackSwitcher track={track} onChange={switchTrack} tracks={availableTracks} compact /> : <span className="label">{title}</span>}
         </header>
-        {!online ? <div className="offline-bar">Offline — reps unavailable</div> : null}
+        {!online ? <div className="offline-bar" role="status">Offline — reps unavailable</div> : null}
         <aside className="sidebar-rail">
           <div className="rail-inner">
             <Link href={TRACK_HOME[track]} className="wordmark">NERVE</Link>
@@ -205,11 +208,11 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
             <nav className="rail-nav" aria-label="Main navigation">
               {items.map((item) => {
                 const Icon = item.icon
-                return <Link key={item.href} href={item.href} className={`rail-link${active(item.href) ? ' rail-link--active' : ''}`}><Icon size={20} strokeWidth={1.5} /><span>{item.label}</span></Link>
+                return <Link key={item.href} href={item.href} aria-current={active(item.href) ? 'page' : undefined} className={`rail-link${active(item.href) ? ' rail-link--active' : ''}`}><Icon size={20} strokeWidth={1.5} /><span>{item.label}</span></Link>
               })}
             </nav>
             <div className="rail-bottom">
-              {loading ? <Skeleton height={32} /> : user ? <RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} locked={user.voiceLocked} track={track} credits={user.interviewCredits} /> : null}
+              {loading ? <Skeleton height={32} /> : user ? <RepsRemaining count={user.repsRemainingToday} resetAt={user.repsResetAt} locked={user.voiceLocked} track={track} credits={user.interviewCredits} texting={user.textingRemaining} /> : null}
               <Link className="account-row" href="/profile">
                 <Avatar name={user?.displayName ?? 'N'} size={32} />
                 <span style={{ minWidth: 0 }}><strong style={{ display: 'block', color: 'var(--text)', fontWeight: 500 }}>{user?.displayName ?? 'Account'}</strong><span className="label">{user?.plan ?? 'free'} plan</span></span>
@@ -217,11 +220,11 @@ export function AppShell({ children, title }: { children: ReactNode; title: stri
             </div>
           </div>
         </aside>
-        <main className="app-content"><div className="content-shell">{children}</div></main>
+        <main id="main-content" tabIndex={-1} className="app-content"><div className="content-shell">{children}</div></main>
         <nav className="bottom-tabs" style={{ gridTemplateColumns: `repeat(${items.length}, 1fr)` }} aria-label="Main navigation">
           {items.map((item) => {
             const Icon = item.icon
-            return <Link key={item.href} href={item.href} className={`nav-tab${active(item.href) ? ' nav-tab--active' : ''}`}><Icon size={20} strokeWidth={1.5} /><span className="nav-tab__label">{item.label}</span></Link>
+            return <Link key={item.href} href={item.href} aria-current={active(item.href) ? 'page' : undefined} className={`nav-tab${active(item.href) ? ' nav-tab--active' : ''}`}><Icon size={20} strokeWidth={1.5} /><span className="nav-tab__label">{item.label}</span></Link>
           })}
         </nav>
       </div>
@@ -252,7 +255,7 @@ const TRACK_LABEL: Record<Track, string> = {
 export function TrackSwitcher({ track, onChange, compact = false, tracks }: { track: Track; onChange: (track: Track) => void; compact?: boolean; tracks?: readonly Track[] }) {
   const available = tracks ?? (['dating', 'interview'] as const)
   return (
-    <div className="track-switcher" role="group" style={compact ? { width: 142 + (available.length - 2) * 62 } : undefined} aria-label="Training track">
+    <div className="track-switcher" role="group" style={{ gridTemplateColumns: `repeat(${available.length}, minmax(0, 1fr))`, ...(compact ? { width: 142 + (available.length - 2) * 62 } : {}) }} aria-label="Training track">
       {available.map((option) => (
         <button key={option} aria-pressed={track === option} onClick={() => onChange(option)}>{TRACK_LABEL[option]}</button>
       ))}
@@ -298,7 +301,7 @@ export function useResetCountdown(resetAt: string | null | undefined): string {
   return remaining
 }
 
-export function RepsRemaining({ count, resetAt, locked = false, track = 'dating', credits = 0 }: { count: number; resetAt: string; locked?: boolean; track?: Track; credits?: number }) {
+export function RepsRemaining({ count, resetAt, locked = false, track = 'dating', credits = 0, texting = 0 }: { count: number; resetAt: string; locked?: boolean; track?: Track; credits?: number; texting?: number }) {
   const remaining = useResetCountdown(resetAt)
   /**
    * ── EVERY STATE IS A TARGET (LAUNCH-GAP A2) ─────────────────────────────
@@ -327,6 +330,23 @@ export function RepsRemaining({ count, resetAt, locked = false, track = 'dating'
    * A credit is never "locked" and never "resets", so neither branch below
    * applies to it.
    */
+  /**
+   * THREE METERS NOW, AND THE THIRD IS NOT A REP EITHER.
+   *
+   * Texting is metered in CONVERSATIONS a day, not voice reps — so the pill
+   * showed "1 rep left" on a section that spends none, linking to the
+   * subscription screen to buy more of something the user was not using. The
+   * same objection the interview branch below was written for.
+   *
+   * It counts down and it resets at midnight, so unlike a credit it keeps the
+   * countdown state; what it does not do is send anybody to a paywall while
+   * they still have one in hand.
+   */
+  if (track === 'texting') {
+    return texting > 0
+      ? <span className="reps-pill"><strong>{texting}</strong> conversation{texting === 1 ? '' : 's'} left</span>
+      : <Link className="reps-pill amber" href="/pricing">Resets {remaining}</Link>
+  }
   if (track === 'interview') {
     return credits > 0
       ? <Link className="reps-pill" href="/interview/credits"><strong>{credits}</strong> credit{credits === 1 ? '' : 's'}</Link>

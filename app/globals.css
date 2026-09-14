@@ -31,7 +31,7 @@ html { background: var(--ground); }
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   background:
     radial-gradient(circle at 84% -10%, rgba(196, 248, 42, 0.055), transparent 31rem),
     var(--ground);
@@ -152,11 +152,12 @@ button { color: inherit; }
 .avatar img { z-index: 1; object-fit: cover; filter: saturate(.72) contrast(1.05); }
 .avatar > span { position: relative; z-index: 1; text-shadow: 0 1px 0 var(--ground); }
 .fluid-persona { position: relative; isolation: isolate; display: inline-block; flex: 0 0 auto; overflow: hidden; background: radial-gradient(circle, color-mix(in srgb, var(--persona-deep) 22%, transparent), transparent 70%); transition: opacity 240ms; touch-action: pan-y; }
-.fluid-persona__canvas { position: absolute; z-index: 1; inset: 0; display: block; width: 100%; height: 100%; }
+.fluid-persona__canvas { position: absolute; z-index: 1; inset: 0; display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 320ms ease; }
+.fluid-persona--ready .fluid-persona__canvas { opacity: 1; }
 .fluid-persona__initial { position: absolute; z-index: 2; inset: 50% auto auto 50%; color: rgba(255,255,255,.9); font-family: var(--font-sans), sans-serif; font-size: clamp(12px, 15%, 46px); font-weight: 400; line-height: 1; text-shadow: 0 1px 10px rgba(11,12,10,.9); transform: translate(-50%, -50%); pointer-events: none; }
 .fluid-persona--fallback::before, .fluid-persona--fallback::after { content: ''; position: absolute; z-index: 1; inset: 22%; border: 2px solid var(--persona-core); border-radius: 46% 54% 41% 59% / 57% 38% 62% 43%; opacity: .72; transform: rotate(-14deg); }
 .fluid-persona--fallback::after { inset: 29% 16%; border-color: var(--persona-sheen); opacity: .34; transform: rotate(24deg); }
-@media (prefers-reduced-motion: no-preference) { .fluid-persona__canvas { animation: persona-in 420ms cubic-bezier(.2,0,0,1) both; } }
+@media (prefers-reduced-motion: no-preference) { .fluid-persona--ready .fluid-persona__canvas { animation: persona-in 420ms cubic-bezier(.2,0,0,1) both; } }
 .field { display: grid; gap: 7px; }
 .arena-input { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 2px; padding: 10px 12px; outline: 0; background: var(--surface-2); color: var(--text); transition: border 120ms; }
 .arena-input::placeholder { color: var(--text-mute); }
@@ -1005,7 +1006,7 @@ a.record-card:hover { border-color: var(--line-bright); background: var(--surfac
 .screen-heading.compact { margin-bottom: 24px; }
 .history-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .history-toolbar .arena-tabs { flex: 1; }
-.persona-filter { display: none; gap: 5px; }
+.persona-filter { display: grid; gap: 5px; }
 .persona-filter select { min-height: 40px; border: 1px solid var(--line); border-radius: 2px; padding: 0 10px; background: var(--surface); color: var(--text); }
 .history-list, .history-groups { display: grid; gap: 8px; }
 .history-groups { gap: 26px; }
@@ -2824,92 +2825,243 @@ a.admin-chip { text-decoration: none; }
 
 
 /* ── Texting ──────────────────────────────────────────────────────────────
-   The section's own surfaces. Arena throughout: hairlines not shadows, 2px
-   radius at most, tabular-nums on every digit, and volt exactly once per
-   screen — the inbox spends it on YOUR TURN or on the offer when the day's
-   conversation is gone, and the debrief spends it on her interest line. */
+   Every texting screen renders INSIDE `AppShell`, so `.app-content` already
+   supplies the page padding and `.content-shell` the max width. Nothing here
+   sets its own page gutter or centres itself a second time — the section
+   shipped doing both, which is half of why it read as a bolted-on surface.
 
-.texting-home { display: grid; align-content: start; gap: 18px; width: min(100%, 680px); margin: 0 auto; padding: 24px 16px 40px; }
-.texting-home__top { display: grid; gap: 6px; }
-.texting-home__top p { margin: 0; font-size: 14px; }
+   Arena throughout: hairlines not shadows, 2px radius at most, tabular-nums on
+   every digit, and volt exactly once per screen — the inbox spends it on YOUR
+   TURN (or on the offer when the day is gone) and the debrief on her interest
+   line. */
 
-.texting-gate { display: grid; gap: 8px; border: 1px solid var(--line-bright); border-radius: 2px; padding: 16px; background: var(--surface); }
-.texting-gate p { margin: 0; color: var(--text-dim); font-size: 14px; }
-.texting-gate .arena-button { justify-self: start; margin-top: 4px; }
+.texting-home { display: grid; align-content: start; gap: 20px; }
+/* `.screen-heading` is shared and is a one-column grid; the inbox wants the
+   count beside the title rather than under it. Scoped here so the six other
+   screens that use the class are untouched. */
+.texting-home .screen-heading,
+.texting-debrief .screen-heading { grid-template-columns: minmax(0, 1fr) auto; align-items: start; margin-bottom: 22px; }
+.texting-home .screen-heading h1,
+.texting-debrief .screen-heading h1 { margin: 0; }
+.screen-heading__sub { max-width: 520px; margin: 6px 0 0; color: var(--text-dim); font-size: 14px; line-height: 1.5; }
+.texting-home__count { flex: none; align-self: center; color: var(--text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-.texting-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
-.texting-list li { border-bottom: 1px solid var(--line); }
-.texting-list__row { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: start; gap: 12px; padding: 14px 4px; text-decoration: none; color: inherit; }
+.texting-gate { display: grid; gap: 8px; border: 1px solid var(--line-bright); border-radius: 2px; padding: 16px 18px; background: var(--surface); }
+.texting-gate p { margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.55; }
+.texting-gate .arena-button { justify-self: start; margin-top: 6px; }
+
+.texting-list { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.texting-list li + li { border-top: 1px solid var(--line); }
+.texting-list__row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 10px 15px 2px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 140ms ease;
+}
 a.texting-list__row:hover { background: var(--surface); }
-.texting-list__row--shut { opacity: .5; cursor: default; }
-.texting-list__body { display: grid; gap: 3px; min-width: 0; }
-.texting-list__name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.texting-list__name strong { font-weight: 500; }
+a.texting-list__row:focus-visible { outline: 1px solid var(--volt); outline-offset: -1px; }
+.texting-list__row--shut { opacity: .45; cursor: default; }
+.texting-list__avatar { display: grid; place-items: center; width: 44px; height: 44px; }
+.texting-list__body { display: grid; gap: 4px; min-width: 0; }
+.texting-list__name { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.texting-list__name strong { font-weight: 500; font-size: 15px; letter-spacing: .01em; }
 .texting-list__when { flex: none; font-family: var(--font-mono), monospace; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-mute); }
-.texting-list__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 14px; }
-.texting-list__state { color: var(--text-mute); }
+.texting-list__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 13.5px; line-height: 1.4; }
+.texting-list__state { color: var(--text-mute); font-size: 10px; }
 /* The one volt element on the inbox. */
 .texting-list__state--turn { color: var(--volt); }
+.texting-list__chevron { color: var(--text-mute); flex: none; }
 
-.texting-thread { min-height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ground); }
-.texting-thread__top { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 6px 12px 6px 0; background: color-mix(in srgb, var(--ground) 92%, transparent); backdrop-filter: blur(8px); }
+/* ── The thread ──────────────────────────────────────────────────────────
+   A three-row grid sized to the space the shell leaves, so the header pins to
+   the top, the transcript scrolls, and the compose row sits on the floor of
+   the content area rather than floating over the page. The two constants are
+   the shell's own padding: 72 + 88 on mobile, 48 + 64 from 1024px up. */
+.texting-thread {
+  --texting-chrome: 160px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: calc(100dvh - var(--texting-chrome));
+  min-height: 420px;
+  width: min(100%, 680px);
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.texting-thread__top {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+  background: var(--surface-2);
+}
+.texting-thread__back,
+.texting-thread__fresh {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease;
+}
+.texting-thread__back:hover, .texting-thread__fresh:hover { color: var(--text); background: var(--surface); }
 .texting-thread__who { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.texting-thread__who > span { display: grid; min-width: 0; }
-.texting-thread__who strong { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Status, never an action — so never volt. Absent entirely once she has gone. */
-.texting-thread__presence { color: var(--text-mute); }
-.texting-thread__fresh { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: transparent; color: var(--text-dim); padding: 7px 10px; border-radius: 2px; cursor: pointer; }
-.texting-thread__fresh:hover { border-color: var(--line-bright); color: var(--text); }
+.texting-thread__ident { display: grid; gap: 1px; min-width: 0; }
+.texting-thread__ident strong { font-weight: 500; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Status, never an action — so never volt. A fixed line height keeps the name
+   from shifting a pixel when she starts and stops typing. */
+.texting-thread__presence { color: var(--text-mute); font-size: 10px; line-height: 1.4; min-height: 14px; }
+.texting-thread__presence--typing { color: var(--text-dim); }
 
-.texting-thread__body { overflow-y: auto; display: grid; align-content: start; gap: 10px; width: min(100%, 640px); margin: 0 auto; padding: 20px 16px 28px; }
-.texting-thread__memory { margin-bottom: 8px; }
-.texting-thread__opener { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 2px; padding: 18px; }
-.texting-thread__scene { margin: 0; color: var(--text); line-height: 1.6; }
-.texting-thread__opener p.muted { margin: 0; font-size: 14px; }
+/* MESSAGES SIT ON THE FLOOR, which is what every thread anybody has ever read
+   does. `align-content: start` stacked them under the header with the empty
+   evening below, so a three-message conversation read as a page that had failed
+   to load the rest. `end` puts the newest message where the eye already is and
+   where the compose box is about to be. */
+.texting-thread__body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  align-content: end;
+  gap: 10px;
+  padding: 18px 16px 20px;
+}
+.texting-thread__body--empty { align-content: center; justify-items: center; }
+.texting-thread__body--empty .texting-thread__opener { width: min(100%, 420px); }
+.texting-thread__memory { margin-bottom: 4px; }
+.texting-thread__opener { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: 2px; padding: 16px; background: var(--ground); }
+.texting-thread__scene { margin: 0; color: var(--text); font-size: 14px; line-height: 1.6; }
+.texting-thread__scene.muted { color: var(--text-dim); }
+.texting-thread__opener p.muted { margin: 0; font-size: 13px; }
 
 .texting-turn { display: grid; gap: 4px; }
 /* A real gap in the conversation gets a real marker. The presence delays
    generate these on their own, which is what makes a cold thread LOOK cold on
    scroll-back rather than only read as cold. */
-.texting-thread__when { display: grid; place-items: center; margin: 6px 0 2px; }
-.texting-thread__when span { font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .06em; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+.texting-thread__when { display: grid; place-items: center; margin: 8px 0 4px; }
+.texting-thread__when span { font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .08em; color: var(--text-mute); font-variant-numeric: tabular-nums; }
 /* The receipt. `Delivered` means she has not looked; `Seen 11:04` with nothing
    under it, forever, is left on read. */
-.texting-receipt { justify-self: end; margin: 0; font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .04em; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+.texting-receipt { justify-self: end; margin: 0 2px 0 0; font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .04em; color: var(--text-mute); font-variant-numeric: tabular-nums; }
 
-.texting-ending { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 2px; padding: 16px; margin-top: 10px; }
-.texting-ending p { margin: 0; color: var(--text-dim); font-size: 14px; }
-.texting-ending__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+/* WHO SAID IT HAS TO BE READABLE WITHOUT READING IT.
+   Both bubbles were a dark panel with a hairline, and at a glance the thread
+   was one column of identical boxes. His are a filled, lighter panel with no
+   border; hers are the ground with a hairline — so the two sides differ in
+   fill, in border and in text colour rather than in alignment alone. */
+.texting-thread .text-bubble { max-width: 76%; border-radius: 2px; font-size: 14.5px; line-height: 1.5; padding: 9px 12px; }
+.texting-thread .text-bubble--user { border: 0; background: #20241c; color: var(--text); }
+.texting-thread .text-bubble--persona { border: 1px solid var(--line-bright); background: transparent; color: var(--text-dim); }
+.texting-thread .text-bubble--typing { border: 1px solid var(--line); padding: 11px 13px; }
 
-.texting-compose { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; width: min(100%, 640px); margin: 0 auto; border-top: 1px solid var(--line); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
-.texting-compose textarea { width: 100%; min-height: 46px; max-height: 180px; resize: none; border: 1px solid var(--line-bright); border-radius: 2px; background: var(--surface); color: var(--text); font-family: inherit; font-size: 15px; line-height: 1.5; padding: 12px 13px; }
+.texting-ending { display: grid; gap: 7px; border: 1px solid var(--line-bright); border-radius: 2px; padding: 15px; margin-top: 8px; background: var(--ground); }
+.texting-ending p { margin: 0; color: var(--text-dim); font-size: 13.5px; line-height: 1.55; }
+.texting-ending__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
+
+/* ONE LINE, ALWAYS.
+   Three chips wrapped onto three rows at 420px and ate a third of the
+   transcript, then collided with the compose box. The rail is a rail: it
+   scrolls sideways and never grows downward. */
+.texting-thread .cue-rail {
+  width: 100%;
+  margin: 0;
+  padding: 9px 16px 10px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.texting-thread .cue-rail::-webkit-scrollbar { display: none; }
+.texting-thread .cue-rail__label { width: auto; flex: none; margin: 0 4px 0 0; }
+.texting-thread .cue-chip { flex: none; white-space: nowrap; }
+
+/* ONE CUE AT A TIME ON A PHONE.
+   Even scrolling sideways, three chips on a 420px rail leave the third one cut
+   through the middle of a word, which reads as a broken layout rather than as
+   something to scroll. The rail's whole job is to point at ONE thing, so below
+   the tablet breakpoint it shows the one it is pointing at. */
+@media (max-width: 639px) {
+  .texting-thread .cue-chip { display: none; }
+  .texting-thread .cue-chip[aria-current='step'] { display: inline-block; }
+}
+
+.texting-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding: 10px 12px;
+  background: var(--surface-2);
+}
+.texting-compose textarea {
+  width: 100%;
+  min-height: 42px;
+  max-height: 140px;
+  resize: none;
+  border: 1px solid var(--line-bright);
+  border-radius: 2px;
+  background: var(--ground);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.45;
+  padding: 10px 12px;
+}
 .texting-compose textarea:focus-visible { outline: 1px solid var(--volt); outline-offset: -1px; }
-.texting-compose textarea:disabled { color: var(--text-mute); }
-.texting-compose button { width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid var(--volt); border-radius: 2px; background: var(--volt); color: var(--ground); cursor: pointer; }
+.texting-compose textarea:disabled { color: var(--text-mute); background: var(--surface); }
+.texting-compose button { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--volt); border-radius: 2px; background: var(--volt); color: var(--ground); cursor: pointer; transition: opacity 140ms ease; }
 .texting-compose button:disabled { border-color: var(--line-bright); background: transparent; color: var(--text-mute); cursor: not-allowed; }
 
-.texting-debrief { display: grid; align-content: start; gap: 20px; width: min(100%, 640px); margin: 0 auto; padding: 16px 16px 40px; }
-.texting-debrief__top { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 4px; }
-.texting-debrief__top h1 { margin: 0; }
-.texting-debrief__block { display: grid; gap: 10px; }
-.texting-debrief__block p { margin: 0; color: var(--text-dim); line-height: 1.6; }
+/* ── The debrief ─────────────────────────────────────────────────────────── */
+.texting-debrief { display: grid; align-content: start; gap: 22px; width: min(100%, 680px); }
+.texting-debrief__back { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 8px; color: var(--text-mute); text-decoration: none; }
+.texting-debrief__back:hover { color: var(--text); }
 .texting-debrief__thin { margin: 0; }
+.texting-debrief__block { display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 2px; padding: 16px; }
+.texting-debrief__block p { margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.6; }
 /* The one volt element on this screen. */
-.texting-curve { width: 100%; height: 96px; overflow: visible; }
-.texting-debrief__axis { display: flex; justify-content: space-between; gap: 8px; margin: 0; font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+.texting-curve { width: 100%; height: 92px; overflow: visible; display: block; }
+.texting-debrief__axis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding-top: 2px; border-top: 1px solid var(--line); }
+.texting-debrief__axis div { display: grid; gap: 3px; padding-top: 10px; }
+.texting-debrief__axis dt { font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); }
+.texting-debrief__axis dd { margin: 0; font-family: var(--font-mono), monospace; font-size: 19px; color: var(--text); font-variant-numeric: tabular-nums; }
 
-.texting-movers { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
-.texting-movers li { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 12px; align-items: start; border-left: 1px solid var(--line-bright); padding-left: 12px; }
-.texting-movers__delta { font-family: var(--font-mono), monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--text); }
-.texting-movers__delta--down { color: var(--text-dim); }
-.texting-movers__body { display: grid; gap: 3px; min-width: 0; }
-.texting-movers__text { color: var(--text); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
-.texting-movers__why { color: var(--text-mute); font-size: 12.5px; }
-.texting-debrief__note { margin: 0; font-size: 13px; }
+.texting-movers { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.texting-movers li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: start; }
+.texting-movers__delta { font-family: var(--font-mono), monospace; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--text); padding-top: 1px; }
+.texting-movers__delta--down { color: var(--text-mute); }
+.texting-movers__body { display: grid; gap: 4px; min-width: 0; border-left: 1px solid var(--line-bright); padding-left: 12px; }
+.texting-movers__text { color: var(--text); font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.texting-movers__why { color: var(--text-mute); font-size: 12px; line-height: 1.45; }
+.texting-debrief__foot { display: grid; gap: 12px; justify-items: start; }
+.texting-debrief__note { margin: 0; color: var(--text-mute); font-size: 12.5px; line-height: 1.5; }
+
+@media (min-width: 1024px) {
+  /* The shell's desktop padding is 48 top and 64 bottom. */
+  .texting-thread { --texting-chrome: 112px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   /* The dots stop moving but the words stay — "typing" with nothing rendered
      at all would be the indicator silently disappearing for the people most
      likely to need it. */
   .text-bubble--typing i { animation: none; }
+  .texting-list__row { transition: none; }
 }

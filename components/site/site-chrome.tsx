@@ -61,6 +61,7 @@ export function SiteHeader({ cta = 'Start training' }: { cta?: string }) {
           <Link href={SITE_LINKS.interviews}>Interviews</Link>
           <Link href={SITE_LINKS.howItWorks} className="site-header__wide-link">How it works</Link>
           <Link href={SITE_LINKS.pricing}>Pricing</Link>
+          <Link href="/login">Log in</Link>
         </nav>
         <Link href="/start" className="arena-button arena-button--primary arena-button--sm">{cta}</Link>
       </div>
@@ -124,8 +125,9 @@ export function SiteFooter() {
 export function SitePage({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <div className={`site${className ? ` ${className}` : ''}`}>
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <SiteHeader />
-      <main className="site-main">{children}</main>
+      <main id="main-content" tabIndex={-1} className="site-main">{children}</main>
       <SiteFooter />
     </div>
   )

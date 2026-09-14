@@ -223,6 +223,7 @@ export function PersonaTuner({ personas, models, signedInAs }: { personas: Tuner
           return (
             <button
               key={entry.slug}
+              aria-pressed={entry.slug === persona.slug}
               className={`admin-chip${entry.slug === persona.slug ? ' is-on' : ''}`}
               style={{ '--chip-hue': hue.core } as React.CSSProperties}
               onClick={() => setSlug(entry.slug)}
@@ -299,7 +300,7 @@ export function PersonaTuner({ personas, models, signedInAs }: { personas: Tuner
           </Section>
 
           <Section title="What the dials imply" sub="Computed from the values above, not measured from a rep.">
-            <div className="admin-readout">
+            <div className="admin-readout" role="region" aria-label="Warmth behavior table" tabIndex={0}>
               <div className="admin-readout__row admin-readout__row--head">
                 <span>warmth</span><span>band</span><span>words</span><span>eff. sharp</span><span>she may</span><span>gates open</span>
               </div>

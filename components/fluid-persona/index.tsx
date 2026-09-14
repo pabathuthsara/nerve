@@ -49,7 +49,9 @@ export function FluidPersona({
   const pushRef = useRef<() => void>(() => {})
   const pointerRef = useRef({ x: 0, y: 0, active: false })
   const retryRef = useRef(0)
+  const recoveryCount = useRef(0)
   const [failed, setFailed] = useState(false)
+  const [ready, setReady] = useState(false)
   const [generation, setGeneration] = useState(0)
 
   const visual = useMemo(() => visualFor(name, personaId), [name, personaId])
@@ -78,8 +80,11 @@ export function FluidPersona({
   useEffect(() => {
     const unsubscribe = onContextLost(() => {
       handleRef.current = null
+      setReady(false)
       setFailed(true)
       window.clearTimeout(retryRef.current)
+      if (recoveryCount.current >= 1) return
+      recoveryCount.current += 1
       retryRef.current = window.setTimeout(() => {
         setFailed(false)
         setGeneration((value) => value + 1)
@@ -94,6 +99,8 @@ export function FluidPersona({
     if (!mount || !canvas) return
 
     let disposed = false
+    setReady(false)
+    setFailed(false)
     let handle: StageHandle | null = null
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
     const measure = () => {
@@ -104,7 +111,7 @@ export function FluidPersona({
     const intersectionObserver = new IntersectionObserver(([entry]) => { handle?.setVisible(entry?.isIntersecting ?? true) }, { rootMargin: '120px' })
     const onMotionChange = () => handle?.setReducedMotion(motion.matches)
 
-    void mountAvatar({ visual, canvas, reducedMotion: motion.matches })
+    void mountAvatar({ visual, canvas, reducedMotion: motion.matches, onFirstFrame: () => { if (!disposed) setReady(true) } })
       .then((mounted) => {
         if (disposed || !mounted) {
           mounted?.dispose()
@@ -134,6 +141,7 @@ export function FluidPersona({
   }, [generation, visual])
 
   const pointerMove = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (event.pointerType === 'touch') return
     const bounds = event.currentTarget.getBoundingClientRect()
     pointerRef.current = {
       x: ((event.clientX - bounds.left) / Math.max(1, bounds.width) - 0.5) * 2,
@@ -161,7 +169,8 @@ export function FluidPersona({
     'fluid-persona',
     `fluid-persona--mode-${visual.mode}`,
     fill ? 'fluid-persona--fill' : '',
-    failed ? 'fluid-persona--fallback' : '',
+    failed || !ready ? 'fluid-persona--fallback' : '',
+    ready ? 'fluid-persona--ready' : '',
     className,
   ].filter(Boolean).join(' ')
 

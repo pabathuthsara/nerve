@@ -24,6 +24,7 @@ the recommended fixes have not been implemented.
 |---|---|
 | [`NERVE-SPEC.md`](NERVE-SPEC.md) | **The specification.** What the product is, why every major decision was made, and the milestone order. Section numbers (§04, §07, §14…) are referenced from code comments and from every other doc |
 | [`PRODUCT.md`](PRODUCT.md) | The shape as built: three tracks, the rep format, the four-rung ladder, how voice is sold, the four sections, and what a user sees in what order |
+| [`UI-UX-AUDIT-2026-09-14.md`](UI-UX-AUDIT-2026-09-14.md) | The September interface pass: responsive layouts, accessible controls and sheets, persona rendering/recovery, browser coverage, and verification limits |
 
 ## What to do next
 

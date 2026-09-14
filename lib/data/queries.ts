@@ -23,6 +23,7 @@ import { nextTierRequirement, unlockedTier } from '@/lib/field/assignment'
 import { milestoneFor, type Milestone } from '@/lib/field/milestones'
 import { LIBRARY_READ_PREFIX, MEMORY_BEAT_FLAG, planWaitlistFlag } from './ui-flags'
 import { daysBetween, localDay, nextLocalMidnight } from './day'
+import { startedOnDay, textingAllowance } from '@/lib/texting/allowance'
 import { currentStreak } from './counters'
 import { buildRepRecords, type RepRecord } from './records'
 import {
@@ -108,7 +109,7 @@ export async function fetchUserState(): Promise<UserState | null> {
       .maybeSingle(),
     supabase
       .from('entitlements')
-      .select('plan, reps_per_day, reps_used_today, reps_day, renews_at, onboarding_rep_used_at')
+      .select('plan, reps_per_day, reps_used_today, reps_day, renews_at, onboarding_rep_used_at, texting_threads_per_day')
       .eq('user_id', user.id)
       .maybeSingle(),
     supabase.from('streaks').select('current, last_active_on').eq('user_id', user.id).maybeSingle(),
@@ -173,6 +174,29 @@ export async function fetchUserState(): Promise<UserState | null> {
           signupRepSpentOn(entitlement.onboarding_rep_used_at, timezone, today),
       })
     : 0
+  /**
+   * Texting conversations left today.
+   *
+   * Counted rather than stored (`lib/texting/allowance.ts`), so this is a read
+   * over `started_at` and there is no counter to roll at midnight. It is here
+   * because the chrome's pill has to know which meter it is on: showing "1 rep
+   * left" to somebody in the texting section is the same lie the interview
+   * track already forced this component to stop telling.
+   */
+  let textingRemaining = 0
+  try {
+    const { data: threads } = await supabase
+      .from('texting_threads')
+      .select('started_at')
+      .eq('user_id', user.id)
+      .gte('started_at', new Date(Date.now() - 48 * 3600_000).toISOString())
+    const startedToday = (threads ?? []).filter((row) => startedOnDay(row.started_at, timezone, new Date())).length
+    textingRemaining = textingAllowance({
+      threadsPerDay: entitlement?.texting_threads_per_day ?? 0,
+      startedToday,
+    }).remaining
+  } catch { /* an unreadable count reads as none left, which refuses nothing */ }
+
   const plan = entitlement && isPlan(entitlement.plan) ? entitlement.plan : 'free'
   const activeTrack = profile && isTrack(profile.active_track) ? profile.active_track : 'dating'
   const focus = profile?.focus_area
@@ -194,6 +218,7 @@ export async function fetchUserState(): Promise<UserState | null> {
     repsRemainingToday: remainingToday,
     interviewCredits,
     interviewScreenerCredits,
+    textingRemaining,
     repsPerDay: perDay,
     repsResetAt: nextLocalMidnight(new Date(), timezone).toISOString(),
     signupRepAvailable: signupRep,

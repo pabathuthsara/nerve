@@ -115,6 +115,7 @@ interface Instance {
   reduced: boolean
   needsRender: boolean
   lastFrameAt: number
+  onFirstFrame?: () => void
 }
 
 /**
@@ -155,6 +156,10 @@ export function onContextLost(listener: () => void): () => void {
 function reportLoss(): void {
   const listeners = [...lostListeners]
   cancelIdleTeardown()
+  stopLoop()
+  for (const instance of instances) disposeInstance(instance)
+  instances.clear()
+  document.removeEventListener('visibilitychange', resumeWhenVisible)
   teardownShared()
   for (const listener of listeners) listener()
 }
@@ -390,11 +395,13 @@ function approach(current: number, goal: number, rate: number): number {
   return current + (goal - current) * rate
 }
 
-function update(instance: Instance, elapsed: number, now: number): void {
+function update(instance: Instance, elapsed: number, now: number, frameScale: number): void {
   const state = instance.state
   const reduced = instance.reduced
-  const rate = reduced ? 1 : 0.12
-  const warmthRate = reduced ? 1 : 0.045
+  // Keep the response time consistent between the small 24fps portraits and
+  // the large 60fps stage. Bound catch-up after a hidden tab becomes visible.
+  const ease = (rate: number) => reduced ? 1 : 1 - Math.pow(1 - rate, frameScale)
+  const warmthRate = ease(0.045)
 
   const targetWarmth = Math.min(1, Math.max(0, state.warmth / 100))
   instance.smoothWarmth = approach(instance.smoothWarmth, targetWarmth, warmthRate)
@@ -408,10 +415,10 @@ function update(instance: Instance, elapsed: number, now: number): void {
   const thinkGoal = state.speaking === 'thinking' ? 1 : 0
   const readyGoal = state.status === 'connecting' ? 0 : 1
 
-  instance.smoothUser = approach(instance.smoothUser, userGoal, rate * 1.6)
-  instance.smoothSelf = approach(instance.smoothSelf, selfGoal, rate * 1.6)
-  instance.smoothThink = approach(instance.smoothThink, thinkGoal, reduced ? 1 : 0.05)
-  instance.smoothReady = approach(instance.smoothReady, readyGoal, reduced ? 1 : 0.03)
+  instance.smoothUser = approach(instance.smoothUser, userGoal, ease(0.192))
+  instance.smoothSelf = approach(instance.smoothSelf, selfGoal, ease(0.192))
+  instance.smoothThink = approach(instance.smoothThink, thinkGoal, ease(0.05))
+  instance.smoothReady = approach(instance.smoothReady, readyGoal, ease(0.03))
 
   const pulseAge = (now - instance.pulseAt) / 1000
   const pulseLife = !reduced && pulseAge >= 0 && pulseAge < 1.15 ? 1 - smoothstep(0.12, 1.15, pulseAge) : 0
@@ -443,15 +450,15 @@ function update(instance: Instance, elapsed: number, now: number): void {
 
   const tilt = instance.visual.tilt
   const lean = -0.08 + smoothstep(0.3, 0.8, warmth) * 0.4
-  const pointerX = state.pointerActive ? state.pointerX : 0
-  const pointerY = state.pointerActive ? state.pointerY : 0
-  instance.root.rotation.x = approach(instance.root.rotation.x, tilt[0] + pointerY * lean, reduced ? 1 : 0.05)
-  instance.root.rotation.y = approach(instance.root.rotation.y, tilt[1] + pointerX * lean, reduced ? 1 : 0.05)
+  const pointerX = state.pointerActive && !reduced ? state.pointerX : 0
+  const pointerY = state.pointerActive && !reduced ? state.pointerY : 0
+  instance.root.rotation.x = approach(instance.root.rotation.x, tilt[0] + pointerY * lean, ease(0.05))
+  instance.root.rotation.y = approach(instance.root.rotation.y, tilt[1] + pointerX * lean, ease(0.05))
   instance.root.rotation.z = tilt[2] + (reduced ? 0 : Math.sin(elapsed * 0.16 + instance.visual.seed) * 0.035)
 
   if (!reduced) {
-    instance.body.rotation.z += 0.0006 + warmth * 0.0012
-    if (instance.motes) instance.motes.rotation.z -= 0.0004 + warmth * 0.0006
+    instance.body.rotation.z += (0.0006 + warmth * 0.0012) * frameScale
+    if (instance.motes) instance.motes.rotation.z -= (0.0004 + warmth * 0.0006) * frameScale
   }
 }
 
@@ -487,7 +494,7 @@ function draw(context: Shared, instance: Instance): void {
 }
 
 function tick(): void {
-  frame = requestAnimationFrame(tick)
+  running = false
   const context = shared
   if (!context || context.disposed) return
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
@@ -499,15 +506,21 @@ function tick(): void {
     if (!instance.visible) continue
     if (instance.reduced && !instance.needsRender) continue
     if (!instance.reduced && now - instance.lastFrameAt < 1000 / instance.lod.fps - 1) continue
+    const frameScale = Math.min(3, Math.max(0.25, (now - instance.lastFrameAt) / (1000 / 60)))
     instance.lastFrameAt = now
     instance.needsRender = false
-    update(instance, elapsed, now)
+    update(instance, elapsed, now, frameScale)
     draw(context, instance)
+    instance.onFirstFrame?.()
+    instance.onFirstFrame = undefined
   }
+  startLoop()
 }
 
 function startLoop(): void {
   if (running) return
+  if (document.visibilityState === 'hidden') return
+  if (![...instances].some((instance) => instance.visible && (!instance.reduced || instance.needsRender))) return
   running = true
   frame = requestAnimationFrame(tick)
 }
@@ -522,6 +535,16 @@ export interface MountOptions {
   visual: PersonaVisual
   canvas: HTMLCanvasElement
   reducedMotion: boolean
+  onFirstFrame?: () => void
+}
+
+function resumeWhenVisible(): void { startLoop() }
+
+function disposeInstance(instance: Instance): void {
+  instance.geometry.dispose()
+  for (const material of instance.materials) material.dispose()
+  instance.moteGeometry?.dispose()
+  instance.moteMaterial?.dispose()
 }
 
 /**
@@ -638,6 +661,8 @@ export async function mountAvatar(options: MountOptions): Promise<StageHandle | 
     lastFrameAt: performance.now() - (options.visual.seed % 41),
   }
 
+  instance.onFirstFrame = options.onFirstFrame
+  if (instances.size === 0) document.addEventListener('visibilitychange', resumeWhenVisible)
   instances.add(instance)
   cancelIdleTeardown()
   startLoop()
@@ -665,6 +690,7 @@ export async function mountAvatar(options: MountOptions): Promise<StageHandle | 
       ) {
         instance.needsRender = true
       }
+      startLoop()
     },
     measure(cssWidth: number, cssHeight: number) {
       instance.cssWidth = Math.max(1, cssWidth)
@@ -676,6 +702,7 @@ export async function mountAvatar(options: MountOptions): Promise<StageHandle | 
       // A resized canvas is a blank canvas, and under reduced motion nothing
       // else would ever redraw it.
       instance.needsRender = true
+      startLoop()
       if (width === instance.width && height === instance.height) return
       instance.width = width
       instance.height = height
@@ -687,18 +714,21 @@ export async function mountAvatar(options: MountOptions): Promise<StageHandle | 
     setVisible(visible: boolean) {
       if (visible && !instance.visible) instance.needsRender = true
       instance.visible = visible
+      startLoop()
     },
     setReducedMotion(reduced: boolean) {
       instance.reduced = reduced
       instance.needsRender = true
+      startLoop()
     },
     dispose() {
-      instances.delete(instance)
-      instance.geometry.dispose()
-      for (const material of instance.materials) material.dispose()
-      instance.moteGeometry?.dispose()
-      instance.moteMaterial?.dispose()
-      if (instances.size === 0) scheduleTeardown()
+      if (!instances.delete(instance)) return
+      disposeInstance(instance)
+      if (instances.size === 0) {
+        document.removeEventListener('visibilitychange', resumeWhenVisible)
+        stopLoop()
+        scheduleTeardown()
+      }
     },
   }
 }
