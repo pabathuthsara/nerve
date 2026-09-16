@@ -2,7 +2,13 @@ import 'server-only'
 
 import { redirect } from 'next/navigation'
 import { currentUser, supabaseServer } from '@/lib/db/server'
-import { ONBOARDING_DEFERRED_FLAG, ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG } from './ui-flags'
+import {
+  ONBOARDING_CV_FLAG,
+  ONBOARDING_DEFERRED_FLAG,
+  ONBOARDING_NAME_FLAG,
+  ONBOARDING_ROLE_FLAG,
+  ONBOARDING_TRACK_FLAG,
+} from './ui-flags'
 
 // `/text` is text mode (P1). Protected like every other training surface — it
 // costs no quota, which is not the same as being open to anybody.
@@ -191,11 +197,37 @@ function readFlags(value: unknown): Record<string, unknown> {
  * already uses for one-time beats: adding the next one is a string rather than
  * a migration.
  */
-export function onboardingResumePath(profile: { focus_area: string | null; ui_flags: unknown } | null): string {
+export function onboardingResumePath(
+  profile: { focus_area: string | null; active_track?: string | null; ui_flags: unknown } | null,
+): string {
   if (!profile) return '/onboarding/track'
   const flags = readFlags(profile.ui_flags)
   if (!flags[ONBOARDING_TRACK_FLAG]) return '/onboarding/track'
-  if (!profile.focus_area) return '/onboarding/focus'
+
+  /**
+   * ── THE RUN FORKS HERE ───────────────────────────────────────────────────
+   *
+   * Past the track question the two arms need different things before a first
+   * rep can exist. Dating needs the focus answer, which picks the character.
+   * Interview needs a role — `interview_setups.complete` is a role title and
+   * nothing else — and then the CV, which is the one document that makes the
+   * questions about *this* person.
+   *
+   * `active_track` is safe to read HERE and nowhere above it, and the
+   * distinction is the one this function has always been about: the column
+   * carries a database default, so it cannot say whether anybody chose. Past
+   * the flag it is known to be an answer, and it is then the only thing that
+   * says which run somebody is on.
+   *
+   * The CV step is deliberately BEFORE the name and the microphone. It is the
+   * one step on this arm that is genuinely optional, and burying an optional
+   * step behind the two that are not is how it goes unanswered.
+   */
+  if (profile.active_track === 'interview') {
+    if (!flags[ONBOARDING_ROLE_FLAG]) return '/onboarding/role'
+    if (!flags[ONBOARDING_CV_FLAG]) return '/onboarding/cv'
+  } else if (!profile.focus_area) return '/onboarding/focus'
+
   // Same problem as step one, for the opposite reason: `display_name` can be
   // legitimately empty, because the name step is skippable. A flag is what
   // separates "not asked yet" from "asked, and they would rather not say".
@@ -213,4 +245,10 @@ export function onboardingResumePath(profile: { focus_area: string | null; ui_fl
  * exists for exactly this ("a `'use server'` module may only export async
  * functions"), and are re-exported here so every importer is unchanged.
  */
-export { ONBOARDING_DEFERRED_FLAG, ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG } from './ui-flags'
+export {
+  ONBOARDING_CV_FLAG,
+  ONBOARDING_DEFERRED_FLAG,
+  ONBOARDING_NAME_FLAG,
+  ONBOARDING_ROLE_FLAG,
+  ONBOARDING_TRACK_FLAG,
+} from './ui-flags'

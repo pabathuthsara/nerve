@@ -672,6 +672,10 @@ a.record-card:hover { border-color: var(--line-bright); background: var(--surfac
    would now select the mark on the cards that carry one, so the text block is
    addressed by its own rule instead. */
 .option-card > .mark { margin-right: 2px; }
+/* The interviewer choice at the end of the interview onboarding run. The
+   avatar is the meter, not decoration (see lib/personas/visual.ts), so it sits
+   where the mark sits on every other option card. */
+.interviewer-option > .fluid-persona { margin-right: 2px; border-radius: 2px; }
 .option-card > span { display: grid; gap: 3px; margin-right: auto; min-width: 0; }
 .option-card > .arena-chip { margin-right: 0; }
 .option-card strong { font-size: 16px; font-weight: 400; }

@@ -1770,3 +1770,60 @@ Everything in §15's list is unchanged and still owed. Added to it:
 2. **Nothing in this pass has been heard out loud** — the same sentence §13.3 is
    emphatic about. It is routing, copy and arithmetic; no prompt, no band, no
    trajectory and no `PIPELINE_*` default moved.
+
+---
+
+## 17. The door — **16 September 2026**
+
+§16's Part 1 put the track's shape right for somebody already inside it: a
+**profile** set once and a **run** set every time. This is the same finding one
+step earlier, about somebody who is not inside it yet, and it was found the way
+§16 was — by walking it. `LAUNCH-GAP.md` D24 is the decision and
+`ONBOARDING-AUDIT.md` §9 is the run as it now stands.
+
+**What was wrong.** Both doors into the product answered "job interviews" and
+then walked the dating run. `/start` asked the dating focus question, drew the
+dating mechanism screen and asked what *she* should call you; the signed-in run
+asked the focus question again and ended at `/interview`, which for a brand-new
+account is `SetupPrompt` — *Tell us about the job*, a three-step wizard, an
+interviewer picker and a run setup, and only then a brief. **Cold account to a
+spoken interview was eleven screens, six of them about the other product.** The
+free five-minute screener that §5.6 grants every account at sign-up, and that
+Part 2 of §16 made reachable on the default path, was still five screens past
+the moment somebody was told it was free.
+
+**What it is now.** Eight screens before the account and four after it. The
+role is question two and the CV is question three — both before the account on
+`/start`, both in the run for anyone who arrives another way — and the last
+step of the run is the interviewer, which starts the screener.
+
+**The field that made it possible is one this plan already specified.**
+`interview_setups.complete` is *a role title and nothing else*, because §C4
+says a missing CV degrades to the field, the role and the job description
+rather than to a generic interview. So a single text field asked before the
+account is the whole difference between landing on the free screener and
+landing on a wizard. `startInterviewSetup` carries it and `seedInterviewSetup`
+writes it on the service role beside `stampNewAccount` — an **INSERT** rather
+than the upsert every other path uses, so a row that somehow exists is never
+overwritten by a sign-up.
+
+**And B1 was nearly re-made one screen earlier.** `setupFromRow` never answers
+a null round: it clamps to `DEFAULT_ROUND`, the ten-minute recruiter screen,
+which costs a credit a new account does not have. A run that ended by
+navigating to the brief without writing a round would have handed a brand-new
+account a refusal for the thing its sign-up screen called free. The last step
+saves `openingRound(hasScreener)` before it navigates, which is the same
+function the home screen and the run setup already ask.
+
+### Still owed by hand, after this pass
+
+1. **The Start button on the brief this run ends at has not been pressed.** The
+   walk was taken to the brief and stopped there, because the next tap spends a
+   real screener credit against a real interviewer. §13.3 of
+   `INTERVIEW-TECHNICAL-PLAN.md` is the standing rule and it applies here:
+   `npm run rep:audition -- dan-whitfield <player> 1 screener`.
+2. **Neither arm has been walked on a phone**, which is where the traffic D21
+   is about comes from.
+3. **Nothing in this pass was heard out loud either.** Routing, copy and one
+   service-role insert; no prompt, no band, no trajectory and no `PIPELINE_*`
+   default moved, and `dating-arm.test.ts` passed unchanged on every commit.

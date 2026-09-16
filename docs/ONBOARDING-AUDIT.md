@@ -723,3 +723,82 @@ the 351 kB `/signup` door it replaces, and still the heaviest thing a cold
 visitor is asked to download. The obvious lever, lazy-loading the persona orb,
 was measured at 8 kB and reverted as not worth the moving part; the remaining
 weight is the shared UI module and the marks registry.
+
+
+---
+
+## 9 · The run forks at the track answer — **16 September 2026**
+
+`LAUNCH-GAP.md` D24 is the decision and its argument. What belongs here is what
+this run now is, because §1's table is no longer the whole of it.
+
+**There are two runs, and `stepsFor(track)` picks one.**
+
+| # | Dating | Interview | Written |
+|---|---|---|---|
+| — | `/onboarding/age` | `/onboarding/age` | `date_of_birth`, `age_confirmed_at` |
+| 1 | `/onboarding/track` | `/onboarding/track` | `active_track`, `ui_flags['onboarding:track']` |
+| 2 | `/onboarding/focus` | **`/onboarding/role`** | `focus_area` · or `interview_setups.role_title`, `company`, `ui_flags['onboarding:role']` |
+| 3 | — | **`/onboarding/cv`** | the private `cv` bucket, `cv_text`, `ui_flags['onboarding:cv']` |
+| 4 | `/onboarding/name` | `/onboarding/name` | `display_name`, `ui_flags['onboarding:name']` |
+| 5 | `/onboarding/mic` | `/onboarding/mic` | `vad_offset_ms` |
+| 6 | `/onboarding/ready` — the brief | **the interviewer, which starts the free screener** | `onboarding_complete`, `interviewer_slug`, `round_type` |
+
+**Why it had to fork at all.** D1 got the run to stop *ending* at `/train` with
+a dating persona in front of somebody who had answered "job interviews". It did
+not change what happened in between, so an interview account was still asked
+what it found hard about flirting — and `FocusStep` had grown a sub-heading
+apologising for the question, which is the tell that a question should not have
+been asked at all. Then it ended at `/interview`, which for a brand-new account
+is `SetupPrompt`: *Tell us about the job*, a three-step wizard, an interviewer
+picker and a run setup, all before a brief. **Eleven screens, six of them about
+dating.** It is eight then four.
+
+**The role is the load-bearing field, and it is why the CV step could move
+here.** `interview_setups.complete` is *a role title and nothing else* — the CV
+is optional by design (§C4: a missing CV degrades to the field, the role and
+the job description rather than to a generic interview). So asking for the role
+is the whole difference between an account that lands on its free screener and
+one that lands on a wizard, and the CV can then be asked as what it actually is:
+optional, once, ahead of the name and the microphone. **Ahead of them
+deliberately** — it is the only genuinely optional step on either run, and an
+optional step placed last is a step nobody does.
+
+**Both new steps stamp a flag when ASKED, never when answered.** Both are
+skippable, so the answer cannot be the marker: that is the same distinction
+`ONBOARDING_NAME_FLAG` has always drawn, and without it somebody who said "I'm
+not sure yet" is returned to the question every time they load. It is also why
+`onboardingResumePath` reads flags rather than joining `interview_setups` — it
+runs in the route guard on every protected request, off one `profiles` select.
+
+**Three things are enforcement rather than care.**
+
+- **The two step lists are the same length and differ at exactly one index.**
+  The run holds the step as an INDEX, so somebody who goes back to the track
+  question and changes their answer has to stay on the screen they are on
+  rather than being teleported. `start-funnel.test.ts` asserts the shape.
+- **`active_track` may be read only BELOW the track flag.** The column carries a
+  database default, so above the flag it is set for everybody who has chosen
+  nothing — the exact trap this function was written to avoid, one fork later.
+  `guards.test.ts` asserts it.
+- **`app/page.tsx` had to learn to select `active_track`.** It did not, and it
+  is the one entry point every auth action lands on, so every interview account
+  with an unfinished run would have been sent to the dating question. That is
+  `INTERVIEW-PLAN.md` E2's shape exactly: a shared function reading a default
+  because its caller did not pass the column that says which product this is.
+  It now also sends a *finished* interview account to `/interview` rather than
+  to the dating home.
+
+**And the round is written on the way out of the run.** `setupFromRow` never
+answers a null round — it clamps to `DEFAULT_ROUND`, the ten-minute recruiter
+screen, which costs a credit a new account does not have. So the last step saves
+`openingRound(hasScreener)` before it navigates, or the brief on the other side
+refuses the account its own free screener. That is `LAUNCH-GAP.md` B1 caught one
+screen earlier than B1 found it.
+
+**Still owed by hand.** The interview arm has been walked end to end in a
+browser to the brief, and the brief's Start has **not** been pressed — that
+spends a real screener credit and a real interviewer, and §13.3 of
+`INTERVIEW-TECHNICAL-PLAN.md` is emphatic that a green suite proves nothing
+about how a round sounds. `npm run rep:audition -- dan-whitfield <player> 1
+screener` is the instrument. Nor has either arm been walked on a phone.

@@ -35,7 +35,16 @@ export default async function Home() {
   const supabase = await supabaseServer()
   const { data: profile } = await supabase
     .from('profiles')
-    .select('onboarding_complete, focus_area, ui_flags, age_confirmed_at')
+    /**
+     * `active_track` is read here for one reason and it is load-bearing:
+     * `onboardingResumePath` forks on it (LAUNCH-GAP D22), and this is the
+     * entry point every auth action lands on. Without it an interview account
+     * whose run is unfinished was sent to `/onboarding/focus` — the dating
+     * question its arm never asks — which is the E2 failure shape exactly: a
+     * shared function reading a default because its caller did not pass the
+     * one column that says which product this is.
+     */
+    .select('onboarding_complete, active_track, focus_area, ui_flags, age_confirmed_at')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -57,5 +66,18 @@ export default async function Home() {
   if (!profile?.age_confirmed_at) redirect('/onboarding/age')
 
   const settled = profile.onboarding_complete || !!flags[ONBOARDING_DEFERRED_FLAG]
-  redirect(settled ? '/train' : onboardingResumePath(profile))
+  /**
+   * A finished account goes to its own track's home, not to the other one's.
+   *
+   * D1 made the END of onboarding honour the answer and this is the same
+   * sentence on every sign-in afterwards: `/train` is the dating home, and the
+   * shell adopts the track from the pathname, so sending an interview account
+   * there handed it the other product every time it came back.
+   *
+   * Safe by construction — the route guard redirects `/interview` to `/train`
+   * for an account whose `unlocked_tracks` does not carry it, so the worst
+   * case is one extra hop rather than a locked door.
+   */
+  const home = profile.active_track === 'interview' ? '/interview' : '/train'
+  redirect(settled ? home : onboardingResumePath(profile))
 }

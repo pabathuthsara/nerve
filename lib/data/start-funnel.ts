@@ -46,7 +46,12 @@
  */
 
 import { chooseTodayPersona, uiLevel } from './progression'
-import { ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG, trackWaitlistFlag } from './ui-flags'
+import {
+  ONBOARDING_NAME_FLAG,
+  ONBOARDING_ROLE_FLAG,
+  ONBOARDING_TRACK_FLAG,
+  trackWaitlistFlag,
+} from './ui-flags'
 import { DATING_PERSONAS } from '@/lib/personas'
 import { PRESENTATION } from '@/lib/personas/presentation'
 import type { FirstRepCandidate } from './first-rep'
@@ -69,12 +74,35 @@ export type StartStep =
   | 'track'
   | 'reframe'
   | 'focus'
+  | 'role'
   | 'mechanism'
   | 'name'
   | 'build'
   | 'account'
 
-export const START_STEPS: readonly StartStep[] = [
+/**
+ * ── TWO ARMS, ONE SHAPE ──────────────────────────────────────────────────
+ *
+ * The track question is the third thing that happens and it is answered by
+ * somebody who came for one of two different products. Until 16 September the
+ * run carried on regardless: an interview answer was followed by the dating
+ * focus question ("Making it flirty without being weird"), the dating
+ * mechanism screen ("she can get bored... one small thing to do in the real
+ * world") and a name step asking what *she* should call you. Every screen
+ * worked and the whole run said the product had not listened.
+ *
+ * So there are two lists. They are the same length and they differ at exactly
+ * one index — question two, which is the focus area on the dating arm and the
+ * role on the interview one — and that is a property rather than a
+ * coincidence: the run holds the step as an INDEX, and somebody who changes
+ * their track answer with the back arrow has to stay on the screen they were
+ * on rather than being teleported. `start-funnel.test.ts` asserts it.
+ *
+ * The three interstitials are shared positions and branch on their own copy,
+ * which is the right split: `reframe` and `mechanism` make the same argument
+ * about two different rooms, and a fourth list of screens would drift.
+ */
+const DATING_STEPS: readonly StartStep[] = [
   'hook',
   'track',
   'reframe',
@@ -84,6 +112,35 @@ export const START_STEPS: readonly StartStep[] = [
   'build',
   'account',
 ]
+
+const INTERVIEW_STEPS: readonly StartStep[] = [
+  'hook',
+  'track',
+  'reframe',
+  'role',
+  'mechanism',
+  'name',
+  'build',
+  'account',
+]
+
+/**
+ * The steps, for the track as it stands right now.
+ *
+ * `null` is the dating list deliberately, because the screens before the track
+ * question are identical on both and the answer arrives before the first one
+ * that is not.
+ */
+export function startSteps(track: Track | null): readonly StartStep[] {
+  return track === 'interview' ? INTERVIEW_STEPS : DATING_STEPS
+}
+
+/**
+ * The dating list, kept as an export for the analytics note and the tests.
+ * Screens read `startSteps(track)`; nothing renders from this.
+ */
+export const START_STEPS: readonly StartStep[] = DATING_STEPS
+export { INTERVIEW_STEPS }
 
 /**
  * What the funnel has learnt, and the only thing that crosses into the account.
@@ -97,6 +154,28 @@ export const START_STEPS: readonly StartStep[] = [
 export interface StartAnswers {
   track: Track | null
   focusArea: FocusArea | null
+  /**
+   * The interview arm's question two, and the reason the account arrives
+   * ready to run one.
+   *
+   * `interview_setups.complete` is *a role title and nothing else* — the CV is
+   * optional by design (§C4) — so this single field is the difference between
+   * an account that lands on "Tell us about the job" and one that lands on its
+   * free screener. It is asked here, before the account, for the same reason
+   * everything else on this run is: the answer is cheap to give and it is the
+   * one that makes the first round specific.
+   */
+  roleTitle: string | null
+  company: string | null
+  /**
+   * Asked, whether or not it was answered — the same distinction `named` draws.
+   *
+   * The role step is skippable ("I'm not sure yet"), so an empty title is an
+   * answer and not an absence. Without the boolean, somebody who skipped would
+   * be put back on the question by the resume, and then again by
+   * `onboardingResumePath` after signing up.
+   */
+  roleAsked: boolean
   displayName: string | null
   named: boolean
   /**
@@ -113,6 +192,9 @@ export interface StartAnswers {
 export const EMPTY_START_ANSWERS: StartAnswers = {
   track: null,
   focusArea: null,
+  roleTitle: null,
+  company: null,
+  roleAsked: false,
   displayName: null,
   named: false,
   english: false,
@@ -139,6 +221,15 @@ const FOCUS_AREAS: readonly FocusArea[] = ['opening', 'sustaining', 'flirting', 
 /** The same ceiling `saveOnboardingChoice` applies, applied at the same edge. */
 const NAME_MAX = 40
 
+/** The same ceiling `sanitisePatch` applies to `role_title` and `company`. */
+const ROLE_MAX = 120
+
+/** Trim, cap, and read blank as absent. Three fields need exactly this. */
+function text(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null
+  return value.trim().slice(0, max) || null
+}
+
 export function encodeStartAnswers(answers: StartAnswers): string {
   return JSON.stringify(answers)
 }
@@ -154,14 +245,13 @@ export function decodeStartAnswers(raw: string | null | undefined): StartAnswers
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return EMPTY_START_ANSWERS
   const record = parsed as Record<string, unknown>
 
-  const displayName = typeof record['displayName'] === 'string'
-    ? record['displayName'].trim().slice(0, NAME_MAX)
-    : ''
-
   return {
     track: TRACKS.find((value) => value === record['track']) ?? null,
     focusArea: FOCUS_AREAS.find((value) => value === record['focusArea']) ?? null,
-    displayName: displayName || null,
+    roleTitle: text(record['roleTitle'], ROLE_MAX),
+    company: text(record['company'], ROLE_MAX),
+    roleAsked: record['roleAsked'] === true,
+    displayName: text(record['displayName'], NAME_MAX),
     named: record['named'] === true,
     english: record['english'] === true,
   }
@@ -169,7 +259,7 @@ export function decodeStartAnswers(raw: string | null | undefined): StartAnswers
 
 /** Whether anything crossed at all — a signup with none of this is an ordinary one. */
 export function hasStartAnswers(answers: StartAnswers): boolean {
-  return !!answers.track || !!answers.focusArea || answers.named || answers.english
+  return !!answers.track || !!answers.focusArea || answers.roleAsked || answers.named || answers.english
 }
 
 /**
@@ -182,9 +272,15 @@ export function hasStartAnswers(answers: StartAnswers): boolean {
  * explains what any of this is.
  */
 export function startResumeIndex(answers: StartAnswers): number {
-  const at = (step: StartStep) => START_STEPS.indexOf(step)
+  const steps = startSteps(answers.track)
+  const at = (step: StartStep) => steps.indexOf(step)
   if (!answers.track) return hasStartAnswers(answers) ? at('track') : at('hook')
-  if (!answers.focusArea) return at('focus')
+  // Question two, which is a different question on each arm. The interview arm
+  // reads the FLAG rather than the title, because "I'm not sure yet" is an
+  // answer — the same reason `named` exists beside `displayName`.
+  if (answers.track === 'interview') {
+    if (!answers.roleAsked) return at('role')
+  } else if (!answers.focusArea) return at('focus')
   if (!answers.named) return at('name')
   return at('build')
 }
@@ -265,6 +361,17 @@ export function startProfileWrite(answers: StartAnswers): StartProfileWrite {
     flags.push(ONBOARDING_TRACK_FLAG)
   }
   if (answers.focusArea) patch.focus_area = answers.focusArea
+  /**
+   * The interview arm's question two, stamped for the same reason the name is:
+   * the step is skippable, so the title alone cannot tell a skip from a
+   * question nobody has been asked — and `onboardingResumePath` would put
+   * somebody who said "not sure yet" back on it every time they loaded.
+   *
+   * Never stamped on the dating arm, whatever is in the answers. Only one of
+   * the two question-twos is asked, and flagging a step that was never shown
+   * would skip it in the signed-in run if they switched tracks later.
+   */
+  if (answers.track === 'interview' && answers.roleAsked) flags.push(ONBOARDING_ROLE_FLAG)
   if (answers.named) {
     if (answers.displayName) patch.display_name = answers.displayName
     flags.push(ONBOARDING_NAME_FLAG)
@@ -277,6 +384,30 @@ export function startProfileWrite(answers: StartAnswers): StartProfileWrite {
   if (answers.english) flags.push(trackWaitlistFlag('english'))
 
   return { patch, flags }
+}
+
+/**
+ * The other table a finished interview funnel writes.
+ *
+ * `profiles` is not where a role title belongs — `interview_setups` is, and
+ * `setupFromRow` reads `complete` off exactly this field. Kept pure and
+ * separate from `startProfileWrite` for the same reason that one is: it is the
+ * difference between an account that opens on its free screener and one that
+ * opens on "Tell us about the job", and that is a silent failure — every
+ * screen still works.
+ *
+ * `null` when there is nothing to write, so the caller can skip the round trip
+ * rather than upserting an empty row. A row with no role title reads as
+ * incomplete anyway, but an empty row is one the user never created.
+ */
+export interface StartInterviewWrite {
+  roleTitle: string
+  company: string
+}
+
+export function startInterviewSetup(answers: StartAnswers): StartInterviewWrite | null {
+  if (answers.track !== 'interview' || !answers.roleTitle) return null
+  return { roleTitle: answers.roleTitle, company: answers.company ?? '' }
 }
 
 /**
@@ -300,8 +431,12 @@ export function startProfileWrite(answers: StartAnswers): StartProfileWrite {
  * while throwing away the focus and the name they had already given would be
  * making them pay for changing their mind.
  *
- * Only the track moves. The focus answer is collected on both arms and the
- * name is a name.
+ * Only the track moves. The name is a name, and the two question-twos are
+ * kept rather than cleared: somebody who answered the focus question and then
+ * switched to interviews has still told us something true about the dating
+ * reps their account also has, and clearing it would be charging them for
+ * changing their mind. `startResumeIndex` then asks whichever question two the
+ * new track has and has not had an answer.
  */
 export function startOpening(stored: StartAnswers, asked: Track | null): { answers: StartAnswers; index: number } {
   if (!hasStartAnswers(stored)) {
@@ -310,8 +445,8 @@ export function startOpening(stored: StartAnswers, asked: Track | null): { answe
      * says what this is, and somebody arriving from `/interviews` has just
      * read a longer version of it.
      */
-    if (!asked) return { answers: EMPTY_START_ANSWERS, index: START_STEPS.indexOf('hook') }
-    return { answers: { ...EMPTY_START_ANSWERS, track: asked }, index: START_STEPS.indexOf('reframe') }
+    if (!asked) return { answers: EMPTY_START_ANSWERS, index: startSteps(null).indexOf('hook') }
+    return { answers: { ...EMPTY_START_ANSWERS, track: asked }, index: startSteps(asked).indexOf('reframe') }
   }
   const answers = asked && stored.track !== asked ? { ...stored, track: asked } : stored
   return { answers, index: startResumeIndex(answers) }

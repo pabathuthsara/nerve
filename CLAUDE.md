@@ -171,6 +171,25 @@ the real world and log the outcome.
    **And read what 0/42 does not prove**: a true 3% rate produces zero on 42
    visits about a quarter of the time, so two signups afterwards is not
    evidence it worked — the per-step drop is.
+   **D24 forked that run on 16 September 2026, and the fork is the shape to
+   copy for any third track.** Choosing "job interviews" was followed by the
+   dating focus question, the dating mechanism screen and "what should *she*
+   call you?", and then by a dashboard and a three-step wizard — eleven screens
+   from a cold account to a spoken interview, six of them about the other
+   product. `startSteps(track)` and `stepsFor(track)` now return one of two
+   lists **per run**; the interview arm asks the **role** and the **CV** where
+   the dating arm asks the focus area, and its last step is the interviewer,
+   which starts the free screener. Three things there are load-bearing. The two
+   lists are the **same length and differ at exactly one index**, because the
+   run holds the step as an INDEX and a changed track answer must not teleport
+   anybody. **`onboardingResumePath` may read `active_track` only BELOW the
+   track flag** — the column carries a database default, so above it the column
+   is set for everybody who has chosen nothing, which is the trap that function
+   has always existed to avoid; `app/page.tsx` was not selecting the column at
+   all, which is E2's shape on the one entry point every auth action lands on.
+   And **`interview_setups.complete` is a role title and nothing else**, which
+   is why asking for the role before the account is the whole difference
+   between landing on a free screener and landing on a setup wizard.
    **Its §3b is the 8 September experience audit, Parts 1–8 — all shipped**,
    and it is the shortest description of what the product does now:
    the interview track is a **profile** you set once and a **run**
@@ -250,7 +269,7 @@ npm run db:spend      # the spend ceiling: rate limit, daily cap, both kill swit
 npm run db:credits    # the interview credit: hold, settle, release, refund, both expiry rules, multi-credit rounds
 npm run db:interview -- you@example.com   # open the interview track on an account, with credits
 npm run db:billing    # the billing loop: grant, upgrade, dunning, expiry, dispute, replay
-npm run db:funnel     # /start's crossing: the answers, both flags, the age stamp, and that a plain /signup still resumes at question one
+npm run db:funnel     # /start's crossing, both arms: the answers, the flags, the age stamp, the interview role reaching interview_setups, and that a plain /signup still resumes at question one
 npm run db:texting    # the texting thread lifecycle: the daily allowance counted rather than stored, that a thread CANNOT be deleted, one open thread per character with history behind it, and RLS from a second real account
 npm run whop:setup       # creates the Whop product, plans and webhook (dry run without --apply)
 npm run whop:verify      # the money preflight: keys, plans, prices, trial, webhook

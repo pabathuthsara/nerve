@@ -22,7 +22,13 @@
 import { revalidatePath } from 'next/cache'
 import { currentUser, supabaseServer } from '@/lib/db/server'
 import { announceUnlock } from '@/lib/db/unlocks'
-import { ONBOARDING_DEFERRED_FLAG, ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG } from '@/lib/data/guards'
+import {
+  ONBOARDING_CV_FLAG,
+  ONBOARDING_DEFERRED_FLAG,
+  ONBOARDING_NAME_FLAG,
+  ONBOARDING_ROLE_FLAG,
+  ONBOARDING_TRACK_FLAG,
+} from '@/lib/data/guards'
 import { trackWaitlistFlag } from '@/lib/data/ui-flags'
 import type { FocusArea } from '@/lib/data/focus'
 import type { TablesUpdate } from '@/lib/db/types'
@@ -185,6 +191,16 @@ export async function saveOnboardingChoice(input: {
   track?: Track
   focusArea?: FocusArea
   /**
+   * The interview arm's question two and three, recorded as ASKED.
+   *
+   * Only the markers. The role title itself goes to `interview_setups` through
+   * `saveInterviewSetup` and the CV to the private bucket through `uploadCv` —
+   * neither belongs on the profile, and both steps are skippable, so the answer
+   * cannot be the marker. The same argument as `displayName` below, twice.
+   */
+  roleAsked?: boolean
+  cvAsked?: boolean
+  /**
    * The name step (§08's `usesYourName` dial).
    *
    * `null` is a deliberate skip and is recorded as answered — the step is
@@ -204,6 +220,9 @@ export async function saveOnboardingChoice(input: {
   // so it is already set for somebody who has answered nothing — which made it
   // useless for "where did this person stop". See `onboardingResumePath`.
   if (input.track) flags.push(ONBOARDING_TRACK_FLAG)
+
+  if (input.roleAsked) flags.push(ONBOARDING_ROLE_FLAG)
+  if (input.cvAsked) flags.push(ONBOARDING_CV_FLAG)
 
   if (input.displayName !== undefined) {
     const trimmed = input.displayName?.trim().slice(0, 40) ?? ''

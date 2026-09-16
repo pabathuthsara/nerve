@@ -97,6 +97,42 @@ export async function readInterviewSetupFor(userId: string): Promise<InterviewSe
 }
 
 /**
+ * The role `/start` collected before the account existed (LAUNCH-GAP D22).
+ *
+ * ── WHY THIS IS THE SERVICE ROLE AND WHY IT IS AN INSERT ─────────────────
+ *
+ * It runs inside `signUpWithPassword`, which with email confirmation on has a
+ * user id and no cookie — the same reason `stampNewAccount` is admin. And it
+ * is the only write to this table that is not the user's own hand, so it is
+ * deliberately an INSERT rather than the upsert every other path uses: if a row
+ * somehow exists for this id, the account is not new and nothing here may
+ * overwrite a job description somebody wrote. A conflict is a no-op, not an
+ * error.
+ *
+ * Nothing here is an entitlement (rule 11): a role title is the user's own
+ * document about their own job hunt, editable from `/interview/setup/role` the
+ * moment they are in.
+ *
+ * Best-effort. A sign-up must never fail because a preference did not stick —
+ * the backstop is `/onboarding/role`, which asks the same question.
+ */
+export async function seedInterviewSetup(
+  userId: string,
+  input: { roleTitle: string; company: string },
+): Promise<boolean> {
+  const update = sanitisePatch({ roleTitle: input.roleTitle, company: input.company })
+  if (!update.role_title) return false
+  try {
+    const { error } = await supabaseAdmin()
+      .from('interview_setups')
+      .insert({ user_id: userId, ...update })
+    return !error
+  } catch {
+    return false
+  }
+}
+
+/**
  * The round this account's next interview runs, resolved server-side.
  *
  * Falls back to the default rather than refusing, because a missing setup is a

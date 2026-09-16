@@ -19,6 +19,8 @@
  *   every answer reads back on the columns `onboardingResumePath` reads
  *   a SKIPPED name is stored as answered, with no name
  *   the English ask lands on the same flag `recordTrackWaitlist` stamps
+ *   the interview arm's role reaches `interview_setups`, and only that arm's
+ *   a skipped role creates no empty row, and is still flagged as asked
  *   a sign-up with no funnel behind it writes nothing but the date (§16.4)
  *
  * The last one is the regression check: `/signup` is still a door, people
@@ -34,14 +36,18 @@ import {
   EMPTY_START_ANSWERS,
   decodeStartAnswers,
   encodeStartAnswers,
+  startInterviewSetup,
   startProfileWrite,
   type StartAnswers,
 } from '@/lib/data/start-funnel'
 import {
+  ONBOARDING_CV_FLAG,
   ONBOARDING_NAME_FLAG,
+  ONBOARDING_ROLE_FLAG,
   ONBOARDING_TRACK_FLAG,
   trackWaitlistFlag,
 } from '@/lib/data/ui-flags'
+import { onboardingResumePath } from '@/lib/data/guards'
 
 let failures = 0
 
@@ -82,6 +88,21 @@ async function stamp(
         : {}),
     }, { count: 'exact' })
     .eq('id', userId)
+
+  /**
+   * The interview arm's second write, reconstructed the same way and for the
+   * same reason (`seedInterviewSetup` is admin-only and lives beside a
+   * `server-only` import). An INSERT rather than an upsert: nothing may
+   * overwrite a job description somebody wrote.
+   */
+  const setup = startInterviewSetup(answers)
+  if (setup) {
+    await admin.from('interview_setups').insert({
+      user_id: userId,
+      role_title: setup.roleTitle,
+      company: setup.company,
+    })
+  }
   return count
 }
 
@@ -118,11 +139,11 @@ async function main(): Promise<void> {
     console.log('\nA run answered in full')
 
     const answers = decodeStartAnswers(encodeStartAnswers({
+      ...EMPTY_START_ANSWERS,
       track: 'dating',
       focusArea: 'rejection',
       displayName: 'Sam',
       named: true,
-      english: false,
     }))
     const full = await newAccount('full')
 
@@ -154,6 +175,78 @@ async function main(): Promise<void> {
     check(
       !!stamped[ONBOARDING_TRACK_FLAG] && !!row?.focus_area && !!stamped[ONBOARDING_NAME_FLAG],
       'every condition onboardingResumePath tests before /onboarding/mic is met',
+    )
+
+    /* ---------------------------------------------------------------- *
+     * The interview arm
+     *
+     * D22. The run forks at the track question, and the fork is only real if
+     * the account lands ready to run its free screener: a role title in
+     * `interview_setups` (which is all `complete` is), the role step flagged,
+     * and a resume that asks for the CV rather than for a dating focus answer
+     * nobody on this arm was ever offered.
+     * ---------------------------------------------------------------- */
+    console.log('\nAn interview run answered in full')
+
+    const interviewAnswers = decodeStartAnswers(encodeStartAnswers({
+      ...EMPTY_START_ANSWERS,
+      track: 'interview',
+      roleTitle: 'Senior Backend Engineer',
+      company: 'Monzo',
+      roleAsked: true,
+      displayName: 'Sam',
+      named: true,
+    }))
+    const interview = await newAccount('interview')
+    const interviewCount = await stamp(admin, interview, '1997-02-18', interviewAnswers)
+    check(interviewCount === 1, 'the profile write affects exactly one row')
+
+    const { data: interviewRow } = await admin
+      .from('profiles')
+      .select('active_track, focus_area, ui_flags, unlocked_tracks')
+      .eq('id', interview)
+      .maybeSingle()
+    check(interviewRow?.active_track === 'interview', 'the track answer is on the row')
+    check(!interviewRow?.focus_area, 'no dating focus was invented for an arm that never asked')
+    const interviewFlags = flagsOf(interviewRow?.ui_flags)
+    check(!!interviewFlags[ONBOARDING_ROLE_FLAG], 'the role step is flagged as answered')
+    check(!interviewFlags[ONBOARDING_CV_FLAG], 'and the CV step is not — it happens after the account')
+
+    const { data: setupRow } = await admin
+      .from('interview_setups')
+      .select('role_title, company')
+      .eq('user_id', interview)
+      .maybeSingle()
+    check(setupRow?.role_title === 'Senior Backend Engineer', 'the role reached interview_setups')
+    check(setupRow?.company === 'Monzo', 'and so did the company')
+    check(
+      onboardingResumePath({
+        active_track: interviewRow?.active_track ?? null,
+        focus_area: interviewRow?.focus_area ?? null,
+        ui_flags: interviewRow?.ui_flags ?? {},
+      }) === '/onboarding/cv',
+      'the run resumes at the CV step, not at a dating question',
+    )
+    check(
+      (interviewRow?.unlocked_tracks ?? []).includes('interview'),
+      'the free screener opened the track, so /interview* renders (E1)',
+    )
+
+    /* ---------------------------------------------------------------- *
+     * An interview run that skipped the role
+     * ---------------------------------------------------------------- */
+    console.log('\nAn interview run that skipped the role')
+
+    const noRole = await newAccount('norole')
+    await stamp(admin, noRole, '1993-09-09', { ...interviewAnswers, roleTitle: null, company: null })
+    const { data: noRoleSetup } = await admin
+      .from('interview_setups').select('user_id').eq('user_id', noRole).maybeSingle()
+    check(!noRoleSetup, 'no empty setup row is created for a question that was skipped')
+    const { data: noRoleRow } = await admin
+      .from('profiles').select('ui_flags').eq('id', noRole).maybeSingle()
+    check(
+      !!flagsOf(noRoleRow?.ui_flags)[ONBOARDING_ROLE_FLAG],
+      'and the step is still flagged, so the question is not asked a second time',
     )
 
     /* ---------------------------------------------------------------- *

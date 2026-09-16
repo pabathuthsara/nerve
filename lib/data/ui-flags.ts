@@ -78,6 +78,29 @@ export const ONBOARDING_TRACK_FLAG = 'onboarding:track'
 export const ONBOARDING_NAME_FLAG = 'onboarding:name'
 
 /**
+ * The interview arm's question two: the role you are walking into.
+ *
+ * A flag rather than a read of `interview_setups.role_title`, for two reasons
+ * and both matter. The step is skippable, so an empty title cannot tell a skip
+ * from a question nobody has been asked — the same distinction
+ * `ONBOARDING_NAME_FLAG` draws. And `onboardingResumePath` runs inside the
+ * route guard on every protected request off one `profiles` select: reading a
+ * second table there would put a join on the hot path of every page in the
+ * product to answer a question about five screens.
+ */
+export const ONBOARDING_ROLE_FLAG = 'onboarding:role'
+
+/**
+ * The CV step, stamped whether a file was uploaded or skipped.
+ *
+ * Same argument as the two above, with more force: §C4 says a missing CV
+ * degrades to the field, the role and the job description rather than to a
+ * generic interview, so declining to upload one is a legitimate finished
+ * answer and must not be a step somebody is returned to forever.
+ */
+export const ONBOARDING_CV_FLAG = 'onboarding:cv'
+
+/**
  * Stamped by *Look around first* on the mic step. See the guard: it buys the
  * same freedom of movement a finished run does without claiming the run
  * finished, which is what makes the step returnable.

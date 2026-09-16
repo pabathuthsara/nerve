@@ -56,20 +56,20 @@ import { capture } from '@/components/analytics'
 import { FluidPersona } from '@/components/fluid-persona'
 import { Mark } from '@/components/marks'
 import { Button, DateOfBirth, Input } from '@/components/ui'
-import { FocusStep, NameStep, TrackStep } from './onboarding-questions'
+import { FocusStep, NameStep, RoleStep, TrackStep } from './onboarding-questions'
 import { RuleBlock, repGoal } from './rep-format'
 import { tap } from '@/lib/haptics'
 import { MIN_AGE, checkAge } from '@/lib/safety/age'
 import {
   EMPTY_START_ANSWERS,
   START_FIELD,
-  START_STEPS,
   START_STORAGE_KEY,
   decodeStartAnswers,
   encodeStartAnswers,
   firstRepPreview,
   hasStartAnswers,
   startOpening,
+  startSteps,
   type StartAnswers,
   type StartStep,
 } from '@/lib/data/start-funnel'
@@ -144,9 +144,17 @@ export function StartScreen({ initialTrack = null }: { initialTrack?: Track | nu
     setStep(resumed.index)
   }, [initialTrack, remember])
 
+  /**
+   * The steps for the track as it stands — two lists of the same length that
+   * differ at one index (`startSteps`). The index is the state, so changing
+   * the track answer with the back arrow swaps question two under somebody
+   * rather than moving them.
+   */
+  const steps = startSteps(answers.track)
+
   const goTo = useCallback((next: number) => {
-    setStep(Math.min(Math.max(next, 0), START_STEPS.length - 1))
-  }, [])
+    setStep(Math.min(Math.max(next, 0), steps.length - 1))
+  }, [steps.length])
 
   const advance = useCallback((next: StartAnswers, from: number) => {
     tap()
@@ -154,7 +162,7 @@ export function StartScreen({ initialTrack = null }: { initialTrack?: Track | nu
     goTo(from + 1)
   }, [goTo, remember])
 
-  const stepName = START_STEPS[step] as StartStep
+  const stepName = steps[step] as StartStep
 
   /** Every screen, as it is reached. The property is the funnel (B7). */
   useEffect(() => {
@@ -177,7 +185,7 @@ export function StartScreen({ initialTrack = null }: { initialTrack?: Track | nu
 
   return (
     <main className="onboarding-page start-page">
-      {stepName === 'hook' ? null : <StartProgress step={step} />}
+      {stepName === 'hook' ? null : <StartProgress step={step} steps={steps} />}
       {step > 0
         ? <button type="button" className="onboarding-back" aria-label="Back to the previous screen" onClick={() => goTo(step - 1)}><ChevronLeft size={24} strokeWidth={1.5} /></button>
         : null}
@@ -208,16 +216,30 @@ export function StartScreen({ initialTrack = null }: { initialTrack?: Track | nu
             ? <FocusStep
                 value={answers.focusArea}
                 firstRep={firstRep}
-                track={answers.track}
                 onChoose={(value) => { answered('focus', value); advance({ ...answers, focusArea: value }, step) }}
               />
             : null}
 
-          {stepName === 'mechanism' ? <MechanismStep onNext={() => { tap(); goTo(step + 1) }} /> : null}
+          {/* The interview arm's question two. One field decides whether the
+              account lands on its free screener or on a setup wizard — see
+              `startInterviewSetup`. */}
+          {stepName === 'role'
+            ? <RoleStep
+                roleTitle={answers.roleTitle}
+                company={answers.company}
+                onSubmit={(value) => {
+                  answered('role', value.roleTitle ? 'given' : 'skipped')
+                  advance({ ...answers, ...value, roleAsked: true }, step)
+                }}
+              />
+            : null}
+
+          {stepName === 'mechanism' ? <MechanismStep track={answers.track} onNext={() => { tap(); goTo(step + 1) }} /> : null}
 
           {stepName === 'name'
             ? <NameStep
                 value={answers.displayName}
+                track={answers.track}
                 onSubmit={(value) => {
                   answered('name', value ? 'given' : 'skipped')
                   advance({ ...answers, displayName: value, named: true }, step)
@@ -243,8 +265,8 @@ export function StartScreen({ initialTrack = null }: { initialTrack?: Track | nu
  * signed-in run's rail: it is not a step in a run, it is the screen that says
  * what the run is. A progress bar on it would be counting somebody's arrival.
  */
-function StartProgress({ step }: { step: number }) {
-  const steps = START_STEPS.slice(1)
+function StartProgress({ step, steps: all }: { step: number; steps: readonly string[] }) {
+  const steps = all.slice(1)
   const index = step - 1
   return (
     <div className="onboarding-progress" role="group" aria-label={`Step ${index + 1} of ${steps.length}`}>
@@ -276,9 +298,18 @@ function HookStep({ onStart }: { onStart: () => void }) {
     <section className="onboarding-question start-hook">
       <span className="label">Nerve</span>
       <h1 className="display-lg" tabIndex={-1} data-step-heading>The conversation you keep not having.</h1>
+      {/* ── THE FIRST SCREEN BELONGS TO BOTH TRACKS ──────────────────────
+          It described one product: three minutes, someone who can lose
+          interest, and a thing to do in the real world. The next screen then
+          offered job interviews as an equal option, and somebody who picked it
+          had been sold a dating app one tap earlier. What is true of both is
+          the part worth leading with anyway — you say it out loud, under time,
+          to somebody who is deciding — so the claim got shorter and truer
+          rather than longer. The two rooms are named in the second sentence,
+          in the order the question below asks them. */}
       <p className="onboarding-sub">
-        Three minutes, out loud, against someone who can lose interest and say no. You are scored on how you
-        talked, never on whether it worked. Then one small thing to do in the real world.
+        Out loud, under time, to someone who is deciding — a stranger you want to talk to, or an
+        interviewer you want to impress. You are scored on how you talked, never on whether it worked.
       </p>
       <div className="start-actions">
         <Button size="lg" fullWidth onClick={onStart}>Start</Button>
@@ -329,16 +360,37 @@ function ReframeStep({ track, onNext }: { track: string | null; onNext: () => vo
  * The marks are the ones those three surfaces already use, at Ink-2 — never
  * `current`, because the primary button below is the screen's one volt.
  */
-function MechanismStep({ onNext }: { onNext: () => void }) {
-  const beats = [
-    { mark: 'state-session', label: 'Rep', copy: 'Three minutes of voice against a character with her own mood. She can get bored, get distracted, and say no.' },
-    { mark: 'state-chart', label: 'Score', copy: 'Six dimensions, on how you talked. Never on whether it worked.' },
-    { mark: 'state-field', label: 'Field', copy: 'One small thing to do in the real world. You log what happened.' },
-  ] as const
+function MechanismStep({ track, onNext }: { track: string | null; onNext: () => void }) {
+  const interview = track === 'interview'
+  /**
+   * Three beats per arm, and the middle one is the same claim in both rooms
+   * because it is the differentiator (§07): a rep that ends in rejection can
+   * score 92, and an interview that ends with no offer is graded on how it was
+   * answered. Everything else in this category sells the result.
+   *
+   * The third beat is where the two products genuinely differ. Dating has the
+   * field challenge — the thing you go and do outside. An interview has no
+   * outside step and inventing one would be a promise with nothing behind it,
+   * so the interview arm's third beat is the ladder of rounds, which is what
+   * that track actually has and what the credits are for.
+   */
+  const beats = interview
+    ? ([
+        { mark: 'kind-technique', label: 'Round', copy: 'A real round with a real interviewer — five minutes to twenty-five. She follows up on what you skipped.' },
+        { mark: 'state-chart', label: 'Score', copy: 'Seven dimensions, on how you answered. Never on whether you got the job.' },
+        { mark: 'state-session', label: 'Again', copy: 'Screener, technical, final. Same role, harder room, and a trend you can read.' },
+      ] as const)
+    : ([
+        { mark: 'state-session', label: 'Rep', copy: 'Three minutes of voice against a character with her own mood. She can get bored, get distracted, and say no.' },
+        { mark: 'state-chart', label: 'Score', copy: 'Six dimensions, on how you talked. Never on whether it worked.' },
+        { mark: 'state-field', label: 'Field', copy: 'One small thing to do in the real world. You log what happened.' },
+      ] as const)
   return (
     <section className="onboarding-question start-claim">
       <span className="label">How it works</span>
-      <h1 className="display-lg" tabIndex={-1} data-step-heading>Inside, then outside.</h1>
+      <h1 className="display-lg" tabIndex={-1} data-step-heading>
+        {interview ? 'A room, not a quiz.' : 'Inside, then outside.'}
+      </h1>
       <ul className="start-beats">
         {beats.map((beat) => (
           <li key={beat.label}>
@@ -380,12 +432,24 @@ function BuildStep({ answers, firstRep, onNext }: {
             "you are here" and a third volt would make none of them mean it. */}
         <Mark name="kind-technique" size={44} />
         <h1 className="display-lg" tabIndex={-1} data-step-heading>Your first round.</h1>
+        {/* THEIR ANSWER, SPENT — the same standard the dating build screen is
+            held to. The role they typed one screen ago is what the interviewer
+            is briefed on, so it is named here rather than being collected and
+            not mentioned again until a wizard two screens into the account. */}
         <p className="brief-hook">
-          Five minutes with a recruiter, free on every account. You pick the role, the interviewer and the
-          round after you are in — it takes about a minute.
+          {answers.roleTitle
+            ? `Five minutes with a recruiter, on ${answers.roleTitle}${answers.company ? ` at ${answers.company}` : ''}. Free on every account — no card.`
+            : 'Five minutes with a recruiter, free on every account. No card. You can name the role any time; the questions get sharper when you do.'}
         </p>
         <p className="brief-goal">{repGoal(true, 5)}</p>
         <RuleBlock interview minutes={5} />
+        {/* What actually happens next, said before the form rather than
+            discovered after it. Two of these three are the steps between the
+            account and the microphone. */}
+        <div className="rule-block start-plan">
+          <div><span>Next</span><strong>Your CV, then a mic check</strong></div>
+          <div><span>Then</span><strong>Who is in the room</strong></div>
+        </div>
         <Button size="lg" fullWidth onClick={onNext}>{answers.displayName ? `Create your account, ${answers.displayName}` : 'Create your account'}</Button>
       </section>
     )
@@ -522,6 +586,9 @@ function AccountStep({ answers }: { answers: StartAnswers }) {
           capture('start_account_submitted', {
             track: answers.track ?? 'dating',
             focus: answers.focusArea ?? 'none',
+            // The interview arm's question two, so the two arms can be read
+            // against each other rather than one of them being a blank column.
+            role: answers.roleTitle ? 'given' : answers.roleAsked ? 'skipped' : 'none',
             named: answers.named && !!answers.displayName,
           })
         }}

@@ -105,7 +105,7 @@ export interface EventProps {
    * throw in development rather than let it leave the device.
    */
   start_answered: { step: string; answer: string }
-  start_account_submitted: { track: string; focus: string; named: boolean }
+  start_account_submitted: { track: string; focus: string; role: 'given' | 'skipped' | 'none'; named: boolean }
   /**
    * Why a sign-up did not happen. `server` covers everything Supabase refused
    * — an address that already has an account is the common one, and it is a

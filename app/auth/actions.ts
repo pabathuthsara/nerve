@@ -22,7 +22,14 @@ import { supabaseServer } from '@/lib/db/server'
 import { supabaseAdmin } from '@/lib/db/admin'
 import { checkAge } from '@/lib/safety/age'
 import type { TablesUpdate } from '@/lib/db/types'
-import { START_FIELD, decodeStartAnswers, startProfileWrite, type StartAnswers } from '@/lib/data/start-funnel'
+import {
+  START_FIELD,
+  decodeStartAnswers,
+  startInterviewSetup,
+  startProfileWrite,
+  type StartAnswers,
+} from '@/lib/data/start-funnel'
+import { seedInterviewSetup } from '@/lib/db/interview'
 
 export interface AuthResult {
   ok: boolean
@@ -266,18 +273,39 @@ async function stampNewAccount(userId: string, dateOfBirth: string, answers: Sta
     patch.ui_flags = flags.reduce<Record<string, string>>((carry, flag) => ({ ...carry, [flag]: stamp }), {})
   }
 
+  /**
+   * The interview arm's answer goes to a second table, and it is a separate
+   * write because it is a separate row in a separate place.
+   *
+   * The one-write argument above is about `profiles`, which is being raced by
+   * `handle_new_user`. Nothing races `interview_setups` — no trigger inserts
+   * it — so there is nothing to merge with and nothing to lose. It is also
+   * genuinely optional: `startInterviewSetup` answers null for the dating arm
+   * and for an interview run that skipped the question, and then nothing is
+   * written at all rather than an empty row the user never created.
+   *
+   * Fired before the retry loop so a slow profile write does not delay it, and
+   * awaited at the end so the redirect does not outrun it — the very next
+   * screen reads `interview_setups.complete` to decide whether this account
+   * lands on its free screener or on a setup wizard.
+   */
+  const setup = startInterviewSetup(answers)
+  const seeded = setup ? seedInterviewSetup(userId, setup) : null
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const { count } = await supabaseAdmin()
         .from('profiles')
         .update(patch, { count: 'exact' })
         .eq('id', userId)
-      if (count !== 0) return
+      if (count !== 0) break
     } catch {
       // Fall through to the retry, then to the backstop.
     }
     if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 150))
   }
+
+  await seeded
 }
 
 export async function signInWithPassword(_prev: AuthResult, form: FormData): Promise<AuthResult> {

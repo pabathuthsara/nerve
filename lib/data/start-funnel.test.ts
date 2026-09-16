@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   EMPTY_START_ANSWERS,
+  INTERVIEW_STEPS,
   START_STEPS,
   decodeStartAnswers,
   encodeStartAnswers,
@@ -9,17 +10,33 @@ import {
   startProfileWrite,
   startOpening,
   startResumeIndex,
+  startInterviewSetup,
   startRosterCandidates,
+  startSteps,
   type StartAnswers,
 } from './start-funnel'
 import { DATING_PERSONAS } from '@/lib/personas'
 import { PRESENTATION } from '@/lib/personas/presentation'
-import { ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG, trackWaitlistFlag } from './ui-flags'
+import { ONBOARDING_NAME_FLAG, ONBOARDING_ROLE_FLAG, ONBOARDING_TRACK_FLAG, trackWaitlistFlag } from './ui-flags'
 import { FOCUS_PLANS } from './focus'
 
 const answered: StartAnswers = {
   track: 'dating',
   focusArea: 'rejection',
+  roleTitle: null,
+  company: null,
+  roleAsked: false,
+  displayName: 'Sam',
+  named: true,
+  english: false,
+}
+
+const interviewAnswered: StartAnswers = {
+  track: 'interview',
+  focusArea: null,
+  roleTitle: 'Senior Backend Engineer',
+  company: 'Monzo',
+  roleAsked: true,
   displayName: 'Sam',
   named: true,
   english: false,
@@ -53,6 +70,48 @@ describe('the funnel, in order', () => {
       return Math.max(longest, run)
     }, 0)
     expect(runs).toBe(1)
+  })
+})
+
+describe('the two arms', () => {
+  it('are the same length and differ at exactly one index', () => {
+    /**
+     * The run holds the step as an INDEX. Somebody who goes back to the track
+     * question and changes their answer has to stay on the screen they are on
+     * rather than being teleported forward or bounced to the end — which is
+     * what any other shape of these two lists would do.
+     */
+    expect(INTERVIEW_STEPS).toHaveLength(START_STEPS.length)
+    const differences = START_STEPS
+      .map((step, index) => (step === INTERVIEW_STEPS[index] ? null : index))
+      .filter((index): index is number => index !== null)
+    expect(differences).toEqual([START_STEPS.indexOf('focus')])
+    expect(INTERVIEW_STEPS[START_STEPS.indexOf('focus')]).toBe('role')
+  })
+
+  it('never asks the other arm its question', () => {
+    // The bug this fork exists for: an interview answer was followed by
+    // "Making it flirty without being weird".
+    expect(startSteps('interview')).not.toContain('focus')
+    expect(startSteps('dating')).not.toContain('role')
+    // Unanswered is the dating list, because every screen before the track
+    // question is the same on both and the answer arrives before the first one
+    // that is not.
+    expect(startSteps(null)).toEqual(START_STEPS)
+  })
+
+  it('never runs two claims together on either arm', () => {
+    // The same rule as below, asserted on the arm that was added later.
+    const claims = new Set(['hook', 'reframe', 'mechanism', 'build'])
+    for (const steps of [START_STEPS, INTERVIEW_STEPS]) {
+      const runs = steps.reduce<number>((longest, step, index) => {
+        if (!claims.has(step)) return longest
+        let run = 1
+        for (let back = index - 1; back >= 0 && claims.has(steps[back] as string); back -= 1) run += 1
+        return Math.max(longest, run)
+      }, 0)
+      expect(runs).toBe(1)
+    }
   })
 })
 
@@ -130,6 +189,25 @@ describe('where a reload lands', () => {
     }
   })
 
+  it('returns an interview run to the role, never to the focus question', () => {
+    const stages: [Partial<StartAnswers>, string][] = [
+      [{ track: 'interview' }, 'role'],
+      // The skip. `roleAsked` without a title is a finished step — the same
+      // distinction `named` draws, and the reason neither can be the title.
+      [{ track: 'interview', roleAsked: true }, 'name'],
+      [{ track: 'interview', roleAsked: true, roleTitle: 'SRE' }, 'name'],
+      [{ track: 'interview', roleAsked: true, named: true }, 'build'],
+    ]
+    for (const [partial, expected] of stages) {
+      const answers = { ...EMPTY_START_ANSWERS, ...partial }
+      expect(startSteps(answers.track)[startResumeIndex(answers)]).toBe(expected)
+    }
+  })
+
+  it('counts a role that was asked as having started', () => {
+    expect(hasStartAnswers({ ...EMPTY_START_ANSWERS, roleAsked: true })).toBe(true)
+  })
+
   it('counts the English ask as having started', () => {
     // Somebody who asked for a track that does not exist has interacted. Sending
     // them back to the hook would replay the pitch at somebody mid-run.
@@ -176,6 +254,18 @@ describe('opening the run', () => {
     expect(answers.track).toBe('interview')
     expect(answers.focusArea).toBe('rejection')
     expect(answers.displayName).toBe('Sam')
+    // The one question the other arm never asked. Everything they gave is
+    // kept; what they are returned to is the answer the new arm does not have.
+    expect(INTERVIEW_STEPS[index]).toBe('role')
+  })
+
+  it('takes a switched-back run to the build screen once both question-twos are in', () => {
+    const { answers, index } = open(
+      { track: 'interview', focusArea: 'rejection', roleAsked: true, roleTitle: 'SRE', displayName: 'Sam', named: true },
+      'dating',
+    )
+    expect(answers.track).toBe('dating')
+    expect(answers.roleTitle).toBe('SRE')
     expect(START_STEPS[index]).toBe('build')
   })
 
@@ -202,6 +292,37 @@ describe('what the account inherits', () => {
   it('records the English ask on the same flag the signed-in run uses', () => {
     const { flags } = startProfileWrite({ ...EMPTY_START_ANSWERS, english: true })
     expect(flags).toEqual([trackWaitlistFlag('english')])
+  })
+
+  it('stamps the role flag for the interview arm, and the title goes to the other table', () => {
+    const { patch, flags } = startProfileWrite(interviewAnswered)
+    // A role title is not a profile column and never becomes one.
+    expect(patch).toEqual({ active_track: 'interview', display_name: 'Sam' })
+    expect(flags).toEqual([ONBOARDING_TRACK_FLAG, ONBOARDING_ROLE_FLAG, ONBOARDING_NAME_FLAG])
+    expect(startInterviewSetup(interviewAnswered)).toEqual({
+      roleTitle: 'Senior Backend Engineer',
+      company: 'Monzo',
+    })
+  })
+
+  it('stamps the role flag for a skip, and writes no setup row at all', () => {
+    const skipped = { ...interviewAnswered, roleTitle: null, company: null }
+    expect(startProfileWrite(skipped).flags).toContain(ONBOARDING_ROLE_FLAG)
+    // An empty row is a row the user never created, and `complete` would read
+    // false off it either way.
+    expect(startInterviewSetup(skipped)).toBeNull()
+  })
+
+  it('never stamps the role flag or seeds a setup on the dating arm', () => {
+    /**
+     * Somebody who answered the role question, went back and switched to
+     * dating keeps the answer in the funnel — but the interview run never
+     * happened for them, and flagging a step that was never shown would skip
+     * it if they opened the track later.
+     */
+    const switched = { ...interviewAnswered, track: 'dating' as const }
+    expect(startProfileWrite(switched).flags).not.toContain(ONBOARDING_ROLE_FLAG)
+    expect(startInterviewSetup(switched)).toBeNull()
   })
 
   it('writes nothing at all for a funnel nobody answered', () => {

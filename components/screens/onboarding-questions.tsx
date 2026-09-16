@@ -1,15 +1,24 @@
 'use client'
 
 /**
- * The three questions, and the two primitives they are built from.
+ * The questions, and the two primitives they are built from.
  *
  * ── WHY THESE MOVED OUT OF `onboarding-screens.tsx` ──────────────────────
  *
  * They are asked twice now. The signed-in run asks them after sign-up, over a
  * `profiles` row, writing each answer as it is given; `/start` asks the same
- * three before an account exists and carries the answers into the sign-up form
+ * ones before an account exists and carries the answers into the sign-up form
  * (`lib/data/start-funnel.ts` is the argument for why that reordering is the
  * whole feature). Two runs, one set of questions.
+ *
+ * ── THERE ARE FOUR OF THEM AND EVERY RUN ASKS THREE ──────────────────────
+ *
+ * `TrackStep` and `NameStep` are asked on both arms. Question two is not the
+ * same question: the dating arm asks what the hard part is (`FocusStep`,
+ * which picks the character) and the interview arm asks what role you are
+ * walking into (`RoleStep`, which is what makes `interview_setups` complete
+ * and therefore what lets the run end in the free screener rather than in a
+ * setup wizard). `lib/data/start-funnel.ts` owns which list is walked.
  *
  * A second authored copy was the obvious alternative and it is the mistake
  * this file exists to prevent. `PRESENTATION.name` is the precedent: renaming
@@ -151,33 +160,112 @@ export { FOCUS_OPTIONS }
  * care, and it costs one prop: the orb was already being rendered on the step
  * after this one.
  */
-export function FocusStep({ value, firstRep, track, onChoose }: { value: FocusArea | null; firstRep: FirstRepCandidate | null; track: Track | null; onChoose: (value: FocusArea) => void }) {
+export function FocusStep({ value, firstRep, onChoose }: { value: FocusArea | null; firstRep: FirstRepCandidate | null; onChoose: (value: FocusArea) => void }) {
   /**
-   * D1's edge. Every account has both tracks now, and somebody who has just
-   * answered "job interviews" being asked about flirting with no explanation
-   * reads as the run having forgotten what they said one screen ago. The
-   * answer is still worth collecting — it steers the dating reps they also
-   * have — so the question stays and says which half it is about.
+   * ── THIS IS THE DATING ARM'S QUESTION TWO, AND ONLY ITS ─────────────────
+   *
+   * It carried a `track` prop and an interview branch for a week, which asked
+   * somebody who had just answered "job interviews" about flirting and then
+   * apologised for it in the sub-heading. An apology on a question is a
+   * question that should not have been asked: the interview arm has its own
+   * question two now (`RoleStep`), and this one is never rendered there.
+   *
+   * The answer is still collected from an interview account that later opens
+   * the dating side — from `/profile/settings`, which is where a preference
+   * belongs, rather than from the run that is trying to reach a first rep.
    */
-  const interview = track === 'interview'
   return (
     <Question
       eyebrow="Step two"
-      title={interview ? 'And on the dating reps?' : "What's the hard part?"}
-      sub={interview
-        ? 'Your account has both tracks. This one is only about the dating side — it picks who you meet there and your first challenge out in the world. Interviews are set up separately, on the next screen but one.'
-        : 'This one earns its keep: it picks who you meet first, your first challenge out in the world, and the technique on your brief.'}
+      title="What's the hard part?"
+      sub="This one earns its keep: it picks who you meet first, your first challenge out in the world, and the technique on your brief."
     >
       {FOCUS_OPTIONS.map((option) => (
         <Option key={option.value} label={option.label} mark={focusMark(option.value) ?? undefined} selected={value === option.value} onClick={() => onChoose(option.value)} />
       ))}
-      {value && firstRep && !interview ? (
+      {value && firstRep ? (
         <p className="focus-preview" aria-live="polite">
           <FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={18} size={42} />
           <span><span className="label">First up</span> {firstRep.name} — {firstRep.setting.toLowerCase()}</span>
         </p>
       ) : null}
     </Question>
+  )
+}
+
+/* ------------------------------------------------------------------ *
+ * Question two, interview arm
+ * ------------------------------------------------------------------ */
+
+/**
+ * The role, asked where the dating arm asks what the hard part is.
+ *
+ * ── WHY THIS IS A QUESTION ON BOTH RUNS ──────────────────────────────────
+ *
+ * `interview_setups.complete` is *a role title and nothing else* — the CV is
+ * optional by design (§C4) — so this one field is the whole difference between
+ * an account that lands on its free five-minute screener and one that lands on
+ * "Tell us about the job" and a three-step wizard. Asking it here costs one
+ * screen that was already in the run, and it is the cheapest possible version
+ * of the question: no field picker, no job description, no CV. Those live on
+ * `/interview/setup/role`, which is still where the profile is EDITED.
+ *
+ * ── AND WHY IT IS SKIPPABLE ──────────────────────────────────────────────
+ *
+ * The same reason the name is. A required free-text field is the highest-cost
+ * control on either run, and plenty of people practising interviews are
+ * practising for a job they have not found yet. A skip is answered by the
+ * interviewer working from the field alone, which §C4 already provides for —
+ * and `onboardingResumePath` reads the flag rather than the title, so a skip
+ * is a finished step rather than one somebody is returned to forever.
+ */
+export function RoleStep({ roleTitle, company, onSubmit }: {
+  roleTitle: string | null
+  company: string | null
+  onSubmit: (value: { roleTitle: string | null; company: string | null }) => void
+}) {
+  const [role, setRole] = useState(roleTitle ?? '')
+  const [where, setWhere] = useState(company ?? '')
+  const trimmedRole = role.trim()
+  return (
+    <section className="onboarding-question">
+      <span className="label">Step two</span>
+      <h1 className="display-lg" tabIndex={-1} data-step-heading>What are you interviewing for?</h1>
+      <p className="onboarding-sub">
+        This is what makes the questions yours rather than generic. The title is enough — how hard the
+        questions are follows from it, and you can change both later.
+      </p>
+      <form
+        className="option-stack"
+        onSubmit={(event) => {
+          event.preventDefault()
+          onSubmit({ roleTitle: trimmedRole || null, company: where.trim() || null })
+        }}
+      >
+        <Input
+          label="Role title"
+          name="roleTitle"
+          autoComplete="organization-title"
+          maxLength={120}
+          placeholder="Senior Backend Engineer"
+          value={role}
+          onChange={(event) => setRole(event.target.value)}
+        />
+        <Input
+          label="Company"
+          name="company"
+          autoComplete="organization"
+          maxLength={120}
+          placeholder="Optional"
+          value={where}
+          onChange={(event) => setWhere(event.target.value)}
+        />
+        <Button type="submit" size="lg" fullWidth disabled={!trimmedRole}>Continue</Button>
+        <Button type="button" variant="ghost" fullWidth onClick={() => onSubmit({ roleTitle: null, company: null })}>
+          I&apos;m not sure yet
+        </Button>
+      </form>
+    </section>
   )
 }
 
@@ -198,14 +286,42 @@ export function FocusStep({ value, firstRep, track, onChoose }: { value: FocusAr
  * not want to give, and the alternative to a skip is a required field between
  * a new account and its first rep.
  */
-export function NameStep({ value, onSubmit }: { value: string | null; onSubmit: (value: string | null) => void }) {
+export function NameStep({ value, track = null, eyebrow = 'Step three', onSubmit }: {
+  value: string | null
+  /**
+   * Which number this question is, which is not the same on every run.
+   *
+   * `/start` asks three questions on either arm, so the name is always the
+   * third. The signed-in interview run has a fourth screen in front of it —
+   * the CV — and two screens both reading "Step three" is a rail that
+   * contradicts itself.
+   */
+  eyebrow?: string
+  /**
+   * Whose mouth the name comes out of.
+   *
+   * It used to read "What should she call you?" on both arms, which on the
+   * interview run was the third screen in a row written for the other product.
+   * The gate itself is unchanged — §08's `usesYourName` — and so is the rule
+   * that a skip means nobody ever says it.
+   */
+  track?: Track | null
+  onSubmit: (value: string | null) => void
+}) {
   const [name, setName] = useState(value ?? '')
+  const interview = track === 'interview'
   const trimmed = name.trim()
   return (
     <section className="onboarding-question">
-      <span className="label">Step three</span>
-      <h1 className="display-lg" tabIndex={-1} data-step-heading>What should she call you?</h1>
-      <p className="onboarding-sub">First name is plenty. She only uses it once a conversation has earned it — and never if you skip this.</p>
+      <span className="label">{eyebrow}</span>
+      <h1 className="display-lg" tabIndex={-1} data-step-heading>
+        {interview ? 'What should your interviewer call you?' : 'What should she call you?'}
+      </h1>
+      <p className="onboarding-sub">
+        {interview
+          ? 'First name is plenty. It is what you are greeted with and what you hear when they push back — and never used at all if you skip this.'
+          : 'First name is plenty. She only uses it once a conversation has earned it — and never if you skip this.'}
+      </p>
       <form className="option-stack" onSubmit={(event) => { event.preventDefault(); onSubmit(trimmed || null) }}>
         <Input label="First name" name="displayName" autoComplete="given-name" maxLength={40} placeholder="Sam" value={name} onChange={(event) => setName(event.target.value)} />
         <Button type="submit" size="lg" fullWidth>Continue</Button>

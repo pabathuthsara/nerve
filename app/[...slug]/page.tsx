@@ -2,6 +2,7 @@ import { isAuthRoute, isBillingRoute, isOnboardingRoute, RouteView, type AuthCon
 import type { OnboardingContext } from '@/components/screens/onboarding-screens'
 import { enforceFrontendGuard, ONBOARDING_TRACK_FLAG, onboardingResumePath, type GuardedProfile } from '@/lib/data/guards'
 import { fetchFirstRepCandidates } from '@/lib/data/first-rep'
+import { readInterviewSetup } from '@/lib/db/interview'
 import { uiLevel } from '@/lib/data/progression'
 import { currentUser } from '@/lib/db/server'
 import { checkoutConfigured, packsConfigured, takingRealPayments } from '@/lib/billing/plans'
@@ -53,9 +54,18 @@ async function onboardingContext(path: string, profile: GuardedProfile | null): 
     ? (profile.ui_flags as Record<string, unknown>)
     : {}
   const answeredTrack = !!flags[ONBOARDING_TRACK_FLAG]
+  const track = answeredTrack ? TRACKS.find((value) => value === profile?.active_track) ?? null : null
+  /**
+   * The interview arm's question two lives in `interview_setups`, so the run
+   * costs one more read — and only on that arm. A dating account pays nothing
+   * for a table it never opens, and the age gate pays for neither.
+   */
+  const setup = track === 'interview' && path !== '/onboarding/age' ? await readInterviewSetup() : null
   return {
-    track: answeredTrack ? TRACKS.find((value) => value === profile?.active_track) ?? null : null,
+    track,
     focusArea: FOCUS_AREAS.find((value) => value === profile?.focus_area) ?? null,
+    roleTitle: setup?.roleTitle || null,
+    company: setup?.company || null,
     displayName: profile?.display_name?.trim() || null,
     currentLevel,
     resumeRoute: onboardingResumePath(profile) as OnboardingContext['resumeRoute'],

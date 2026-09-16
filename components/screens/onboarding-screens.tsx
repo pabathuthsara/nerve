@@ -65,7 +65,7 @@ import { resetPerson } from '@/components/analytics'
 import { forgetCurrentUser } from '@/lib/data/session'
 import { PauseMeter, offsetFromPause } from '@/lib/voice/calibration'
 import { DEFAULT_CALIBRATION, resolveSilenceMs } from '@/lib/voice/types'
-import { Button, DateOfBirth, Sheet } from '@/components/ui'
+import { Button, Card, DateOfBirth, FileDrop, Sheet, Skeleton } from '@/components/ui'
 /**
  * The three questions, shared with `/start` (`onboarding-questions.tsx`).
  *
@@ -74,7 +74,19 @@ import { Button, DateOfBirth, Sheet } from '@/components/ui'
  * both runs render the same components. `FOCUS_OPTIONS` is re-exported
  * below because `/profile/settings` has always imported it from here.
  */
-import { FOCUS_OPTIONS, FocusStep, NameStep, TrackStep } from './onboarding-questions'
+import { FOCUS_OPTIONS, FocusStep, NameStep, RoleStep, TrackStep } from './onboarding-questions'
+/**
+ * The interview arm's two extra steps reach the interview track's own writes.
+ *
+ * Imported rather than re-implemented: `uploadCv` is the only path that stores
+ * a CV and extracts it once on the bytes that were actually stored (C2/C3), and
+ * a second uploader on this run would be a row naming one file and carrying
+ * another file's text.
+ */
+import { removeCv, saveInterviewSetup, uploadCv } from '@/app/interview/actions'
+import { useInterviewers, useUserState } from '@/lib/data'
+import { useProduct } from '@/components/product-provider'
+import { openingRound, roundType } from '@/lib/data/interview-credits'
 import { MIN_AGE } from '@/lib/safety/age'
 import { tap } from '@/lib/haptics'
 import { FluidPersona } from '@/components/fluid-persona'
@@ -89,6 +101,8 @@ type OnboardingRoute =
   | '/onboarding/age'
   | '/onboarding/track'
   | '/onboarding/focus'
+  | '/onboarding/role'
+  | '/onboarding/cv'
   | '/onboarding/name'
   | '/onboarding/mic'
   | '/onboarding/ready'
@@ -104,6 +118,15 @@ type OnboardingRoute =
 export interface OnboardingContext {
   track: Track | null
   focusArea: FocusArea | null
+  /**
+   * The interview arm's question two, read from `interview_setups` on the
+   * server for the same reason every other answer here is read: a step that
+   * cannot show its own stored answer is a step the back arrow draws blank.
+   *
+   * Null on the dating arm, where the row is not read at all.
+   */
+  roleTitle: string | null
+  company: string | null
   displayName: string | null
   /**
    * The characters the first rep could be against, read on the server.
@@ -141,7 +164,7 @@ export interface OnboardingContext {
  * product ever read the column — see `saveOnboardingChoice` for why it was
  * removed rather than wired.
  */
-const STEPS: readonly OnboardingRoute[] = [
+const DATING_STEPS: readonly OnboardingRoute[] = [
   '/onboarding/track',
   '/onboarding/focus',
   '/onboarding/name',
@@ -149,15 +172,55 @@ const STEPS: readonly OnboardingRoute[] = [
   '/onboarding/ready',
 ]
 
-const stepMap: Record<string, number> = Object.fromEntries(STEPS.map((route, index) => [route, index]))
+/**
+ * ── THE INTERVIEW ARM'S RUN ──────────────────────────────────────────────
+ *
+ * Until 16 September there was one list and it was this one with the dating
+ * focus question in it, so an account that answered "job interviews" was asked
+ * what it found hard about flirting, told how a three-minute rep works, and
+ * then handed to `/interview` — where it met "Tell us about the job" and a
+ * three-step wizard before anything could be spoken. Cold account to
+ * microphone was eleven screens, six of them about the other product.
+ *
+ * Two steps replace the focus question. The **role** is what
+ * `interview_setups.complete` actually is (a role title and nothing else), so
+ * it is the difference between landing on a free screener and landing on a
+ * wizard. The **CV** is the one document that makes the questions about this
+ * person rather than about the field — and it is here, ahead of the name and
+ * the microphone, because it is the only genuinely optional step on the run
+ * and an optional step placed last is a step nobody does.
+ *
+ * Both are skippable and both stamp a flag when asked rather than when
+ * answered, which is what stops the resume returning somebody to a question
+ * they have already declined. See `onboardingResumePath`.
+ */
+const INTERVIEW_STEPS: readonly OnboardingRoute[] = [
+  '/onboarding/track',
+  '/onboarding/role',
+  '/onboarding/cv',
+  '/onboarding/name',
+  '/onboarding/mic',
+  '/onboarding/ready',
+]
+
+function stepsFor(track: Track | null): readonly OnboardingRoute[] {
+  return track === 'interview' ? INTERVIEW_STEPS : DATING_STEPS
+}
 
 export function OnboardingScreen({ route, context }: { route: OnboardingRoute; context: OnboardingContext }) {
-  // See STEPS. The gate stands on its own: no rail, no back arrow, nothing
-  // that suggests it can be skipped past.
+  // See the step lists. The gate stands on its own: no rail, no back arrow,
+  // nothing that suggests it can be skipped past.
   if (route === '/onboarding/age') {
     return <main className="onboarding-page"><OnboardingSignOut /><div className="onboarding-shell"><AgeStep /></div></main>
   }
-  return <OnboardingRun start={stepMap[context.resumeRoute] ?? 0} context={context} />
+  /**
+   * The resume is a ROUTE and the run holds an INDEX, so the route has to be
+   * looked up in the list this account is actually walking. Resolved here, off
+   * `context.track` — which the server only reports once the track flag says it
+   * was chosen, so an unanswered run opens at zero on either list.
+   */
+  const start = stepsFor(context.track).indexOf(context.resumeRoute)
+  return <OnboardingRun start={start < 0 ? 0 : start} context={context} />
 }
 
 /* ------------------------------------------------------------------ *
@@ -165,10 +228,17 @@ export function OnboardingScreen({ route, context }: { route: OnboardingRoute; c
  * ------------------------------------------------------------------ */
 
 function OnboardingRun({ start, context }: { start: number; context: OnboardingContext }) {
-  const [step, setStep] = useState(() => Math.min(Math.max(start, 0), STEPS.length - 1))
   const [track, setTrack] = useState<Track | null>(context.track)
+  const [step, setStep] = useState(() => Math.min(Math.max(start, 0), stepsFor(context.track).length - 1))
   const [focusArea, setFocusArea] = useState<FocusArea | null>(context.focusArea)
   const [displayName, setDisplayName] = useState<string | null>(context.displayName)
+  /**
+   * The interview arm's question two, opened on what is already stored — the
+   * same rule every other step follows, and the reason the back arrow shows an
+   * answered question answered rather than blank.
+   */
+  const [roleTitle, setRoleTitle] = useState<string | null>(context.roleTitle)
+  const [company, setCompany] = useState<string | null>(context.company)
   const [error, setError] = useState<string | null>(null)
 
   /**
@@ -184,6 +254,13 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
   const entered = useRef(false)
 
   /**
+   * The list this run is walking, which changes under the user the moment the
+   * track answer does. Both lists start with the track question and neither
+   * can be re-entered above it, so the index stays meaningful across a switch.
+   */
+  const steps = stepsFor(track)
+
+  /**
    * Who they are about to meet — the same rule `/train` runs, over the roster
    * the server sent, against the focus answer as it stands right now rather
    * than as it stood when the page rendered. Empty progress is not an
@@ -195,9 +272,9 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
   /** Move. See the note at the top of the file for why this touches no URL. */
   const goTo = useCallback((next: number) => {
     setError(null)
-    setStep(Math.min(Math.max(next, 0), STEPS.length - 1))
+    setStep(Math.min(Math.max(next, 0), steps.length - 1))
     busy.current = false
-  }, [])
+  }, [steps.length])
 
   /**
    * Answer, advance, and only then find out whether it stored.
@@ -224,6 +301,28 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
   }, [goTo])
 
   /**
+   * The role step's write, which is two writes to two tables.
+   *
+   * The title is the user's own document about their own job hunt and belongs
+   * in `interview_setups`; the flag that says the step HAPPENED belongs on the
+   * profile, where the route guard reads it without a join (see
+   * `ONBOARDING_ROLE_FLAG`). The flag is stamped only once the title has
+   * stored, so a failed write returns them to the question rather than
+   * skipping silently past it.
+   *
+   * A skip with nothing stored writes no setup row at all — an empty row is a
+   * row the user never created, and `complete` reads false off its absence
+   * just as well. A skip that CLEARS a title they gave earlier does write,
+   * because that is a real edit.
+   */
+  const saveRole = useCallback((value: { roleTitle: string | null; company: string | null }) => {
+    const stamp = () => saveOnboardingChoice({ roleAsked: true })
+    if (!value.roleTitle && !roleTitle) return stamp()
+    return saveInterviewSetup({ roleTitle: value.roleTitle ?? '', company: value.company ?? '' })
+      .then((result) => (result.ok ? stamp() : result))
+  }, [roleTitle])
+
+  /**
    * Focus the question on the way in (§02's keyboard rule, and the reason a
    * screen reader used to re-enter every step from the top of the chrome).
    * Skipped on the first render: stealing focus from a page somebody has just
@@ -235,11 +334,11 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
     heading?.focus()
   }, [step])
 
-  const route = STEPS[step] as OnboardingRoute
+  const route = steps[step] as OnboardingRoute
 
   return (
     <main className="onboarding-page">
-      <OnboardingProgress step={step} />
+      <OnboardingProgress step={step} steps={steps} />
       {step > 0
         ? <button type="button" className="onboarding-back" aria-label="Back to the previous question" onClick={() => goTo(step - 1)}><ChevronLeft size={24} strokeWidth={1.5} /></button>
         : null}
@@ -258,20 +357,45 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
             ? <FocusStep
                 value={focusArea}
                 firstRep={firstRep}
-                track={track}
                 onChoose={(value) => { setFocusArea(value); commit(() => saveOnboardingChoice({ focusArea: value }), step, step + 1) }}
+              />
+            : null}
+          {/* The interview arm's question two. */}
+          {route === '/onboarding/role'
+            ? <RoleStep
+                roleTitle={roleTitle}
+                company={company}
+                onSubmit={(value) => {
+                  setRoleTitle(value.roleTitle)
+                  setCompany(value.company)
+                  commit(() => saveRole(value), step, step + 1)
+                }}
+              />
+            : null}
+          {route === '/onboarding/cv'
+            ? <CvStep
+                roleTitle={roleTitle}
+                onDone={() => { commit(() => saveOnboardingChoice({ cvAsked: true }), step, step + 1) }}
               />
             : null}
           {route === '/onboarding/name'
             ? <NameStep
                 value={displayName}
+                track={track}
+                // The CV sits in front of this on the interview arm, so the
+                // rail and the eyebrow have to agree about which number it is.
+                eyebrow={track === 'interview' ? 'Step four' : 'Step three'}
                 onSubmit={(value) => { setDisplayName(value); commit(() => saveOnboardingChoice({ displayName: value }), step, step + 1) }}
               />
             : null}
           {route === '/onboarding/mic'
             ? <MicStep firstRep={firstRep} track={track} onDone={() => goTo(step + 1)} />
             : null}
-          {route === '/onboarding/ready' ? <ReadyStep firstRep={firstRep} name={displayName} track={track} /> : null}
+          {route === '/onboarding/ready'
+            ? track === 'interview'
+              ? <InterviewReadyStep name={displayName} roleTitle={roleTitle} />
+              : <ReadyStep firstRep={firstRep} name={displayName} />
+            : null}
         </div>
       </div>
     </main>
@@ -299,10 +423,10 @@ function OnboardingSignOut() {
  * the thing the design system says volt is for; done is a hairline that is
  * merely brighter than pending.
  */
-function OnboardingProgress({ step }: { step: number }) {
+function OnboardingProgress({ step, steps }: { step: number; steps: readonly OnboardingRoute[] }) {
   return (
-    <div className="onboarding-progress" role="group" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
-      {STEPS.map((route, index) => (
+    <div className="onboarding-progress" role="group" aria-label={`Step ${step + 1} of ${steps.length}`}>
+      {steps.map((route, index) => (
         <i
           key={route}
           className={index === step ? 'current' : index < step ? 'done' : ''}
@@ -387,6 +511,124 @@ function AgeStep() {
 }
 
 /* ------------------------------------------------------------------ *
+ * The CV
+ * ------------------------------------------------------------------ */
+
+/**
+ * The interview arm's third step, and the only optional one on either run.
+ *
+ * ── WHY IT IS INSIDE THE RUN RATHER THAN BEHIND `/interview` ─────────────
+ *
+ * It was on `/interview/setup/cv`, step two of a three-step wizard reached
+ * from a dashboard that the end of onboarding dropped people on. Nobody
+ * arriving to practise an interview wants a dashboard: they want the round
+ * they were promised, and the CV is the one thing that makes its questions
+ * about them. So it is asked here, once, between the role and the microphone.
+ *
+ * `/interview/setup/cv` is untouched and is still where a CV is replaced or
+ * removed later. This screen uploads and moves on — the full editor, with the
+ * replace sheet and the removal confirmation, stays on the profile where a
+ * destructive control belongs.
+ *
+ * ── WHAT IT REFUSES TO DO ────────────────────────────────────────────────
+ *
+ * It does not block. §C4 is explicit that a missing CV degrades to the field,
+ * the role and the job description rather than to a generic interview, and an
+ * unreadable file is a warning rather than an error for the same reason. A
+ * document upload standing between somebody and the thing they came to
+ * practise is the wrong trade at the wrong moment.
+ */
+function CvStep({ roleTitle, onDone }: { roleTitle: string | null; onDone: () => void }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [stored, setStored] = useState<{ name: string; chars: number | null } | null>(null)
+  const [warning, setWarning] = useState<string | null>(null)
+  const [error, setError] = useState<string | undefined>(undefined)
+
+  /**
+   * `CvSetup`'s lesson, which cost an upload that had in fact succeeded: this
+   * has to be ARMED on mount, not only disarmed on unmount. `reactStrictMode`
+   * double-invokes effects, so a cleanup-only version is stuck false forever
+   * after the first remount and every guarded `setState` below bails.
+   */
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+
+  const upload = (next: File | null) => {
+    setError(undefined)
+    setWarning(null)
+    if (!next) { setFile(null); return }
+    const name = next.name.toLowerCase()
+    // The same two bounds `CvSetup` states, stated here too rather than
+    // discovered by a rejected upload.
+    if (!name.endsWith('.pdf') && !name.endsWith('.docx')) { setError('Use a PDF or DOCX file.'); return }
+    if (next.size > 5 * 1024 * 1024) { setError('File must be 5 MB or smaller.'); return }
+    setFile(next)
+    setUploading(true)
+    const form = new FormData()
+    form.set('file', next)
+    void uploadCv(form)
+      .then((result) => {
+        if (!mounted.current) return
+        setUploading(false)
+        setFile(null)
+        if (!result.ok) { setError(result.message ?? 'Not uploaded.'); return }
+        setStored({ name: result.fileName ?? next.name, chars: result.chars })
+        setWarning(result.warning)
+      })
+      .catch(() => {
+        if (!mounted.current) return
+        setUploading(false)
+        setFile(null)
+        setError('That upload did not finish. Try it again.')
+      })
+  }
+
+  const drop = () => {
+    setStored(null)
+    setWarning(null)
+    void removeCv().catch(() => undefined)
+  }
+
+  return (
+    <section className="onboarding-question">
+      <span className="label">Step three</span>
+      <h1 className="display-lg" tabIndex={-1} data-step-heading>Add your CV</h1>
+      <p className="onboarding-sub">
+        {roleTitle
+          ? `It is what turns "tell me about a project" into a question about yours. Read once, kept private, and used only to brief your interviewer for ${roleTitle}.`
+          : 'It is what turns "tell me about a project" into a question about yours. Read once, kept private, and used only to brief your interviewer.'}
+      </p>
+      <div className="setup-form">
+        {stored && !file
+          ? (
+            <Card className="uploaded-file">
+              <Check size={28} strokeWidth={1.5} />
+              <div>
+                <strong>{stored.name}</strong>
+                <span>{stored.chars === null ? 'Uploaded' : `${stored.chars.toLocaleString()} characters read`}</span>
+              </div>
+              <Button size="sm" variant="secondary" onClick={drop}>Remove</Button>
+            </Card>
+          )
+          : <FileDrop file={file} onFile={upload} error={error} />}
+        {uploading ? <p className="label mute" role="status">Reading it now. This takes a second and happens once.</p> : null}
+        {/* Not an error (§C4). The file is stored; the words did not come out
+            of it, and the interview still runs off the role and the field. */}
+        {warning ? <Card className="cv-warning"><span className="label">The file is saved, the words are not</span><p>{warning}</p></Card> : null}
+        <Button size="lg" fullWidth disabled={uploading} onClick={onDone}>Continue</Button>
+        {stored
+          ? null
+          : <Button variant="ghost" fullWidth disabled={uploading} onClick={onDone}>I&apos;ll add it later</Button>}
+      </div>
+    </section>
+  )
+}
+
+/* ------------------------------------------------------------------ *
  * The microphone
  * ------------------------------------------------------------------ */
 
@@ -403,6 +645,7 @@ interface AudioDevice { deviceId: string; label: string }
 
 function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | null; track: Track | null; onDone: () => void }) {
   const router = useRouter()
+  const interview = track === 'interview'
   const [state, setState] = useState<MicState>('request')
   const [skipping, setSkipping] = useState(false)
   const [devices, setDevices] = useState<AudioDevice[]>([])
@@ -423,8 +666,8 @@ function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | nu
    * navigation (§14, `lib/db/spend.ts`).
    */
   useEffect(() => {
-    if (firstRep) router.prefetch(`/rep/${firstRep.id}/live`)
-  }, [firstRep, router])
+    if (!interview && firstRep) router.prefetch(`/rep/${firstRep.id}/live`)
+  }, [firstRep, interview, router])
 
   const stop = useCallback(() => {
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
@@ -557,7 +800,8 @@ function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | nu
           first rep — true of the check and false of the product, while
           /legal/privacy opens with "We record your voice" and promises thirty
           days. Two surfaces, one claim. */}
-      <p>A rep is a spoken conversation, so this is the one permission the app needs. Your browser will ask next. This check is not recorded at all; reps are, and they are deleted thirty days later.</p>
+      {/* Both arms are voice, and only one of them calls it a rep. */}
+      <p>{interview ? 'An interview is a spoken conversation, so this is the one permission the app needs.' : 'A rep is a spoken conversation, so this is the one permission the app needs.'} Your browser will ask next. This check is not recorded at all; {interview ? 'interviews' : 'reps'} are, and they are deleted thirty days later.</p>
       <Button size="lg" fullWidth onClick={() => void request()}>Allow microphone</Button>
       {escape}
     </> : null}
@@ -586,7 +830,7 @@ function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | nu
       <span className="label">Mic level</span>
       <MicLevelMeter meterRef={meterRef} />
       <h1 className="display-md" tabIndex={-1} data-step-heading>Say: “testing, one two three”</h1>
-      <p>Headphones recommended — she&apos;ll hear herself otherwise.</p>
+      <p>Headphones recommended — {interview ? 'your interviewer' : 'she'}&apos;ll hear {interview ? 'themselves' : 'herself'} otherwise.</p>
       <DevicePicker devices={devices} value={deviceId} onChange={(value) => { setDeviceId(value); void request() }} />
       {escape}
     </> : null}
@@ -675,6 +919,111 @@ function DevicePicker({ devices, value, onChange }: { devices: AudioDevice[]; va
  * ------------------------------------------------------------------ */
 
 /**
+ * The interview arm's last screen, and it ends in the free round rather than
+ * on a dashboard (LAUNCH-GAP D22).
+ *
+ * ── WHAT THIS REPLACES ───────────────────────────────────────────────────
+ *
+ * D1 got the run to stop ending at `/train` with a dating persona in front of
+ * somebody who had said they came for interviews. It ended at `/interview`
+ * instead — which for a brand-new account is `SetupPrompt`: "Tell us about the
+ * job", then a three-step wizard, then an interviewer picker, then a run setup,
+ * and only then a brief. Five screens between an account and the thing the
+ * sign-up screen promised was free.
+ *
+ * Four of those five have already happened by the time anybody reaches this
+ * one: the role is question two and the CV is question three. What is left is
+ * the only choice worth making per run, and it is the one that is genuinely
+ * interesting — **who is in the room**. So it is the last step rather than a
+ * fourth screen behind a dashboard, and choosing somebody starts the round.
+ *
+ * ── WHY THE ROUND IS WRITTEN HERE ────────────────────────────────────────
+ *
+ * B1, one screen earlier than B1 found it. `setupFromRow` never answers a null
+ * round — it clamps to `DEFAULT_ROUND`, which is the ten-minute recruiter screen
+ * and costs a credit the account does not have. An account holding nothing but
+ * the free screener would reach the brief and be refused by its own credit
+ * check. `openingRound` is the function that already knows this, and it is
+ * asked with the balance rather than assumed.
+ */
+function InterviewReadyStep({ name, roleTitle }: { name: string | null; roleTitle: string | null }) {
+  const router = useRouter()
+  const { setSelectedInterviewerId } = useProduct()
+  const { data: interviewers, loading } = useInterviewers()
+  const { data: user } = useUserState()
+  const [starting, setStarting] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const round = roundType(openingRound((user?.interviewScreenerCredits ?? 0) > 0))
+
+  /**
+   * Awaited, not fired and forgotten — the same rule the dating brief follows.
+   * The guard sends an unfinished run straight back here, so leaving before
+   * `finishOnboarding` lands is a loop rather than an interview. The round and
+   * the interviewer go first: they are what the brief on the other side reads.
+   */
+  const start = async (interviewerId: string) => {
+    setStarting(interviewerId)
+    setError(null)
+    setSelectedInterviewerId(interviewerId)
+    const saved = await saveInterviewSetup({ interviewerSlug: interviewerId, round: round.id })
+      .catch(() => ({ ok: false, message: 'Could not save — check your connection.' }))
+    if (!saved.ok) {
+      setStarting(null)
+      setError(saved.message ?? 'Could not save. Try again.')
+      return
+    }
+    await finishOnboarding()
+    router.push(`/interview/rep/${interviewerId}/brief`)
+  }
+
+  return (
+    <section className="onboarding-question interview-ready">
+      <span className="label">Last thing</span>
+      <h1 className="display-lg" tabIndex={-1} data-step-heading>Who is in the room?</h1>
+      <p className="onboarding-sub">
+        {roleTitle
+          ? `${round.label} for ${roleTitle}. ${round.durationMs / 60_000} minutes, free on your account. They decide how warm the room is — how hard the questions are is yours to set afterwards.`
+          : `${round.label}. ${round.durationMs / 60_000} minutes, free on your account. They decide how warm the room is — how hard the questions are is yours to set afterwards.`}
+      </p>
+      {error ? <div className="onboarding-error form-error" role="alert">{error}</div> : null}
+      <div className="option-stack">
+        {loading
+          ? <><Skeleton height={76} /><Skeleton height={76} /><Skeleton height={76} /></>
+          : interviewers.map((interviewer) => (
+            <button
+              key={interviewer.id}
+              type="button"
+              className="option-card interviewer-option"
+              disabled={starting !== null}
+              aria-busy={starting === interviewer.id}
+              onClick={() => { tap(); void start(interviewer.id) }}
+            >
+              <FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} size={40} />
+              <span><strong>{interviewer.name}</strong><small>{interviewer.styleLabel}</small></span>
+            </button>
+          ))}
+      </div>
+      {/* The honest end to a roster nothing has seeded — a Start button with
+          nobody behind it would spend a credit on an empty room. */}
+      {!loading && interviewers.length === 0
+        ? (
+          <Button
+            size="lg"
+            fullWidth
+            loading={starting !== null}
+            onClick={() => { setStarting('none'); void finishOnboarding().then(() => router.push('/interview')) }}
+          >
+            {name ? `Go to interviews, ${name}` : 'Go to interviews'}
+          </Button>
+        )
+        : null}
+    </section>
+  )
+}
+
+
+/**
  * This screen IS the brief — same character, same rules block, same Start.
  * Routing it at `/rep/<id>/brief` re-rendered the identical card at a new URL
  * and asked for Start again, which reads as a button that did not work.
@@ -685,7 +1034,7 @@ function DevicePicker({ devices, value, onChange }: { devices: AudioDevice[]; va
  * screen where somebody is already waiting to start and disagreed with the
  * focus answer's own promise about who they would meet.
  */
-function ReadyStep({ firstRep, name, track }: { firstRep: FirstRepCandidate | null; name: string | null; track: Track | null }) {
+function ReadyStep({ firstRep, name }: { firstRep: FirstRepCandidate | null; name: string | null }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [starting, setStarting] = useState(false)
@@ -697,35 +1046,6 @@ function ReadyStep({ firstRep, name, track }: { firstRep: FirstRepCandidate | nu
     setStarting(true)
     await finishOnboarding()
     router.push(href)
-  }
-
-  /**
-   * ── D1: THE RUN ENDS WHERE THEY SAID THEY WERE GOING ────────────────────
-   *
-   * `/onboarding/track` asks dating or interview and writes `active_track`, and
-   * the run then ended at `/train` in every case — where `AppShell`'s pathname
-   * effect immediately set the track back to `dating`, because that is where
-   * they had landed. So somebody who signed up to practise interviews was shown
-   * a dating persona, a warmth meter and a field challenge, and had to find the
-   * track switcher themselves. The one question onboarding asks about intent
-   * was overwritten within a second of being answered.
-   *
-   * An interview cannot open on a first rep the way a dating one can — it needs
-   * a role, a CV and a round first — so the end of the run for that track is
-   * the interview home, which is where that setup begins. The free screener is
-   * named, because it is the thing that makes the next screen worth opening.
-   */
-  if (track === 'interview') {
-    return (
-      <section className="brief-shell">
-        <Mark name="kind-technique" size={44} current />
-        <h1 className="display-lg" tabIndex={-1} data-step-heading>You&apos;re set up.</h1>
-        <p className="brief-hook">Next: the role you are interviewing for, your CV, and who you want in the room. Your first five-minute round is free.</p>
-        <Button size="lg" fullWidth loading={starting} onClick={() => void start('/interview')}>
-          {name ? `Set up your interview, ${name}` : 'Set up your interview'}
-        </Button>
-      </section>
-    )
   }
 
   /**

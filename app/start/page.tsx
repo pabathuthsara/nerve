@@ -32,8 +32,13 @@ export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Start — NERVE',
+  /**
+   * Both tracks, because the run asks which one on its second screen. It said
+   * only the dating half, which made the link preview under a paid post an
+   * advertisement for one of the two products the page then offers.
+   */
   description:
-    'Three minutes of voice against someone who can lose interest and say no, scored on how you talked rather than on whether it worked. Set yours up in under a minute.',
+    'Timed voice reps against someone who is deciding — a stranger you want to talk to, or an interviewer you want to impress. Scored on how you talked, never on whether it worked. Set yours up in under a minute.',
   /**
    * Crawlable, not indexable. `noindex` keeps this from competing with `/` for
    * the same terms; `follow` and the absence of a `robots.txt` rule keep the

@@ -14,7 +14,7 @@ import Link from 'next/link'
 import { AlertTriangle } from 'lucide-react'
 
 const authRoutes = new Set<AuthRoute>(['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password'])
-const onboardingRoutes = new Set<OnboardingRoute>(['/onboarding/age', '/onboarding/track', '/onboarding/focus', '/onboarding/name', '/onboarding/mic', '/onboarding/ready'])
+const onboardingRoutes = new Set<OnboardingRoute>(['/onboarding/age', '/onboarding/track', '/onboarding/focus', '/onboarding/role', '/onboarding/cv', '/onboarding/name', '/onboarding/mic', '/onboarding/ready'])
 const sessionViews = new Set<SessionView>(['result', 'scorecard', 'transcript'])
 
 /**
@@ -40,7 +40,7 @@ const INTERVIEW_ROUTES = new Set<InterviewRoute>([
  * reached in practice; it exists so the route table stays synchronous and
  * never has to reason about a missing prop.
  */
-const EMPTY_ONBOARDING: OnboardingContext = { track: null, focusArea: null, displayName: null, roster: [], currentLevel: 1, resumeRoute: '/onboarding/track' }
+const EMPTY_ONBOARDING: OnboardingContext = { track: null, focusArea: null, roleTitle: null, company: null, displayName: null, roster: [], currentLevel: 1, resumeRoute: '/onboarding/track' }
 
 /**
  * The two things an auth screen cannot answer for itself.

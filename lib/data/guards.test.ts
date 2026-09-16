@@ -15,12 +15,25 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { ONBOARDING_NAME_FLAG, ONBOARDING_TRACK_FLAG, onboardingResumePath } from './guards'
+import {
+  ONBOARDING_CV_FLAG,
+  ONBOARDING_NAME_FLAG,
+  ONBOARDING_ROLE_FLAG,
+  ONBOARDING_TRACK_FLAG,
+  onboardingResumePath,
+} from './guards'
 
 const stamp = '2026-08-30T00:00:00.000Z'
 
 const profile = (flags: Record<string, string>, focus: string | null = null) => ({
   focus_area: focus,
+  ui_flags: flags,
+})
+
+/** The same row on the other arm. `active_track` is the only difference. */
+const interview = (flags: Record<string, string>) => ({
+  focus_area: null,
+  active_track: 'interview',
   ui_flags: flags,
 })
 
@@ -56,6 +69,72 @@ describe('onboardingResumePath', () => {
     // same screen every time they reloaded.
     const flags = { [ONBOARDING_TRACK_FLAG]: stamp, [ONBOARDING_NAME_FLAG]: stamp }
     expect(onboardingResumePath(profile(flags, 'flirting'))).toBe('/onboarding/mic')
+  })
+
+  /**
+   * ── THE FORK (LAUNCH-GAP D22) ──────────────────────────────────────────
+   *
+   * Past the track question the two arms need different things before a first
+   * rep can exist, and the interview arm used to be walked through the dating
+   * one: an account that answered "job interviews" was asked what it found
+   * hard about flirting, and then handed to a dashboard and a three-step
+   * wizard. These four assertions are the fork.
+   */
+  describe('the interview arm', () => {
+    const tracked = { [ONBOARDING_TRACK_FLAG]: stamp }
+
+    it('asks for the role where the dating arm asks for the focus', () => {
+      expect(onboardingResumePath(interview(tracked))).toBe('/onboarding/role')
+    })
+
+    it('asks for the CV next, before the name and the microphone', () => {
+      // Deliberately ahead of the two steps that are not optional: an optional
+      // step placed last is a step nobody does.
+      expect(onboardingResumePath(interview({ ...tracked, [ONBOARDING_ROLE_FLAG]: stamp })))
+        .toBe('/onboarding/cv')
+    })
+
+    it('treats a skipped CV as answered', () => {
+      // §C4: a missing CV degrades to the field, the role and the job
+      // description. Declining is a finished answer, not a step to return to.
+      const flags = { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp, [ONBOARDING_CV_FLAG]: stamp }
+      expect(onboardingResumePath(interview(flags))).toBe('/onboarding/name')
+      expect(onboardingResumePath(interview({ ...flags, [ONBOARDING_NAME_FLAG]: stamp })))
+        .toBe('/onboarding/mic')
+    })
+
+    it('never asks an interview account for a dating focus area', () => {
+      const walked = [
+        tracked,
+        { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp },
+        { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp, [ONBOARDING_CV_FLAG]: stamp },
+        { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp, [ONBOARDING_CV_FLAG]: stamp, [ONBOARDING_NAME_FLAG]: stamp },
+      ]
+      for (const flags of walked) {
+        expect(onboardingResumePath(interview(flags))).not.toBe('/onboarding/focus')
+      }
+    })
+
+    it('never asks a dating account for a role or a CV', () => {
+      // The other half of the same rule, and the one that would break the arm
+      // that has every customer on it.
+      const walked = [
+        profile(tracked),
+        profile(tracked, 'opening'),
+        profile({ ...tracked, [ONBOARDING_NAME_FLAG]: stamp }, 'opening'),
+      ]
+      for (const row of walked) {
+        expect(['/onboarding/role', '/onboarding/cv']).not.toContain(onboardingResumePath(row))
+      }
+    })
+
+    it('does not read the track above the flag that says it was chosen', () => {
+      // `active_track` carries a database default, so it is set for everybody
+      // before anybody has chosen. An unflagged row goes to question one
+      // whatever the column happens to say.
+      expect(onboardingResumePath({ focus_area: null, active_track: 'interview', ui_flags: {} }))
+        .toBe('/onboarding/track')
+    })
   })
 
   it('never returns the step that was cut', () => {
