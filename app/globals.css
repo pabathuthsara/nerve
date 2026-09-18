@@ -2133,6 +2133,40 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
    product, and it sits under the loudest button on the page. */
 .final-call__maker { max-width: 42ch; margin: 22px auto 0; color: var(--text-mute); font-size: 13px; }
 
+/* ---- what the first testers said ---- */
+
+/*
+  Five items in a three-column grid, with the first spanning two so the rows
+  fill exactly (2+1 / 1+1+1) instead of leaving an orphan. No faces and no
+  stars — see the note on `Reviews`.
+*/
+.reviews { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.reviews__item {
+  display: grid; align-content: space-between; gap: 18px;
+  border: 1px solid var(--line); border-radius: 2px;
+  padding: 24px 22px;
+  background: var(--surface);
+}
+.reviews__item blockquote {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px; line-height: 1.6;
+  text-wrap: pretty;
+}
+/* The one that names the differentiator, at the size that says so. */
+.reviews__item--lead blockquote { font-size: clamp(18px, 2.2vw, 22px); line-height: 1.5; }
+.reviews__item figcaption { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.reviews__name { color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; }
+.reviews__context { color: var(--text-mute); font-size: 12px; }
+
+@media (min-width: 720px) {
+  .reviews { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .reviews { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .reviews__item--lead { grid-column: span 2; }
+}
+
 /* ---- the hero's voice ---- */
 
 /*

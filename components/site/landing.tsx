@@ -23,6 +23,7 @@ import { PRESENTATION } from '@/lib/personas/presentation'
 import { PERSONA_VISUAL } from '@/lib/personas/visual'
 import { LEVEL_NAMES } from '@/lib/data/progression'
 import { PUBLIC_PLANS, SCREENER_NOTE, TRIAL_DAYS, repsLine } from '@/lib/site/plans'
+import { REVIEWS, reviewCountNote, reviewsReady } from '@/lib/site/reviews'
 import type { CSSProperties, ReactNode } from 'react'
 import type { UsageProof } from '@/lib/db/founding'
 
@@ -136,6 +137,7 @@ export function Landing({ usage = null }: { usage?: UsageProof | null }) {
   return (
     <>
       <Hero usage={usage} />
+      <Reviews />
       <ScoringLaw />
       <Loop />
       <Roster />
@@ -168,6 +170,59 @@ function SectionCall({ href = '/start', children }: { href?: string; children: R
     <div className="section-call">
       <Link href={href} className="arena-button arena-button--primary arena-button--lg">{children}</Link>
     </div>
+  )
+}
+
+/**
+ * What the first testers said, directly under the hero.
+ *
+ * ── WHY HERE AND NOT FURTHER DOWN ────────────────────────────────────────
+ *
+ * `SIGNUP-FIXES-2026-09-18.md` §4.4 calls social proof the largest missing
+ * category on this page, and a cold visitor from paid social decides in a few
+ * seconds. Below the hero is the first slot where somebody has been told what
+ * the product is and has not yet been asked for anything — so it answers
+ * *does this work for people like me* before the argument starts, rather than
+ * after three screens of it.
+ *
+ * ── NO FACES, AND NO STARS ───────────────────────────────────────────────
+ *
+ * `VISUAL-AUDIT.md` §1 forbids photographs of people as product, and a row of
+ * stock headshots is the single most obvious tell of a bought testimonial
+ * block. There is no rating either: five stars from five friends is a
+ * statistic about nothing, and §4.4's rule is that a number on this page is
+ * counted or absent. What is left is the words and the name, which is all a
+ * real quote ever needed.
+ *
+ * The first quote leads at a larger size because it is the one that names the
+ * differentiator — being turned down by something that is not a person.
+ *
+ * **No number in the heading.** `reviewCountNote` counts the quotes, and a
+ * hardcoded "five" beside it would be a second source for one fact — stale
+ * the moment a sixth person is quoted, on the page where a wrong number is a
+ * compliance problem rather than a typo.
+ */
+function Reviews() {
+  if (!reviewsReady()) return null
+  return (
+    <SiteSection
+      kicker="The testers"
+      title={<>They tried it<br />before you did.</>}
+      lede={reviewCountNote()}
+      wide
+    >
+      <ul className="reviews">
+        {REVIEWS.map((review, index) => (
+          <li key={review.name} className={index === 0 ? 'reviews__item reviews__item--lead' : 'reviews__item'}>
+            <blockquote>{review.quote}</blockquote>
+            <figcaption>
+              <span className="reviews__name">{review.name}</span>
+              {review.context ? <span className="reviews__context">{review.context}</span> : null}
+            </figcaption>
+          </li>
+        ))}
+      </ul>
+    </SiteSection>
   )
 }
 
