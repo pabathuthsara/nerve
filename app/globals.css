@@ -3019,6 +3019,33 @@ a.admin-chip { text-decoration: none; }
 .start-foot--exit { font-size: 12px; }
 .start-foot--exit a { color: var(--text-mute); text-decoration: underline; text-underline-offset: 3px; }
 .start-foot--exit a:hover { color: var(--text-dim); }
+/*
+  The tester quote on the account screen. Quiet on purpose — it is reassurance
+  beside a form, not a second argument, so it takes a hairline rule rather than
+  a card and sits at Ink-2. A boxed testimonial here would compete with the
+  thing it is meant to get somebody to fill in.
+*/
+.start-proof {
+  margin: 20px 0 0;
+  border-left: 1px solid var(--line-bright);
+  padding: 2px 0 2px 14px;
+  text-align: left;
+}
+.start-proof blockquote {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 14px; line-height: 1.6;
+  text-wrap: pretty;
+  quotes: '\201C' '\201D' '\2018' '\2019';
+}
+.start-proof blockquote::before { content: open-quote; }
+.start-proof blockquote::after { content: close-quote; }
+.start-proof figcaption {
+  margin-top: 8px;
+  color: var(--text-mute);
+  font-family: var(--font-mono), monospace; font-size: 11px;
+  letter-spacing: .08em; text-transform: uppercase;
+}
 .start-age__form { margin-top: 26px; }
 /* One number, so the field does not run the width of the screen and invite a
    date into it. */

@@ -117,3 +117,36 @@ export function reviewCountNote(list: readonly Review[] = REVIEWS): string {
   const said = list.filter((review) => review.quote.trim().length > 0).length
   return `From the first ${said} people who tried it. Their words, not ours.`
 }
+
+/**
+ * The one quote that appears inside `/start`, on the account screen.
+ *
+ * ── WHY ONE, AND WHY THERE ───────────────────────────────────────────────
+ *
+ * Not a carousel and not a screen of its own. `start-funnel.ts` has a rule
+ * that a claim may never follow a claim and may never come before the first
+ * question, and §3.2 cut `reframe` two days before this was added for
+ * exactly that reason — a reviews screen after the hook would put back what
+ * was just removed, and every extra screen in an eight-screen run is another
+ * place to leave.
+ *
+ * Doubt is not highest after the hook. It is highest on screen eight, where
+ * somebody who has answered six questions is asked for an email and a
+ * password. So the proof goes there, costs no step, and does not move.
+ *
+ * ── AND WHY THIS ONE ─────────────────────────────────────────────────────
+ *
+ * The hesitation at a sign-up form is *will this actually do anything for
+ * me*, not *what is this* — that has been answered six screens ago. Mason's
+ * is the only one of the five that answers the first question, and it does it
+ * without overclaiming: he still gets nervous. A quote that promised the
+ * nerves went away would be the clinical register rule 12 forbids, said by a
+ * customer, which is not better.
+ *
+ * Selected BY NAME rather than by index, so reordering `REVIEWS` for the
+ * landing page's grid cannot silently change which quote the funnel shows.
+ */
+const SIGNUP_REVIEW_NAME = 'Mason Hayes'
+
+export const SIGNUP_REVIEW: Review | null =
+  REVIEWS.find((review) => review.name === SIGNUP_REVIEW_NAME) ?? null

@@ -64,6 +64,7 @@ import { GoogleButton } from './google-button'
 import { RuleBlock, repGoal } from './rep-format'
 import { tap } from '@/lib/haptics'
 import { MIN_AGE, checkAge } from '@/lib/safety/age'
+import { SIGNUP_REVIEW } from '@/lib/site/reviews'
 import {
   EMPTY_START_ANSWERS,
   START_FIELD,
@@ -724,6 +725,22 @@ function AccountStep({ answers }: { answers: StartAnswers }) {
         One free voice rep and one free five-minute interview, on every account.
         No card now, and none ever if you stay free. Takes about twenty seconds.
       </p>
+      {/*
+        One tester, static, on the screen where doubt is highest.
+
+        Not a carousel and not a screen of its own: `startSteps` may never put
+        a claim after a claim, §3.2 cut `reframe` for that reason, and every
+        extra screen in an eight-screen run is another place to leave. The
+        hesitation HERE is "will this do anything for me", which six screens
+        of explaining what the product is has not answered. See
+        `SIGNUP_REVIEW`.
+      */}
+      {SIGNUP_REVIEW ? (
+        <figure className="start-proof">
+          <blockquote>{SIGNUP_REVIEW.quote}</blockquote>
+          <figcaption>{SIGNUP_REVIEW.name}</figcaption>
+        </figure>
+      ) : null}
       {/* §2.1 step 4, and it is only correct now that §2.2 has shipped.
           The answers this form posts in `START_FIELD` are carried in a cookie
           instead, because the OAuth leg leaves the site — and they now

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MIN_REVIEWS, REVIEWS, reviewCountNote, reviewsReady } from './reviews'
+import { MIN_REVIEWS, REVIEWS, SIGNUP_REVIEW, reviewCountNote, reviewsReady } from './reviews'
 
 /**
  * These run over the one part of the landing page that quotes a named human
@@ -71,5 +71,17 @@ describe('the testers, and what a quote is not allowed to say', () => {
     expect(reviewsReady(REVIEWS.slice(0, MIN_REVIEWS - 1))).toBe(false)
     // A row filled with an empty quote is padding, and does not count.
     expect(reviewsReady([REVIEWS[0]!, { quote: '   ', name: 'Nobody' }, REVIEWS[1]!])).toBe(false)
+  })
+
+  it('still has the quote the signup form shows', () => {
+    /**
+     * `SIGNUP_REVIEW` resolves by NAME, so reordering the array for the
+     * landing grid cannot change which quote `/start` shows — but renaming or
+     * removing that person would leave the account screen with nothing and no
+     * error. This is what says so.
+     */
+    expect(SIGNUP_REVIEW).not.toBeNull()
+    expect(SIGNUP_REVIEW?.quote.trim().length).toBeGreaterThan(20)
+    expect(REVIEWS).toContainEqual(SIGNUP_REVIEW)
   })
 })
