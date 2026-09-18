@@ -2147,14 +2147,31 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
   padding: 24px 22px;
   background: var(--surface);
 }
+/*
+  The marks are CSS, not characters in the string.
+
+  `lib/site/reviews.ts` is a transcript — what somebody said — and punctuation
+  we add for display has no business in it. Keeping them here also means the
+  test that reads those strings is reading their words rather than our
+  quotation marks, and a quote lifted out of the file for any other surface
+  arrives unadorned.
+
+  `text-indent` hangs the opening mark into the margin so the first line of
+  text still starts flush with every line below it and with the name — the
+  alternative indents one line by a quarter of an em and looks like a mistake.
+*/
 .reviews__item blockquote {
   margin: 0;
   color: var(--text);
   font-size: 16px; line-height: 1.6;
   text-wrap: pretty;
+  quotes: '\201C' '\201D' '\2018' '\2019';
+  text-indent: -0.42em;
 }
+.reviews__item blockquote::before { content: open-quote; }
+.reviews__item blockquote::after { content: close-quote; }
 /* The one that names the differentiator, at the size that says so. */
-.reviews__item--lead blockquote { font-size: clamp(18px, 2.2vw, 22px); line-height: 1.5; }
+.reviews__item--lead blockquote { font-size: clamp(18px, 2.2vw, 22px); line-height: 1.5; text-indent: -0.46em; }
 .reviews__item figcaption { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .reviews__name { color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; }
 .reviews__context { color: var(--text-mute); font-size: 12px; }
