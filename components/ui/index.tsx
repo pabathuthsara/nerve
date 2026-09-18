@@ -450,9 +450,36 @@ export function Sheet({ open, onClose, title, children, dismissible = true }: { 
           aria-modal="true"
           aria-label={title ?? 'Dialog'}
           tabIndex={-1}
-          initial={reducedMotion ? false : isDesktop ? { opacity: 0, scale: .98 } : { y: '100%' }}
-          animate={isDesktop ? { opacity: 1, scale: 1 } : { y: 0 }}
-          exit={reducedMotion ? { opacity: 0 } : isDesktop ? { opacity: 0, scale: .98 } : { y: '100%' }}
+          /**
+           * ── EVERY STATE NAMES EVERY PROPERTY, AND THAT IS THE FIX ──────
+           *
+           * These used to be written per-breakpoint: the phone animated `y`
+           * and the desktop animated `opacity` and `scale`. On a desktop
+           * browser that left every sheet in the product about 97% of its
+           * own height too low — mostly below the fold.
+           *
+           * The cause is that `useBreakpoint` cannot know the width during
+           * the first render: it starts `false` and corrects in an effect,
+           * because a hook that read `matchMedia` while rendering would
+           * hydrate differently from the server. So `initial` is ALWAYS
+           * captured as the phone's `{ y: '100%' }`, and a frame later
+           * `animate` became the desktop object — which named no `y`, so
+           * Framer stopped driving it and abandoned the value wherever the
+           * interrupted entrance had got to.
+           *
+           * A motion value nothing animates keeps its last value. So the two
+           * states must span the same keys, and then the correction animates
+           * rather than strands. The phone path is unchanged: `opacity` and
+           * `scale` are already 1 there, so adding them names what was
+           * already true.
+           */
+          initial={reducedMotion ? false : isDesktop
+            ? { opacity: 0, scale: .98, y: 0 }
+            : { opacity: 1, scale: 1, y: '100%' }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={reducedMotion ? { opacity: 0, scale: 1, y: 0 } : isDesktop
+            ? { opacity: 0, scale: .98, y: 0 }
+            : { opacity: 1, scale: 1, y: '100%' }}
           transition={{ duration: reducedMotion ? 0 : .24, ease: [0.2, 0, 0, 1] }}
           drag={!isDesktop && dismissible ? 'y' : false}
           dragControls={dragControls}

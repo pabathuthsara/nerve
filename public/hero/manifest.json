@@ -1,22 +1,23 @@
 {
   "persona": "nadia",
-  "recordedAt": "2026-08-28T10:07:49.130Z",
+  "recordedAt": "2026-09-18T17:04:00.000Z",
   "her": {
     "voice": "marin",
     "model": "gpt-realtime",
     "scripted": false
   },
   "his": {
-    "voice": "ash",
-    "model": "gpt-4o-mini-tts",
-    "scripted": true
+    "voice": "human",
+    "model": null,
+    "scripted": true,
+    "source": "recorded"
   },
-  "totalMs": 47900,
+  "totalMs": 49582,
   "turns": [
     {
       "who": "you",
-      "text": "That's the third one you've picked up and put back.",
-      "ms": 3970,
+      "text": "That's the third one you picked up and put back.",
+      "ms": 4607,
       "audio": "/hero/you-01.mp3"
     },
     {
@@ -28,7 +29,7 @@
     {
       "who": "you",
       "text": "What does she actually read? Not what you think she should read.",
-      "ms": 5370,
+      "ms": 5716,
       "audio": "/hero/you-02.mp3"
     },
     {
@@ -39,32 +40,32 @@
     },
     {
       "who": "you",
-      "text": "Then don't buy her literature. Buy her the thing she'd be embarrassed to be seen with.",
-      "ms": 6620,
+      "text": "Then don't buy her literature. Buy her the one thing she'd be embarrassed to be seen with.",
+      "ms": 6484,
       "audio": "/hero/you-03.mp3"
     },
     {
       "who": "her",
-      "text": "Heh. Yeah, maybe that’s the right idea. Just go full ridiculous and lean into it.",
+      "text": "Heh. Yeah, maybe that\u2019s the right idea. Just go full ridiculous and lean into it.",
       "ms": 5870,
       "audio": "/hero/nadia-03.mp3"
     },
     {
       "who": "you",
       "text": "I've got a shelf of those. I keep them behind the good ones.",
-      "ms": 4120,
+      "ms": 5033,
       "audio": "/hero/you-04.mp3"
     },
     {
       "who": "her",
-      "text": "Yeah, that sounds familiar. We all do that a bit, don’t we?",
+      "text": "Yeah, that sounds familiar. We all do that a bit, don\u2019t we?",
       "ms": 4070,
       "audio": "/hero/nadia-04.mp3"
     },
     {
       "who": "you",
-      "text": "Anyway — good luck with the sister. I'll let you get on.",
-      "ms": 4770,
+      "text": "Anyway \u2014 good luck with your sister. I'll let you get home.",
+      "ms": 4692,
       "audio": "/hero/you-05.mp3"
     },
     {

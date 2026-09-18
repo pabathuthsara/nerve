@@ -87,28 +87,42 @@ describe('onboardingResumePath', () => {
       expect(onboardingResumePath(interview(tracked))).toBe('/onboarding/role')
     })
 
-    it('asks for the CV next, before the name and the microphone', () => {
-      // Deliberately ahead of the two steps that are not optional: an optional
-      // step placed last is a step nobody does.
-      expect(onboardingResumePath(interview({ ...tracked, [ONBOARDING_ROLE_FLAG]: stamp })))
+    it('asks for the name before the CV, so a /start account is not asked it twice', () => {
+      /**
+       * The CV was ahead of the name for a day, on the argument that an
+       * optional step placed last is a step nobody does. The run opens at this
+       * path and then walks FORWARD, so an unanswered step in front of an
+       * answered one drags the resume back behind it — and a `/start` account
+       * arrives with the name already given. It was asked a second time.
+       */
+      const roled = { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp }
+      expect(onboardingResumePath(interview(roled))).toBe('/onboarding/name')
+      expect(onboardingResumePath(interview({ ...roled, [ONBOARDING_NAME_FLAG]: stamp })))
         .toBe('/onboarding/cv')
+    })
+
+    it('never returns a step behind one the funnel already answered', () => {
+      // The rule the reorder encodes, asserted rather than commented: what
+      // `/start` stamps is track, role and name, so the resume for that shape
+      // must be a step that comes after all three.
+      const fromStart = { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp, [ONBOARDING_NAME_FLAG]: stamp }
+      const resume = onboardingResumePath(interview(fromStart))
+      expect(['/onboarding/track', '/onboarding/role', '/onboarding/name']).not.toContain(resume)
     })
 
     it('treats a skipped CV as answered', () => {
       // §C4: a missing CV degrades to the field, the role and the job
       // description. Declining is a finished answer, not a step to return to.
-      const flags = { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp, [ONBOARDING_CV_FLAG]: stamp }
-      expect(onboardingResumePath(interview(flags))).toBe('/onboarding/name')
-      expect(onboardingResumePath(interview({ ...flags, [ONBOARDING_NAME_FLAG]: stamp })))
-        .toBe('/onboarding/mic')
+      const flags = { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp, [ONBOARDING_NAME_FLAG]: stamp, [ONBOARDING_CV_FLAG]: stamp }
+      expect(onboardingResumePath(interview(flags))).toBe('/onboarding/mic')
     })
 
     it('never asks an interview account for a dating focus area', () => {
       const walked = [
         tracked,
         { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp },
-        { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp, [ONBOARDING_CV_FLAG]: stamp },
-        { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp, [ONBOARDING_CV_FLAG]: stamp, [ONBOARDING_NAME_FLAG]: stamp },
+        { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp, [ONBOARDING_NAME_FLAG]: stamp },
+        { ...tracked, [ONBOARDING_ROLE_FLAG]: stamp, [ONBOARDING_NAME_FLAG]: stamp, [ONBOARDING_CV_FLAG]: stamp },
       ]
       for (const flags of walked) {
         expect(onboardingResumePath(interview(flags))).not.toBe('/onboarding/focus')

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { visualFor } from '@/lib/personas/visual'
+import { visualFor, type PersonaVisual } from '@/lib/personas/visual'
 import { mountAvatar, onContextLost, type Speaking, type StageHandle, type StageStatus } from './stage'
 
 export type { Speaking, StageStatus }
@@ -25,6 +25,25 @@ interface FluidPersonaProps {
   personaLevel?: number
   /** 'connecting' holds her drawn-in and quiet until the session is actually up. */
   status?: StageStatus
+  /**
+   * A visual to draw instead of the one `visualFor` derives from the name.
+   *
+   * Additive and off by default — every existing caller resolves exactly as
+   * it did. It exists for the one surface that needs the 3D effect without
+   * being a character: the landing page's house voice, which speaks AUTHORED
+   * words and so must not wear a persona's identity (rule 10).
+   *
+   * Without it the hash fallback in `visualFor` chose a roster hue by
+   * accident, and on `/` it chose Nadia's crimson — Red is semantic in Arena
+   * and never branding, so the landing page opened a sheet with what read as
+   * an error state in it.
+   *
+   * Anything passed here is still held to the roster's bounds by
+   * `lib/site/house-visual.test.ts`, which runs the same assertions
+   * `visual.test.ts` runs over `PERSONA_VISUAL`. The override skips the
+   * table, not the rules.
+   */
+  visual?: PersonaVisual
   className?: string
 }
 
@@ -41,6 +60,7 @@ export function FluidPersona({
   userLevel = 0,
   personaLevel = 0,
   status = 'idle',
+  visual: override,
   className = '',
 }: FluidPersonaProps) {
   const mountRef = useRef<HTMLSpanElement | null>(null)
@@ -54,7 +74,7 @@ export function FluidPersona({
   const [ready, setReady] = useState(false)
   const [generation, setGeneration] = useState(0)
 
-  const visual = useMemo(() => visualFor(name, personaId), [name, personaId])
+  const visual = useMemo(() => override ?? visualFor(name, personaId), [override, name, personaId])
   const initial = name.trim().charAt(0).toUpperCase()
   const normalizedWarmth = Math.min(100, Math.max(0, warmth))
 

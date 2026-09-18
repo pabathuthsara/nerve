@@ -1324,6 +1324,7 @@ export type Database = {
           id: number
           path: string
           referrer_host: string | null
+          step: string | null
           user_id: string | null
           visitor: string
         }
@@ -1334,6 +1335,7 @@ export type Database = {
           id?: never
           path: string
           referrer_host?: string | null
+          step?: string | null
           user_id?: string | null
           visitor: string
         }
@@ -1344,6 +1346,7 @@ export type Database = {
           id?: never
           path?: string
           referrer_host?: string | null
+          step?: string | null
           user_id?: string | null
           visitor?: string
         }
@@ -1503,6 +1506,10 @@ export type Database = {
           signups: number
           reps: number
         }[]
+      }
+      admin_start_funnel: {
+        Args: { days: number }
+        Returns: { step: string; views: number; visitors: number }[]
       }
       admin_top_paths: {
         Args: { days: number; lim: number }

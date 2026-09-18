@@ -4,6 +4,7 @@ import { currentUser, supabaseServer } from '@/lib/db/server'
 import { ONBOARDING_DEFERRED_FLAG, onboardingResumePath } from '@/lib/data/guards'
 import { SitePage } from '@/components/site/site-chrome'
 import { Landing } from '@/components/site/landing'
+import { usageProof } from '@/lib/db/founding'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,7 +30,14 @@ export const metadata: Metadata = {
 export default async function Home() {
   const user = await currentUser()
   if (!user) {
-    return <SitePage className="site--landing"><Landing /></SitePage>
+    /**
+     * §4.4a. Counted, never asserted — and awaited here rather than inside
+     * the component because `usageProof` is service-role and belongs on the
+     * server side of the boundary (`lib/db/founding.ts`). It is memoised for
+     * a minute and answers `null` on any failure, so the landing page can
+     * never be held up, and never invents a number it could not read.
+     */
+    return <SitePage className="site--landing"><Landing usage={await usageProof()} /></SitePage>
   }
 
   const supabase = await supabaseServer()

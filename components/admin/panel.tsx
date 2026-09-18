@@ -16,7 +16,7 @@
 
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import type { DayRow, TopRow } from '@/lib/db/admin-metrics'
+import type { DayRow, FunnelRow, TopRow } from '@/lib/db/admin-metrics'
 
 export function AdminNav({ here, signedInAs }: { here: 'overview' | 'users' | 'personas'; signedInAs: string }) {
   return (
@@ -167,6 +167,54 @@ export function TopTable({
               <span className="admin-truncate">{row.key}</span>
               <span className="data">{row.views.toLocaleString()}</span>
               <span className="data">{row.visitors.toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+/**
+ * The `/start` run, screen by screen, with a bar per row.
+ *
+ * Its own component rather than a `TopTable` with an extra column, because it
+ * is answering a different question and has to be read differently: the rows
+ * are in RUN ORDER rather than sorted by size, so the eye reads down a
+ * descending staircase and the step where it falls off a cliff is the finding.
+ * Sorting these by volume, which is right for paths and referrers, would
+ * destroy the only thing the table is for.
+ *
+ * The percentage is of the FIRST screen throughout, not of the previous row.
+ * Step-to-step figures read more dramatically and answer the wrong question:
+ * what an operator needs is how many of the people who arrived are still here.
+ */
+export function FunnelTable({ rows, days }: { rows: readonly FunnelRow[]; days: number }) {
+  const started = rows[0]?.visitors ?? 0
+  return (
+    <section className="admin-card">
+      <header><h2 className="display-md">Where they stopped</h2></header>
+      {started === 0 ? (
+        <p className="admin-fine">
+          Nobody has walked the run in the last {days} days — or the step beacon shipped after the
+          last person did. A flat table here is an absence of history, not an absence of visitors.
+        </p>
+      ) : (
+        <div className="admin-readout admin-readout--funnel">
+          <div className="admin-readout__row admin-readout__row--head">
+            <span>Screen</span><span>People</span><span>Reached</span><span />
+          </div>
+          {rows.map((row) => (
+            <div key={row.key} className="admin-readout__row">
+              <span className="admin-truncate">{row.key}</span>
+              <span className="data">{row.visitors.toLocaleString()}</span>
+              <span className="data">{row.reachedPct}%</span>
+              {/* Ink-2, never volt. Nothing on this page is the current
+                  action, and a volt bar per row would put nine accents on
+                  one screen. */}
+              <span className="admin-funnel__bar" role="presentation">
+                <i style={{ width: `${row.reachedPct}%` }} />
+              </span>
             </div>
           ))}
         </div>

@@ -57,7 +57,52 @@ export async function foundingAccountsTaken(): Promise<number | null> {
   }
 }
 
-/** Drops the memo. For the preflight, which must read the live number. */
+/**
+ * What the product has actually done, for the landing page (SIGNUP-FIXES §4.4a).
+ *
+ * The largest missing category on `/` is social proof, and the only kind this
+ * product may ship is the counted kind. **Everything above about the founding
+ * number applies verbatim**: the service role because `sessions` and
+ * `profiles` are both read-own, `head: true` so nothing about any account
+ * leaves this function, and null as a real answer that removes the line
+ * rather than inventing one.
+ *
+ * Small numbers are not a problem to hide. At this stage honesty about being
+ * early is an asset, and the alternative — a testimonial nobody gave, a
+ * round number nobody counted — is rule 12 and terms clause 08 on the one
+ * page §14's reviewer opens. An invented review costs more than every signup
+ * it could buy.
+ *
+ * Both counts or neither: a "reps run" with no "people training" beside it
+ * invites the reader to divide, and a half-rendered pair reads as a number
+ * that failed rather than a page that is early.
+ */
+export interface UsageProof { reps: number; people: number }
+
+let usage: { at: number; proof: UsageProof } | null = null
+
+export async function usageProof(): Promise<UsageProof | null> {
+  const now = Date.now()
+  if (usage && now - usage.at < TTL_MS) return usage.proof
+
+  try {
+    const admin = supabaseAdmin()
+    const [sessions, people] = await Promise.all([
+      admin.from('sessions').select('id', { count: 'exact', head: true }),
+      admin.from('profiles').select('id', { count: 'exact', head: true }),
+    ])
+    if (typeof sessions.count !== 'number' || typeof people.count !== 'number') return null
+    if (sessions.error || people.error) return null
+    const proof = { reps: sessions.count, people: people.count }
+    usage = { at: now, proof }
+    return proof
+  } catch {
+    return null
+  }
+}
+
+/** Drops the memos. For the preflight, which must read the live number. */
 export function forgetFoundingCount(): void {
   cached = null
+  usage = null
 }

@@ -1,9 +1,14 @@
 'use server'
 
 /**
- * Email and password (§04). Google is deliberately not offered — it needs OAuth
- * credentials created in the Google Cloud console, and /auth/callback already
- * handles the code exchange, so adding it is configuration rather than code.
+ * Email, password and Google (§04).
+ *
+ * Google was deliberately not offered for months, on the grounds that it was
+ * configuration rather than code. Turning it on found the other half: the
+ * exchange really was one dashboard change, and everything AROUND the exchange
+ * — where the funnel's answers go, which host the session lands on, what
+ * §16.4 can still promise — was not. See `lib/db/start-crossing.ts` and
+ * `app/auth/callback/route.ts`.
  *
  * Both halves of the email work without touching the Supabase template:
  * /auth/confirm accepts the default `{{ .ConfirmationURL }}` link and an
@@ -17,19 +22,17 @@
  */
 
 import { redirect } from 'next/navigation'
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { supabaseServer } from '@/lib/db/server'
-import { supabaseAdmin } from '@/lib/db/admin'
 import { checkAge } from '@/lib/safety/age'
-import type { TablesUpdate } from '@/lib/db/types'
+import { stampNewAccount } from '@/lib/db/start-crossing'
 import {
+  START_COOKIE,
+  START_COOKIE_MAX_AGE,
   START_FIELD,
+  birthDateFromYear,
   decodeStartAnswers,
-  startInterviewSetup,
-  startProfileWrite,
-  type StartAnswers,
 } from '@/lib/data/start-funnel'
-import { seedInterviewSetup } from '@/lib/db/interview'
 
 export interface AuthResult {
   ok: boolean
@@ -221,91 +224,83 @@ function isNewAccount(user: { identities?: unknown }): boolean {
   return !(Array.isArray(identities) && identities.length === 0)
 }
 
+/* ------------------------------------------------------------------ *
+ * Google (§04)
+ * ------------------------------------------------------------------ */
+
 /**
- * Everything a brand-new account knows about itself, in one write.
+ * Hands the browser to Google, and puts the funnel's answers somewhere they
+ * will survive the trip.
  *
- * ── WHY ONE WRITE AND NOT TWO ────────────────────────────────────────────
+ * ── WHY THE ANSWERS NEED A COOKIE ────────────────────────────────────────
  *
- * This was `rememberAge`, and it wrote the date of birth alone. `/start` now
- * arrives with three answers besides — the track, the focus area and a first
- * name, collected before the account existed — and the obvious shape was a
- * second update beside the first. It is one, because the thing being raced is
- * the profile row itself: `handle_new_user` inserts it from a trigger on
- * `auth.users`, and two updates would be two chances to lose the same race for
- * two different halves of the same screenful of answers.
+ * `signUpWithPassword` reads them out of its own `FormData`, because the form
+ * that collected them is the form that submits. This flow leaves the site: the
+ * browser goes to Google, then to Supabase, and comes back to a route handler
+ * that has never seen the form. A query parameter would work and is the wrong
+ * tool — it would ride through two third-party redirects, land in their access
+ * logs, and be editable by the person it describes on the way back.
  *
- * ── AND WHY IT RETRIES, WHICH `rememberAge` DID NOT ──────────────────────
+ * `sameSite: 'lax'` is load-bearing and is the thing to not "tidy up" later.
+ * `'strict'` is not sent on a cross-site navigation, and the return leg from
+ * Google is exactly that, so the answers would be silently dropped on every
+ * single sign-up while every test that did not leave the origin still passed.
  *
- * Losing the race used to cost nothing: `/onboarding/age` asks for the date
- * again, and that is the same gate. It is not nothing any more. Somebody who
- * has just answered three questions and would then be asked all three again is
- * the exact failure `/start` exists to prevent, so a write that affected no
- * row is tried once more before giving up. Still best-effort at the end of it —
- * `onboardingResumePath` remains the backstop and a sign-up must never fail
- * because a preference did not stick.
+ * Ten minutes, because it describes one crossing and not a preference. It is
+ * deleted by the callback the moment it is read.
  *
- * With the service role, because there may be no session: with confirmation on
- * `signUp` hands back a user with no cookie attached to it, and waiting for the
- * link to be clicked would mean the §16.4 gate we just ran had nowhere to write
- * its answer. Nothing here is an entitlement (rule 11) — a track, a focus and a
- * first name are all changeable from `/profile/settings` by their owner.
+ * ── AND WHY THIS IS A SERVER ACTION AND NOT A LINK ───────────────────────
+ *
+ * `signInWithOAuth` does not redirect; it returns a URL and, on the way,
+ * writes the PKCE code verifier as a cookie. That cookie has to be set on a
+ * response the browser keeps, which is what a Server Action gives us and what
+ * an `<a href>` to Google would not.
  */
-async function stampNewAccount(userId: string, dateOfBirth: string, answers: StartAnswers): Promise<void> {
-  const stamp = new Date().toISOString()
-  /**
-   * The mapping itself is `startProfileWrite`, and it is pure so that it can
-   * be tested: get one flag wrong and `onboardingResumePath` asks all three
-   * questions again of somebody who has just answered them, with every screen
-   * still working. See `lib/data/start-funnel.test.ts`.
-   */
-  const { patch: answered, flags } = startProfileWrite(answers)
-  const patch: TablesUpdate<'profiles'> = {
-    date_of_birth: dateOfBirth,
-    age_confirmed_at: stamp,
-    ...answered,
-  }
-
-  // Set rather than merged: this row is seconds old and `handle_new_user`
-  // inserts it with the column default. There is nothing here to merge with,
-  // and reading it back first would add a round trip to the one write that is
-  // racing a trigger.
-  if (flags.length > 0) {
-    patch.ui_flags = flags.reduce<Record<string, string>>((carry, flag) => ({ ...carry, [flag]: stamp }), {})
-  }
+export async function signInWithGoogle(form: FormData): Promise<AuthResult> {
+  const raw = String(form.get(START_FIELD) ?? '')
 
   /**
-   * The interview arm's answer goes to a second table, and it is a separate
-   * write because it is a separate row in a separate place.
+   * §16.4, BEFORE the account exists — on the one OAuth entrance that can.
    *
-   * The one-write argument above is about `profiles`, which is being raced by
-   * `handle_new_user`. Nothing races `interview_setups` — no trigger inserts
-   * it — so there is nothing to merge with and nothing to lose. It is also
-   * genuinely optional: `startInterviewSetup` answers null for the dating arm
-   * and for an interview run that skipped the question, and then nothing is
-   * written at all rather than an empty row the user never created.
+   * `/start` asks for a birth year on screen two now, so by the time this
+   * button is pressed there the answer is already in hand and the gate can
+   * run where the rule wants it: ahead of anything being created. Refusing
+   * here means no Google account is ever made for an under-age answer given
+   * on this run, which is the same guarantee `signUpWithPassword` gives.
    *
-   * Fired before the retry loop so a slow profile write does not delay it, and
-   * awaited at the end so the redirect does not outrun it — the very next
-   * screen reads `interview_setups.complete` to decide whether this account
-   * lands on its free screener or on a setup wizard.
+   * `/login` and `/signup` post no answers, so there is nothing to check and
+   * nothing is claimed — those accounts meet the gate at `/onboarding/age`
+   * on their first render instead. Only a year that is present and FAILS
+   * stops the redirect; an absent one is not a refusal.
    */
-  const setup = startInterviewSetup(answers)
-  const seeded = setup ? seedInterviewSetup(userId, setup) : null
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const { count } = await supabaseAdmin()
-        .from('profiles')
-        .update(patch, { count: 'exact' })
-        .eq('id', userId)
-      if (count !== 0) break
-    } catch {
-      // Fall through to the retry, then to the backstop.
-    }
-    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 150))
+  const answers = raw ? decodeStartAnswers(raw) : null
+  if (answers?.birthYear) {
+    const verdict = checkAge(birthDateFromYear(answers.birthYear), new Date())
+    if (!verdict.ok) return { ok: false, message: verdict.message }
   }
 
-  await seeded
+  const supabase = await supabaseServer()
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: `${await siteOrigin()}/auth/callback?next=/` },
+  })
+
+  if (error || !data?.url) {
+    return { ok: false, message: 'Google sign-in is unavailable right now. Use your email address.' }
+  }
+
+  if (raw) {
+    const store = await cookies()
+    store.set(START_COOKIE, raw, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: START_COOKIE_MAX_AGE,
+    })
+  }
+
+  redirect(data.url)
 }
 
 export async function signInWithPassword(_prev: AuthResult, form: FormData): Promise<AuthResult> {

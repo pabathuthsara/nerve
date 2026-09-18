@@ -31,6 +31,10 @@ describe('the event catalogue', () => {
     // The order is the funnel. PostHog reads these as a sequence, so a
     // reordering here is a reordering of the chart M5's gate is read off.
     expect(FUNNEL_EVENTS).toEqual([
+      // The landing page's voice, which happens on `/` and so comes before
+      // everything the run raises.
+      'intro_played',
+      'intro_cta',
       'start_step_viewed',
       'start_answered',
       'start_account_submitted',

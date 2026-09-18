@@ -87,8 +87,23 @@ describe('the plan record', () => {
   it('never writes a voiceless plan as a counter that will reset', () => {
     // "0 / day" in the mono data face reads as a quota that comes back at
     // midnight. A free account's does not, and that is the whole point.
-    expect(repsLine(planById('free'))).toBe('None')
+    expect(repsPerDayLine(0)).toBe('None')
     expect(repsLine(planById('pro'))).toBe('3 / day')
+  })
+
+  it('never lets the free card contradict its own bullet', () => {
+    /**
+     * §4.6. The meter printed `None` directly under `$0`, two inches above a
+     * feature bullet promising "One voice rep when you sign up". The card was
+     * calling its own list a lie on the page §14's reviewer opens.
+     *
+     * Asserted against the FEATURE LIST rather than against a literal, so the
+     * two can never drift apart again: if the bullet stops promising a rep,
+     * this test is what says the meter has to stop too.
+     */
+    expect(repsLine(planById('free'))).not.toBe('None')
+    const promisesARep = planById('free').features.some((feature) => /one voice rep/i.test(feature))
+    expect(promisesARep).toBe(true)
   })
 })
 
@@ -531,8 +546,13 @@ describe('the packs are sold in credits (LAUNCH-GAP B3)', () => {
  * from the authored one.
  */
 describe('the reps line, from a plan and from an entitlement', () => {
-  it('words a bare number exactly as it words a plan', () => {
-    for (const plan of PUBLIC_PLANS) {
+  it('words a bare number exactly as it words a plan, wherever both are a rate', () => {
+    // Free is deliberately excluded (§4.6): on that card the question is
+    // "what do I get", not "how many a day", and the two answers are
+    // different sentences. Every PAID plan must still agree, because
+    // `/profile/subscription` prints the entitlement beside the authored
+    // number and two wordings for one thing is the bug E3 fixed.
+    for (const plan of PUBLIC_PLANS.filter((candidate) => candidate.id !== 'free')) {
       expect(repsPerDayLine(plan.repsPerDay)).toBe(repsLine(plan))
     }
   })

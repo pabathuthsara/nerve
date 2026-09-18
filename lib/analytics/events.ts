@@ -59,6 +59,18 @@
  */
 /** The funnel, in the order it happens. */
 export const FUNNEL_EVENTS = [
+  /**
+   * The landing page's ten seconds of voice, before the funnel proper.
+   *
+   * It sits above `start_step_viewed` because it happens on `/`, earlier than
+   * anything else here, and because the question it answers is the one the
+   * whole section was built for: does hearing it move somebody into the run.
+   * `intro_cta` is the same press measured at its other end — without both,
+   * a high play count and a flat signup rate are indistinguishable from a
+   * high play count that converts.
+   */
+  'intro_played',
+  'intro_cta',
   'start_step_viewed',
   'start_answered',
   'start_account_submitted',
@@ -144,6 +156,9 @@ export interface EventProps {
   texting_debrief_viewed: { persona_id: string; ending: 'warm' | 'faded' | 'dismissed' | 'abandoned' | 'open' }
   /** The free wall, which is the only place this section asks for money. */
   texting_allowance_reached: { per_day: number }
+  /** No properties. Who pressed play is not a thing worth keeping about them. */
+  intro_played: Record<string, never>
+  intro_cta: Record<string, never>
 }
 
 /**

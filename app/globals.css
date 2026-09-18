@@ -537,6 +537,15 @@ button { color: inherit; }
 .auth-fine { margin: 24px auto 0; max-width: 340px; color: var(--text-mute); font-size: 11px; text-align: center; }
 .auth-fine a { text-decoration: underline; text-underline-offset: 3px; }
 .auth-dev { display: grid; gap: 12px; margin-top: 26px; }
+
+/* The second door. A hairline "or" rather than a heavier divider, and the
+   button is --secondary: volt appears once per screen and the primary action
+   above it already has it. */
+.auth-oauth { display: grid; gap: 14px; margin-top: 18px; }
+.auth-or { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; color: var(--text-mute); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.auth-or::before, .auth-or::after { content: ''; height: 1px; background: var(--line); }
+.auth-oauth__label { display: inline-flex; align-items: center; gap: 10px; }
+.auth-oauth .auth-fine { margin-top: 0; }
 .legal-page { min-height: 100dvh; padding: 36px 20px 72px; background: linear-gradient(135deg, rgba(196,248,42,.025), transparent 38%); }
 .legal-document { width: min(100%, 720px); display: grid; gap: 34px; margin: 0 auto; }
 .legal-document header { display: grid; gap: 9px; border-bottom: 1px solid var(--line); padding: 46px 0 28px; }
@@ -602,10 +611,40 @@ a.record-card:hover { border-color: var(--line-bright); background: var(--surfac
    is a hairline that is merely brighter than one not yet reached. Every tick
    used to read `index <= step`, so the step under your feet looked exactly
    like the ones behind it. */
+/*
+  §4.7 — CONFIRMED BUG, and it was the first glyph on every page.
+
+  `.skip-link` is rendered by `components/site/site-chrome.tsx` and
+  `components/app-shell.tsx` and had NO rule anywhere in this file, so it
+  painted as an ordinary link at the top of the landing page: the first thing
+  a stranger read was an accessibility affordance that was supposed to be
+  invisible until focused.
+
+  Off-screen rather than `display: none` — a hidden element is not focusable,
+  which would remove the affordance instead of fixing it. It takes volt only
+  while focused, so Arena's once-per-screen rule holds: at that moment it IS
+  the screen's current action.
+*/
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background: var(--volt);
+  color: var(--ground);
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-radius: 2px;
+}
+.skip-link:focus { left: 0.5rem; top: 0.5rem; }
+
 .onboarding-progress { position: absolute; top: 32px; left: 50%; display: flex; align-items: center; gap: 8px; transform: translateX(-50%); }
-.onboarding-progress i { width: 18px; height: 3px; background: var(--line); transition: background-color 180ms, width 180ms; }
+.onboarding-progress i { width: 18px; height: 3px; flex-shrink: 0; background: var(--line); transition: background-color 180ms, width 180ms; }
 .onboarding-progress i.done { background: var(--line-bright); }
 .onboarding-progress i.current { width: 28px; background: var(--volt); }
+.onboarding-progress__count { margin-left: 6px; white-space: nowrap; color: var(--text-mute); font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .onboarding-progress i { transition: none; } }
 
 .onboarding-back { position: absolute; top: 20px; left: 16px; width: 44px; height: 44px; display: grid; place-items: center; border: 0; padding: 0; background: none; color: var(--text-dim); cursor: pointer; transition: color 120ms; }
@@ -1629,6 +1668,12 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .interview-readiness { display: grid; gap: 12px; }
 .interview-readiness .interview-last { margin-top: 0; border-top: 0; padding-top: 0; }
 .interview-readiness p { margin: 0; }
+/* The seventh dimension across the run. Same rail, same weight — it is a
+   reading, not an offer, so nothing here takes volt (the mark is Ink-2 and
+   `current` is never passed). */
+.interview-accuracy { display: grid; gap: 12px; }
+.interview-accuracy .interview-last { margin-top: 0; border-top: 0; padding-top: 0; }
+.interview-accuracy p { margin: 0; line-height: 1.5; }
 .interview-dimensions { display: grid; gap: 0; margin: 4px 0 0; padding: 0; list-style: none; }
 .interview-dimensions li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; border-top: 1px solid var(--line); }
 .interview-dimensions li:first-child { border-top: 0; }
@@ -1988,6 +2033,19 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 }
 .site-section--wide { width: var(--site-width); }
 .site-section__head { display: grid; gap: 12px; margin-bottom: clamp(28px, 4vw, 44px); }
+/* §4.5 — the empty right column. Stacked by default so the mobile order is
+   the reading order, two columns only where the space actually exists. */
+.site-section__figure { margin-bottom: clamp(28px, 4vw, 44px); }
+@media (min-width: 1100px) {
+  .site-section--split .site-section__top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    gap: clamp(36px, 4vw, 64px);
+  }
+  .site-section--split .site-section__head,
+  .site-section--split .site-section__figure { margin-bottom: clamp(28px, 4vw, 44px); }
+}
 .site-section__head .display-lg { font-size: clamp(1.95rem, 5.4vw, 2.9rem); }
 .site-lede { max-width: 56ch; margin: 4px 0 0; color: var(--text-dim); font-size: clamp(15px, 1.5vw, 16.5px); line-height: 1.7; }
 .site-prose { max-width: 66ch; margin: 0 0 18px; color: var(--text-dim); font-size: 15.5px; line-height: 1.8; }
@@ -2053,6 +2111,61 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 .hero__actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .hero__actions .arena-button { flex: 1 1 auto; min-width: 190px; }
 .hero__fine { margin: 0; color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: 0.05em; }
+/* The second track's line (§4.1). Ink-2 and below the rule block, because a
+   competing link seven words before the primary CTA is a leak in the
+   highest-value paragraph on the site. */
+.hero__aside { max-width: 46ch; margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.65; }
+/* Counted, never asserted (§4.4a) — see `lib/db/founding.ts` for why that
+   distinction is a compliance rule here and not a style note. */
+.hero__proof { margin: 0; color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: .05em; font-variant-numeric: tabular-nums; }
+.hero__proof strong { color: var(--text-dim); font-weight: 400; }
+/* §4.3. A door in the middle of nine thousand pixels of argument. Centred
+   and generously spaced so it reads as an offer rather than as the next
+   paragraph. */
+.section-call { display: flex; justify-content: center; margin-top: 38px; }
+/* The hero's voice control and the sheet it opens. */
+/* The /start funnel table. Four columns rather than the three a TopTable
+   has, and the bar is Ink-2 — nine volt bars on one screen would be nine
+   current actions. */
+.admin-readout--funnel .admin-readout__row { grid-template-columns: minmax(0, 1fr) 72px 68px minmax(80px, 1.2fr); }
+.admin-funnel__bar { display: block; height: 6px; align-self: center; background: var(--surface-2); border: 1px solid var(--line); }
+.admin-funnel__bar i { display: block; height: 100%; background: var(--text-mute); }
+
+.intro-trigger { display: inline-flex; align-items: center; gap: 10px; }
+.intro-trigger__len { color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: .06em; }
+/*
+  Sized so the CTA clears the fold INSIDE the sheet.
+
+  `.sheet` is a bottom sheet at every width and scrolls its own overflow, so
+  a tall body does not get clipped — it gets hidden below a scroll nobody
+  knows is there, which on a 900px desktop viewport put `Start training free`
+  out of sight. The orb is the only thing here with slack in it, so the orb
+  gives way. Measured at 390x844 and 1280x900.
+*/
+.intro-modal { width: min(100%, 420px); display: grid; justify-items: center; gap: 16px; margin: 0 auto; text-align: center; }
+/* The orb IS the play control, so it has to read as pressable without taking
+   volt — the CTA below is the sheet's one accent. */
+.intro-modal__orb { position: relative; display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 2px; }
+.intro-modal__orb:focus-visible { outline: 2px solid var(--volt); outline-offset: 6px; }
+.intro-modal__badge {
+  position: absolute; display: grid; place-items: center;
+  width: 46px; height: 46px;
+  border: 1px solid var(--line-bright); border-radius: 2px;
+  background: rgba(11, 12, 10, .72); color: var(--text);
+  transition: border-color 160ms, opacity 160ms;
+}
+.intro-modal__orb:hover .intro-modal__badge { border-color: var(--text-dim); }
+/* While it speaks the orb is the thing to watch, so the chrome gets out of
+   the way rather than sitting on top of it. */
+.intro-modal__orb.is-playing .intro-modal__badge { opacity: .28; }
+.intro-modal__line { max-width: 40ch; margin: 0; color: var(--text-dim); font-size: 15px; line-height: 1.7; }
+.intro-modal .start-foot { margin-top: -8px; }
+@media (prefers-reduced-motion: reduce) { .intro-modal__badge { transition: none; } }
+
+.section-call .arena-button { min-width: 260px; }
+/* §4.4d. Quiet — it is a fact about the company, not a claim about the
+   product, and it sits under the loudest button on the page. */
+.final-call__maker { max-width: 42ch; margin: 22px auto 0; color: var(--text-mute); font-size: 13px; }
 
 @media (min-width: 1024px) {
   .hero__actions .arena-button { flex: 0 0 auto; }
@@ -2781,6 +2894,22 @@ a.admin-chip { text-decoration: none; }
 /* The funnel has no sign-out control, so the shell's top-right is empty and
    the run can sit slightly higher than the signed-in one. */
 .start-page { padding-top: 92px; }
+/*
+  §2.4 — THE TOP GAP, and it was 28% of the first screen a stranger sees.
+
+  `.onboarding-page` is `place-items: center`, which is right for the
+  signed-in run: those screens are short, the user is already inside, and
+  centring reads as composure. On `/start`'s hook it read as an empty page —
+  240px of `#0B0C0A` above the headline at 390×844, on the one screen whose
+  only job is to be read in four seconds.
+
+  Top-aligned, and only where the alignment is what costs: the hook screen,
+  and only when the viewport is short enough for centring to push the
+  headline down. Tall desktop viewports keep the centred composition.
+*/
+@media (max-height: 900px) {
+  .start-page:has(.start-hook) { align-items: start; padding-top: 72px; }
+}
 
 .start-hook > .onboarding-sub, .start-claim > .onboarding-sub { max-width: 42ch; }
 .start-hook > h1 { max-width: 18ch; }
@@ -2796,6 +2925,21 @@ a.admin-chip { text-decoration: none; }
 .start-foot { margin: 0; color: var(--text-mute); font-size: 13px; text-align: center; }
 .start-foot .volt-link { color: var(--text-dim); text-decoration: underline; text-underline-offset: 3px; transition: color 120ms; }
 .start-foot .volt-link:hover { color: var(--text); }
+.start-foot--quiet { margin-top: 2px; }
+/* The sign-in exit, at Ink-3 on its own line: it is a way out for a fraction
+   of a percent of this page's traffic and it used to sit at the same weight
+   as the explanation link (§2.4). */
+.start-foot--exit { font-size: 12px; }
+.start-foot--exit a { color: var(--text-mute); text-decoration: underline; text-underline-offset: 3px; }
+.start-foot--exit a:hover { color: var(--text-dim); }
+.start-age__form { margin-top: 26px; }
+/* One number, so the field does not run the width of the screen and invite a
+   date into it. */
+.start-age__form .field { max-width: 180px; }
+.start-age__form .field input { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: .08em; }
+/* §2.1 step 4: when Google is the FIRST door the divider sits below it, so
+   the spacing is mirrored. */
+.auth-oauth--first { margin-top: 26px; margin-bottom: 4px; }
 
 .start-beats { display: grid; gap: 2px; margin: 22px 0 0; padding: 0; list-style: none; border-block: 1px solid var(--line); }
 .start-beats li { display: grid; grid-template-columns: 22px 1fr; align-items: start; gap: 14px; padding: 16px 0; border-top: 1px solid var(--line); }

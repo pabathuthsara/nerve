@@ -286,17 +286,8 @@ export function RoleStep({ roleTitle, company, onSubmit }: {
  * not want to give, and the alternative to a skip is a required field between
  * a new account and its first rep.
  */
-export function NameStep({ value, track = null, eyebrow = 'Step three', onSubmit }: {
+export function NameStep({ value, track = null, onSubmit }: {
   value: string | null
-  /**
-   * Which number this question is, which is not the same on every run.
-   *
-   * `/start` asks three questions on either arm, so the name is always the
-   * third. The signed-in interview run has a fourth screen in front of it —
-   * the CV — and two screens both reading "Step three" is a rail that
-   * contradicts itself.
-   */
-  eyebrow?: string
   /**
    * Whose mouth the name comes out of.
    *
@@ -313,7 +304,7 @@ export function NameStep({ value, track = null, eyebrow = 'Step three', onSubmit
   const trimmed = name.trim()
   return (
     <section className="onboarding-question">
-      <span className="label">{eyebrow}</span>
+      <span className="label">Step three</span>
       <h1 className="display-lg" tabIndex={-1} data-step-heading>
         {interview ? 'What should your interviewer call you?' : 'What should she call you?'}
       </h1>

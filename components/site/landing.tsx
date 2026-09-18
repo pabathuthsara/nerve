@@ -18,11 +18,13 @@ import { ArrowRight, Check } from 'lucide-react'
 import { Mark, dimensionMark } from '@/components/marks'
 import { LoopDiagram } from './figures'
 import { SiteSection, SITE_LINKS } from './site-chrome'
+import { IntroTrigger } from './intro-trigger'
 import { PRESENTATION } from '@/lib/personas/presentation'
 import { PERSONA_VISUAL } from '@/lib/personas/visual'
 import { LEVEL_NAMES } from '@/lib/data/progression'
 import { PUBLIC_PLANS, SCREENER_NOTE, TRIAL_DAYS, repsLine } from '@/lib/site/plans'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import type { UsageProof } from '@/lib/db/founding'
 
 /**
  * The shipped roster, in rung order, with the tier the app uses.
@@ -124,10 +126,16 @@ const FAQ = [
   },
 ]
 
-export function Landing() {
+/**
+ * §4.4a. The proof is passed IN rather than fetched here, because this file
+ * is imported by a client boundary in places and `usageProof` is service-role
+ * — `lib/db/founding.ts` exists to keep exactly that read on the server. The
+ * page awaits it; this renders whatever came back, including nothing.
+ */
+export function Landing({ usage = null }: { usage?: UsageProof | null }) {
   return (
     <>
-      <Hero />
+      <Hero usage={usage} />
       <ScoringLaw />
       <Loop />
       <Roster />
@@ -141,31 +149,93 @@ export function Landing() {
   )
 }
 
-function Hero() {
+/**
+ * A primary CTA, at the three moments somebody is most likely to have decided.
+ *
+ * §4.3. Between the hero's button and the final call there was no way to sign
+ * up but the sticky header — 9,000 pixels of argument on a phone with no
+ * door in it. These are placed where the reading is strongest rather than at
+ * a regular interval: the moment the differentiator lands, the moment they
+ * have picked a character in their head, and the moment a different buyer
+ * entirely has finished reading about their own product.
+ *
+ * It is `--primary`, and that is deliberate against Arena's once-per-screen
+ * rule rather than in spite of it: these are separate screens. Nothing else
+ * in a section takes volt, so scrolling never puts two in view at once.
+ */
+function SectionCall({ href = '/start', children }: { href?: string; children: ReactNode }) {
+  return (
+    <div className="section-call">
+      <Link href={href} className="arena-button arena-button--primary arena-button--lg">{children}</Link>
+    </div>
+  )
+}
+
+function Hero({ usage }: { usage: UsageProof | null }) {
   return (
     <section className="hero">
       <div className="hero__copy">
         <span className="label">Conversation gym</span>
         <h1 className="display-xl hero__head">Three minutes.<br />One stranger.<br />No script.</h1>
+        {/*
+          §4.1. The paragraph was written for somebody who already knows what
+          this is: it opened by defining a term ("a rep is…") and closed on a
+          riddle ("a clean rep that ends in rejection can score 92") that only
+          lands once you know outcome is excluded. Second person, present
+          tense, and the riddle moved to the scorecard section where the 87 is
+          already on the screen to explain it.
+        */}
         <p className="hero__body">
-          A rep is a timed conversation, out loud, with someone who can lose interest,
-          get distracted and say no. You are scored on how you talked — never on
-          whether it worked. A clean rep that ends in rejection can score 92.
-          {/* D3. Anyone arriving on an interview-prep intent had to scroll past
-              the entire dating argument to find out we do it. One clause, and
-              a nav link, and a page of its own at /interviews. */}
-          {' '}The same engine runs <Link href={SITE_LINKS.interviews} className="volt-link">practice job interviews</Link>, with one free round on every account.
+          You talk out loud to an AI character for three minutes. She can get bored,
+          get distracted and walk away. Afterwards you get a score on how you handled
+          it — not on whether it worked.
         </p>
+        {/*
+          §4.2. Buttons before the rule block.
+          The block is good content in the wrong slot: at 400×717 it pushed the
+          primary CTA's top edge to y=657, which is below the fold on a phone
+          with browser chrome. Nothing was cut — it reads immediately after.
+        */}
+        <div className="hero__actions">
+          <Link href="/start" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
+          {/* Ten seconds of voice, behind a press (§4.5's "prove the software
+              runs", without the autoplay). It replaces the `How it works`
+              link rather than sitting beside it: three controls in the hero
+              is two too many, and hearing it answers the question that link
+              was there to answer. */}
+          <IntroTrigger />
+        </div>
+        <p className="hero__fine">Sign-up includes a voice rep. No card.</p>
+        {/*
+          §4.4a — SOCIAL PROOF, COUNTED AND NEVER ASSERTED.
+
+          The same rule `lib/db/founding.ts` was written for, and it is a
+          compliance rule rather than a style one: a number nobody counts is
+          a claim on the page §14's reviewer opens. These two are a live
+          `count` over `sessions` and `profiles`; if the query fails the line
+          is absent rather than approximate.
+
+          Small and odd on purpose. At this stage being visibly early is more
+          credible than a round number, and the alternative — a testimonial
+          nobody gave — is rule 12, terms clause 08 and an account-closing
+          risk that costs more than every signup it could buy.
+        */}
+        {usage && usage.reps > 0
+          ? <p className="hero__proof"><strong>{usage.reps.toLocaleString('en-GB')}</strong> reps run · <strong>{usage.people.toLocaleString('en-GB')}</strong> people training</p>
+          : null}
         <div className="rule-block hero__rules">
           {[['Length', '3:00, every time'], ['Ends', 'When the clock does'], ['Scored on', 'How you played']].map(([label, value]) => (
             <div key={label}><span>{label}</span><strong>{value}</strong></div>
           ))}
         </div>
-        <div className="hero__actions">
-          <Link href="/start" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
-          <Link href={SITE_LINKS.howItWorks} className="arena-button arena-button--secondary arena-button--lg">How it works</Link>
-        </div>
-        <p className="hero__fine">Sign-up includes a voice rep. No card.</p>
+        {/* D3. Anyone arriving on an interview-prep intent had to scroll past
+            the entire dating argument to find out we do it. It used to be a
+            clause seven words before the primary CTA, which is a competing
+            link in the highest-value paragraph on the site (§4.1); it is its
+            own line below the rule block now, at Ink-2. */}
+        <p className="hero__aside">
+          The same engine runs <Link href={SITE_LINKS.interviews} className="volt-link">practice job interviews</Link>, with one free round on every account.
+        </p>
       </div>
     </section>
   )
@@ -223,10 +293,14 @@ export function ScoringLaw() {
     <SiteSection
       kicker="The scorecard"
       title={<>Outcome is never<br />part of the score.</>}
-      lede="Six dimensions, every rep, each one quoting your own words back at you. Whether she gave you a number, agreed to anything, or walked away contributes exactly zero. A sloppy rep that got lucky scores 54."
+      lede="Six dimensions, every rep, each one quoting your own words back at you. Whether she gave you a number, agreed to anything, or walked away contributes exactly zero. A clean rep that ends in rejection can score 92; a sloppy rep that got lucky scores 54."
       wide
+      /* §4.5. The one row on that table whose asset already exists: the
+         scorecard was below the copy with 570px of black beside it, and it is
+         the single strongest thing on the page. It stacks back under the
+         heading below 1100px. */
+      figure={<ScorecardArtifact />}
     >
-      <ScorecardArtifact />
       <ul className="dimension-grid">
         {DIMENSIONS.map((dimension) => (
           <li key={dimension.name}>
@@ -236,6 +310,7 @@ export function ScoringLaw() {
           </li>
         ))}
       </ul>
+      <SectionCall>Get your first scorecard</SectionCall>
     </SiteSection>
   )
 }
@@ -336,6 +411,7 @@ function Roster() {
           )
         })}
       </ul>
+      <SectionCall>Meet the first one free</SectionCall>
       <p className="site-aside">
         A tier opens when you score 70 or better in two reps at the tier below it.
         Not when you win two — winning is not a thing you can grind, and it is not
@@ -407,6 +483,10 @@ export function InterviewTrack() {
           </div>
         </li>
       </ul>
+      {/* `?track=interview`, because this reader is a different buyer and
+          sending them into the dating run is the D24 failure on the page
+          rather than in the funnel. */}
+      <SectionCall href="/start?track=interview">Run the free screener</SectionCall>
       <p className="site-aside">
         {SCREENER_NOTE} After that, interviews are bought by the interview rather than
         by the month — see <Link href={SITE_LINKS.pricing} className="volt-link">pricing</Link>.
@@ -501,9 +581,18 @@ function PricingTeaser() {
 function Questions() {
   return (
     <SiteSection kicker="Questions" title={<>The ones worth<br />asking first.</>}>
+      {/*
+        §4.8. The first question is *"Do I have to actually speak out loud?"* —
+        the single most common objection to this product — and it was behind a
+        click. The answer to the biggest objection should never be a tap away,
+        so the first two open by default.
+
+        `defaultOpen` and not `open`: `open` on a `<details>` is controlled,
+        which would make them un-closable.
+      */}
       <div className="faq">
-        {FAQ.map((entry) => (
-          <details key={entry.q}>
+        {FAQ.map((entry, index) => (
+          <details key={entry.q} open={index < 2}>
             <summary>
               <span>{entry.q}</span>
               <i aria-hidden="true" />
@@ -526,6 +615,17 @@ function FinalCall() {
         and it is the last time being bad at it costs you nothing.
       </p>
       <Link href="/start" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
+      {/*
+        §4.4d. One true sentence about who is behind this.
+
+        No photograph. `VISUAL-AUDIT.md` §1 forbids photographs of people as
+        product and is not an instruction to hide the company — but a face is
+        a judgement call the audit says to confirm before shipping, and the
+        text line is unambiguous either way. §14's reviewer reads a named solo
+        founder as a real entity; a cold visitor reads it as a reason to trust
+        a page with no logos on it.
+      */}
+      <p className="final-call__maker">Built by one person in Sri Lanka, because I was bad at this.</p>
       <ul className="final-call__points">
         <li><Check size={14} strokeWidth={2} aria-hidden="true" /> A voice rep included with sign-up</li>
         <li><Check size={14} strokeWidth={2} aria-hidden="true" /> No card to start, and none to stay free</li>

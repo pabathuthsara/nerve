@@ -661,7 +661,12 @@ export async function fetchInterviewProgress(): Promise<InterviewProgress> {
 
   const { data: scores } = await supabase
     .from('scores')
-    .select('session_id, composite, opening, curiosity, listening, signal_reading, composure, close')
+    // `technical_accuracy` rides along: it is the seventh dimension and it is
+    // the one thing the readiness panel could not say anything about, because
+    // it was never read here. Null on every round that did not probe, which is
+    // most of them — `interviewProgress` keeps those out rather than zeroing
+    // them (a round that did not ask about fundamentals did not score nought).
+    .select('session_id, composite, opening, curiosity, listening, signal_reading, composure, close, technical_accuracy')
     .in('session_id', rows.map((row) => row.id))
 
   const bySession = new Map((scores ?? []).map((row) => [row.session_id, row]))
@@ -681,6 +686,7 @@ export async function fetchInterviewProgress(): Promise<InterviewProgress> {
       round: DEFAULT_ROUND,
       composite: score?.composite ?? null,
       dimensions,
+      technicalAccuracy: typeof score?.technical_accuracy === 'number' ? score.technical_accuracy : null,
     }
   }))
 }

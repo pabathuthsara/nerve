@@ -41,7 +41,7 @@ import { createHash } from 'node:crypto'
 import { supabaseAdmin } from '@/lib/db/admin'
 import { secretSupabaseKey } from '@/lib/db/env'
 import { currentUser } from '@/lib/db/server'
-import { countryCode, deviceFor, isBot, normalisePath, referrerHost } from '@/lib/analytics/pageview'
+import { countryCode, deviceFor, isBot, normalisePath, normaliseStep, referrerHost } from '@/lib/analytics/pageview'
 
 export const dynamic = 'force-dynamic'
 
@@ -135,9 +135,12 @@ export async function POST(request: NextRequest) {
   }
   if (!body || typeof body !== 'object') return done()
 
-  const { path: rawPath, ref } = body as { path?: unknown; ref?: unknown }
+  const { path: rawPath, ref, step: rawStep } = body as { path?: unknown; ref?: unknown; step?: unknown }
   const path = normalisePath(rawPath)
   if (!path) return done()
+  // Only ever set for `/start`, and only ever an authored screen name. A
+  // value this does not recognise is dropped and the view still counts.
+  const step = normaliseStep(path, rawStep)
 
   const visitor = visitorDigest(request, userAgent)
   if (!withinBurst(visitor, Date.now())) return done()
@@ -165,6 +168,7 @@ export async function POST(request: NextRequest) {
       user_id: userId,
       country: countryCode(request.headers.get('x-vercel-ip-country')),
       device: deviceFor(userAgent),
+      step,
     })
   } catch {
     // A traffic counter must never be the reason a page reports an error.

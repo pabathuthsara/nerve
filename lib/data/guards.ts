@@ -66,15 +66,16 @@ export async function enforceFrontendGuard(path: string): Promise<GuardedProfile
    *
    * The sign-up form asks and `signUpWithPassword` writes the answer, so a
    * password account arrives here already stamped and never sees this step.
-   * What still does: every account created before the gate shipped. Google
-   * used to be the other case — its button had no fields on it — and that door
-   * is closed for now, which narrows who lands here without removing the need
-   * for it. They are asked once, and nothing in the product opens until they
-   * answer, which is the difference between a gate and a form.
+   * Two kinds of account still do. Every account created before the gate
+   * shipped — and, since 18 September 2026, **every Google account**, because
+   * OAuth returns no date of birth and the only scope that would ask for one
+   * is sensitive. They are asked once, and nothing in the product opens until
+   * they answer, which is the difference between a gate and a form.
    *
-   * It also has to keep working if Google is ever turned on (§04): the
-   * `/auth/callback` exchange is still in place, and an OAuth account would
-   * arrive with no date exactly as it did before.
+   * That is what §16.4 now means on the OAuth arm: the account exists before
+   * the gate runs, and this is the thing standing between it and the product.
+   * `LAUNCH-GAP.md` D25 is the argument; the comment below is the redirect
+   * loop it cost to get right.
    *
    * Checked before the onboarding gate rather than folded into it, because a
    * user who finished onboarding months ago is exactly the case that has no
@@ -104,7 +105,9 @@ export async function enforceFrontendGuard(path: string): Promise<GuardedProfile
    * to `/onboarding/track`, which had no date either and sent it back here.
    * Every Google sign-up landed in that loop, and the screen it never reached
    * is the §16.4 gate. Returning here answers both, because past this point
-   * there is only ever one right thing to draw.
+   * there is only ever one right thing to draw. **That case is live again as
+   * of 18 September 2026** — it was hypothetical for the weeks Google was off,
+   * and it is now the first render of every account that arrives through it.
    */
   if (ageRoute) return (profile as GuardedProfile | null) ?? null
 
@@ -219,19 +222,24 @@ export function onboardingResumePath(
    * the flag it is known to be an answer, and it is then the only thing that
    * says which run somebody is on.
    *
-   * The CV step is deliberately BEFORE the name and the microphone. It is the
-   * one step on this arm that is genuinely optional, and burying an optional
-   * step behind the two that are not is how it goes unanswered.
+   * **The CV sits AFTER the name**, and that order is the answer to a bug
+   * rather than a preference. The run opens at this path and walks FORWARD, so
+   * every step ahead of it is shown again — and a `/start` account arrives with
+   * the name already answered. With the CV in front of it, the resume landed
+   * behind the name question and asked it a second time, of somebody who had
+   * answered it before the account existed. The rule: **a step asked before
+   * sign-up must never have an unasked step in front of it.**
    */
-  if (profile.active_track === 'interview') {
+  const interview = profile.active_track === 'interview'
+  if (interview) {
     if (!flags[ONBOARDING_ROLE_FLAG]) return '/onboarding/role'
-    if (!flags[ONBOARDING_CV_FLAG]) return '/onboarding/cv'
   } else if (!profile.focus_area) return '/onboarding/focus'
 
   // Same problem as step one, for the opposite reason: `display_name` can be
   // legitimately empty, because the name step is skippable. A flag is what
   // separates "not asked yet" from "asked, and they would rather not say".
   if (!flags[ONBOARDING_NAME_FLAG]) return '/onboarding/name'
+  if (interview && !flags[ONBOARDING_CV_FLAG]) return '/onboarding/cv'
   return '/onboarding/mic'
 }
 

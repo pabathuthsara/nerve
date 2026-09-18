@@ -3,6 +3,7 @@ import {
   EMPTY_START_ANSWERS,
   INTERVIEW_STEPS,
   START_STEPS,
+  birthDateFromYear,
   decodeStartAnswers,
   encodeStartAnswers,
   firstRepPreview,
@@ -19,8 +20,10 @@ import { DATING_PERSONAS } from '@/lib/personas'
 import { PRESENTATION } from '@/lib/personas/presentation'
 import { ONBOARDING_NAME_FLAG, ONBOARDING_ROLE_FLAG, ONBOARDING_TRACK_FLAG, trackWaitlistFlag } from './ui-flags'
 import { FOCUS_PLANS } from './focus'
+import { checkAge } from '@/lib/safety/age'
 
 const answered: StartAnswers = {
+  birthYear: 2001,
   track: 'dating',
   focusArea: 'rejection',
   roleTitle: null,
@@ -32,6 +35,7 @@ const answered: StartAnswers = {
 }
 
 const interviewAnswered: StartAnswers = {
+  birthYear: 1998,
   track: 'interview',
   focusArea: null,
   roleTitle: 'Senior Backend Engineer',
@@ -48,21 +52,49 @@ describe('the funnel, in order', () => {
     // sequence keyed on this — so a reorder here is a reorder of the chart.
     expect(START_STEPS).toEqual([
       'hook',
+      'age',
       'track',
-      'reframe',
+      'build',
       'focus',
       'mechanism',
       'name',
-      'build',
       'account',
     ])
+  })
+
+  it('puts the age gate second, before anything is invested', () => {
+    /**
+     * §16.4 and SIGNUP-FIXES §2.2. It is asserted by POSITION rather than by
+     * presence because the whole argument for moving it is where it sits: a
+     * birthday asked at the point of purchase reads as a data grab and the
+     * same birthday on screen two reads as care. Index 1 on both arms, and
+     * nothing is collected before it.
+     *
+     * It is also what lets the Google door satisfy the gate before the
+     * account exists — `signInWithGoogle` runs `checkAge` on this answer
+     * ahead of the redirect — so moving it later silently weakens §16.4 on
+     * an arm this file does not mention.
+     */
+    expect(START_STEPS[1]).toBe('age')
+    expect(INTERVIEW_STEPS[1]).toBe('age')
+  })
+
+  it('shows the character before it argues, and argues only once', () => {
+    // §3.1/§3.2. `build` is the only screen that stops being an argument and
+    // becomes a thing, and it used to arrive after every abstract screen had
+    // taken its cut. It now precedes the one surviving claim screen.
+    for (const steps of [START_STEPS, INTERVIEW_STEPS]) {
+      expect(steps.indexOf('build')).toBeLessThan(steps.indexOf('mechanism'))
+      expect(steps).not.toContain('reframe')
+      expect(steps.filter((step) => step === 'mechanism' || step === 'build')).toHaveLength(2)
+    }
   })
 
   it('never puts two non-questions back to back before the first answer', () => {
     // A stranger's first interaction has to be cheap and theirs. Three claims
     // in a row before they have touched anything is the advertisement they
     // just clicked out of.
-    const claims = new Set(['hook', 'reframe', 'mechanism', 'build'])
+    const claims = new Set(['hook', 'mechanism', 'build'])
     const runs = START_STEPS.reduce<number>((longest, step, index) => {
       if (!claims.has(step)) return longest
       let run = 1
@@ -102,7 +134,7 @@ describe('the two arms', () => {
 
   it('never runs two claims together on either arm', () => {
     // The same rule as below, asserted on the arm that was added later.
-    const claims = new Set(['hook', 'reframe', 'mechanism', 'build'])
+    const claims = new Set(['hook', 'mechanism', 'build'])
     for (const steps of [START_STEPS, INTERVIEW_STEPS]) {
       const runs = steps.reduce<number>((longest, step, index) => {
         if (!claims.has(step)) return longest
@@ -171,6 +203,67 @@ describe('answers crossing an untrusted boundary', () => {
   })
 })
 
+describe('the birth year, and the direction it is allowed to be wrong in', () => {
+  it('derives 31 December, so a year is read as the YOUNGEST it could be', () => {
+    /**
+     * The whole point, and the opposite of what `SIGNUP-FIXES.md` §2.2
+     * literally prescribes (it says 1 January and then states this intent).
+     *
+     * 1 January treats everybody born in that year as the OLDEST they could
+     * be, which admits a real seventeen-year-old born in November for eleven
+     * months. 31 December treats them as the youngest, so the only people it
+     * is wrong about are refused a few months early — the direction §16.4
+     * requires an imprecise gate to be wrong in.
+     */
+    expect(birthDateFromYear(2001)).toBe('2001-12-31')
+    expect(birthDateFromYear(null)).toBe('')
+  })
+
+  it('refuses the borderline year rather than admitting it', () => {
+    const today = new Date('2026-09-18T00:00:00Z')
+    // Born some time in 2008: 18 already if born before 18 September, not yet
+    // if born after. The gate takes the cautious reading.
+    expect(checkAge(birthDateFromYear(2008), today).ok).toBe(false)
+    expect(checkAge(birthDateFromYear(2007), today).ok).toBe(true)
+  })
+
+  it('pads a short year into a date nobody was born on, which is why the screen guards first', () => {
+    /**
+     * The hazard `AgeStep`'s four-digit test exists for, pinned here so a
+     * future simplification cannot quietly reintroduce it.
+     *
+     * `birthDateFromYear` pads, so a half-typed `19` becomes `0019-12-31` —
+     * a well-formed ISO string that gets past `checkAge`'s regex and into
+     * `Date.UTC`, which maps years 0–99 onto 1900–1999. The roll-over check
+     * then fires and the honest answer is "that is not a real date", which
+     * is a terrible thing to say to somebody who is still typing.
+     *
+     * `checkAge` is not wrong here. The SCREEN is wrong if it manufactures a
+     * date out of an unfinished field and reports the result as a verdict
+     * about a person.
+     */
+    expect(birthDateFromYear(19)).toBe('0019-12-31')
+    const verdict = checkAge(birthDateFromYear(19), new Date('2026-09-18T00:00:00Z'))
+    expect(verdict.ok).toBe(false)
+    expect(verdict.ok === false && verdict.reason).toBe('malformed')
+  })
+
+  it('reads a year off the wire whatever type it arrives as', () => {
+    // sessionStorage keeps a number, a form post makes it a string, and the
+    // OAuth cookie is JSON again. One parser reads all three.
+    expect(decodeStartAnswers(JSON.stringify({ birthYear: 2001 })).birthYear).toBe(2001)
+    expect(decodeStartAnswers(JSON.stringify({ birthYear: '2001' })).birthYear).toBe(2001)
+  })
+
+  it('refuses a typo without pretending to be the age gate', () => {
+    // Loose bounds on purpose: these catch a mistyped year, and `checkAge` is
+    // the only thing allowed to return a verdict about a person.
+    for (const forged of [0, 42, 20010, -2001, 1.5, '20o1', null, {}, []]) {
+      expect(decodeStartAnswers(JSON.stringify({ birthYear: forged })).birthYear).toBeNull()
+    }
+  })
+})
+
 describe('where a reload lands', () => {
   it('opens on the hook with nothing on file', () => {
     expect(START_STEPS[startResumeIndex(EMPTY_START_ANSWERS)]).toBe('hook')
@@ -178,11 +271,16 @@ describe('where a reload lands', () => {
 
   it('returns to the first unanswered question, never to an interstitial', () => {
     const stages: [Partial<StartAnswers>, string][] = [
-      [{ english: true }, 'track'],
-      [{ track: 'dating' }, 'focus'],
-      [{ track: 'dating', focusArea: 'opening' }, 'name'],
-      [{ track: 'dating', focusArea: 'opening', named: true }, 'build'],
-      [{ track: 'dating', focusArea: 'opening', named: true, displayName: 'Sam' }, 'build'],
+      // §16.4 outranks everything, in the same order `enforceFrontendGuard`
+      // applies it: a run with answers but no year goes back to the gate
+      // rather than past it.
+      [{ english: true }, 'age'],
+      [{ track: 'dating' }, 'age'],
+      [{ birthYear: 2001 }, 'track'],
+      [{ birthYear: 2001, track: 'dating' }, 'focus'],
+      [{ birthYear: 2001, track: 'dating', focusArea: 'opening' }, 'name'],
+      [{ birthYear: 2001, track: 'dating', focusArea: 'opening', named: true }, 'account'],
+      [{ birthYear: 2001, track: 'dating', focusArea: 'opening', named: true, displayName: 'Sam' }, 'account'],
     ]
     for (const [partial, expected] of stages) {
       expect(START_STEPS[startResumeIndex({ ...EMPTY_START_ANSWERS, ...partial })]).toBe(expected)
@@ -191,12 +289,12 @@ describe('where a reload lands', () => {
 
   it('returns an interview run to the role, never to the focus question', () => {
     const stages: [Partial<StartAnswers>, string][] = [
-      [{ track: 'interview' }, 'role'],
+      [{ birthYear: 1998, track: 'interview' }, 'role'],
       // The skip. `roleAsked` without a title is a finished step — the same
       // distinction `named` draws, and the reason neither can be the title.
-      [{ track: 'interview', roleAsked: true }, 'name'],
-      [{ track: 'interview', roleAsked: true, roleTitle: 'SRE' }, 'name'],
-      [{ track: 'interview', roleAsked: true, named: true }, 'build'],
+      [{ birthYear: 1998, track: 'interview', roleAsked: true }, 'name'],
+      [{ birthYear: 1998, track: 'interview', roleAsked: true, roleTitle: 'SRE' }, 'name'],
+      [{ birthYear: 1998, track: 'interview', roleAsked: true, named: true }, 'account'],
     ]
     for (const [partial, expected] of stages) {
       const answers = { ...EMPTY_START_ANSWERS, ...partial }
@@ -206,6 +304,7 @@ describe('where a reload lands', () => {
 
   it('counts a role that was asked as having started', () => {
     expect(hasStartAnswers({ ...EMPTY_START_ANSWERS, roleAsked: true })).toBe(true)
+    expect(hasStartAnswers({ ...EMPTY_START_ANSWERS, birthYear: 2001 })).toBe(true)
   })
 
   it('counts the English ask as having started', () => {
@@ -226,17 +325,24 @@ describe('opening the run', () => {
     expect(answers.track).toBeNull()
   })
 
-  it('skips the hook and the track question when the link already named one', () => {
-    // `/interviews` is a page about the interview track. Asking somebody who
-    // has just read it what they are training for is asking a question they
-    // have spent a page answering.
+  it('skips the hook when the link already named a track, but never the age gate', () => {
+    /**
+     * `/interviews` is a page about the interview track, so the hook is a
+     * longer version of something they have just read and is skipped.
+     *
+     * The track QUESTION used to be skipped with it and is not any more:
+     * §16.4 sits at index 1, and the one screen a run may never jump over is
+     * the gate. They land on `age` and then meet the track question with
+     * their answer already selected, which is a confirmation rather than a
+     * question.
+     */
     const { answers, index } = open({}, 'interview')
-    expect(START_STEPS[index]).toBe('reframe')
+    expect(START_STEPS[index]).toBe('age')
     expect(answers.track).toBe('interview')
   })
 
   it('lets an open session win when it agrees', () => {
-    const stored = { track: 'dating' as const, focusArea: 'opening' as const }
+    const stored = { birthYear: 2001, track: 'dating' as const, focusArea: 'opening' as const }
     const { answers, index } = open(stored, 'dating')
     expect(START_STEPS[index]).toBe('name')
     expect(answers.track).toBe('dating')
@@ -248,7 +354,7 @@ describe('opening the run', () => {
     // /interviews and came in through its button has said something newer —
     // and should not have to give their focus and name again to say it.
     const { answers, index } = open(
-      { track: 'dating', focusArea: 'rejection', displayName: 'Sam', named: true },
+      { birthYear: 2001, track: 'dating', focusArea: 'rejection', displayName: 'Sam', named: true },
       'interview',
     )
     expect(answers.track).toBe('interview')
@@ -259,14 +365,16 @@ describe('opening the run', () => {
     expect(INTERVIEW_STEPS[index]).toBe('role')
   })
 
-  it('takes a switched-back run to the build screen once both question-twos are in', () => {
+  it('takes a switched-back run to the account once both question-twos are in', () => {
     const { answers, index } = open(
-      { track: 'interview', focusArea: 'rejection', roleAsked: true, roleTitle: 'SRE', displayName: 'Sam', named: true },
+      { birthYear: 2001, track: 'interview', focusArea: 'rejection', roleAsked: true, roleTitle: 'SRE', displayName: 'Sam', named: true },
       'dating',
     )
     expect(answers.track).toBe('dating')
     expect(answers.roleTitle).toBe('SRE')
-    expect(START_STEPS[index]).toBe('build')
+    // `build` used to be the last screen and is now the fourth, so a run with
+    // every question answered resumes at the form rather than at the demo.
+    expect(START_STEPS[index]).toBe('account')
   })
 
   it('moves only the track, never an answer the other arm also collects', () => {

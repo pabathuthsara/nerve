@@ -5,9 +5,12 @@ import {
   isBot,
   MAX_PATH,
   normalisePath,
+  normaliseStep,
   referrerHost,
+  START_STEP_NAMES,
   scrubSegment,
 } from './pageview'
+import { startSteps } from '@/lib/data/start-funnel'
 
 describe('normalisePath', () => {
   it('keeps the static routes the product actually serves', () => {
@@ -145,5 +148,37 @@ describe('countryCode', () => {
     expect(countryCode('XX')).toBeNull()
     expect(countryCode('USA')).toBeNull()
     expect(countryCode(null)).toBeNull()
+  })
+})
+
+describe('the /start step, on the way into the traffic table', () => {
+  it('accepts every screen the run can actually show, and no others', () => {
+    /**
+     * The two lists are deliberately separate — `pageview.ts` is the boundary
+     * a browser posts into and must keep meaning the same thing when a screen
+     * is renamed — so this is what stops them drifting apart silently. A step
+     * the run shows but the beacon refuses is a hole in the funnel that looks
+     * like a drop-off.
+     */
+    const run = new Set([...startSteps('dating'), ...startSteps('interview')])
+    expect(new Set(START_STEP_NAMES)).toEqual(run)
+  })
+
+  it('only ever attaches a step to /start', () => {
+    expect(normaliseStep('/start', 'age')).toBe('age')
+    expect(normaliseStep('/', 'age')).toBeNull()
+    expect(normaliseStep('/roster/[persona]', 'age')).toBeNull()
+  })
+
+  it('refuses anything that is not an authored screen', () => {
+    // It arrives from a browser that can post anything. A free-text column
+    // reachable from the network is a log of whatever somebody sends.
+    for (const forged of ['../admin', 'age; drop', 'x'.repeat(200), '', 42, null, {}, ['age']]) {
+      expect(normaliseStep('/start', forged)).toBeNull()
+    }
+  })
+
+  it('trims, because a beacon body is not hand-written', () => {
+    expect(normaliseStep('/start', '  build  ')).toBe('build')
   })
 })

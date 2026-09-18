@@ -813,6 +813,30 @@ Update weekly. `Paying` is **charged accounts only** — never trials.
 | W8 | 29 Oct | 80 | | | | | | |
 | W9 | 2 Nov | **100** | | | | | | |
 
+### The funnel, weekly (SIGNUP-FIXES §1.4)
+
+Three numbers, and none of them can be filled in until `NEXT_PUBLIC_POSTHOG_KEY`
+is set and the project redeployed (§1.1, rule 15). They are the reason the
+table above has been guesswork: 106 paid visits produced zero accounts and
+nothing could say *where* they left, because every event in
+`lib/analytics/events.ts` began at `brief_viewed`, which is past sign-up.
+
+| | Source | Target | W1 | W2 | W3 | W4 | W5 |
+|---|---|---|---|---|---|---|---|
+| Visit → `start_step_viewed[hook]` | PostHog | >90% — below this the page is slow or the link is wrong | | | | | |
+| hook → `start_account_submitted` | PostHog funnel | **3% is the floor. Under 1.5% and §2 has not worked** | | | | | |
+| account → first `rep_completed` | PostHog | ~90% today. Watch it does not fall | | | | | |
+
+**Build the per-step chart the day it is keyed**: a funnel on
+`start_step_viewed` broken down by `step`, ordered hook → age → track → build
+→ focus → mechanism → name → account. That chart is what D21 asked for and has
+never had, and every change shipped on 18 September is a hypothesis about it —
+half of them will turn out to be wrong.
+
+**Read the arithmetic before reading the chart.** At a true 3% rate, 100 visits
+produces zero signups about 5% of the time. Do not kill a change on 80 visits
+and do not celebrate one on three signups.
+
 ### Gate answers
 
 | Gate | Day | Date | Question | Target | Actual | Decision taken |

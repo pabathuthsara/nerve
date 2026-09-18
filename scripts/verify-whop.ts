@@ -51,6 +51,17 @@ import { createCheckout } from '@/lib/billing/checkout'
 import { FROM } from '@/lib/email/send'
 
 let failures = 0
+/**
+ * What the account must say it is (rule 12), in one string so the check and
+ * the instructions it prints cannot disagree.
+ *
+ * `public_speaking_coaching` and never `communication_coaching`: the obvious
+ * vertical is a child of `dating_and_relationships` in Whop's taxonomy, so
+ * pairing it with `personal_development` is an invalid combination the API
+ * accepts, echoes back, and then silently resets.
+ */
+const ACCOUNT_CLASSIFICATION = 'personal_development / public_speaking_coaching'
+
 let warnings = 0
 
 function check(passed: boolean, description: string): void {
@@ -191,7 +202,7 @@ async function main(): Promise<void> {
   } else {
     const account = (await accountResponse.json()) as {
       id: string; title: string | null; status?: string
-      industry_group?: string; industry_type?: string
+      industry_group?: string | null; industry_type?: string | null
       logo_url?: string | null; banner_image_url?: string | null; opengraph_image_url?: string | null
     }
     check(account.id === accountId, `the key can read ${accountId} — "${account.title ?? 'untitled'}"`)
@@ -211,16 +222,58 @@ async function main(): Promise<void> {
     // So it is checked here, in the preflight that runs before money moves,
     // because the revert is silent and the cost of missing it is the payment
     // account.
-    check(
-      account.industry_type === 'public_speaking_coaching'
-        && account.industry_group === 'personal_development',
-      `it is classified as personal_development / public_speaking_coaching`
-      + ` (${account.industry_group} / ${account.industry_type})`,
-    )
-    if (account.industry_type === 'mental_health_app') {
-      console.log('  ----        REVERTED. Run `npm run whop:setup -- --apply`, and if that')
-      console.log('  ----        cannot write it, fix it through the MCP or the dashboard.')
-      console.log('  ----        It contradicts terms clause 08 and CLAUDE.md rule 10.')
+    /**
+     * ── AND THE ACCOUNT KEY CANNOT SEE IT, WHICH THIS USED TO HIDE ────────
+     *
+     * `GET /accounts/{id}` on an **account-scoped API key** omits
+     * `industry_group` and `industry_type` entirely. So this printed
+     *
+     *     FAIL  it is classified as ... (undefined / undefined)
+     *
+     * which reads as "nobody has set it" and is not what was true: on
+     * 18 September the live values were `health_and_wellness_software /
+     * wellness`, read back with a user-token credential. The preflight was
+     * failing for the right reason by accident and describing the wrong
+     * problem, and its escalation branch — keyed to the single literal
+     * `mental_health_app` — printed nothing at all, because the account had
+     * drifted to a DIFFERENT value in the same forbidden family.
+     *
+     * Three states now, and they are genuinely different things:
+     *
+     *   unreadable  this credential cannot see the field — it comes back
+     *               `null`, or missing. A WARNING that
+     *               says where to look, never a silent pass — the one thing
+     *               that must not happen is a green preflight over an
+     *               unknown classification.
+     *   wrong       fail, print what it actually says, and escalate on the
+     *               whole health/wellness/therapy family rather than on one
+     *               remembered string.
+     *   right       pass.
+     */
+    const group = account.industry_group
+    const type = account.industry_type
+    // `== null`, covering both: the account key omits these on some
+    // responses and returns an explicit `null` on others, and both mean the
+    // same thing — this credential cannot see the classification.
+    if (group == null && type == null) {
+      warn(false, 'the account key cannot read the industry classification (rule 12)')
+      note('      This key is account-scoped and the field is not in its response.')
+      note('      It is NOT a pass. Read it with a user-token credential — the Whop')
+      note('      MCP `accounts_get`, or the dashboard — and confirm it still says')
+      note(`      ${ACCOUNT_CLASSIFICATION}. It has reverted on its own at least`)
+      note('      four times, including from writes that never touched the account.')
+    } else {
+      check(
+        type === 'public_speaking_coaching' && group === 'personal_development',
+        `it is classified as ${ACCOUNT_CLASSIFICATION} (${group} / ${type})`,
+      )
+      const forbidden = `${group ?? ''} ${type ?? ''}`.toLowerCase()
+      if (/health|wellness|therap|mental|medical|clinical/.test(forbidden)) {
+        console.log('  ----        REVERTED, and into the one family rule 12 names. Run')
+        console.log('  ----        `npm run whop:setup -- --apply`, and if that cannot write')
+        console.log('  ----        it, fix it through the MCP or the dashboard.')
+        console.log('  ----        It contradicts terms clause 08 and CLAUDE.md rule 12.')
+      }
     }
 
     // The images. A blank logo is not a launch blocker, but a link that renders

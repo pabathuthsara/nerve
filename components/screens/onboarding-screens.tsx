@@ -84,9 +84,9 @@ import { FOCUS_OPTIONS, FocusStep, NameStep, RoleStep, TrackStep } from './onboa
  * another file's text.
  */
 import { removeCv, saveInterviewSetup, uploadCv } from '@/app/interview/actions'
-import { useInterviewers, useUserState } from '@/lib/data'
+import { useInterviewers } from '@/lib/data'
 import { useProduct } from '@/components/product-provider'
-import { openingRound, roundType } from '@/lib/data/interview-credits'
+import { SCREENER_ROUND, roundType } from '@/lib/data/interview-credits'
 import { MIN_AGE } from '@/lib/safety/age'
 import { tap } from '@/lib/haptics'
 import { FluidPersona } from '@/components/fluid-persona'
@@ -182,13 +182,21 @@ const DATING_STEPS: readonly OnboardingRoute[] = [
  * three-step wizard before anything could be spoken. Cold account to
  * microphone was eleven screens, six of them about the other product.
  *
- * Two steps replace the focus question. The **role** is what
- * `interview_setups.complete` actually is (a role title and nothing else), so
- * it is the difference between landing on a free screener and landing on a
- * wizard. The **CV** is the one document that makes the questions about this
- * person rather than about the field — and it is here, ahead of the name and
- * the microphone, because it is the only genuinely optional step on the run
- * and an optional step placed last is a step nobody does.
+ * Two steps join the run. The **role** replaces the focus question, because it
+ * is what `interview_setups.complete` actually is (a role title and nothing
+ * else) and therefore the difference between landing on a free screener and
+ * landing on a wizard. The **CV** is the one document that makes the questions
+ * about this person rather than about the field.
+ *
+ * **The CV sits after the name, and the order is load-bearing.** It was before
+ * it for a day, on the argument that an optional step placed late is a step
+ * nobody does — and that cost every `/start` account the name question twice.
+ * The run opens at `onboardingResumePath` and then walks FORWARD, so any step
+ * ahead of the resume point is shown again; a `/start` account arrives with the
+ * name already answered, and putting an unanswered step in front of it dragged
+ * the resume back behind a question that had been asked before the account
+ * existed. The rule that falls out: **a step asked before sign-up must never
+ * have an unasked step in front of it.**
  *
  * Both are skippable and both stamp a flag when asked rather than when
  * answered, which is what stops the resume returning somebody to a question
@@ -197,8 +205,8 @@ const DATING_STEPS: readonly OnboardingRoute[] = [
 const INTERVIEW_STEPS: readonly OnboardingRoute[] = [
   '/onboarding/track',
   '/onboarding/role',
-  '/onboarding/cv',
   '/onboarding/name',
+  '/onboarding/cv',
   '/onboarding/mic',
   '/onboarding/ready',
 ]
@@ -382,9 +390,6 @@ function OnboardingRun({ start, context }: { start: number; context: OnboardingC
             ? <NameStep
                 value={displayName}
                 track={track}
-                // The CV sits in front of this on the interview arm, so the
-                // rail and the eyebrow have to agree about which number it is.
-                eyebrow={track === 'interview' ? 'Step four' : 'Step three'}
                 onSubmit={(value) => { setDisplayName(value); commit(() => saveOnboardingChoice({ displayName: value }), step, step + 1) }}
               />
             : null}
@@ -595,7 +600,7 @@ function CvStep({ roleTitle, onDone }: { roleTitle: string | null; onDone: () =>
 
   return (
     <section className="onboarding-question">
-      <span className="label">Step three</span>
+      <span className="label">Step four</span>
       <h1 className="display-lg" tabIndex={-1} data-step-heading>Add your CV</h1>
       <p className="onboarding-sub">
         {roleTitle
@@ -837,7 +842,7 @@ function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | nu
     {state === 'confirmed' ? <>
       <Check size={52} strokeWidth={1.25} className="mic-glyph" />
       <h1 className="display-lg" tabIndex={-1} data-step-heading>We can hear you</h1>
-      <CalibrationReadout pauseMs={pauseMs} />
+      <CalibrationReadout pauseMs={pauseMs} interview={interview} />
       <DevicePicker devices={devices} value={deviceId} onChange={setDeviceId} />
       <Button size="lg" fullWidth onClick={() => { void persistCalibration(); stop(); onDone() }}>Continue</Button>
     </> : null}
@@ -859,18 +864,18 @@ function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | nu
  * character sits through a mid-sentence gap before she answers, which is
  * genuinely the most useful number on the run.
  */
-function CalibrationReadout({ pauseMs }: { pauseMs: number | null }) {
+function CalibrationReadout({ pauseMs, interview }: { pauseMs: number | null; interview: boolean }) {
   const offset = offsetFromPause(pauseMs, DEFAULT_CALIBRATION.silenceMs)
   const windowMs = resolveSilenceMs({ ...DEFAULT_CALIBRATION, patienceOffsetMs: offset })
   return (
     <div className="mic-readout" role="status">
       <div><span>Level</span><strong className="data">Good</strong></div>
       <div><span>Your pause</span><strong className="data">{pauseMs === null ? 'Not measured' : `${pauseMs}ms`}</strong></div>
-      <div><span>She waits</span><strong className="data">{windowMs}ms</strong></div>
+      <div><span>{interview ? 'They wait' : 'She waits'}</span><strong className="data">{windowMs}ms</strong></div>
       <p>
         {pauseMs === null
-          ? 'We heard you, but not enough of a gap to time. She will use the default, and you can retest any time from Settings.'
-          : 'That is how long she will sit through a pause before she answers, so a sentence you break in the middle stays one sentence.'}
+          ? `We heard you, but not enough of a gap to time. ${interview ? 'They' : 'She'} will use the default, and you can retest any time from Settings.`
+          : `That is how long ${interview ? 'they' : 'she'} will sit through a pause before ${interview ? 'they answer' : 'she answers'}, so a sentence you break in the middle stays one sentence.`}
       </p>
     </div>
   )
@@ -937,36 +942,49 @@ function DevicePicker({ devices, value, onChange }: { devices: AudioDevice[]; va
  * interesting — **who is in the room**. So it is the last step rather than a
  * fourth screen behind a dashboard, and choosing somebody starts the round.
  *
- * ── WHY THE ROUND IS WRITTEN HERE ────────────────────────────────────────
+ * ── AND WHY IT WRITES NO ROUND ───────────────────────────────────────────
  *
- * B1, one screen earlier than B1 found it. `setupFromRow` never answers a null
- * round — it clamps to `DEFAULT_ROUND`, which is the ten-minute recruiter screen
- * and costs a credit the account does not have. An account holding nothing but
- * the free screener would reach the brief and be refused by its own credit
- * check. `openingRound` is the function that already knows this, and it is
- * asked with the balance rather than assumed.
+ * It did, for a day, and both halves of that were wrong. It read the balance
+ * out of `useUserState()` without waiting for it, so anybody who chose an
+ * interviewer before that request landed was written down for the ten-minute
+ * recruiter screen — a credit the account does not have, refused two screens
+ * later on the brief. And it was patching over a defect one layer down:
+ * `setupFromRow` clamped a null round to `DEFAULT_ROUND`, which made dead code
+ * of every `?? openingRound(...)` in the product.
+ *
+ * That is fixed at the shape now — a null round means *never chosen* and
+ * `resolveInterviewRound` is the one server-side answer — so the honest thing
+ * for this screen to write is the interviewer and nothing else. What the round
+ * is gets decided by the function that can read the balance without racing
+ * anybody.
  */
 function InterviewReadyStep({ name, roleTitle }: { name: string | null; roleTitle: string | null }) {
   const router = useRouter()
   const { setSelectedInterviewerId } = useProduct()
   const { data: interviewers, loading } = useInterviewers()
-  const { data: user } = useUserState()
   const [starting, setStarting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const round = roundType(openingRound((user?.interviewScreenerCredits ?? 0) > 0))
+  /**
+   * What this account is about to run, for the copy only.
+   *
+   * Every account is granted the free screener at sign-up, and this screen is
+   * only ever reached by an account seconds old, so `SCREENER_ROUND` is what it
+   * is — named from the table rather than typed out, so the length and the
+   * label move with it. The server decides what actually runs.
+   */
+  const round = roundType(SCREENER_ROUND)
 
   /**
    * Awaited, not fired and forgotten — the same rule the dating brief follows.
    * The guard sends an unfinished run straight back here, so leaving before
-   * `finishOnboarding` lands is a loop rather than an interview. The round and
-   * the interviewer go first: they are what the brief on the other side reads.
+   * `finishOnboarding` lands is a loop rather than an interview.
    */
   const start = async (interviewerId: string) => {
     setStarting(interviewerId)
     setError(null)
     setSelectedInterviewerId(interviewerId)
-    const saved = await saveInterviewSetup({ interviewerSlug: interviewerId, round: round.id })
+    const saved = await saveInterviewSetup({ interviewerSlug: interviewerId })
       .catch(() => ({ ok: false, message: 'Could not save — check your connection.' }))
     if (!saved.ok) {
       setStarting(null)

@@ -61,23 +61,43 @@ import type { Level, Track } from './types'
 /**
  * The screens, in order.
  *
- * Five of the eight are new and three are the onboarding questions. The three
- * that are neither a question nor the form — `reframe`, `mechanism`, `build` —
- * are the ones that make this a funnel rather than a form with a longer walk
- * to it, and they are placed deliberately: never two in a row, and never
+ * Four are questions, two are claims, one is a demo and one is the form. They
+ * are placed deliberately: never two claims in a row, and never a claim
  * before the first question. A stranger's first interaction has to be cheap
  * and it has to be *theirs*; three claims in a row before they have touched
  * anything is an advertisement, which is the thing they just clicked out of.
+ *
+ * ── THE 18 SEPTEMBER REORDER (SIGNUP-FIXES §2.2, §3.1, §3.2) ─────────────
+ *
+ * The run was hook → track → claim → question → claim → name → CASS → form:
+ * three arguments and *then* the demo. Two changes, and the second is the one
+ * with the number behind it.
+ *
+ * **`age` is now screen two.** It was the first field of the account form,
+ * where a birthday asked at the point of purchase reads as a data grab. Asked
+ * on screen two with a sentence explaining it, the same question reads as the
+ * product being careful — and it is the only screen on the whole run that
+ * demonstrates the §16 safety position out loud. §16.4 is untouched: the gate
+ * is still checked on the server before `auth.signUp`, and moving it *earlier*
+ * makes it earlier, not weaker. It also lets the Google door satisfy the gate
+ * before the account exists, which is the one thing that door could not do.
+ *
+ * **`build` moved to position four and `reframe` is gone.** `build` is the
+ * only screen in the run that stops being an argument and becomes a thing —
+ * the character, her room, her hook — and it used to arrive after every
+ * abstract screen had taken its cut. `reframe`'s argument ("reading about it
+ * doesn't transfer") is made better by meeting Cass than by reading a
+ * paragraph about meeting Cass, so it was cut rather than moved.
  */
 export type StartStep =
   | 'hook'
+  | 'age'
   | 'track'
-  | 'reframe'
+  | 'build'
   | 'focus'
   | 'role'
   | 'mechanism'
   | 'name'
-  | 'build'
   | 'account'
 
 /**
@@ -98,29 +118,30 @@ export type StartStep =
  * their track answer with the back arrow has to stay on the screen they were
  * on rather than being teleported. `start-funnel.test.ts` asserts it.
  *
- * The three interstitials are shared positions and branch on their own copy,
- * which is the right split: `reframe` and `mechanism` make the same argument
- * about two different rooms, and a fourth list of screens would drift.
+ * The two interstitials that survive — `build` and `mechanism` — are shared
+ * positions that branch on their own copy, which is the right split: they
+ * make the same argument about two different rooms, and a third list of
+ * screens would drift. `age` is shared outright; §16.4 does not have an arm.
  */
 const DATING_STEPS: readonly StartStep[] = [
   'hook',
+  'age',
   'track',
-  'reframe',
+  'build',
   'focus',
   'mechanism',
   'name',
-  'build',
   'account',
 ]
 
 const INTERVIEW_STEPS: readonly StartStep[] = [
   'hook',
+  'age',
   'track',
-  'reframe',
+  'build',
   'role',
   'mechanism',
   'name',
-  'build',
   'account',
 ]
 
@@ -152,6 +173,22 @@ export { INTERVIEW_STEPS }
  * — and then again by `onboardingResumePath` after signing up.
  */
 export interface StartAnswers {
+  /**
+   * Screen two, and the §16.4 gate (SIGNUP-FIXES §2.2).
+   *
+   * A year rather than a date, because this is a funnel and a three-wheel
+   * date picker on screen two of a cold ad click is three interactions for an
+   * answer one gives. `birthDateFromYear` turns it into the `YYYY-MM-DD` that
+   * `checkAge` has always taken, so the gate itself is unchanged and untested
+   * code paths are not introduced into the one function §16.4 rests on.
+   *
+   * It is on `StartAnswers` rather than in the form's local state because the
+   * answer is now given six screens before the form, has to survive a reload
+   * like every other answer, and — the part that earns its place — has to
+   * cross the Google redirect. Without it every OAuth sign-up lands on
+   * `/onboarding/age` for something it was already told.
+   */
+  birthYear: number | null
   track: Track | null
   focusArea: FocusArea | null
   /**
@@ -190,6 +227,7 @@ export interface StartAnswers {
 }
 
 export const EMPTY_START_ANSWERS: StartAnswers = {
+  birthYear: null,
   track: null,
   focusArea: null,
   roleTitle: null,
@@ -215,6 +253,29 @@ export const EMPTY_START_ANSWERS: StartAnswers = {
 export const START_STORAGE_KEY = 'nerve:start'
 export const START_FIELD = 'start_answers'
 
+/**
+ * The third carrier, for the door that leaves the site.
+ *
+ * `START_STORAGE_KEY` is the run holding its own answers across a reload and
+ * `START_FIELD` is the form handing them to `signUpWithPassword`. Neither
+ * survives Google: the browser goes to accounts.google.com and comes back to a
+ * route handler with no form behind it and no access to another origin's
+ * `sessionStorage`.
+ *
+ * Same encoding, same `decodeStartAnswers`, so the server still parses one
+ * shape from one function however it arrived — which is the whole reason that
+ * parser checks its enums instead of casting.
+ */
+export const START_COOKIE = 'nerve_start'
+
+/**
+ * Ten minutes. It describes one crossing that is seconds long; anything
+ * longer is a stale answer waiting to be applied to an account that has since
+ * chosen otherwise. `crossOAuthAccount` refuses that case anyway — this is the
+ * belt to its braces.
+ */
+export const START_COOKIE_MAX_AGE = 600
+
 const TRACKS: readonly Track[] = ['dating', 'interview']
 const FOCUS_AREAS: readonly FocusArea[] = ['opening', 'sustaining', 'flirting', 'rejection']
 
@@ -228,6 +289,39 @@ const ROLE_MAX = 120
 function text(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null
   return value.trim().slice(0, max) || null
+}
+
+/**
+ * A four-digit year, or nothing. Accepts the number and the string, because
+ * this parser reads `sessionStorage`, a form post and a cookie, and only one
+ * of the three keeps a number a number.
+ *
+ * The bounds are deliberately loose — they refuse a typo, not an age.
+ * `checkAge` is the only thing allowed to return a verdict, and a year that
+ * passes here and fails there gets that function's authored sentence rather
+ * than a silent null that would look like an unanswered question.
+ */
+function year(value: unknown): number | null {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.trim()) : NaN
+  if (!Number.isInteger(parsed) || parsed < 1900 || parsed > 2200) return null
+  return parsed
+}
+
+/**
+ * The year, as the date `checkAge` takes.
+ *
+ * **31 December, and the day of the month is the whole point.** Deriving from
+ * 1 January would treat everybody born in that year as the OLDEST they could
+ * be, which lets a real seventeen-year-old born in November through the gate
+ * for eleven months. 31 December treats them as the YOUNGEST they could be,
+ * so the only people it is wrong about are refused a few months early — which
+ * is the direction §16.4 requires an imprecise gate to be wrong in.
+ *
+ * (`SIGNUP-FIXES.md` §2.2 prescribes 1 January and states the intent this
+ * implements; its arithmetic is inverted. The intent is what shipped.)
+ */
+export function birthDateFromYear(value: number | null): string {
+  return value === null ? '' : `${String(value).padStart(4, '0')}-12-31`
 }
 
 export function encodeStartAnswers(answers: StartAnswers): string {
@@ -246,6 +340,7 @@ export function decodeStartAnswers(raw: string | null | undefined): StartAnswers
   const record = parsed as Record<string, unknown>
 
   return {
+    birthYear: year(record['birthYear']),
     track: TRACKS.find((value) => value === record['track']) ?? null,
     focusArea: FOCUS_AREAS.find((value) => value === record['focusArea']) ?? null,
     roleTitle: text(record['roleTitle'], ROLE_MAX),
@@ -259,7 +354,7 @@ export function decodeStartAnswers(raw: string | null | undefined): StartAnswers
 
 /** Whether anything crossed at all — a signup with none of this is an ordinary one. */
 export function hasStartAnswers(answers: StartAnswers): boolean {
-  return !!answers.track || !!answers.focusArea || answers.roleAsked || answers.named || answers.english
+  return !!answers.birthYear || !!answers.track || !!answers.focusArea || answers.roleAsked || answers.named || answers.english
 }
 
 /**
@@ -274,7 +369,13 @@ export function hasStartAnswers(answers: StartAnswers): boolean {
 export function startResumeIndex(answers: StartAnswers): number {
   const steps = startSteps(answers.track)
   const at = (step: StartStep) => steps.indexOf(step)
-  if (!answers.track) return hasStartAnswers(answers) ? at('track') : at('hook')
+  if (!hasStartAnswers(answers)) return at('hook')
+  // §16.4 first, and in the same order the signed-in guard enforces it: an
+  // account with no date is sent to the gate ahead of everything else, so a
+  // resume that put somebody past it would be the one screen in the run that
+  // a reload could skip.
+  if (!answers.birthYear) return at('age')
+  if (!answers.track) return at('track')
   // Question two, which is a different question on each arm. The interview arm
   // reads the FLAG rather than the title, because "I'm not sure yet" is an
   // answer — the same reason `named` exists beside `displayName`.
@@ -282,7 +383,7 @@ export function startResumeIndex(answers: StartAnswers): number {
     if (!answers.roleAsked) return at('role')
   } else if (!answers.focusArea) return at('focus')
   if (!answers.named) return at('name')
-  return at('build')
+  return at('account')
 }
 
 /* ------------------------------------------------------------------ *
@@ -446,7 +547,17 @@ export function startOpening(stored: StartAnswers, asked: Track | null): { answe
      * read a longer version of it.
      */
     if (!asked) return { answers: EMPTY_START_ANSWERS, index: startSteps(null).indexOf('hook') }
-    return { answers: { ...EMPTY_START_ANSWERS, track: asked }, index: startSteps(asked).indexOf('reframe') }
+    /**
+     * A named track skips the hook and lands on the age gate.
+     *
+     * It used to skip the track question too, and it cannot any more: §16.4
+     * is now screen two, and the one screen a run is not allowed to jump over
+     * is the gate. So `?track=interview` saves the hook — somebody arriving
+     * from `/interviews` has just read a longer version of it — and then
+     * meets the track question with their answer already selected, which is a
+     * confirmation rather than a question.
+     */
+    return { answers: { ...EMPTY_START_ANSWERS, track: asked }, index: startSteps(asked).indexOf('age') }
   }
   const answers = asked && stored.track !== asked ? { ...stored, track: asked } : stored
   return { answers, index: startResumeIndex(answers) }

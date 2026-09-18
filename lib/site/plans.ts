@@ -636,13 +636,26 @@ export function hasVoice(plan: Plan): boolean {
 }
 
 /**
- * Reps a day, as the pages write it.
+ * Reps a day, as the OFFER pages write it (SIGNUP-FIXES §4.6).
  *
- * "None" rather than "0 / day" on free. A zero in the mono data face reads as a
- * counter that has run down and will come back tomorrow, which is exactly the
- * wrong thing to tell somebody whose plan has no voice in it at all.
+ * The card meter answers "what do I get", not "how many a month" — the
+ * distinction `interviewsLine` already draws thirty lines below, where free
+ * returns `'1 free'` rather than `'None'` with a comment saying a card that
+ * printed `None` beside a bullet promising one free interview "would be
+ * contradicting itself on the page a merchant-of-record reviewer reads".
+ *
+ * That argument applies verbatim to voice reps and was not being applied:
+ * free's own feature list says *"One voice rep when you sign up, so you know
+ * what you are deciding about"*, and the meter two inches above it said
+ * **None**. The card was calling its own bullet a lie under a $0 price, which
+ * is the worst place on the site to be caught doing it.
+ *
+ * `repsPerDayLine` is deliberately unchanged: `/profile/subscription` reports
+ * a live entitlement, and a zero there is the truth about a rate rather than
+ * a claim about an offer.
  */
 export function repsLine(plan: PublicPlan): string {
+  if (plan.id === 'free') return '1, then text mode'
   return repsPerDayLine(plan.repsPerDay)
 }
 

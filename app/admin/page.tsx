@@ -21,11 +21,12 @@ import { adminUser } from '@/lib/db/admin-gate'
 import {
   adminDaily,
   adminOverview,
+  adminStartFunnel,
   adminTopPaths,
   adminTopReferrers,
   recentAdminActions,
 } from '@/lib/db/admin-metrics'
-import { AdminNav, DayBars, Figure, StatBlock, TopTable, ago, money } from '@/components/admin/panel'
+import { AdminNav, DayBars, Figure, FunnelTable, StatBlock, TopTable, ago, money } from '@/components/admin/panel'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,11 +48,12 @@ export default async function AdminOverviewPage() {
   if (!user) notFound()
 
   // In parallel: five independent reads, each of which fails soft on its own.
-  const [overview, daily, paths, referrers, audit] = await Promise.all([
+  const [overview, daily, paths, referrers, funnel, audit] = await Promise.all([
     adminOverview(),
     adminDaily(30),
     adminTopPaths(7, 10),
     adminTopReferrers(7, 8),
+    adminStartFunnel(7),
     recentAdminActions(12),
   ])
 
@@ -143,6 +145,11 @@ export default async function AdminOverviewPage() {
           </p>
         </section>
       ) : null}
+
+      {/* Before the paths table, because it is the more specific question and
+          the one D21 is about: `/start` is a single row up there, and the
+          eight screens behind it are where the funnel is actually lost. */}
+      <FunnelTable rows={funnel} days={7} />
 
       <div className="admin-grid">
         <TopTable title="Where they landed" rows={paths} head="Path · 7d" empty="No page views yet." />

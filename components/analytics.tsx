@@ -145,10 +145,10 @@ export function resetPerson(): void {
  * that have no beacon. Neither path is awaited and neither can throw into a
  * render — §05's rule about vendors, applied to our own endpoint.
  */
-function countPageView(pathname: string): void {
+function countPageView(pathname: string, step?: string): void {
   if (pathname.startsWith('/admin')) return
   try {
-    const body = JSON.stringify({ path: pathname, ref: document.referrer || null })
+    const body = JSON.stringify({ path: pathname, ref: document.referrer || null, ...(step ? { step } : {}) })
     if (navigator.sendBeacon?.(POST_PATH, new Blob([body], { type: 'application/json' }))) return
     void fetch(POST_PATH, {
       method: 'POST',
@@ -162,6 +162,24 @@ function countPageView(pathname: string): void {
 }
 
 const POST_PATH = '/api/pageview'
+
+/**
+ * A screen inside `/start`, counted as its own view.
+ *
+ * The run is eight screens behind one URL — the step lives in React state and
+ * the address bar never moves — so the traffic table saw `/start` once and
+ * the per-step drop, which is the number D21 exists to get, was invisible to
+ * everything except PostHog. PostHog has never been keyed.
+ *
+ * Exported rather than wired into the pathname effect because nothing outside
+ * the run knows a step has changed. It is the same beacon, with one more
+ * field, and it fails silent exactly as the rest of this file does.
+ */
+export function countStartStep(step: string): void {
+  countPageView('/start', step)
+}
+
+
 
 export function Analytics() {
   const pathname = usePathname()

@@ -33,9 +33,11 @@
  * the demonstration, it costs about eight cents, and the first purchase
  * decision belongs after the first scorecard.
  *
- * **No claim with a number in it.** The reframe screen is copy only. A
+ * **No claim with a number in it.** Every screen that argues is copy only. A
  * statistic about how many people avoid conversations is one clause away from
  * a prevalence claim, and rule 12 and terms clause 08 both draw that line.
+ * (The screen this rule was written for — `reframe` — was cut on 18 September;
+ * the rule outlives it and binds `mechanism` and anything added later.)
  *
  * ── ONE MORE THING, ABOUT THE BUILD SCREEN ───────────────────────────────
  *
@@ -52,17 +54,20 @@ import { useRouter } from 'next/navigation'
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, Eye, EyeOff } from 'lucide-react'
 import { signUpWithPassword, type AuthResult } from '@/app/auth/actions'
-import { capture } from '@/components/analytics'
+import { capture, countStartStep } from '@/components/analytics'
+import { metaTrack } from '@/components/meta-pixel'
 import { FluidPersona } from '@/components/fluid-persona'
 import { Mark } from '@/components/marks'
-import { Button, DateOfBirth, Input } from '@/components/ui'
+import { Button, Input } from '@/components/ui'
 import { FocusStep, NameStep, RoleStep, TrackStep } from './onboarding-questions'
+import { GoogleButton } from './google-button'
 import { RuleBlock, repGoal } from './rep-format'
 import { tap } from '@/lib/haptics'
 import { MIN_AGE, checkAge } from '@/lib/safety/age'
 import {
   EMPTY_START_ANSWERS,
   START_FIELD,
+  birthDateFromYear,
   START_STORAGE_KEY,
   decodeStartAnswers,
   encodeStartAnswers,
@@ -92,8 +97,11 @@ const EMPTY_RESULT: AuthResult = { ok: false, message: null }
  *
  * The hook is skipped with it, deliberately: its job is to say what this is,
  * and a visitor arriving from one of those pages has just read a longer
- * version. No `start_answered` is raised for a step nobody was shown — the
- * funnel simply shows these sessions entering at `reframe`, which is true.
+ * version. **The track question is no longer skipped with it** — §16.4 sits
+ * at screen two now and the gate is the one screen a run may never jump, so
+ * these sessions open on `age` and then meet the track question with their
+ * answer already selected. No `start_answered` is raised for a step nobody
+ * was shown; the funnel shows them entering at `age`, which is true.
  */
 export function StartScreen({ initialTrack = null }: { initialTrack?: Track | null }) {
   const opening = startOpening(EMPTY_START_ANSWERS, initialTrack)
@@ -164,9 +172,18 @@ export function StartScreen({ initialTrack = null }: { initialTrack?: Track | nu
 
   const stepName = steps[step] as StartStep
 
-  /** Every screen, as it is reached. The property is the funnel (B7). */
+  /**
+   * Every screen, as it is reached, counted twice on purpose.
+   *
+   * `capture` is PostHog, which answers the vendor dashboard and is unkeyed
+   * until somebody sets the key. `countStartStep` is the first-party beacon,
+   * which answers `/admin` and works today. They are not redundant: the whole
+   * reason D21 could not be argued about is that the only instrument for it
+   * was the one nobody had turned on.
+   */
   useEffect(() => {
     capture('start_step_viewed', { step: stepName, index: step })
+    countStartStep(stepName)
   }, [step, stepName])
 
   /**
@@ -193,6 +210,17 @@ export function StartScreen({ initialTrack = null }: { initialTrack?: Track | nu
         <div className="onboarding-step" key={step}>
           {stepName === 'hook' ? <HookStep onStart={() => { tap(); goTo(1) }} /> : null}
 
+          {/* Screen two, and the §16.4 gate. Asked here rather than in the
+              form because a birthday at the point of purchase reads as a data
+              grab and the same birthday on screen two reads as care — and
+              because the Google door cannot ask for one at all. */}
+          {stepName === 'age'
+            ? <AgeStep
+                value={answers.birthYear}
+                onSubmit={(value) => { answered('age', 'given'); advance({ ...answers, birthYear: value }, step) }}
+              />
+            : null}
+
           {stepName === 'track'
             ? <TrackStep
                 value={answers.track}
@@ -209,8 +237,6 @@ export function StartScreen({ initialTrack = null }: { initialTrack?: Track | nu
                 onChoose={(value) => { answered('track', value); advance({ ...answers, track: value }, step) }}
               />
             : null}
-
-          {stepName === 'reframe' ? <ReframeStep track={answers.track} onNext={() => { tap(); goTo(step + 1) }} /> : null}
 
           {stepName === 'focus'
             ? <FocusStep
@@ -277,6 +303,18 @@ function StartProgress({ step, steps: all }: { step: number; steps: readonly str
           aria-current={position === index ? 'step' : undefined}
         />
       ))}
+      {/*
+        §3.4. Dots say "there are more"; they do not say "there are two more",
+        and a stranger cannot tell one third from one tenth. The count is
+        derived from the list rather than written down, so adding or cutting a
+        screen can never leave a number lying — which is exactly what the
+        hand-written "seven screens" in three docstrings did.
+
+        `aria-hidden` because the group above already carries the same fact as
+        its label, and a screen reader announcing it twice is worse than not
+        at all.
+      */}
+      <span className="onboarding-progress__count" aria-hidden="true">{index + 1} of {steps.length}</span>
     </div>
   )
 }
@@ -312,11 +350,22 @@ function HookStep({ onStart }: { onStart: () => void }) {
         interviewer you want to impress. You are scored on how you talked, never on whether it worked.
       </p>
       <div className="start-actions">
-        <Button size="lg" fullWidth onClick={onStart}>Start</Button>
-        <p className="start-foot">
+        {/* §2.4. `Start` promised nothing and named no cost. The duration is
+            measured against the seven screens that follow, not asserted — if
+            a screen is added, re-time it or change the number. */}
+        <Button size="lg" fullWidth onClick={onStart}>Set mine up — 40 seconds</Button>
+        {/* The word `free` used to appear for the first time on screen eight,
+            under the form. It is the single most persuasive word available and
+            it belongs on the screen people decide to leave from. */}
+        <p className="start-foot">Free · no card · your first rep is included</p>
+        <p className="start-foot start-foot--quiet">
           <Link href="/how-it-works" className="volt-link">What is this?</Link>
-          <span aria-hidden="true"> · </span>
-          <Link href="/login" className="volt-link">I have an account</Link>
+        </p>
+        {/* Demoted to its own line at Ink-3: an exit for a fraction of a
+            percent of this page's traffic does not get the same weight as the
+            explanation link, and it used to sit beside it. */}
+        <p className="start-foot start-foot--exit">
+          <Link href="/login">I have an account</Link>
         </p>
       </div>
     </section>
@@ -324,28 +373,96 @@ function HookStep({ onStart }: { onStart: () => void }) {
 }
 
 /**
- * Screen three. The reframe, and it carries no statistic on purpose.
+ * Screen two, and the §16.4 gate (SIGNUP-FIXES §2.2).
  *
- * The obvious version of this screen quotes a number about how many people
- * avoid conversations they want to have. Every such number is a prevalence
- * claim in one more clause, rule 12 forbids the clinical register outright,
- * and terms clause 08 is the page a compliance reviewer reads first. The
- * argument is better without one: nobody disputes that reading about a skill
- * is not the same as having done it.
+ * ── WHY A YEAR AND NOT A DATE ────────────────────────────────────────────
+ *
+ * `/signup` asks for a full date on a three-wheel control, and that is right
+ * there: it is the last screen before an account and the person has already
+ * decided. Here it is the second thing that happens to a stranger who arrived
+ * four seconds ago, and three interactions for an answer that needs one is
+ * exactly the friction this run exists to remove.
+ *
+ * The gate itself does not change. `birthDateFromYear` turns the year into
+ * the `YYYY-MM-DD` `checkAge` has always taken — **31 December**, so a year
+ * is read as the youngest that year could be and the gate errs toward
+ * refusing somebody a few months early rather than admitting a seventeen-year
+ * old for eleven of them. `checkAge` runs here, again in the account form,
+ * and again on the server before `auth.signUp`.
+ *
+ * ── AND WHY IT IS WORTH A WHOLE SCREEN ───────────────────────────────────
+ *
+ * The sub-line is the only sentence in the entire run that shows the safety
+ * position §16 spent months building. Buried in a form field it reads as a
+ * data grab; given its own screen with a reason attached it reads as the
+ * product being careful, which is the thing this audience is least expecting.
+ *
+ * The refusal is `checkAge`'s own sentence, including the final one. A
+ * verdict is not retried here any more than it is at `/onboarding/age` — but
+ * nothing is recorded either, because there is no account and no row, and
+ * refusing to let somebody correct a mistyped year would turn a slip into a
+ * closed door.
  */
-function ReframeStep({ track, onNext }: { track: string | null; onNext: () => void }) {
-  const interview = track === 'interview'
+function AgeStep({ value, onSubmit }: { value: number | null; onSubmit: (year: number) => void }) {
+  const [text, setText] = useState(value ? String(value) : '')
+  const [message, setMessage] = useState<string | null>(null)
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault()
+
+    /**
+     * Four digits before `checkAge` sees it, and this guard is load-bearing
+     * rather than defensive.
+     *
+     * `birthDateFromYear` pads, so a half-typed `19` becomes `0019-12-31` and
+     * an empty field becomes `0000-12-31`. Both are well-formed ISO strings,
+     * so `checkAge` gets past its regex and into `Date.UTC`, which maps years
+     * 0–99 onto 1900–1999 — the roll-over check then fires and the screen
+     * told somebody who had typed two digits so far that their birthday "is
+     * not a real date".
+     *
+     * `checkAge` is right to answer that; the string it was handed really is
+     * not a date anybody was born on. The screen is what was wrong: it must
+     * not manufacture a date out of an unfinished field and then report the
+     * result as a verdict about a person.
+     */
+    if (!/^\d{4}$/.test(text)) {
+      setMessage('Enter the year you were born, all four digits.')
+      capture('start_account_failed', { reason: 'age' })
+      return
+    }
+
+    const verdict = checkAge(birthDateFromYear(Number(text)), new Date())
+    if (!verdict.ok) {
+      setMessage(verdict.message)
+      capture('start_account_failed', { reason: 'age' })
+      return
+    }
+    setMessage(null)
+    onSubmit(Number(text))
+  }
+
   return (
-    <section className="onboarding-question start-claim">
-      <span className="label">Why this works</span>
-      <h1 className="display-lg" tabIndex={-1} data-step-heading>Reading about it doesn&apos;t transfer.</h1>
+    <section className="onboarding-question start-age">
+      <span className="label">First</span>
+      <h1 className="display-lg" tabIndex={-1} data-step-heading>How old are you?</h1>
       <p className="onboarding-sub">
-        {interview
-          ? 'You can have every answer prepared and still lose the thread when somebody follows up on the one detail you skipped. The gap is not preparation. It is that you have never had to say it at speed, to a person who is deciding.'
-          : 'You can know exactly what to say and still lose the thread four seconds in. The gap is not knowledge. It is that you have never done it under time, against someone who might not be interested.'}
+        Nerve is {MIN_AGE}+. The year is the only part we keep, and it is why we can promise the
+        characters stay PG-13.
       </p>
-      <p className="onboarding-sub">The only thing that closes it is having done it. Out loud, with something at stake.</p>
-      <div className="start-actions"><Button size="lg" fullWidth onClick={onNext}>Go on</Button></div>
+      <form className="auth-form start-age__form" onSubmit={submit}>
+        {message ? <div className="form-error" role="alert">{message}</div> : null}
+        <Input
+          label="Year of birth"
+          inputMode="numeric"
+          autoComplete="bday-year"
+          maxLength={4}
+          placeholder="2001"
+          value={text}
+          onChange={(event) => setText(event.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+        />
+        <Button type="submit" size="lg" fullWidth>Continue</Button>
+      </form>
     </section>
   )
 }
@@ -421,7 +538,27 @@ function BuildStep({ answers, firstRep, onNext }: {
   firstRep: ReturnType<typeof firstRepPreview>
   onNext: () => void
 }) {
-  const focusLabel = FOCUS_LINE[answers.focusArea ?? 'opening']
+  /**
+   * The upper-funnel signal (§1.2, and §5.3 is why it matters more than the
+   * registration one right now). At ~15% of clicks this is dense enough for
+   * a conversion campaign to actually learn from, where
+   * `CompleteRegistration` at 3% of 126 clicks is four events and the
+   * optimiser never exits its learning phase.
+   *
+   * On mount rather than on the button, because reaching this screen is the
+   * interest signal; pressing its button is most of the way to the other
+   * event.
+   */
+  useEffect(() => { metaTrack('Lead') }, [])
+
+  /**
+   * The focus answer has not been given yet on this screen since §3.1 moved
+   * it ahead of the question — so the row is dropped rather than defaulted.
+   * Printing "How you open" for somebody who has chosen nothing would be the
+   * demo screen inventing an answer on the one screen whose whole job is to
+   * be believed.
+   */
+  const focusLabel = answers.focusArea ? FOCUS_LINE[answers.focusArea] : null
 
   if (answers.track === 'interview') {
     return (
@@ -450,7 +587,9 @@ function BuildStep({ answers, firstRep, onNext }: {
           <div><span>Next</span><strong>Your CV, then a mic check</strong></div>
           <div><span>Then</span><strong>Who is in the room</strong></div>
         </div>
-        <Button size="lg" fullWidth onClick={onNext}>{answers.displayName ? `Create your account, ${answers.displayName}` : 'Create your account'}</Button>
+        {/* Not the last screen any more (§3.1), so it no longer promises an
+            account. The account CTA lives on the screen that creates one. */}
+        <Button size="lg" fullWidth onClick={onNext}>Go on</Button>
       </section>
     )
   }
@@ -459,8 +598,8 @@ function BuildStep({ answers, firstRep, onNext }: {
     return (
       <section className="brief-shell start-build">
         <h1 className="display-lg" tabIndex={-1} data-step-heading>You&apos;re set.</h1>
-        <p className="brief-hook">Create your account and your first rep is waiting on the other side of it.</p>
-        <Button size="lg" fullWidth onClick={onNext}>Create your account</Button>
+        <p className="brief-hook">Your first rep is waiting a few screens from here.</p>
+        <Button size="lg" fullWidth onClick={onNext}>Go on</Button>
       </section>
     )
   }
@@ -474,10 +613,10 @@ function BuildStep({ answers, firstRep, onNext }: {
       <div className="rule-block start-plan">
         <div><span>Where</span><strong>{firstRep.setting}</strong></div>
         <div><span>Time</span><strong>3:00</strong></div>
-        <div><span>Watching for</span><strong>{focusLabel}</strong></div>
+        {focusLabel ? <div><span>Watching for</span><strong>{focusLabel}</strong></div> : null}
       </div>
       <p className="start-note">She doesn&apos;t know you&apos;re practising. She can lose interest.</p>
-      <Button size="lg" fullWidth onClick={onNext}>{answers.displayName ? `Create your account, ${answers.displayName}` : 'Create your account'}</Button>
+      <Button size="lg" fullWidth onClick={onNext}>Go on</Button>
     </section>
   )
 }
@@ -530,23 +669,34 @@ function AccountStep({ answers }: { answers: StartAnswers }) {
    * interviews is the run forgetting them at the last possible moment.
    */
   const interview = answers.track === 'interview'
+  // The same pure lookup the build screen renders from, so the character
+  // named here can never drift from the one they were just introduced to.
+  const firstRep = firstRepPreview(answers.focusArea)
   const router = useRouter()
   const [state, action, busy] = useActionState(signUpWithPassword, EMPTY_RESULT)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [dateOfBirth, setDateOfBirth] = useState('')
   const [show, setShow] = useState(false)
+  /**
+   * Given on screen two, not here (§2.2). It is still posted and still
+   * checked — by this handler and again by `signUpWithPassword` before
+   * `auth.signUp` — because §16.4 is about the answer being on the record
+   * before the account exists, not about which screen collected it.
+   */
+  const dateOfBirth = birthDateFromYear(answers.birthYear)
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => { if (state.ok) router.push(`/verify-email?email=${encodeURIComponent(email)}`) }, [email, router, state.ok])
   useEffect(() => { if (state.message) capture('start_account_failed', { reason: 'server' }) }, [state.message])
 
   const zone = typeof Intl === 'undefined' ? '' : Intl.DateTimeFormat().resolvedOptions().timeZone
-  const strength = password.length === 0
-    ? 'Use at least 8 characters.'
-    : password.length < 8 ? 'Keep going — 8 characters minimum.'
-    : password.length < 12 ? 'Good enough. Longer is stronger.'
-    : 'Strong.'
+  /**
+   * One static hint (§2.3). It used to be three strings that changed as you
+   * typed — *keep going*, *good enough*, *strong* — which is unsolicited
+   * judgement at the most fragile moment in the funnel. The rule is the same
+   * rule; it is just stated once instead of graded live.
+   */
+  const strength = 'At least 8 characters.'
 
   const refuse = (reason: 'email' | 'password' | 'age', text: string) => {
     capture('start_account_failed', { reason })
@@ -558,10 +708,30 @@ function AccountStep({ answers }: { answers: StartAnswers }) {
   return (
     <section className="onboarding-question start-account">
       <span className="label">Last thing</span>
-      <h1 className="display-lg" tabIndex={-1} data-step-heading>Where do your scores go?</h1>
+      {/* §2.3. *Where do your scores go?* made the account a filing cabinet.
+          The screen before this one just drew her, named her and named her
+          room — so this screen names her back, and the account becomes the
+          door to a person. `firstRep` is the same lookup the build screen
+          renders, so the two can never name different characters. */}
+      <h1 className="display-lg" tabIndex={-1} data-step-heading>
+        {interview ? 'Your interviewer is ready.' : firstRep ? `${firstRep.name} is ready.` : 'You\u2019re set.'}
+      </h1>
+      {/* The cost, next to the promise. "None ever if you stay free" is true —
+          the free plan is `price: null` and its card says *no card, ever* —
+          and it answers the objection that actually stops a free signup,
+          which is not "what does it cost now" but "what happens later". */}
       <p className="onboarding-sub">
-        One free voice rep and one free five-minute interview, on every account. No card.
+        One free voice rep and one free five-minute interview, on every account.
+        No card now, and none ever if you stay free. Takes about twenty seconds.
       </p>
+      {/* §2.1 step 4, and it is only correct now that §2.2 has shipped.
+          The answers this form posts in `START_FIELD` are carried in a cookie
+          instead, because the OAuth leg leaves the site — and they now
+          include the birth year, so a Google sign-up from this screen
+          satisfies §16.4 before the account exists and lands on the product
+          rather than on `/onboarding/age`. That is what makes Google the
+          fastest path here, and what makes putting it first honest. */}
+      <GoogleButton answers={encodeStartAnswers(answers)} first />
       <form
         className="auth-form"
         action={action}
@@ -583,6 +753,17 @@ function AccountStep({ answers }: { answers: StartAnswers }) {
             return
           }
           setMessage(null)
+          /**
+           * The ad platform's copy of this moment (§1.2). A STANDARD event,
+           * not a custom one: Meta's optimiser has priors on the standard
+           * names, and a custom event with three conversions a week never
+           * leaves the learning phase while a standard one borrows.
+           *
+           * It is deliberately not routed through `capture()` — see the
+           * header of `components/meta-pixel.tsx`. The funnel has to keep
+           * counting on the day the pixel is switched off.
+           */
+          metaTrack('CompleteRegistration', { content_name: answers.track ?? 'dating' })
           capture('start_account_submitted', {
             track: answers.track ?? 'dating',
             focus: answers.focusArea ?? 'none',
@@ -613,9 +794,13 @@ function AccountStep({ answers }: { answers: StartAnswers }) {
             </button>
           }
         />
-        <DateOfBirth label="Date of birth" value={dateOfBirth} onChange={setDateOfBirth} hint={`Nerve is ${MIN_AGE}+. The date is the only thing we keep.`} />
         <input type="hidden" name="date_of_birth" value={dateOfBirth} readOnly />
         <Button type="submit" size="lg" fullWidth loading={busy}>{interview ? 'Start the interview' : 'Start the rep'}</Button>
+        {/* §2.3. The reassurance used to sit 400px above the button, which is
+            not where the decision is made. The 30-day line is a privacy
+            promise and this form is where privacy is being decided; it was
+            only ever in the landing page footer. */}
+        <p className="start-foot">No card · Recordings auto-delete after 30 days</p>
       </form>
       <p className="auth-fine">
         By continuing, you agree to the <Link href="/legal/terms">terms</Link> and <Link href="/legal/privacy">privacy policy</Link>.

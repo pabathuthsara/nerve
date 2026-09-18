@@ -1,14 +1,16 @@
 'use client'
 
 /**
- * The Arena doors. Email and password, against Supabase.
+ * The Arena doors. Email, password and Google, against Supabase.
  *
- * **Google is not offered.** The button was on both doors and the provider was
- * never configured, so pressing it reached Supabase, got told the provider was
- * disabled, and put an error under a control that had looked like the fastest
- * way in. §04 still wants it; `signInWithOAuth` plus the `/auth/callback`
- * exchange is one button and a dashboard change away, and the callback route is
- * deliberately left in place so that stays true.
+ * **Google is offered again, and the reason it was pulled is worth keeping.**
+ * The button was on both doors before the provider was ever configured, so
+ * pressing it reached Supabase, got told the provider was disabled, and put an
+ * error under the control that looked like the fastest way in. A door is not
+ * shipped when its button renders. It is shipped when the provider answers,
+ * the callback writes a session on the host the cookie belongs to, and the
+ * funnel's answers survive the trip — `lib/db/start-crossing.ts` is the third
+ * of those and was the one nobody had written.
  *
  * Every form here posts to a Server Action rather than to a client-side
  * Supabase call, for one reason that matters and one that follows from it:
@@ -30,6 +32,7 @@ import { Button, DateOfBirth, Hairline, Input } from '@/components/ui'
 import { Mark } from '@/components/marks'
 import { checkAge, MIN_AGE } from '@/lib/safety/age'
 import { packById, type InterviewPack } from '@/lib/site/plans'
+import { GoogleButton } from './google-button'
 import {
   devSignIn,
   resendConfirmation,
@@ -75,7 +78,7 @@ function LoginForm({ devLoginEmail }: { devLoginEmail: string | null }) {
   const [state, action, busy] = useActionState(signInWithPassword, EMPTY)
   const [show, setShow] = useState(false)
   const error = state.message
-  return <><AuthHeading title="Log in" /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} /><div className="auth-inline"><span /><Link href="/forgot-password" className="volt-link">Forgot?</Link></div><Button type="submit" size="lg" fullWidth loading={busy}>Log in</Button></form><AuthFoot>New here? <Link href="/signup" className="volt-link">Start training</Link></AuthFoot>{devLoginEmail ? <DevDoor email={devLoginEmail} /> : null}</>
+  return <><AuthHeading title="Log in" /><form className="auth-form" action={action}>{error ? <FormError>{error}</FormError> : null}<TimezoneField /><Input label="Email" name="email" type="email" autoComplete="email" placeholder="you@example.com" required /><PasswordField label="Password" name="password" show={show} onToggle={() => setShow((value) => !value)} /><div className="auth-inline"><span /><Link href="/forgot-password" className="volt-link">Forgot?</Link></div><Button type="submit" size="lg" fullWidth loading={busy}>Log in</Button></form><GoogleButton /><AuthFoot>New here? <Link href="/signup" className="volt-link">Start training</Link></AuthFoot>{devLoginEmail ? <DevDoor email={devLoginEmail} /> : null}</>
 }
 
 /**
@@ -195,6 +198,10 @@ function SignupAccount({ pack, email, onEmail, password, onPassword, onDone }: {
       <PasswordField label="Password" name="password-draft" show={show} onToggle={() => setShow((value) => !value)} value={password} onChange={onPassword} hint={strength} autoComplete="new-password" />
       <Button type="submit" size="lg" fullWidth>Continue</Button>
     </form>
+    {/* No date of birth on this arm, so §16.4 is answered by
+        `/onboarding/age` on the first render instead of by step two here.
+        See `lib/db/start-crossing.ts` and `LAUNCH-GAP.md` D25. */}
+    <GoogleButton label="Sign up with Google" />
     <AuthFoot>Already training? <Link href="/login" className="volt-link">Log in</Link></AuthFoot>
   </>
 }

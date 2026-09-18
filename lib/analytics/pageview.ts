@@ -31,6 +31,21 @@
  * alone would be readable and would leak the first route somebody forgot.
  */
 
+/**
+ * Every screen `/start` can show, as the beacon is allowed to report them.
+ *
+ * Deliberately a literal list rather than an import from
+ * `lib/data/start-funnel.ts`: this module is the boundary a browser posts
+ * into, and it must keep meaning the same thing when a screen is renamed or
+ * removed. A step that no longer exists should stop being accepted on purpose
+ * — by editing this line — rather than silently the moment a component moves.
+ * `pageview.test.ts` asserts the two lists agree, so the drift is caught at
+ * build time instead of being possible.
+ */
+export const START_STEP_NAMES = [
+  'hook', 'age', 'track', 'build', 'focus', 'role', 'mechanism', 'name', 'account',
+] as const
+
 /** The database CHECK. Repeated here so a refusal happens before the insert. */
 export const MAX_PATH = 128
 
@@ -188,4 +203,23 @@ export function countryCode(raw: string | null | undefined): string | null {
   const code = raw.trim().toUpperCase()
   if (!/^[A-Z]{2}$/.test(code) || code === 'XX') return null
   return code
+}
+
+/**
+ * The `/start` screen a view belongs to, or null.
+ *
+ * Checked against the authored step list rather than sanitised, for the same
+ * reason `normalisePath` refuses rather than trims: this arrives from a
+ * browser that can post anything, and a traffic table with a free-text column
+ * in it is a log of whatever somebody sends. An unknown value is dropped and
+ * the view is still counted — the path is the thing that must not be lost.
+ *
+ * Only `/start` may carry one. A step on any other path is a caller doing
+ * something this was not built for, and it is discarded silently.
+ */
+export function normaliseStep(path: string, value: unknown): string | null {
+  if (path !== '/start') return null
+  if (typeof value !== 'string') return null
+  const step = value.trim()
+  return (START_STEP_NAMES as readonly string[]).includes(step) ? step : null
 }

@@ -16,6 +16,7 @@ import 'server-only'
  */
 
 import { supabaseAdmin } from './admin'
+import { startSteps } from '@/lib/data/start-funnel'
 
 export interface Overview {
   accounts: number
@@ -142,6 +143,49 @@ export async function adminDaily(days = 30): Promise<DayRow[]> {
       signups: num(row.signups),
       reps: num(row.reps),
     }))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The `/start` run, screen by screen — the number D21 asked for.
+ *
+ * Returned **in the run's own order**, and padded with the screens nobody
+ * reached, because a funnel with the empty rows dropped is a funnel that
+ * hides the drop. The order comes from `startSteps`, which is the only place
+ * that knows it; the SQL deliberately does not, so a reorder of the run
+ * cannot leave a stale sequence in a migration.
+ *
+ * The two arms share every screen but one, so the union of both lists is what
+ * gets drawn — `focus` and `role` both appear, and whichever arm was not
+ * taken simply reads zero.
+ */
+export interface FunnelRow extends TopRow { reachedPct: number }
+
+export async function adminStartFunnel(days = 7): Promise<FunnelRow[]> {
+  try {
+    const { data, error } = await supabaseAdmin()
+      .rpc('admin_start_funnel', { days: clamp(days, 1, 180) })
+    if (error || !data) return []
+
+    const counts = new Map(data.map((row) => [String(row.step), { views: num(row.views), visitors: num(row.visitors) }]))
+    const order = [...startSteps('dating'), ...startSteps('interview')]
+      .filter((step, index, all) => all.indexOf(step) === index)
+
+    // Everything is a share of the FIRST screen, not of the previous one.
+    // Step-to-step percentages read well and answer the wrong question: what
+    // an operator needs is how many of the people who arrived are still here.
+    const top = counts.get(order[0] ?? '')?.visitors ?? 0
+    return order.map((step) => {
+      const row = counts.get(step) ?? { views: 0, visitors: 0 }
+      return {
+        key: step,
+        views: row.views,
+        visitors: row.visitors,
+        reachedPct: top > 0 ? Math.round((row.visitors / top) * 100) : 0,
+      }
+    })
   } catch {
     return []
   }

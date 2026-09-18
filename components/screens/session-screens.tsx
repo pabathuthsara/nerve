@@ -97,13 +97,24 @@ function ResultScreen({ session }: { session: SessionSummary }) {
   const { data: user } = useUserState()
   const memory = usePersonaMemory(session.personaId)
   const subject = [...personas, ...interviewers].find((item) => item.id === session.personaId)
+  /**
+   * Which product this screen is drawing, resolved once.
+   *
+   * It was five separate `session.track === 'interview'` tests and four places
+   * that had forgotten to make one — the meter's label, the memory line and
+   * both record sentences, all of which said "she" to somebody who had just
+   * been interviewed by Dan Whitfield. One name, so the next thing added here
+   * has an obvious flag to read.
+   */
+  const interview = session.track === 'interview'
+
   // The number the outcome actually turned on, which is not where the meter
   // finished — see `resultReading`. This screen used to show `finalWarmth`
   // against the threshold and produced `71 / 65` under the words "She left".
   const reading = resultReading({
     decisionWarmth: session.decisionWarmth,
     finalWarmth: session.finalWarmth,
-    interview: session.track === 'interview',
+    interview,
     won: session.won,
   })
   const { warmth: decided, threshold, fallback: usingFallback, lateSurge, close, nearMiss } = reading
@@ -310,13 +321,25 @@ function ResultScreen({ session }: { session: SessionSummary }) {
         <>
           <span className="result-time data">{formatDuration(session.durationMs)}</span>
           <Chip tone="band" band={session.finalBand}>{session.track === 'interview' ? interviewBand(session.finalBand) : session.finalBand}</Chip>
-          {fasterBy !== null ? <p className="result-record">{fasterBy} {fasterBy === 1 ? 'second' : 'seconds'} faster than your best against her.</p> : null}
-          {freshMemory ? <p className="result-memory"><span className="label">She&apos;ll remember</span> {freshMemory}</p> : null}
+          {/* THE SECOND TRACK READS THIS SCREEN TOO, AND IT USED TO READ IT IN
+              THE OTHER PRODUCT'S WORDS. `headline` and `context` above were
+              guarded when the interview arm shipped; these were not, so a
+              candidate who was asked back was told they had been "faster than
+              your best against her" and that the interviewer would remember
+              them as "she". `interview` is the same flag the band chip on the
+              line above already reads. */}
+          {fasterBy !== null ? <p className="result-record">{fasterBy} {fasterBy === 1 ? 'second' : 'seconds'} faster than your best {interview ? 'in this room' : 'against her'}.</p> : null}
+          {freshMemory ? <p className="result-memory"><span className="label">{interview ? 'They\u2019ll remember' : 'She\u2019ll remember'}</span> {freshMemory}</p> : null}
         </>
       ) : (
         <>
           <div className="result-warmth">
-            <span className="label">Warmth</span>
+            {/* The meter has a different name on each arm and always has —
+                `interviewBand` renames every band for the interview track, and
+                this label was the one place still calling it warmth. A
+                candidate does not warm to a recruiter; the recruiter forms an
+                impression of them. */}
+            <span className="label">{interview ? 'Their read' : 'Warmth'}</span>
             <strong className="data">{decided}{herBestWarmth === null ? <i>/ {threshold}</i> : null}</strong>
           </div>
           {/* R12. Score against yourself, not against the bar. `41 — your best
@@ -328,9 +351,9 @@ function ResultScreen({ session }: { session: SessionSummary }) {
               // The motivating half of R12, and the reason the comparison is
               // worth drawing at all: a rep that lost is still allowed to be
               // the best you have managed against her.
-              ? <p className="result-record">Your best against her yet — the last one stopped at <span className="data">{herBestWarmth}</span>. She decides at <span className="data">{threshold}</span>.</p>
-              : <p className="result-record">Your best against her is <span className="data">{herBestWarmth}</span>. She decides at <span className="data">{threshold}</span>.</p>
-            : <span className="label mute">{usingFallback ? 'Where the meter finished' : 'Where the meter was when she decided'}</span>}
+              ? <p className="result-record">Your best {interview ? 'with them' : 'against her'} yet — the last one stopped at <span className="data">{herBestWarmth}</span>. {interview ? 'They decide' : 'She decides'} at <span className="data">{threshold}</span>.</p>
+              : <p className="result-record">Your best {interview ? 'with them' : 'against her'} is <span className="data">{herBestWarmth}</span>. {interview ? 'They decide' : 'She decides'} at <span className="data">{threshold}</span>.</p>
+            : <span className="label mute">{usingFallback ? 'Where the meter finished' : `Where it stood when ${interview ? 'they' : 'she'} decided`}</span>}
           <p>{context}</p>
         </>
       )}

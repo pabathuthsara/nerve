@@ -472,8 +472,15 @@ export interface InterviewSetup {
   complete: boolean
   /** The authored field this role sits in (§5.9). Feeds the compiled prompt. */
   field: InterviewFieldId
-  /** Which round this setup runs. Decides length and the wind-down (§5.7). */
-  round: RoundTypeId
+  /**
+   * Which round this setup runs, or **null when it has never been chosen**.
+   *
+   * Decides length and the wind-down (§5.7). Null is not a synonym for the
+   * default: every reader answers it with `openingRound(hasScreener)`, because
+   * the default round costs a credit and a brand-new account holds only a free
+   * screener. See the note on `InterviewSetupRecord.round`.
+   */
+  round: RoundTypeId | null
   /**
    * The question on screen (§5.11). Off by default, and the setup says why.
    *

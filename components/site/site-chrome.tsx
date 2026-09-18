@@ -49,7 +49,12 @@ export const SITE_LINKS = {
  */
 export const SUPPORT_EMAIL = 'support@hellonerve.com'
 
-export function SiteHeader({ cta = 'Start training' }: { cta?: string }) {
+/**
+ * §4.3. The default was `Start training`, which is the most-seen CTA on the
+ * site and withheld the single most persuasive word available. Every caller
+ * that does not override it now says `Start free`.
+ */
+export function SiteHeader({ cta = 'Start free' }: { cta?: string }) {
   return (
     <header className="site-header">
       <div className="site-header__inner">
@@ -139,6 +144,7 @@ export function SiteSection({
   kicker,
   title,
   lede,
+  figure,
   children,
   wide = false,
 }: {
@@ -146,15 +152,31 @@ export function SiteSection({
   kicker: string
   title: ReactNode
   lede?: ReactNode
+  /**
+   * Something to put in the right column beside the heading (§4.5).
+   *
+   * Every section on the landing page was a left-column headline with an
+   * empty black right half at 1200px — screenshotted at four scroll
+   * positions and empty at all four. This is the seam for fixing that one
+   * section at a time, with the thing the section is ABOUT rather than with
+   * decoration.
+   *
+   * It stacks under the heading below 1100px, so the mobile order is
+   * unchanged and nothing has to be hidden at a breakpoint.
+   */
+  figure?: ReactNode
   children?: ReactNode
   wide?: boolean
 }) {
   return (
-    <section id={id} className={`site-section${wide ? ' site-section--wide' : ''}`}>
-      <div className="site-section__head">
-        <span className="label">{kicker}</span>
-        <h2 className="display-lg">{title}</h2>
-        {lede ? <p className="site-lede">{lede}</p> : null}
+    <section id={id} className={`site-section${wide ? ' site-section--wide' : ''}${figure ? ' site-section--split' : ''}`}>
+      <div className="site-section__top">
+        <div className="site-section__head">
+          <span className="label">{kicker}</span>
+          <h2 className="display-lg">{title}</h2>
+          {lede ? <p className="site-lede">{lede}</p> : null}
+        </div>
+        {figure ? <div className="site-section__figure">{figure}</div> : null}
       </div>
       {children}
     </section>

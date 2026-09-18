@@ -458,11 +458,25 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     `npm run whop:verify` afterwards, every time** — that preflight is the only
     thing that has ever caught this — and **read it back again later**, before
     any launch or marketing action.
+    **On 18 September 2026 it was found at `health_and_wellness_software /
+    wellness`** — a fourth value, in the forbidden family, with no write of any
+    kind since 8 September. It is still wrong as of that date and needs a
+    user-token write.
     Note also that **the API key cannot write the account at all** (404); only
     a user-token credential can, which is why `whop:setup` prints the account
-    fields for a human instead of setting them. `npm run whop:verify` now
-    asserts the classification, so the preflight fails rather than the
-    compliance review.
+    fields for a human instead of setting them. **It cannot READ the
+    classification either** — `GET /accounts/{id}` on an account-scoped key
+    answers `industry_group: null, industry_type: null` whatever the account
+    actually says. For ten days `whop:verify` therefore printed
+    `FAIL … (null / null)`, which reads as "nobody set it" and was not what
+    was true; its escalation branch was keyed to the literal
+    `mental_health_app` and so said nothing at all about a drift into a
+    different value in the same family. It now separates *unreadable* from
+    *wrong*, warns rather than pretending, names the credential that can see
+    it, and escalates on the whole health/wellness/therapy family. **So the
+    preflight can only ever tell you to go and look** — the actual read is the
+    Whop MCP's `accounts_get` or the dashboard, and it must be done before any
+    launch or marketing action.
 13. **PG-13, enforced by moderation on both streams.** Payment-processor survival. (§16)
     Built, in `lib/safety/`. The verdict mapping, the escalation sequence and the
     age arithmetic are pure functions with tests — change them there, not in the

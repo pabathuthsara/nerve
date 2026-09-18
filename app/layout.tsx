@@ -6,22 +6,34 @@ import { ProductProvider } from '@/components/product-provider'
 import { ShellFrame } from '@/components/app-shell'
 import { ToastProvider } from '@/components/ui'
 import { Analytics } from '@/components/analytics'
+import { MetaPixel } from '@/components/meta-pixel'
 import { SITE_ORIGIN } from '@/lib/site/origin'
 
 export const metadata: Metadata = {
-  // Resolves the relative `/og.png` below. It used to fall back to localhost,
-  // which published link previews nobody outside this machine could load —
-  // see the note in `lib/site/origin.ts`.
+  /**
+   * Resolves the generated OG image below. It used to fall back to localhost,
+   * which published link previews nobody outside this machine could load —
+   * see the note in `lib/site/origin.ts`.
+   */
   metadataBase: new URL(SITE_ORIGIN),
   title: { default: 'NERVE — Conversation training', template: '%s · NERVE' },
   description: 'Timed voice reps for conversations that matter.',
+  /**
+   * **No `images` key here, and that is what makes §4.9 work.**
+   *
+   * `app/opengraph-image.tsx` is a file convention: Next generates the tags
+   * from it and applies them to every route that does not declare its own —
+   * including `/start`, which the audit notes was inheriting a wordmark. An
+   * explicit `images` array at this level OVERRIDES the convention, which is
+   * how `/og.png` stayed on every card after the route existed. Adding one
+   * back here silently reverts the change.
+   */
   openGraph: {
     title: 'NERVE — Conversation training',
     description: 'Practice the conversations you usually avoid.',
     type: 'website',
-    images: [{ url: '/og.png', width: 1731, height: 909, alt: 'NERVE — Practice the conversations you usually avoid.' }],
   },
-  twitter: { card: 'summary_large_image', title: 'NERVE — Conversation training', description: 'Practice the conversations you usually avoid.', images: ['/og.png'] },
+  twitter: { card: 'summary_large_image', title: 'NERVE — Conversation training', description: 'Practice the conversations you usually avoid.' },
 }
 
 /**
@@ -67,7 +79,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         sections that wear it, so `/`, the auth run, the onboarding run and a
         live rep are all still bare.
       */}
-      <body><ProductProvider><ToastProvider><ShellFrame>{children}</ShellFrame></ToastProvider><Analytics /></ProductProvider></body>
+      <body><ProductProvider><ToastProvider><ShellFrame>{children}</ShellFrame></ToastProvider><Analytics /><MetaPixel /></ProductProvider></body>
     </html>
   )
 }
