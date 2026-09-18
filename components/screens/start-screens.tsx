@@ -717,30 +717,20 @@ function AccountStep({ answers }: { answers: StartAnswers }) {
       <h1 className="display-lg" tabIndex={-1} data-step-heading>
         {interview ? 'Your interviewer is ready.' : firstRep ? `${firstRep.name} is ready.` : 'You\u2019re set.'}
       </h1>
-      {/* The cost, next to the promise. "None ever if you stay free" is true —
-          the free plan is `price: null` and its card says *no card, ever* —
-          and it answers the objection that actually stops a free signup,
-          which is not "what does it cost now" but "what happens later". */}
+      {/*
+        ONE LINE, because the eye needs somewhere to land.
+
+        This was three sentences, and the tester quote below it was another
+        three lines at 14px against this one's 15px — a one-pixel, zero-colour
+        difference, which is not a hierarchy, it is a wall. Two of the three
+        moved rather than being deleted: the card promise is the last thing
+        read before the tap (§2.3) and now lives only there, and "takes about
+        twenty seconds" was a claim the form demonstrates by being short.
+      */}
       <p className="onboarding-sub">
         One free voice rep and one free five-minute interview, on every account.
-        No card now, and none ever if you stay free. Takes about twenty seconds.
       </p>
-      {/*
-        One tester, static, on the screen where doubt is highest.
 
-        Not a carousel and not a screen of its own: `startSteps` may never put
-        a claim after a claim, §3.2 cut `reframe` for that reason, and every
-        extra screen in an eight-screen run is another place to leave. The
-        hesitation HERE is "will this do anything for me", which six screens
-        of explaining what the product is has not answered. See
-        `SIGNUP_REVIEW`.
-      */}
-      {SIGNUP_REVIEW ? (
-        <figure className="start-proof">
-          <blockquote>{SIGNUP_REVIEW.quote}</blockquote>
-          <figcaption>{SIGNUP_REVIEW.name}</figcaption>
-        </figure>
-      ) : null}
       {/* §2.1 step 4, and it is only correct now that §2.2 has shipped.
           The answers this form posts in `START_FIELD` are carried in a cookie
           instead, because the OAuth leg leaves the site — and they now
@@ -817,8 +807,28 @@ function AccountStep({ answers }: { answers: StartAnswers }) {
             not where the decision is made. The 30-day line is a privacy
             promise and this form is where privacy is being decided; it was
             only ever in the landing page footer. */}
-        <p className="start-foot">No card · Recordings auto-delete after 30 days</p>
+        <p className="start-foot">No card, ever · Recordings auto-delete after 30 days</p>
       </form>
+      {/*
+        One tester, static, BELOW the action rather than above it.
+
+        Not a carousel and not a screen of its own: `startSteps` may never put
+        a claim after a claim, §3.2 cut `reframe` for that reason, and every
+        extra screen in an eight-screen run is another place to leave.
+
+        It sat between the subhead and the form for a few hours and was the
+        reason this screen had no focal point — two grey paragraphs of almost
+        the same size, one after the other, with the action pushed below both.
+        Down here it is the last reassurance before the tap instead of a
+        second thing to read before reaching one, and it can be a clear tier
+        quieter because nothing else is competing at that size.
+      */}
+      {SIGNUP_REVIEW ? (
+        <figure className="start-proof">
+          <blockquote>{SIGNUP_REVIEW.quote}</blockquote>
+          <figcaption>{SIGNUP_REVIEW.name}</figcaption>
+        </figure>
+      ) : null}
       <p className="auth-fine">
         By continuing, you agree to the <Link href="/legal/terms">terms</Link> and <Link href="/legal/privacy">privacy policy</Link>.
       </p>
