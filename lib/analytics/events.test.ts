@@ -34,7 +34,6 @@ describe('the event catalogue', () => {
       // The landing page's voice, which happens on `/` and so comes before
       // everything the run raises.
       'intro_played',
-      'intro_cta',
       'start_step_viewed',
       'start_answered',
       'start_account_submitted',

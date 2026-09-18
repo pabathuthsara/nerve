@@ -18,7 +18,7 @@ import { ArrowRight, Check } from 'lucide-react'
 import { Mark, dimensionMark } from '@/components/marks'
 import { LoopDiagram } from './figures'
 import { SiteSection, SITE_LINKS } from './site-chrome'
-import { IntroTrigger } from './intro-trigger'
+import { HeroVoice } from './hero-voice'
 import { PRESENTATION } from '@/lib/personas/presentation'
 import { PERSONA_VISUAL } from '@/lib/personas/visual'
 import { LEVEL_NAMES } from '@/lib/data/progression'
@@ -198,14 +198,28 @@ function Hero({ usage }: { usage: UsageProof | null }) {
         */}
         <div className="hero__actions">
           <Link href="/start" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
-          {/* Ten seconds of voice, behind a press (§4.5's "prove the software
-              runs", without the autoplay). It replaces the `How it works`
-              link rather than sitting beside it: three controls in the hero
-              is two too many, and hearing it answers the question that link
-              was there to answer. */}
-          <IntroTrigger />
+          <Link href={SITE_LINKS.howItWorks} className="arena-button arena-button--secondary arena-button--lg">How it works</Link>
         </div>
         <p className="hero__fine">Sign-up includes a voice rep. No card.</p>
+      </div>
+
+      {/*
+        §4.5's first row — "the one worth building", because it is the only
+        asset on that table that proves the software runs. The right half of
+        this section was empty black at every scroll position.
+
+        ── ONE DOM ORDER, TWO LAYOUTS ──────────────────────────────────────
+        The hero is three children, not two, so this can sit between them:
+        on a phone it falls after the headline, the paragraph and the primary
+        CTA, and before the rule block — high enough to be seen without
+        pushing the CTA off the fold (§4.2 put it at ~395px and it stays
+        there). On desktop it spans both rows of the right column instead.
+        Nothing is duplicated and nothing is hidden at a breakpoint; a second
+        copy of this would be a second WebGL renderer.
+      */}
+      <HeroVoice />
+
+      <div className="hero__tail">
         {/*
           §4.4a — SOCIAL PROOF, COUNTED AND NEVER ASSERTED.
 

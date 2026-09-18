@@ -2101,6 +2101,10 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
   pointer-events: none;
 }
 .hero__copy { display: grid; align-content: start; gap: 18px; }
+/* The rest of the hero's copy, after the voice on a phone and under it in the
+   same column on desktop. Split so the orb has somewhere to sit that is not
+   the bottom of the section. */
+.hero__tail { display: grid; align-content: start; gap: 18px; }
 .hero__head {
   margin: 2px 0 0;
   font-size: clamp(2.6rem, 11vw, 4.6rem);
@@ -2123,52 +2127,81 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
    and generously spaced so it reads as an offer rather than as the next
    paragraph. */
 .section-call { display: flex; justify-content: center; margin-top: 38px; }
-/* The hero's voice control and the sheet it opens. */
-/* The /start funnel table. Four columns rather than the three a TopTable
-   has, and the bar is Ink-2 — nine volt bars on one screen would be nine
-   current actions. */
-.admin-readout--funnel .admin-readout__row { grid-template-columns: minmax(0, 1fr) 72px 68px minmax(80px, 1.2fr); }
-.admin-funnel__bar { display: block; height: 6px; align-self: center; background: var(--surface-2); border: 1px solid var(--line); }
-.admin-funnel__bar i { display: block; height: 100%; background: var(--text-mute); }
-
-.intro-trigger { display: inline-flex; align-items: center; gap: 10px; }
-.intro-trigger__len { color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: .06em; }
-/*
-  Sized so the CTA clears the fold INSIDE the sheet.
-
-  `.sheet` is a bottom sheet at every width and scrolls its own overflow, so
-  a tall body does not get clipped — it gets hidden below a scroll nobody
-  knows is there, which on a 900px desktop viewport put `Start training free`
-  out of sight. The orb is the only thing here with slack in it, so the orb
-  gives way. Measured at 390x844 and 1280x900.
-*/
-.intro-modal { width: min(100%, 420px); display: grid; justify-items: center; gap: 16px; margin: 0 auto; text-align: center; }
-/* The orb IS the play control, so it has to read as pressable without taking
-   volt — the CTA below is the sheet's one accent. */
-.intro-modal__orb { position: relative; display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 2px; }
-.intro-modal__orb:focus-visible { outline: 2px solid var(--volt); outline-offset: 6px; }
-.intro-modal__badge {
-  position: absolute; display: grid; place-items: center;
-  width: 46px; height: 46px;
-  border: 1px solid var(--line-bright); border-radius: 2px;
-  background: rgba(11, 12, 10, .72); color: var(--text);
-  transition: border-color 160ms, opacity 160ms;
-}
-.intro-modal__orb:hover .intro-modal__badge { border-color: var(--text-dim); }
-/* While it speaks the orb is the thing to watch, so the chrome gets out of
-   the way rather than sitting on top of it. */
-.intro-modal__orb.is-playing .intro-modal__badge { opacity: .28; }
-.intro-modal__line { max-width: 40ch; margin: 0; color: var(--text-dim); font-size: 15px; line-height: 1.7; }
-.intro-modal .start-foot { margin-top: -8px; }
-@media (prefers-reduced-motion: reduce) { .intro-modal__badge { transition: none; } }
 
 .section-call .arena-button { min-width: 260px; }
 /* §4.4d. Quiet — it is a fact about the company, not a claim about the
    product, and it sits under the loudest button on the page. */
 .final-call__maker { max-width: 42ch; margin: 22px auto 0; color: var(--text-mute); font-size: 13px; }
 
+/* ---- the hero's voice ---- */
+
+/*
+  The orb is never covered. It is the only moving thing on this page and the
+  one asset that proves the software runs, so the controls sit UNDER it — an
+  overlaid play triangle would hide the middle of the thing it advertises.
+*/
+.hero-voice { display: grid; justify-items: center; align-content: center; gap: 14px; }
+/*
+  A square box the renderer fills, capped so it cannot outgrow the copy beside
+  it and never taller than it is wide.
+
+  The phone cap is 220 rather than 300 for one measured reason: at 390x844 the
+  orb starts at y=582, and anything larger pushed the PLAY CONTROL past the
+  fold. An orb somebody can see but not start is worse than a smaller one they
+  can — the whole point of putting it here is the press.
+*/
+.hero-voice__orb { width: min(100%, 220px); aspect-ratio: 1; display: grid; place-items: center; }
+.hero-voice__controls { display: flex; align-items: center; gap: 10px; }
+/*
+  Secondary, not volt. `Start training free` is the hero's one accent and this
+  sits a few hundred pixels from it — two volt controls in one view is the
+  rule Arena is mostly made of.
+*/
+.hero-voice__play {
+  display: inline-flex; align-items: center; gap: 10px;
+  border: 1px solid var(--line-bright); border-radius: 2px;
+  padding: 11px 16px;
+  background: transparent; color: var(--text);
+  font-family: var(--font-display), sans-serif; font-size: 14px;
+  letter-spacing: .04em; text-transform: uppercase;
+  cursor: pointer; transition: border-color 140ms, background-color 140ms;
+}
+.hero-voice__play:hover { border-color: var(--text-dim); background: var(--surface-2); }
+.hero-voice__play:focus-visible { outline: 2px solid var(--volt); outline-offset: 3px; }
+.hero-voice__len { color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: .06em; }
+.hero-voice__mute {
+  display: grid; place-items: center; width: 42px; height: 42px;
+  border: 1px solid var(--line); border-radius: 2px;
+  background: transparent; color: var(--text-dim); cursor: pointer;
+  transition: border-color 140ms, color 140ms;
+}
+.hero-voice__mute:hover { border-color: var(--line-bright); color: var(--text); }
+.hero-voice__mute:focus-visible { outline: 2px solid var(--volt); outline-offset: 3px; }
+/* How this works with the sound off, which is how most of a feed watches
+   anything — and the screen-reader path, since the canvas is aria-hidden. */
+.hero-voice__line { max-width: 40ch; margin: 0; color: var(--text-mute); font-size: 13.5px; line-height: 1.65; text-align: center; }
+.hero-voice__fine { margin: 0; color: var(--amber); font-size: 12px; text-align: center; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-voice__play, .hero-voice__mute { transition: none; }
+}
+
 @media (min-width: 1024px) {
   .hero__actions .arena-button { flex: 0 0 auto; }
+  /*
+    Two columns. The copy and its tail stack down column one and the voice
+    takes column two across both rows, so the DOM order that puts the orb
+    mid-hero on a phone still produces a single right-hand column here.
+  */
+  .hero {
+    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+    grid-template-rows: auto auto;
+    align-items: start;
+    column-gap: clamp(32px, 5vw, 64px);
+  }
+  .hero__copy { grid-column: 1; grid-row: 1; }
+  .hero__tail { grid-column: 1; grid-row: 2; }
+  .hero-voice { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  .hero-voice__orb { width: min(100%, 360px); }
 }
 
 /* ---- the scorecard, as a document ---- */
