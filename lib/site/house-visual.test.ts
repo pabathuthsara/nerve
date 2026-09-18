@@ -29,6 +29,12 @@ const distance = (a: [number, number, number], b: [number, number, number]) =>
 
 const luma = ([r, g, b]: [number, number, number]) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 
+/** Saturation, as the fraction of the brightest channel the spread occupies. */
+function chroma([r, g, b]: [number, number, number]): number {
+  const max = Math.max(r, g, b)
+  return max === 0 ? 0 : (max - Math.min(r, g, b)) / max
+}
+
 describe('the house orb', () => {
   const colours = [HOUSE_VISUAL.deep, HOUSE_VISUAL.core, HOUSE_VISUAL.sheen]
 
@@ -42,11 +48,34 @@ describe('the house orb', () => {
     }
   })
 
-  it('keeps its hue out of the volt band', () => {
-    // 60–115° is where Volt lives. An orb in that arc competes with the one
-    // accent the whole system is built around.
+  it('may sit in the volt band only because it has no chroma to compete with', () => {
+    /**
+     * `visual.test.ts` keeps every CHARACTER out of 60–115°, because that is
+     * where Volt lives and an avatar with real chroma there would compete
+     * with the one accent the system is built on.
+     *
+     * This object is deliberately IN that band — every Arena neutral is
+     * (Ground, Surface and Line are all 90°, Ink-3 is 85.7°), and a grey from
+     * any other family read as a foreign object dropped on the page. What
+     * makes that safe is the second half: at this chroma it cannot be
+     * mistaken for an accent at any size. So the rule is asserted rather than
+     * the band, which is a stricter statement and not a loophole.
+     */
     const h = hue(rgb(HOUSE_VISUAL.core))
-    expect(h < 60 || h > 115).toBe(true)
+    const inBand = h >= 60 && h <= 115
+    expect(inBand ? chroma(rgb(HOUSE_VISUAL.core)) : 1).toBeLessThanOrEqual(0.22)
+    // Volt, for scale. An order of magnitude is the point.
+    expect(chroma(rgb('#c4f82a'))).toBeGreaterThan(0.8)
+  })
+
+  it('is the same grey family as the page it sits on', () => {
+    // The whole diagnosis: it shipped at 215° against a page whose every
+    // neutral is 77–90°, and looked like it came from somewhere else.
+    for (const colour of [HOUSE_VISUAL.deep, HOUSE_VISUAL.core, HOUSE_VISUAL.sheen]) {
+      const h = hue(rgb(colour))
+      expect(h).toBeGreaterThanOrEqual(60)
+      expect(h).toBeLessThanOrEqual(115)
+    }
   })
 
   it('stays a real distance from every accent', () => {
@@ -61,7 +90,7 @@ describe('the house orb', () => {
     expect(luma(rgb(HOUSE_VISUAL.core))).toBeLessThan(luma(rgb(HOUSE_VISUAL.sheen)))
   })
 
-  it('is not red, which is what it shipped as by accident', () => {
+  it('is not red, which is what it first shipped as by accident', () => {
     /**
      * The regression this file exists for. Without the override, `visualFor`
      * hashed the name "Nerve" onto a roster row and drew the landing page's

@@ -26,11 +26,14 @@
  * controls sit beneath it rather than over it — an overlaid play triangle
  * would hide the middle of the thing it is advertising.
  *
- * **It loops, and it starts silent.** Browsers refuse audible autoplay
+ * **It plays once, and it starts silent.** Browsers refuse audible autoplay
  * without a gesture, and a page that talks at somebody unprompted is worse
  * than one that does not. The orb animates from the moment it mounts, so the
- * page is alive before anything is pressed; the press adds sound, and the
- * loop means a visitor who looks up mid-sentence hears it come round again.
+ * page is alive before anything is pressed; the press adds sound.
+ *
+ * It used to loop. Ten seconds on repeat is a page that will not stop talking
+ * to somebody who has moved on to reading, and the second and third passes
+ * are heard by nobody who wanted them. It ends, and offers itself again.
  *
  * **The caption is not decoration.** It is how this works muted, which is how
  * most of a feed watches anything, and it is the screen-reader path — the orb
@@ -38,7 +41,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Play, Pause, Volume2, VolumeX } from 'lucide-react'
+import { Play, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react'
 import { FluidPersona } from '@/components/fluid-persona'
 import { HOUSE_VISUAL } from '@/lib/site/house-visual'
 import { capture } from '@/components/analytics'
@@ -63,6 +66,8 @@ export function HeroVoice() {
   const analyserRef = useRef<AnalyserNode | null>(null)
   const startedRef = useRef(false)
   const [playing, setPlaying] = useState(false)
+  /** It has run to the end at least once, so the control offers a repeat. */
+  const [heard, setHeard] = useState(false)
   const [muted, setMuted] = useState(false)
   const [level, setLevel] = useState(0)
   const [failed, setFailed] = useState(false)
@@ -127,6 +132,8 @@ export function HeroVoice() {
     void contextRef.current?.resume()
     element.muted = false
     setMuted(false)
+    // A repeat starts from the top rather than from wherever it stopped.
+    if (heard) element.currentTime = 0
     element.play().then(
       () => {
         if (startedRef.current) return
@@ -135,7 +142,7 @@ export function HeroVoice() {
       },
       () => setFailed(true),
     )
-  }, [attach, playing])
+  }, [attach, heard, playing])
 
   const toggleMute = useCallback(() => {
     const element = audioRef.current
@@ -165,9 +172,15 @@ export function HeroVoice() {
 
       <div className="hero-voice__controls">
         <button type="button" className="hero-voice__play" onClick={toggle}>
-          {playing ? <Pause size={16} strokeWidth={2} aria-hidden="true" /> : <Play size={16} strokeWidth={2} aria-hidden="true" />}
-          {playing ? 'Pause' : 'Hear what this is'}
-          <span className="hero-voice__len" aria-hidden="true">10s</span>
+          {playing
+            ? <Pause size={16} strokeWidth={2} aria-hidden="true" />
+            : heard
+              ? <RotateCcw size={16} strokeWidth={2} aria-hidden="true" />
+              : <Play size={16} strokeWidth={2} aria-hidden="true" />}
+          {playing ? 'Pause' : heard ? 'Play again' : 'Hear what this is'}
+          {/* The length is an argument for pressing it, so it is offered once
+              and then gets out of the way — nobody mid-listen needs telling. */}
+          {playing || heard ? null : <span className="hero-voice__len" aria-hidden="true">10s</span>}
         </button>
         {playing ? (
           <button
@@ -184,19 +197,16 @@ export function HeroVoice() {
       <p className="hero-voice__line">{INTRO_LINE}</p>
       {failed ? <p className="hero-voice__fine" role="alert">That would not play here. The words are above.</p> : null}
 
-      {/*
-        `loop` is the whole point of the second press never being needed: a
-        visitor who looks up halfway through hears it come round again.
-        `preload="none"` so the landing page fetches no audio until asked.
-      */}
+      {/* No `loop`. `preload="none"` so the landing page fetches no audio
+          until somebody asks for it. */}
       <audio
         ref={audioRef}
         src={INTRO_AUDIO}
-        loop
         preload="none"
         crossOrigin="anonymous"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setHeard(true) }}
         onError={() => setFailed(true)}
       />
     </div>
