@@ -974,3 +974,42 @@ The rail stops offering it. The route is untouched and the track switcher is two
 taps away, so nothing a dating user had is gone; what is fixed is a second track
 advertising the first one's material as its own. §11 is the drift here rather
 than the code — recorded in `LAUNCH-GAP.md` §4 as D17.
+
+## 16 · The seventh dimension reached exactly one screen — 20 September 2026
+
+`technical_accuracy` has been a scored column since 7 September (§3,
+`LAUNCH-GAP.md` D15) and it surfaced in **one place**: the standout card on a
+single interview's scorecard. `INTERVIEW_DIMENSIONS` is six and deliberately
+does not include it, so `ReadinessPanel` never plotted it, and `/progress`
+filters to the dating track — so the one question this track is uniquely able to
+answer, *is what I am saying actually right*, could only be answered one
+interview at a time by somebody who remembered which scorecard to reopen. The
+thing the commercial argument for D15 was made on was the thing with no trend.
+
+`AccuracyTrend` is that trend and `AccuracyPanel` draws it, on the interview
+home, under the readiness card. Four decisions in it are the substance:
+
+- **It is a card of its own, not a seventh row.** The six are about *how you
+  answered*; this is about *whether it was true*, and putting them on one list
+  invites averaging them onto one scale. `interviewProgress` keeps it off
+  `moved`/`lagging` for the same reason, and the test asserts that
+  `technicalAccuracy` is in neither `INTERVIEW_DIMENSIONS` nor
+  `DIMENSION_COLUMN` — adding it to either would break the mapping
+  `INTERVIEW_SUBSCORE_KEY` relies on.
+- **Gaps are never filled.** Only `technical` and `deep_technical` probe
+  (`probeShare > 0`), and the grader abstains by default (§8.3), so most rounds
+  produce nothing. No zero-filling and no carrying the last value forward: a
+  round that did not probe did not score zero on fundamentals, it did not ask.
+  `attempts` counts rounds that produced a **reading**, not rounds that were
+  run, which is the number that makes "up 14 across 2 rounds" honest.
+- **The empty state is a fact about the product, not "no data".** It names the
+  two rounds that test fundamentals. It carries no price and no buy button, and
+  it is drawn at the same weight as everything else in the rail — it is the only
+  place on that screen that says what a technical round is *for*, and it is not
+  allowed to become a paywall for saying it.
+- **The corrections stay on the scorecard.** The panel says where they are
+  rather than reprinting them, because a correction without the question and the
+  verbatim quote it belongs to is an accusation with no evidence (§3.4).
+
+**Still owed by hand:** nobody has run a technical round since, so the populated
+state of this panel has been seen only under test data. §13.3 stands.

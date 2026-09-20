@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ACCURACY_EMPTY,
   DIMENSION_COLUMN,
   INTERVIEW_DIMENSIONS,
   TREND_MINIMUM,
+  accuracyReading,
   interviewProgress,
   progressReading,
   type InterviewRep,
@@ -141,5 +143,106 @@ describe('a mixed-track history', () => {
     expect(unfiltered[2] ?? 0).toBe(UNLOCK_REPS)
     // And the rank rail moves with it, which is the half nobody would notice.
     expect(rankFor(filtered)).not.toBe(rankFor(unfiltered))
+  })
+})
+
+
+/**
+ * Technical accuracy across the run.
+ *
+ * It has been a scored column since 7 September and reached exactly one screen
+ * — the standout card on a single interview's scorecard. Nothing aggregated it,
+ * because `INTERVIEW_DIMENSIONS` is six and `/progress` filters to the dating
+ * track, so the one question this track is uniquely able to answer could only
+ * be answered one scorecard at a time.
+ *
+ * The assertions below are all about the same discipline: it is a claim about
+ * what somebody KNOWS, so nothing here may invent a data point.
+ */
+describe('technical accuracy across the run', () => {
+  const at = (day: number) => `2026-09-${String(day).padStart(2, '0')}T09:00:00Z`
+
+  it('is null when nothing has produced a reading', () => {
+    // The common case, and not a failure: a screener, a recruiter screen and a
+    // final round have `probeShare: 0` and never test fundamentals.
+    const progress = interviewProgress([
+      rep({ sessionId: 'a', startedAt: at(1), round: 'screener' }),
+      rep({ sessionId: 'b', startedAt: at(2), round: 'recruiter' }),
+    ])
+    expect(progress.accuracy).toBeNull()
+    expect(accuracyReading(progress.accuracy)).toBeNull()
+    expect(ACCURACY_EMPTY).toContain('technical')
+  })
+
+  it('reads only the rounds that actually returned one', () => {
+    /**
+     * The property that matters most. A round that did not probe did not score
+     * nought on fundamentals — it did not ask about them. Zero-filling would
+     * put a 0 on the chart, and carrying the last value forward would claim a
+     * measurement nobody took.
+     */
+    const progress = interviewProgress([
+      rep({ sessionId: 'a', startedAt: at(1), round: 'technical', technicalAccuracy: 60 }),
+      rep({ sessionId: 'b', startedAt: at(2), round: 'screener', technicalAccuracy: null }),
+      rep({ sessionId: 'c', startedAt: at(3), round: 'technical', technicalAccuracy: 74 }),
+    ])
+    expect(progress.accuracy).toEqual({ attempts: 2, first: 60, latest: 74, best: 74, delta: 14 })
+    // Three interviews in the run, two readings. The panel says both, because
+    // a trend off two points needs its own denominator stated.
+    expect(progress.attempts).toBe(3)
+    expect(accuracyReading(progress.accuracy)).toContain('2 rounds')
+  })
+
+  it('holds no delta off a single reading', () => {
+    // Same rule as `TREND_MINIMUM` on the other six: one number is a baseline,
+    // and calling it a direction is a lie about what it means.
+    const progress = interviewProgress([
+      rep({ sessionId: 'a', startedAt: at(1), technicalAccuracy: 55 }),
+    ])
+    expect(progress.accuracy?.delta).toBeNull()
+    expect(accuracyReading(progress.accuracy)).toContain('One reading')
+  })
+
+  it('reads in the order the interviews happened, not the order they arrived', () => {
+    const progress = interviewProgress([
+      rep({ sessionId: 'c', startedAt: at(3), technicalAccuracy: 80 }),
+      rep({ sessionId: 'a', startedAt: at(1), technicalAccuracy: 50 }),
+    ])
+    expect(progress.accuracy).toMatchObject({ first: 50, latest: 80, delta: 30 })
+  })
+
+  it('says so when it went down', () => {
+    // A harder round after an easier one legitimately lowers it, and a panel
+    // that only ever reports improvement is a panel nobody believes.
+    const progress = interviewProgress([
+      rep({ sessionId: 'a', startedAt: at(1), technicalAccuracy: 78 }),
+      rep({ sessionId: 'b', startedAt: at(2), technicalAccuracy: 61 }),
+    ])
+    expect(accuracyReading(progress.accuracy)).toContain('Down 17')
+  })
+
+  it('ignores an ungraded rep, whatever it carries', () => {
+    const progress = interviewProgress([
+      rep({ sessionId: 'a', startedAt: at(1), composite: null, technicalAccuracy: 90 }),
+    ])
+    expect(progress.accuracy).toBeNull()
+  })
+
+  it('never becomes a seventh behavioural dimension', () => {
+    /**
+     * The mapping `rubric.test.ts` walks pairs every `InterviewDimension` with
+     * a grade key AND a `scores` column. Technical accuracy has a column and no
+     * grade key — the judge returns it separately — so adding it to the list
+     * would break that pairing, and averaging "was it true" into "what moved
+     * most" would put two different kinds of claim on one scale.
+     */
+    expect(INTERVIEW_DIMENSIONS).not.toContain('technicalAccuracy')
+    expect(Object.values(DIMENSION_COLUMN)).not.toContain('technical_accuracy')
+    const progress = interviewProgress([
+      rep({ sessionId: 'a', startedAt: at(1), technicalAccuracy: 20 }),
+      rep({ sessionId: 'b', startedAt: at(2), technicalAccuracy: 90 }),
+    ])
+    // A seventy-point jump in accuracy must not be what `moved` reports.
+    expect(progress.moved?.dimension as string | undefined).not.toBe('technicalAccuracy')
   })
 })

@@ -40,6 +40,7 @@ import {
   Textarea,
 } from '@/components/ui'
 import { CVReplaceSheet } from '@/components/modals'
+import { Mark } from '@/components/marks'
 import { useProduct } from '@/components/product-provider'
 import { FluidPersona } from '@/components/fluid-persona'
 import { removeCv, saveInterviewSetup, uploadCv } from '@/app/interview/actions'
@@ -55,7 +56,7 @@ import {
   ROUND_SHAPE_LABEL,
   ROUND_TYPES,
   creditRefusal,
-  openingRound,
+  roundFor,
   roundType,
   type RoundTypeId,
 } from '@/lib/data/interview-credits'
@@ -66,7 +67,13 @@ import {
   toDifficultyLevel,
   type DifficultyLevel,
 } from '@/lib/data/interview-difficulty'
-import { DIMENSION_LABEL, progressReading } from '@/lib/data/interview-progress'
+import {
+  ACCURACY_EMPTY,
+  DIMENSION_LABEL,
+  accuracyReading,
+  progressReading,
+  type AccuracyTrend,
+} from '@/lib/data/interview-progress'
 import { JOB_DESCRIPTION_LIMIT } from '@/lib/data/interview-limits'
 
 export type InterviewRoute =
@@ -188,7 +195,7 @@ function InterviewHome() {
    * none in the account" while the pill in the chrome said **1 credit**. The
    * opening round is the one the free credit can actually buy.
    */
-  const round = roundType(setup?.round ?? openingRound(screenerCredits > 0))
+  const round = roundType(roundFor(setup?.round, screenerCredits > 0))
   /**
    * WHAT CAN PAY FOR *THIS* ROUND, computed the same way the brief computes it.
    *
@@ -233,18 +240,76 @@ function ReadinessPanel() {
   if (loading || progress.attempts === 0) return null
   const reading = progressReading(progress)
   return (
-    <Card className="interview-readiness">
-      <span className="label">This run · {progress.attempts} interview{progress.attempts === 1 ? '' : 's'}</span>
-      <div className="interview-last"><span><strong>Best</strong></span><span className="data">{progress.best ?? '—'}</span></div>
-      {reading ? <p className="label mute">{reading}</p> : <p className="label mute">One more and there is a trend to read.</p>}
-      <ul className="interview-dimensions">
-        {progress.dimensions.filter((trend) => trend.latest !== null).map((trend) => (
-          <li key={trend.dimension}>
-            <span className="label">{DIMENSION_LABEL[trend.dimension]}</span>
-            <span className="data">{trend.latest}</span>
-          </li>
-        ))}
-      </ul>
+    <>
+      <Card className="interview-readiness">
+        <span className="label">This run · {progress.attempts} interview{progress.attempts === 1 ? '' : 's'}</span>
+        <div className="interview-last"><span><strong>Best</strong></span><span className="data">{progress.best ?? '—'}</span></div>
+        {reading ? <p className="label mute">{reading}</p> : <p className="label mute">One more and there is a trend to read.</p>}
+        <ul className="interview-dimensions">
+          {progress.dimensions.filter((trend) => trend.latest !== null).map((trend) => (
+            <li key={trend.dimension}>
+              <span className="label">{DIMENSION_LABEL[trend.dimension]}</span>
+              <span className="data">{trend.latest}</span>
+            </li>
+          ))}
+        </ul>
+      </Card>
+      <AccuracyPanel accuracy={progress.accuracy} />
+    </>
+  )
+}
+
+/**
+ * What you actually knew — the seventh dimension, across the run.
+ *
+ * ── WHY THIS IS A CARD OF ITS OWN ────────────────────────────────────────
+ *
+ * It was nowhere. `technical_accuracy` has been a scored column since
+ * 7 September and it reached exactly one screen: the standout card on a single
+ * interview's scorecard. `INTERVIEW_DIMENSIONS` is six and does not include it,
+ * so the panel above never plotted it, and `/progress` filters to the dating
+ * track — so the one question this track is uniquely able to answer, *is what I
+ * am saying actually right*, could only be answered one interview at a time by
+ * somebody who remembered which scorecard to reopen.
+ *
+ * It is not a seventh row in the list above, and that is the point rather than
+ * a layout decision. The six are about **how you answered**; this is about
+ * **whether it was true**. They are also present at different rates — only a
+ * technical or deep technical round probes at all — so a seventh row that was
+ * blank on most runs would read as a defect. A card that explains its own
+ * absence reads as a fact about the product, which is what it is.
+ *
+ * `accuracy` is null until something has produced a reading, and the empty
+ * state names the two rounds that do. That is honest and it is also the only
+ * place on this screen that says what a technical round is FOR — but it is not
+ * a paywall: no price, no buy button, and it is drawn at the same weight as
+ * everything else in the rail.
+ */
+function AccuracyPanel({ accuracy }: { accuracy: AccuracyTrend | null }) {
+  const reading = accuracyReading(accuracy)
+  return (
+    <Card className="interview-accuracy">
+      <span className="mark-row"><Mark name="dim-accuracy" size={15} /><span className="label">Technical accuracy</span></span>
+      {accuracy && accuracy.latest !== null
+        ? (
+          <>
+            <div className="interview-last">
+              <span><strong>Latest</strong></span>
+              <span className="data">{accuracy.latest}</span>
+            </div>
+            <ul className="interview-dimensions">
+              <li><span className="label">Best</span><span className="data">{accuracy.best}</span></li>
+              <li><span className="label">Readings</span><span className="data">{accuracy.attempts}</span></li>
+            </ul>
+            {reading ? <p className="label mute">{reading}</p> : null}
+            {/* The corrections themselves live on the scorecard, one interview
+                at a time, because a correction without the question and the
+                quote it belongs to is an accusation with no evidence (§3.4).
+                This says where they are rather than reprinting them. */}
+            <p className="label mute">What was wrong, and what the answer was, is on each interview&apos;s scorecard.</p>
+          </>
+        )
+        : <p className="label mute">{ACCURACY_EMPTY}</p>}
     </Card>
   )
 }
@@ -608,7 +673,7 @@ function RunSetup({ packsOpen }: { packsOpen: boolean }) {
   useEffect(() => {
     if (!setup) return
     // B1. A stored round wins; a null one opens on what the free credit buys.
-    setRound(setup.round ?? openingRound(hasScreener))
+    setRound(roundFor(setup.round, hasScreener))
     setDifficulty(setup.difficultyChoice)
     setCaptions(setup.captions)
   }, [setup, hasScreener])
@@ -616,7 +681,7 @@ function RunSetup({ packsOpen }: { packsOpen: boolean }) {
   const loading = setupLoading || interviewersLoading
   const interviewer = interviewers.find((item) => item.id === (selectedInterviewerId ?? setup?.interviewerId))
     ?? interviewers[0]
-  const chosenRound = round ?? openingRound(hasScreener)
+  const chosenRound = roundFor(round, hasScreener)
   const spec = roundType(chosenRound)
   const derived = difficultyFromRoleTitle(setup?.roleTitle ?? '')
   const effective = difficulty ?? derived
@@ -714,7 +779,7 @@ function RunSetup({ packsOpen }: { packsOpen: boolean }) {
                   trailing: String(option.level),
                 })),
               ]}
-              hint={<><span className="difficulty-example">&ldquo;{difficultySpec(effective).example}&rdquo;</span> It changes the questions, never how patient she is.</>}
+              hint={<><span className="difficulty-example">&ldquo;{difficultySpec(effective).example}&rdquo;</span> It changes the questions, never how patient they are.</>}
             />
           ) : (
             <p className="field__hint setup-note">A {spec.label.toLowerCase()} does not test fundamentals, so there is nothing to set a difficulty for. Pick a technical round to get that dial.</p>
