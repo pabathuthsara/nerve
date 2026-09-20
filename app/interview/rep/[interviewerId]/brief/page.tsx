@@ -4,7 +4,7 @@ import { currentUser } from '@/lib/db/server'
 import { readInterviewSetup } from '@/lib/db/interview'
 import { interviewCreditState } from '@/lib/db/credits'
 import { packsConfigured } from '@/lib/billing/plans'
-import { creditRefusal, hasScreenerCredit, openingRound, roundType, spendableFor } from '@/lib/data/interview-credits'
+import { creditRefusal, hasScreenerCredit, roundFor, roundType, spendableFor } from '@/lib/data/interview-credits'
 import { DEFAULT_FIELD } from '@/lib/data/interview-fields'
 import { DEFAULT_DIFFICULTY } from '@/lib/data/interview-difficulty'
 
@@ -34,7 +34,7 @@ export default async function InterviewBriefPage({ params }: { params: Promise<{
    * decides what a null one means, and `recruiter` meant "the free credit on
    * every account cannot be spent".
    */
-  const round = setup?.round ? roundType(setup.round).id : openingRound(screener)
+  const round = roundFor(setup?.round, screener)
   const spendable = spendableFor(lots, { round, holds: credits?.held ?? 0 })
 
   return (

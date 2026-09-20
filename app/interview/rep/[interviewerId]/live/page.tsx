@@ -7,7 +7,7 @@ import { getPersona } from '@/lib/personas'
 import { resolveProviderId } from '@/lib/voice'
 import { DEFAULT_CALIBRATION } from '@/lib/voice/types'
 import { readInterviewSetup } from '@/lib/db/interview'
-import { creditRefusal, hasScreenerCredit, openingRound, roundType, spendableFor } from '@/lib/data/interview-credits'
+import { creditRefusal, hasScreenerCredit, roundFor, roundType, spendableFor } from '@/lib/data/interview-credits'
 import { DEFAULT_FIELD } from '@/lib/data/interview-fields'
 import { DEFAULT_DIFFICULTY } from '@/lib/data/interview-difficulty'
 import { interviewTrajectory } from '@/lib/warmth/interview/trajectory'
@@ -63,7 +63,7 @@ export default async function InterviewLivePage({ params }: { params: Promise<{ 
   const screener = hasScreenerCredit(credits.lots)
   // A saved setup always wins; this only decides what a null one means, and
   // `recruiter` meant the free credit on every account could not be spent (B1).
-  const round = roundType(setup?.round ?? openingRound(screener))
+  const round = roundType(roundFor(setup?.round, screener))
 
   const live: LiveRepConfig | null = interviewer
     ? {

@@ -38,10 +38,12 @@ export { INTERVIEW_SETUP_COLUMNS, setupFromRow }
 export type { InterviewSetupRecord }
 import {
   DEFAULT_ROUND,
+  hasScreenerCredit,
   isRoundTypeId,
-  roundType,
+  roundFor,
   type RoundTypeId,
 } from '@/lib/data/interview-credits'
+import { interviewCreditState } from './credits'
 import {
   CV_TEXT_LIMIT as CV_LIMIT,
   CUSTOM_QUESTION_CHARS as QUESTION_CHARS,
@@ -133,15 +135,38 @@ export async function seedInterviewSetup(
 }
 
 /**
- * The round this account's next interview runs, resolved server-side.
+ * The round this account's next interview runs, for a caller holding neither
+ * the setup nor the lots.
  *
- * Falls back to the default rather than refusing, because a missing setup is a
- * user who has not been through the flow yet and the screener still has to be
- * runnable. `roundType` clamps anything it does not recognise.
+ * ── WHAT THIS ADDS TO `roundFor`, AND WHAT IT DOES NOT ───────────────────
+ *
+ * The decision itself is `roundFor`, which is pure and is the only place the
+ * question is answered — the interview home, the run setup, the brief and the
+ * live page all call it directly, because each of them has already read the
+ * setup and the credit lots for its own reasons. This adds the two reads, and
+ * nothing else, for the two callers that have neither: the token route and the
+ * credit hold.
+ *
+ * Those two are the money. They decide what a rep is **charged**, where the
+ * four screens decide what it is **said** to cost, and if the two answers
+ * differ by one round the rep reaches the microphone and is refused there,
+ * which the user reads as "Connection lost". That is why the answer is one
+ * function and not six expressions — see `roundFor` for the drift that was
+ * already there.
+ *
+ * **A null round is answered with `openingRound`, never with a default.** A
+ * brand-new account holds one free screener credit and nothing else, and a
+ * screener credit buys the five-minute screener and nothing else — so the round
+ * an account that has never chosen runs is the one its credit can pay for.
+ * Reading the lots is the extra round trip that buys this, and it is the same
+ * read the brief was already making.
  */
-export async function readInterviewRound(userId: string): Promise<RoundTypeId> {
-  const setup = await readInterviewSetupFor(userId)
-  return roundType(setup?.round).id
+export async function resolveInterviewRound(userId: string): Promise<RoundTypeId> {
+  const [setup, credits] = await Promise.all([
+    readInterviewSetupFor(userId),
+    interviewCreditState(userId),
+  ])
+  return roundFor(setup?.round, hasScreenerCredit(credits.lots))
 }
 
 export interface SetupPatch {

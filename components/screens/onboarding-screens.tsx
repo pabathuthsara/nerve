@@ -950,10 +950,11 @@ function DevicePicker({ devices, value, onChange }: { devices: AudioDevice[]; va
  * recruiter screen — a credit the account does not have, refused two screens
  * later on the brief. And it was patching over a defect one layer down:
  * `setupFromRow` clamped a null round to `DEFAULT_ROUND`, which made dead code
- * of every `?? openingRound(...)` in the product.
+ * of every `roundFor(...)` call in the product.
  *
  * That is fixed at the shape now — a null round means *never chosen* and
- * `resolveInterviewRound` is the one server-side answer — so the honest thing
+ * `roundFor` is the one answer, reached server-side through
+ * `resolveInterviewRound` — so the honest thing
  * for this screen to write is the interviewer and nothing else. What the round
  * is gets decided by the function that can read the balance without racing
  * anybody.

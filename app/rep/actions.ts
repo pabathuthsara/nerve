@@ -27,7 +27,7 @@ import { AUDIO_RETENTION_DAYS } from '@/lib/db/retention'
 import { asJson } from '@/lib/db/json'
 import { consumeRep, recordTrainingDay, refundRep, syncLevel } from '@/lib/db/progress'
 import { holdInterviewCredit, refundInterviewCredit, settleInterviewCredit } from '@/lib/db/credits'
-import { readInterviewRound } from '@/lib/db/interview'
+import { resolveInterviewRound } from '@/lib/db/interview'
 import { interviewCreditable, creditRefundReason } from '@/lib/data/interview-rules'
 import { getPersona } from '@/lib/personas'
 import type { RefusalKind } from '@/lib/data/allowance'
@@ -166,7 +166,7 @@ export async function startSession(input: {
     const held = await holdInterviewCredit({
       userId: user.id,
       sessionId: data.id,
-      round: await readInterviewRound(user.id),
+      round: await resolveInterviewRound(user.id),
     })
     if (!held.ok) return { ok: false, message: held.message, sessionId: null, refusal: 'credits' }
   }

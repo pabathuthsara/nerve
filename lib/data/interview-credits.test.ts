@@ -16,6 +16,7 @@ import {
   openingRound,
   planSpend,
   roundCostLabel,
+  roundFor,
   roundProbes,
   roundType,
   spendableFor,
@@ -421,6 +422,24 @@ describe('spendableFor', () => {
     expect(openingRound(false)).toBe(DEFAULT_ROUND)
     // And what it opens on is always affordable with what the account holds.
     expect(canAfford(spendableFor([screener], { round: openingRound(true) }), openingRound(true))).toBe(true)
+  })
+
+  /**
+   * The same decision, at the six call sites that make it. This is the
+   * assertion that would have caught the drift: a null round meant `recruiter`
+   * on the token route and `screener` on the brief, so a rep the screen called
+   * free was refused at the microphone as "Connection lost".
+   */
+  it('answers a never-chosen round the way every call site answers it', () => {
+    expect(roundFor(null, true)).toBe(SCREENER_ROUND)
+    expect(roundFor(undefined, true)).toBe(SCREENER_ROUND)
+    expect(roundFor(null, false)).toBe(DEFAULT_ROUND)
+    // A saved round always wins over both, including the free one.
+    expect(roundFor('deep_technical', true)).toBe('deep_technical')
+    expect(roundFor(SCREENER_ROUND, false)).toBe(SCREENER_ROUND)
+    // And it never invents a round the account cannot pay for.
+    const opened = roundFor(null, true)
+    expect(canAfford(spendableFor([screener], { round: opened }), opened)).toBe(true)
   })
 
   it('knows whether the free screener is worth offering', () => {

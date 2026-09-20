@@ -23,7 +23,7 @@ import { mintSession, pipelineSessionModel, pipelineTranscriptionAllowance } fro
 import { readScoringBody, ScoringInputError } from '@/lib/voice/scoring-request'
 import { openVoiceSession, openInterviewVoiceSession, abortVoiceStartupAttempt, reserveVoiceOperation, settleVoiceOperation } from '@/lib/db/voice-session'
 import { holdInterviewCredit, interviewCreditState, releaseInterviewCredit } from '@/lib/db/credits'
-import { readCvText, readInterviewSetupFor } from '@/lib/db/interview'
+import { readCvText, readInterviewSetupFor, resolveInterviewRound } from '@/lib/db/interview'
 import { compileInterviewBrief } from '@/lib/personas/interview/brief'
 import { DEFAULT_DIFFICULTY } from '@/lib/data/interview-difficulty'
 import { DEFAULT_FIELD } from '@/lib/data/interview-fields'
@@ -164,7 +164,13 @@ export async function POST(request: Request): Promise<Response> {
     // reads the identical string, which is what keeps the CV inside the cached
     // prefix rather than paying for it twenty-two times (C5).
     const setup = interview ? await readInterviewSetupFor(auth.userId) : null
-    const round = interview ? roundType(setup?.round).id : null
+    // `resolveInterviewRound` rather than a clamp of its own: this is the half
+    // of the answer that decides what is CHARGED, and the brief decides what is
+    // shown. A null round means never chosen, and answering that with the
+    // default would price a brand-new account's free screener as a recruiter
+    // screen — the refusal reaching the user as "Connection lost", two screens
+    // after being told the round was free.
+    const round = interview ? await resolveInterviewRound(auth.userId) : null
     // WHICH DESIGN PROBLEM A SYSTEM DESIGN ROUND POSES (§7.3).
     //
     // A fresh id per session rather than anything derived from the account, so

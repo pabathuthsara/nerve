@@ -265,6 +265,32 @@ export function openingRound(hasScreener: boolean): RoundTypeId {
 }
 
 /**
+ * The round to run, from what the setup stored and what the account holds.
+ *
+ * ── WHY THIS IS A FUNCTION AND NOT FIVE `??` EXPRESSIONS ─────────────────
+ *
+ * `setup?.round ?? openingRound(hasScreener)` was written out at five call
+ * sites — the interview home, the run setup, the brief, the live page and the
+ * server-side resolver. Two of those decide what a rep is **charged** and three
+ * decide what a screen **says** it costs, and a disagreement of one round is
+ * not cosmetic: the rep reaches the microphone and is refused there, which the
+ * user reads as "Connection lost".
+ *
+ * They had already drifted once. The resolver and the token route asked
+ * `roundType(setup?.round)`, which clamps to `DEFAULT_ROUND`; the three screens
+ * asked `?? openingRound(...)`. Everything agreed only because `setupFromRow`
+ * clamped as well, so the disagreement was invisible until the clamp came out.
+ *
+ * A saved round always wins. Null means *never chosen*, and is answered with
+ * `openingRound` rather than a default, because a brand-new account holds one
+ * free screener credit and nothing else. Nothing downstream may add a default
+ * of its own.
+ */
+export function roundFor(chosen: RoundTypeId | null | undefined, hasScreener: boolean): RoundTypeId {
+  return chosen ?? openingRound(hasScreener)
+}
+
+/**
  * Why this balance cannot open this round, in a sentence a person can act on.
  *
  * Null when it can. One function because three surfaces say it — the interview

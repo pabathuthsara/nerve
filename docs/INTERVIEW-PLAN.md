@@ -1807,13 +1807,39 @@ writes it on the service role beside `stampNewAccount` — an **INSERT** rather
 than the upsert every other path uses, so a row that somehow exists is never
 overwritten by a sign-up.
 
-**And B1 was nearly re-made one screen earlier.** `setupFromRow` never answers
-a null round: it clamps to `DEFAULT_ROUND`, the ten-minute recruiter screen,
-which costs a credit a new account does not have. A run that ended by
-navigating to the brief without writing a round would have handed a brand-new
-account a refusal for the thing its sign-up screen called free. The last step
-saves `openingRound(hasScreener)` before it navigates, which is the same
-function the home screen and the run setup already ask.
+**And B1 was re-made one screen earlier — fixed at the root on 20 September
+2026.** `setupFromRow` never answered a null round: it clamped to
+`DEFAULT_ROUND`, the ten-minute recruiter screen, which costs a credit a new
+account does not have. That clamp made **dead code of every
+`?? openingRound(...)` in the product** — the fallback only ever fired when
+there was no *row*, and since this pass sign-up seeds one with the role on it.
+So B1 came back the moment D24 shipped: a brand-new account read
+*"Recruiter screen · 1 credit"* on the interview home, the run setup and the
+brief, holding nothing but a free screener, and was refused at the microphone —
+which the token route delivers as **"Connection lost"**, two screens after
+being told the round was free.
+
+The first answer was a patch one screen up: the last step of the run wrote
+`openingRound(hasScreener)` before navigating. That is no longer what holds it.
+**`InterviewSetupRecord.round` is `RoundTypeId | null` now, and null means
+*never chosen*** — an unrecognised value is treated the same way, because it
+cannot have come from the picker. Three consequences worth carrying:
+
+- **One function answers it, and it is pure.** `roundFor(chosen, hasScreener)`
+  in `lib/data/interview-credits.ts`. The four screens that have already read
+  the setup and the lots call it directly; the two callers that have neither —
+  **the token route and the credit hold, which are the money** — reach it
+  through `resolveInterviewRound`, which adds the two reads and nothing else.
+- **The drift it prevents was already there.** The resolver and the token route
+  asked `roundType(setup?.round)`, which clamps; the screens asked
+  `?? openingRound(...)`. They agreed only because `setupFromRow` clamped too,
+  so the disagreement was invisible until the clamp came out. What a screen
+  **says** a round costs and what a rep is **charged** differing by one round is
+  not cosmetic — it is a rep that reaches the microphone and dies there.
+- **The onboarding step still writes no round**, and that is now the honest
+  shape rather than a workaround: it writes the interviewer, and what the round
+  is gets decided by the function that can read the balance without racing
+  anybody.
 
 ### Still owed by hand, after this pass
 

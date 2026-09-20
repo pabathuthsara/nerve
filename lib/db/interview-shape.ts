@@ -8,7 +8,6 @@
  */
 
 import {
-  DEFAULT_ROUND,
   isRoundTypeId,
   type RoundTypeId,
 } from '@/lib/data/interview-credits'
@@ -33,7 +32,28 @@ export interface InterviewSetupRecord {
   company: string
   jobDescription: string
   field: InterviewFieldId
-  round: RoundTypeId
+  /**
+   * The round this account last CHOSE, or null if it never has.
+   *
+   * ── WHY NULL IS A VALUE HERE AND NOT A DEFAULT ───────────────────────────
+   *
+   * This clamped a null `round_type` to `DEFAULT_ROUND` — the ten-minute
+   * recruiter screen, which costs a credit — and that quietly made dead code of
+   * every `roundFor(setup?.round, hasScreener)` call in the product. The
+   * fallback only ever fired when there was no ROW at all, so B1 came back the
+   * moment anything created one: `/interview/setup/role` upserts without a
+   * round, and since D24 sign-up seeds a row with the role on it. A brand-new
+   * account then read "Recruiter screen · 1 credit" on the home screen, the run
+   * setup and the brief, holding nothing but a free screener credit — and was
+   * refused the interview its own sign-up screen had called free.
+   *
+   * So null means *never chosen*, and every reader answers it with `roundFor`,
+   * which knows what a free screener can actually buy. Nothing downstream may
+   * re-introduce a default of its own: the four screens call `roundFor`, and
+   * the token route and the credit hold reach the same function through
+   * `resolveInterviewRound`.
+   */
+  round: RoundTypeId | null
   cvFileName: string | null
   cvPath: string | null
   cvUploadedAt: string | null
@@ -91,7 +111,10 @@ export function setupFromRow(row: SetupRow | null): InterviewSetupRecord | null 
     company: (row.company ?? '').trim(),
     jobDescription: row.job_description ?? '',
     field: isInterviewFieldId(row.field) ? row.field : DEFAULT_FIELD,
-    round: isRoundTypeId(row.round_type) ? row.round_type : DEFAULT_ROUND,
+    // Null rather than a default — see the field's note. A value this table
+    // does not recognise is also "never chosen": it cannot have come from the
+    // picker, and guessing on its behalf is how the last default got here.
+    round: isRoundTypeId(row.round_type) ? row.round_type : null,
     cvFileName: row.cv_filename,
     cvPath: row.cv_path,
     cvUploadedAt: row.cv_uploaded_at,
