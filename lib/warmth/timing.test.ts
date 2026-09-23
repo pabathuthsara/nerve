@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_REPLY_SHAPE,
   MAX_RESPONSE_DELAY_MS,
+  RESPONSE_FLOOR_MS,
   remainingResponseDelayMs,
   responseDelayFor,
   timingBandFor,
@@ -47,10 +48,22 @@ describe('responseDelayFor — silence is a channel, not a defect', () => {
     }
   })
 
-  it('puts the coldest band past the dispreferred threshold and the warmest near the human mode', () => {
-    expect(responseDelayFor(-10, DEFAULT_REPLY_SHAPE, median)).toBeGreaterThan(700)
-    // ~200ms is the universal modal gap. INVESTED sits at or under it.
-    expect(responseDelayFor(95, DEFAULT_REPLY_SHAPE, median)).toBeLessThanOrEqual(250)
+  it('puts the coldest band past the dispreferred threshold and the warmest at the floor', () => {
+    // PERSONA-REALISM-REPORT R6. The onsets are offsets above what the
+    // pipeline can reach now, not absolute times it never met: INVESTED plays
+    // at the floor, and every band above it is held back by an audible margin.
+    expect(responseDelayFor(-10, DEFAULT_REPLY_SHAPE, median) - RESPONSE_FLOOR_MS).toBeGreaterThan(700)
+    expect(responseDelayFor(95, DEFAULT_REPLY_SHAPE, median) - RESPONSE_FLOOR_MS).toBeLessThanOrEqual(100)
+    // Two seconds is still the ceiling, so HOSTILE can never read as a stall.
+    expect(responseDelayFor(-10, DEFAULT_REPLY_SHAPE, () => 0.999)).toBeLessThanOrEqual(MAX_RESPONSE_DELAY_MS)
+  })
+
+  it('adds nothing while the pipeline is slower than the target', () => {
+    // Today's ~3.4 s gap spends every target. The layer must be inert until
+    // the latency work lands — never slower than the pipeline already is.
+    for (const spec of BANDS) {
+      expect(remainingResponseDelayMs(responseDelayFor(spec.min + 1, DEFAULT_REPLY_SHAPE, median), 3400)).toBe(0)
+    }
   })
 
   it('is never a metronome — the same state produces a spread, not a number', () => {

@@ -243,3 +243,69 @@ export function ago(iso: string | null | undefined): string {
   if (days < 60) return `${days}d ago`
   return `${Math.round(days / 30)}mo ago`
 }
+
+/** Milliseconds, as seconds with one place, or a dash. */
+function seconds(ms: number | null): string {
+  return ms === null ? '—' : `${(ms / 1000).toFixed(1)}s`
+}
+
+function pct(value: number | null): string {
+  return value === null ? '—' : `${Math.round(value * 100)}%`
+}
+
+/**
+ * How fast she answers and what that does to the ladder
+ * (PERSONA-REALISM-REPORT L8, W1). The report's two numbers, per rung, beside
+ * the arm rate they decide: re-read this after the latency work lands and
+ * before any trajectory moves.
+ */
+export function LatencyTable({
+  data,
+}: {
+  data: {
+    days: number
+    overall: { reps: number; replyGapP50: number | null; replyGapP90: number | null; firstReplyP50: number | null; firstReplyP90: number | null; agentTurnsPerRep: number | null }
+    rungs: ReadonlyArray<{ personaSlug: string; reps: number; replyGapP50: number | null; firstReplyP50: number | null; agentTurnsPerRep: number | null; armedShare: number | null; engagedShare: number | null }>
+  }
+}) {
+  const { overall } = data
+  return (
+    <section className="admin-card">
+      <header><h2 className="display-md">How fast she answers</h2></header>
+      {overall.reps === 0 ? (
+        <p className="admin-fine">
+          No dating rep of a minute or more in the last {data.days} days, so there is nothing to time.
+        </p>
+      ) : (
+        <>
+          <div className="admin-stats">
+            <Figure label={`Reply gap · p50 · ${data.days}d`} value={seconds(overall.replyGapP50)} note={`p90 ${seconds(overall.replyGapP90)}`} />
+            <Figure label="First reply · p50" value={seconds(overall.firstReplyP50)} note={`p90 ${seconds(overall.firstReplyP90)}`} />
+            <Figure label="Her turns per rep" value={overall.agentTurnsPerRep ?? '—'} note="The ladder is tuned for fifteen" />
+          </div>
+          <div className="admin-readout admin-readout--latency">
+            <div className="admin-readout__row admin-readout__row--head">
+              <span>Rung</span><span>Reps</span><span>Gap</span><span>First</span><span>Turns</span><span>Armed</span><span>Engaged</span>
+            </div>
+            {data.rungs.map((row) => (
+              <div key={row.personaSlug} className="admin-readout__row">
+                <span className="admin-truncate">{presentationName(row.personaSlug)}</span>
+                <span className="data">{row.reps}</span>
+                <span className="data">{seconds(row.replyGapP50)}</span>
+                <span className="data">{seconds(row.firstReplyP50)}</span>
+                <span className="data">{row.agentTurnsPerRep ?? '—'}</span>
+                <span className="data">{pct(row.armedShare)}</span>
+                <span className="data">{pct(row.engagedShare)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+/** The name a user knows her by. The slug for rung 1 is still `tess`. */
+function presentationName(slug: string): string {
+  return slug === 'tess' ? 'Cass' : slug.charAt(0).toUpperCase() + slug.slice(1)
+}

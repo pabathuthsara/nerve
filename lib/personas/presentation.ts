@@ -102,29 +102,29 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
   /**
    * Rung 1, and the first thing anybody reads about this product from the
    * inside. Every word of it is chosen to describe a bored person in a
-   * launderette rather than a character with a disposition toward the reader —
+   * gallery rather than a character with a disposition toward the reader —
    * §14 has a merchant-of-record reviewer signing up and meeting her first,
    * and "flirty" is a dial in her file, never a description on a screen.
    */
   tess: {
     name: 'Cass',
-    setting: 'Public gallery, weekday afternoon',
+    setting: 'Art museum, weekday afternoon',
     settingShort: 'Gallery',
     hook: 'A day off, a room full of paintings, and no idea what any of them are.',
     blurb:
-      'Warm and completely straight with you. She knows nothing about art and says so, and she has decided to find one thing in here she actually likes before she leaves.',
+      'Warm and completely straight with you. A vet tech on her day off who knows nothing about art and says so. She liked one painting in the first room, because of the blue, and she is looking for another before the museum closes.',
     respondsTo: ['saying anything at all', 'telling her what you think of something', 'a small opinion, even a hesitant one'],
     shutsDownOn: ['explaining the art at her', 'sustained rudeness', 'crossing a real boundary'],
     portraitUrl: '',
   },
   nadia: {
     name: 'Nadia',
-    setting: 'Second-hand bookshop, Saturday afternoon',
-    settingShort: 'Bookshop',
-    hook: 'She is hunting for a birthday present for her sister and getting nowhere.',
+    setting: 'Used bookstore, Saturday afternoon',
+    settingShort: 'Bookstore',
+    hook: 'Her sister reads romance. She cannot decide whether to buy what her sister will love or what she thinks her sister should read.',
     blurb:
       'Dry, quiet, half-distracted, and in a good mood that has nothing to do with you. She is easy to talk to and very hard to lose.',
-    respondsTo: ['saying anything at all', 'a real opinion', 'a thought about the book or the shop'],
+    respondsTo: ['following up on what she said', 'a real opinion', 'helping with the present'],
     shutsDownOn: ['sustained rudeness', 'crossing a real boundary'],
     portraitUrl: '',
   },
@@ -143,7 +143,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     name: 'Maya',
     setting: 'Coffee shop, Sunday morning',
     settingShort: 'Coffee shop',
-    hook: 'She came alone with a notebook and is two-thirds through a drink.',
+    hook: 'She came alone with a pocket sketchbook and is drawing the people in the room, badly.',
     blurb:
       'Warm, dry, and slightly guarded. She will keep this going while it is worth having and let it end when it is not.',
     respondsTo: ['building on her last answer', 'an actual opinion', 'noticing the moment you are both in'],
@@ -187,7 +187,7 @@ export const PRESENTATION: Record<string, PersonaPresentation> = {
     name: 'Robin',
     setting: 'Hotel lobby, early evening',
     settingShort: 'Hotel lobby',
-    hook: 'Her car is fifteen minutes late and she is in no hurry about it.',
+    hook: 'She is flying out tonight, her car is fifteen minutes late, and she is in no hurry about it.',
     blurb:
       'Unfailingly polite and almost impossible to read. Whether she is interested is a question she will not answer either way.',
     respondsTo: ['reading a shorter answer correctly', 'a real point of view', 'leaving cleanly at the right moment'],

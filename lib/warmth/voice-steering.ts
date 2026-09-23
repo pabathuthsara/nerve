@@ -16,6 +16,11 @@ export function bindVoiceSteering(voice: VoiceProvider, session: WarmthSession):
       // happened. The adapter honours it by making no request at all.
       const silent = session.staysSilent
       session.noteSilence(silent)
+      // BEFORE the steering line, which consumes the closing hand-over that
+      // both of these defer to, and which carries the laugh permission. A
+      // silent turn gets neither: there is no line to open. See
+      // `WarmthSession.decideExpression`.
+      const expression = silent ? { particle: null, laughAllowed: false } : session.decideExpression()
       return {
         steering: session.statelessDirective(),
         warmth: session.engine.warmth,
@@ -27,8 +32,14 @@ export function bindVoiceSteering(voice: VoiceProvider, session: WarmthSession):
         wordCap: session.replyWordCap,
         sentenceCap: session.replySentenceCap,
         silent,
+        deadEnd: session.lastTurnDeadEnd,
+        laughAllowed: expression.laughAllowed,
+        particle: expression.particle,
       }
     })
+    // The laugh is the model's to take and ours to ration: only a laugh that
+    // actually shipped restarts the spacing.
+    voice.on('agent.expression', ({ laughed }) => session.noteExpression({ laughed }))
   } else {
     // Realtime retains conversation instructions and creates its own replies.
     voice.on('user.speech.start', () => {

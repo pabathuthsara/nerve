@@ -189,10 +189,27 @@ export function sanitiseForSpeech(text: string): string {
     .trim()
 }
 
+/**
+ * The longest leading unit that does not count as her sentence. Three words is
+ * "Oh, hi there." and "Nice to meet you." is four, so a name or an
+ * acknowledgement is free and a real first clause is not. See `capToBudget`.
+ */
+export const LEADING_UNIT_WORDS = 3
+
 export function capToBudget(
   text: string,
   cap: number,
-  options: { sentences?: number } = {},
+  options: {
+    sentences?: number
+    /**
+     * A leading unit of `LEADING_UNIT_WORDS` or fewer does not count against
+     * `sentences` (PERSONA-REALISM-REPORT R1). OPT-IN, and only the dating turn
+     * path opts in: the texting arm reads this function too and must reach the
+     * identical line it always has (rule 19 — a Tier 0 retune is never a side
+     * effect on another track).
+     */
+    freeLead?: boolean
+  } = {},
 ): string {
   const sentences = text.trim().split(/(?<=[.!?]["'’”)]?)\s+/).filter(Boolean)
   const first = sentences[0]
@@ -207,7 +224,33 @@ export function capToBudget(
   // because a stated maximum that is only ever hoped for is not a maximum, and
   // "never two [sentences]" was stated at four bands and disobeyed on 55% of
   // turns for exactly the same reason. Absent means no sentence limit.
-  const sentenceCap = Math.max(1, options.sentences ?? Number.POSITIVE_INFINITY)
+  //
+  // ── A LEADING "YEAH." IS NOT HER SENTENCE (PERSONA-REALISM-REPORT R1) ──
+  //
+  // Nadia was truncated on 70% of her turns after 10 September, median three
+  // words spoken, and the mechanism is exact: the cold bands allow ONE
+  // sentence, the register work taught her to answer in fragments, and the
+  // first fragment is nearly always an acknowledgement. So a whole line went to
+  // the model and one word of it reached the ear —
+  //
+  //   him "My name is [name]."                        her "[name]."
+  //   him "Maybe I can be of help. I'm a good reader." her "Thanks."
+  //
+  // — after a three-second pause, which is the most AI-sounding thing this
+  // product does. `bands.ts` already records the lesson ("rough speech
+  // fragments into more pieces than it has thoughts"); it was applied to OPEN
+  // and above and never to the three bands where Nadia and Maya spend a rep.
+  //
+  // So a leading unit of three words or fewer — an acknowledgement, a name, an
+  // interjection — is not counted against the SENTENCE ceiling. It still costs
+  // its words against the WORD ceiling, which is untouched and still the real
+  // bound (§14.5a: do not raise the word caps). "Nadia. Nice to meet you." ships
+  // at GUARDED; "Yeah. Crime, mostly. Some non-fiction." still stops at two
+  // units, because only the first unit is ever free.
+  const leadIsShort = options.freeLead === true
+    && sentences.length > 1
+    && budgetedWordCount(first) <= LEADING_UNIT_WORDS
+  const sentenceCap = Math.max(1, options.sentences ?? Number.POSITIVE_INFINITY) + (leadIsShort ? 1 : 0)
 
   // ASK BEFORE SPENDING, NOT AFTER.
   //

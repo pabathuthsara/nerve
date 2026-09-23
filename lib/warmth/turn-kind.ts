@@ -55,6 +55,14 @@ import { hasHostilityMarker } from './triggers'
 export type UserTurnKind =
   /** He said nothing intelligible. A transcription artefact or a false trigger. */
   | 'silence'
+  /**
+   * What arrived is not English, so it is almost certainly what the
+   * transcriber MISHEARD rather than what he said (PERSONA-REALISM-REPORT R8).
+   *
+   * Only ever returned for SPOKEN turns (`TurnKindContext.spoken`): typed text
+   * in a thread is what was typed. See `isMisheard`.
+   */
+  | 'unclear'
   /** Contempt aimed at her, or an instruction to leave. */
   | 'dismissal'
   /** He asked her something. Short by construction; never a failure. */
@@ -88,6 +96,14 @@ export interface TurnKindContext {
    * behaviour it has always had.
    */
   herLastTurnAsked?: boolean
+  /**
+   * The turn came from a transcriber, not a keyboard.
+   *
+   * The one reason a turn can be unintelligible that is not the user's doing.
+   * Absent means typed — the texting arm reads `classifyUserTurn` too, and a
+   * message somebody typed in Danish is a message in Danish.
+   */
+  spoken?: boolean
 }
 
 /** He gave a real turn at this many words. Matches `DISCLOSURE_WORDS`. */
@@ -148,6 +164,13 @@ export function classifyUserTurn(
   const count = words(trimmed)
   if (count === 0) return 'silence'
 
+  // BEFORE EVERYTHING THAT READS MEANING, because there is none to read. The
+  // transcriber is pinned to English and still produced "Hej der" for "Hey
+  // there" and "음." for a hum, and she answered the first with "Hej." — a
+  // mishearing mirrored back as though he had spoken Danish. A person says
+  // "sorry?".
+  if (context.spoken && isMisheard(trimmed)) return 'unclear'
+
   // BEFORE the question branch, and that is the fix for "Why are you still
   // here?" scoring +2.25. Contempt with a question mark on the end is contempt.
   if (isDismissal(trimmed) || hasHostilityMarker(trimmed)) return 'dismissal'
@@ -164,6 +187,48 @@ export function classifyUserTurn(
 
   if (count >= DISCLOSURE_WORDS) return 'disclosure'
   return 'answer'
+}
+
+/**
+ * Words a pinned-English transcriber produces when it mishears — common
+ * function words and greetings of the languages it most often drifts into.
+ *
+ * Deliberately NOT a list of every foreign word. The failure is short turns
+ * that came back as another language, and those are made of exactly these.
+ * An English word that is also foreign ("die", "man", "in", "ja" as in "yeah")
+ * is either absent or cannot tip a turn on its own — see `isMisheard`.
+ */
+const FOREIGN = new Set([
+  // Danish, Norwegian, Swedish
+  'hej', 'hei', 'hallå', 'der', 'det', 'och', 'og', 'jeg', 'jag', 'ikke', 'inte', 'tak', 'tack', 'nej', 'hvad', 'vad',
+  // German, Dutch
+  'hallo', 'ich', 'und', 'nicht', 'bitte', 'danke', 'ja', 'nein', 'ist', 'das', 'wie', 'geht', 'dank', 'wel', 'niet', 'een', 'het',
+  // Spanish, Portuguese, Italian, French
+  'hola', 'gracias', 'como', 'estas', 'está', 'qué', 'que', 'sí', 'olá', 'obrigado', 'ciao', 'grazie', 'bonjour', 'merci', 'oui', 'je', 'suis', 'c\'est', 'est', 'moi',
+])
+
+/**
+ * Whether a spoken turn is probably a transcription of something else.
+ *
+ * Two shapes, both measured:
+ *
+ *  1. **Mostly not in the Latin alphabet** — "음.", "อืม". Nobody on the roster
+ *     is speaking Korean or Thai; a transcriber pinned to English emitted those
+ *     for a hum and a breath.
+ *  2. **A short turn made of foreign function words** — "Hej der." Four words
+ *     or fewer, at least half of them in `FOREIGN`. Short because a long turn
+ *     that happens to contain "que" is a sentence in English with a Spanish
+ *     word in it, and a false positive here costs him an unanswered line.
+ */
+export function isMisheard(text: string): boolean {
+  const letters = text.match(/\p{L}/gu) ?? []
+  if (letters.length === 0) return false
+  const latin = letters.filter((ch) => /\p{Script=Latin}/u.test(ch)).length
+  if (latin / letters.length < 0.5) return true
+  const tokens = text.toLowerCase().match(/[\p{L}']+/gu) ?? []
+  if (tokens.length === 0 || tokens.length > 4) return false
+  const foreign = tokens.filter((token) => FOREIGN.has(token)).length
+  return foreign >= 1 && foreign * 2 >= tokens.length
 }
 
 /**

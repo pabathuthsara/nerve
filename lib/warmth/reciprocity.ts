@@ -252,7 +252,7 @@ export function mayVolunteerFor(warmth: number, his: UserTurnShape | null): bool
 export function mayStaySilentFor(
   warmth: number,
   his: UserTurnShape | null,
-  options: { silentLastTurn?: boolean } = {},
+  options: { silentLastTurn?: boolean; consecutiveDeadEnds?: number } = {},
 ): boolean {
   if (!his) return false
   // NEVER TWICE RUNNING, and the reason is not politeness.
@@ -263,10 +263,26 @@ export function mayStaySilentFor(
   // therefore can never leave: the rep would run to the clock with nobody in
   // it. So the shape is silence, then a reply, and that reply is where she goes.
   if (options.silentLastTurn) return false
-  return his.deadEnd
-    && !his.askedQuestion
-    && bandIndex(bandFor(warmth)) <= bandIndex(SILENCE_BAND)
+  if (!his.deadEnd || his.askedQuestion) return false
+  const band = bandIndex(bandFor(warmth))
+  if (band <= bandIndex(SILENCE_BAND)) return true
+  // ── THE SECOND DEAD END AT OPEN (PERSONA-REALISM-REPORT R7) ────────────
+  //
+  // OPEN was excluded because a silence from a woman who has decided he is
+  // worth a sentence reads as sulking — and that is right for ONE grunt. It is
+  // wrong for the second in a row. Cass lives at OPEN on rung 1, so she never
+  // had this move, and on 18 September three consecutive "Okay."s were answered
+  // with three volunteered sentences. Two dead ends running is him leaving the
+  // conversation; letting it sit is the honest reply, and it is exactly the
+  // signal the product exists to teach him to read.
+  //
+  // For EXACTLY that case. One grunt at OPEN is still answered, "never twice
+  // running" above still holds, and ENGAGED and up are untouched.
+  return band === bandIndex(RECIPROCITY_BAND) && (options.consecutiveDeadEnds ?? 0) >= SECOND_DEAD_END
 }
+
+/** The dead end, counted in a row, at which OPEN may answer with nothing. */
+export const SECOND_DEAD_END = 2
 
 /**
  * The clause this adds to the steering line. One, and only one.

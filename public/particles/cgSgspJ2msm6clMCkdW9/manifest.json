@@ -1,0 +1,89 @@
+{
+  "voiceId": "cgSgspJ2msm6clMCkdW9",
+  "sampleRate": 24000,
+  "persona": "tess",
+  "particles": {
+    "oh": "oh.pcm",
+    "mm": "mm.pcm",
+    "yeah": "yeah.pcm",
+    "hm": "hm.pcm",
+    "well": "well.pcm"
+  },
+  "takes": {
+    "oh": [
+      {
+        "seconds": 0.43,
+        "heard": "啊",
+        "ok": false
+      },
+      {
+        "seconds": 0.41,
+        "heard": "哦",
+        "ok": true
+      },
+      {
+        "seconds": 0.57,
+        "heard": "Oh",
+        "ok": true
+      }
+    ],
+    "mm": [
+      {
+        "seconds": 0.48,
+        "heard": "음",
+        "ok": true
+      },
+      {
+        "seconds": 0.36,
+        "heard": "嗯",
+        "ok": true
+      }
+    ],
+    "yeah": [
+      {
+        "seconds": 0.52,
+        "heard": "Ja",
+        "ok": false
+      },
+      {
+        "seconds": 0.4,
+        "heard": "Yeah",
+        "ok": true
+      },
+      {
+        "seconds": 0.28,
+        "heard": "Yeah",
+        "ok": true
+      }
+    ],
+    "hm": [
+      {
+        "seconds": 0.26,
+        "heard": "嗯",
+        "ok": true
+      },
+      {
+        "seconds": 0.31,
+        "heard": "Hm",
+        "ok": true
+      }
+    ],
+    "well": [
+      {
+        "seconds": 0.67,
+        "heard": "哇",
+        "ok": false
+      },
+      {
+        "seconds": 0.72,
+        "heard": "Well",
+        "ok": true
+      },
+      {
+        "seconds": 1.14,
+        "heard": "Well",
+        "ok": true
+      }
+    ]
+  }
+}

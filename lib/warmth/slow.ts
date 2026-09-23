@@ -30,6 +30,11 @@ export interface SlowScore {
   /** The exact words that drove the judgement. Grounding, not decoration. */
   quote: string
   reason: string
+  /**
+   * He meant the line as a joke (PERSONA-REALISM-REPORT 5.4). Absent when the
+   * judge did not say, which is read as false. Moves nothing on the meter.
+   */
+  funny?: boolean
 }
 
 export interface SlowScoreRequest {
@@ -108,6 +113,7 @@ export function clampSlowScore(raw: unknown): SlowScore | null {
     intent: Math.max(-10, Math.min(10, intent)),
     quote: typeof value['quote'] === 'string' ? value['quote'].slice(0, 200) : '',
     reason: typeof value['reason'] === 'string' ? value['reason'].slice(0, 200) : '',
+    ...(value['funny'] === true ? { funny: true } : {}),
   }
 }
 

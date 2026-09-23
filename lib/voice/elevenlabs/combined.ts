@@ -26,7 +26,10 @@ import { withInterviewBrief } from '@/lib/personas/interview/overlay'
 import { DEFAULT_CALIBRATION, type Calibration } from '../types'
 import { priceChatUsage } from '../rates'
 import { resolvePipelineConfig, ttsModelSpec, type PipelineEnv } from './config'
-import { ElevenLabsPersonaCompiler, deliveryFor } from './persona'
+import { ElevenLabsPersonaCompiler, deliveryFor, stripDeliveryTags } from './persona'
+import { deadEndReply, enforceDeliveryTags, withoutParticle } from './shaping'
+import { PARTICLE_TEXTS } from '@/lib/warmth/particles'
+import { HUMOUR_GRACE_MS, humourBound, humourCost, judgeHumour, type HumourJudge, type HumourVerdict } from './humour'
 import { LlmClient } from './llm'
 import { handleLlmRequest, handleTtsRequest, type PersonaOverlay } from './server'
 import { parseAlignment } from './tts'
@@ -36,7 +39,11 @@ import { MAX_REQUESTED_SENTENCE_CAP, MAX_REQUESTED_WORD_CAP, MAX_TURN_TTS_CHARAC
 import { proxiedRequestId } from '../request-id'
 import { seededRandom } from '../seed'
 
-const MAX_BODY_BYTES = 32_768
+/**
+ * 48 KiB. It was 32, and a ticket carries the persona context it was issued
+ * with (memory, openers) beside a history that may itself be 16 KiB.
+ */
+const MAX_BODY_BYTES = 49_152
 const MAX_HISTORY_CHARS = 16_000
 const TURN_TIMEOUT_MS = 25_000
 
@@ -59,6 +66,17 @@ export interface CombinedDependencies {
   tts?: typeof handleTtsRequest
   now?: () => number
   onComplete?: (accounting: TurnAccounting) => Promise<void>
+  /**
+   * Resolves true once this turn's pre-made reservation is CLAIMED
+   * (PERSONA-REALISM-REPORT L2). The writer runs while it is pending; nothing
+   * is sent to synthesis until it resolves, and a false aborts the turn —
+   * a replayed ticket buys at most a writer's first few tokens and never a
+   * syllable of her voice. Absent on the ordinary path, which was admitted
+   * before this function was called.
+   */
+  admission?: Promise<boolean>
+  /** Whether his line was meant to be funny (`./humour.ts`). Injected in tests. */
+  humour?: HumourJudge
 }
 
 /** Reject oversized requests before allocating vendor work. Never trust Content-Length alone. */
@@ -109,6 +127,13 @@ export async function parseTurnRequest(request: Request): Promise<TurnRequest | 
       ...(typeof body.sentenceCap === 'number' && Number.isFinite(body.sentenceCap)
         ? { sentenceCap: Math.round(Math.max(1, Math.min(MAX_REQUESTED_SENTENCE_CAP, body.sentenceCap))) }
         : {}),
+      // PERSONA-REALISM-REPORT R3, R7, R4. Absent is the old behaviour in all
+      // three, and only `true` or a KNOWN particle is ever read: the browser may
+      // tell the pipeline what it played, never invent a string to be spoken.
+      ...(body.laughAllowed === true ? { laughAllowed: true } : {}),
+      ...(body.deadEnd === true ? { deadEnd: true } : {}),
+      ...(typeof body.particle === 'string' && PARTICLE_TEXTS.has(body.particle) ? { particle: body.particle } : {}),
+      ...(typeof body.ticket === 'string' && body.ticket.length <= 24_000 ? { ticket: body.ticket } : {}),
     }
   } catch { return null } finally { reader.releaseLock() }
 }
@@ -127,7 +152,10 @@ export function turnReservation(input: TurnRequest) {
   const cost = priceChatUsage(compiled.llm.model, { input: inputTokens, output: compiled.llm.maxTokens, cachedInput: 0 })
   return {
     model: compiled.llm.model,
-    maxCostUsd: cost === null ? null : cost + MAX_TURN_TTS_CHARACTERS / 1000 * ttsModelSpec(compiled.tts.model).usdPer1kChars,
+    // The humour check (`./humour.ts`) is bounded here too, on every turn,
+    // because a reservation is made before anybody knows whether a laugh will
+    // be permitted. A hundredth of a cent (rule 18: bounded, never unknown).
+    maxCostUsd: cost === null ? null : cost + MAX_TURN_TTS_CHARACTERS / 1000 * ttsModelSpec(compiled.tts.model).usdPer1kChars + humourBound(),
     resources: { llmInputTokens: inputTokens, llmOutputTokens: compiled.llm.maxTokens, ttsCharacters: MAX_TURN_TTS_CHARACTERS },
   }
 }
@@ -192,6 +220,10 @@ export function createCombinedTurn(
       /** What she actually said, after the ceiling. Zero until generation ends. */
       let spokenWords = 0
       let capped = false
+      /** A dead-end rescue was replaced with her micro-reply (R7). */
+      let microReplied = false
+      /** The humour verdict, when one was asked for and arrived in time (R3). */
+      let humour: HumourVerdict | null = null
       const enqueue = (plainText: string) => {
         if (!plainText.trim()) return
         const clipId = String(clips++)
@@ -259,6 +291,18 @@ export function createCombinedTurn(
           }
         }).catch((cause: unknown) => { failure = cause; abort.abort(cause) })
       }
+      // R3: a permitted laugh ships only on a line that was meant to be funny.
+      // Asked in PARALLEL with the writer, which is slower, so it costs the
+      // turn nothing on the critical path. See `./humour.ts`.
+      const lastUser = [...input.history].reverse().find((message) => message.role === 'user')
+      const lastUserIndex = lastUser ? input.history.lastIndexOf(lastUser) : -1
+      const herPrior = lastUserIndex > 0
+        ? [...input.history.slice(0, lastUserIndex)].reverse().find((message) => message.role === 'assistant')?.content ?? null
+        : null
+      const humourCheck: Promise<HumourVerdict> | null = input.laughAllowed && lastUser
+        ? (dependencies.humour ?? judgeHumour)({ his: lastUser.content, herPrior }, abort.signal)
+          .catch(() => ({ funny: false, usage: null }))
+        : null
       try {
         const client = new LlmClient({
           fetchImpl: async (_url, options) => {
@@ -298,8 +342,39 @@ export function createCombinedTurn(
         // Sanitised BEFORE the ceiling, so the sentence count is taken on the
         // punctuation that will actually be spoken and the transcript matches
         // the audio. See `sanitiseForSpeech`.
-        const generated = sanitiseForSpeech(result.text)
-        const spoken = capToBudget(generated, wordCap, sentenceCap === undefined ? {} : { sentences: sentenceCap })
+        //
+        // THEN WHAT SHE IS HELD TO, in this order, each one a rule the band or
+        // the session decided and the writer was only told (`./shaping.ts`):
+        //   the particle she has already said comes off the front (R4),
+        //   at most one opening tag, from the list this warmth allows (R3),
+        //   and a rescue after a dead end becomes her own micro-reply (R7).
+        if (humourCheck) {
+          humour = await Promise.race([
+            humourCheck,
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), HUMOUR_GRACE_MS)),
+          ])
+        }
+        const laughAllowed = input.laughAllowed === true && humour?.funny === true
+        const sanitised = enforceDeliveryTags(
+          withoutParticle(sanitiseForSpeech(result.text), input.particle),
+          { warmth: input.warmth, ...(laughAllowed ? { laughAllowed: true } : {}) },
+        ).text
+        const microReply = input.deadEnd
+          ? deadEndReply(stripDeliveryTags(sanitised), {
+              wordCap, microReplies: persona.microReplies, pick: seededRandom(`${input.turnId}:micro`),
+            })
+          : null
+        const generated = microReply ?? sanitised
+        microReplied = microReply !== null
+        if (dependencies.admission && !(await dependencies.admission)) {
+          throw new Error('This turn was not admitted.')
+        }
+        const spoken = capToBudget(generated, wordCap, {
+          ...(sentenceCap === undefined ? {} : { sentences: sentenceCap }),
+          // R1: "Nadia. Nice to meet you." is one turn, not a name and a
+          // deleted sentence. Dating only; see `capToBudget`.
+          ...(persona.track === 'dating' ? { freeLead: true } : {}),
+        })
         spokenWords = spokenWordCount(spoken)
         capped = spokenWords < spokenWordCount(generated)
         if (!abort.signal.aborted) enqueue(spoken)
@@ -342,7 +417,11 @@ export function createCombinedTurn(
         // fallback. The LLM half is not uncertain at all and is priced as
         // measured — losing it was pure collateral damage.
         const ttsCharged = uncertainSynthesis ? attemptedCharacters * usdPerChar : ttsCost
-        const llmCost = llmUsage ? priceChatUsage(compiled.llm.model, llmUsage) : null
+        // The humour check is priced from its own receipt, or at its bound if
+        // it never answered — it may still have been billed upstream.
+        const llmCost = llmUsage
+          ? (priceChatUsage(compiled.llm.model, llmUsage) ?? 0) + (humourCheck ? humourCost(humour ?? { funny: false, usage: null }) : 0)
+          : null
         // The final audio and done event have already been emitted. The route
         // keeps `finished` alive with after(), so persisting the receipt need
         // not add another database round trip to the browser's turn stream.
@@ -362,6 +441,8 @@ export function createCombinedTurn(
               ttsModel: compiled.tts.model, llmModel: compiled.llm.model,
               llmRequestId, ttsRequestIds,
               wordCap, sentenceCap: sentenceCap ?? null, spokenWords, capped,
+              microReply: microReplied, particle: input.particle ?? null, laughAllowed: input.laughAllowed === true,
+              funny: humour ? humour.funny : null,
               ...timings,
             },
           }).catch(() => undefined) // A failed settlement leaves the server reservation held.

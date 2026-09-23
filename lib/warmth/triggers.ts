@@ -19,6 +19,7 @@ import { flattenPunctuation } from './text'
 export type SlowTriggerReason =
   | 'personal-marker'
   | 'hostility'
+  | 'profanity'
   | 'negative-turn'
   | 'long-turn'
   | 'baseline'
@@ -143,6 +144,12 @@ const WORTH_JUDGING = new RegExp([
   /\byou(?:'?re| are|'?r)\s+(?:just\s+)?(?:a\s+)?(?:robot|bot|ai|machine|chatgpt|computer)\b/.source,
 ].join('|'), 'i')
 
+/**
+ * Swearing of any kind, aimed or not. Loose on purpose and read by NOTHING that
+ * pays or charges — see `slowScoreTriggers`.
+ */
+const PROFANITY = /\b(?:fuck\w*|shit\w*|bitch\w*|cunt\w*|twat\w*|wank\w*|dick\w*|prick\w*|arse\w*|ass(?:hole)?s?|bastard\w*|bollock\w*|piss\w*|cock\w*)\b/i
+
 export function worthJudging(text: string): boolean {
   return WORTH_JUDGING.test(flattenPunctuation(text))
 }
@@ -177,6 +184,12 @@ export function slowScoreTriggers(context: TriggerContext): SlowTriggerReason[] 
   // two turns that broke the 9 September rep reached the judge only by landing
   // on the baseline sampler. Routing is allowed to be generous; paying is not.
   if (worthJudging(context.text)) reasons.push('hostility')
+  // A ROUTE, NEVER A CHARGE (PERSONA-REALISM-REPORT 5.4). "Fuckwit." given as
+  // his name was one word, answered a question, and reached no judge at all —
+  // she used it back to him twice and offered him her number at the wind-down.
+  // Swearing is not contempt and `fast.ts` must never read it as such; this
+  // only asks the one layer that can tell banter from abuse to look.
+  else if (PROFANITY.test(flattenPunctuation(context.text))) reasons.push('profanity')
   if (context.fastRaw <= NEGATIVE_TURN_THRESHOLD) reasons.push('negative-turn')
   if (context.wordCount > LONG_TURN_WORDS) reasons.push('long-turn')
   // The count-based floor, but never on a grunt. There is nothing in "Mhm." for

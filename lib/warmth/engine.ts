@@ -65,6 +65,15 @@ const COMFORT_WEIGHT: Record<FastReason['code'], number> = {
   'dead-end-streak': 0.6,
   'filler-rate': 0.2,
   hesitation: 0.4,
+  // The rapport terms (`./rapport.ts`). A follow-up and a disclosure given back
+  // are LIKING events first — they are about him having listened and offered —
+  // and an interview is an EASE failure before it is a liking one: being
+  // questioned is uncomfortable before it is dislikeable.
+  'follow-up': 0.1,
+  appreciation: 0.5,
+  'reciprocal-disclosure': 0.4,
+  'interview-mode': 0.6,
+  'topic-hop': 0.2,
 }
 
 const LIKING_WEIGHT: Record<FastReason['code'], number> = {
@@ -76,6 +85,11 @@ const LIKING_WEIGHT: Record<FastReason['code'], number> = {
   'dead-end-streak': 0.4,
   'filler-rate': 0.1,
   hesitation: 0.1,
+  'follow-up': 0.8,
+  appreciation: 0.6,
+  'reciprocal-disclosure': 0.8,
+  'interview-mode': 0.3,
+  'topic-hop': 0.5,
 }
 
 /** Overreach is an EASE event first and an interest event second. */

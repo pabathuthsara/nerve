@@ -18,7 +18,7 @@ import { revalidatePath } from 'next/cache'
 import { supabaseServer, currentUser } from '@/lib/db/server'
 import { supabaseAdmin } from '@/lib/db/admin'
 import type { PipelineTelemetry, ProviderId, Rate, SessionUsage, TranscriptTurn } from '@/lib/voice/types'
-import { activateVoiceSession, abortVoiceStartupAttempt, closeVoiceSession, refundEmptyVoiceSession, serverVoiceSessionExists, settleTranscriptionEnvelope } from '@/lib/db/voice-session'
+import { activateVoiceSession, abortVoiceStartupAttempt, closeVoiceSession, refundEmptyVoiceSession, releaseUnclaimedTurns, serverVoiceSessionExists, settleTranscriptionEnvelope } from '@/lib/db/voice-session'
 import type { Scorecard } from '@/lib/grade/types'
 import type { WarmthTelemetry } from '@/lib/warmth/engine'
 import type { RepIncidents } from '@/lib/voice/incidents'
@@ -183,6 +183,8 @@ export async function abandonSession(input: { sessionId: string; operationId: st
   // daily cap until midnight. Before the abort, which does not release
   // reservations. See `settleTranscriptionEnvelope`.
   await settleTranscriptionEnvelope({ userId: user.id, sessionId: input.sessionId, seconds: 0 })
+  // A turn reserved under the countdown and never spoken (L2) did no work.
+  await releaseUnclaimedTurns({ userId: user.id, sessionId: input.sessionId })
   const result = await abortVoiceStartupAttempt({ userId: user.id, ...input })
   return { ok: result.ok, message: result.ok ? null : 'The rep could not be closed.' }
 }
@@ -341,6 +343,11 @@ export async function finishSession(input: {
     // against the daily cap for the rest of the day and never reach the
     // ledger. See `settleTranscriptionEnvelope`.
     await settleTranscriptionEnvelope({ userId: user.id, sessionId: input.sessionId, seconds })
+    // The next turn was reserved while her last one played (L2), and the rep
+    // ended before he said it. Nothing ran against that reservation — it was
+    // never claimed — so it is released at zero rather than held against the
+    // daily cap until midnight. A claimed turn keeps its hold, as always.
+    await releaseUnclaimedTurns({ userId: user.id, sessionId: input.sessionId })
     // Provider operations already wrote their own usage. Client telemetry is
     // diagnostic and must not overwrite it or append the old elapsed-time estimate.
     await closeVoiceSession({ userId: user.id, sessionId: input.sessionId })

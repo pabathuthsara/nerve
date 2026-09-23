@@ -1,7 +1,8 @@
 import { after } from 'next/server'
 import { requireUser } from '@/lib/db/api-auth'
 import { maySpend } from '@/lib/db/spend'
-import { settleVoiceOperation } from '@/lib/db/voice-session'
+import { claimVoiceOperation, settleVoiceOperation } from '@/lib/db/voice-session'
+import { verifyTurnTicket } from '@/lib/voice/elevenlabs/ticket'
 import { asJson } from '@/lib/db/json'
 import { createCombinedTurn, parseTurnRequest, turnReservation } from '@/lib/voice/elevenlabs/combined'
 
@@ -27,18 +28,48 @@ export async function POST(request: Request): Promise<Response> {
   if (!input) return Response.json({ error: 'Invalid rep request.' }, { status: 400 })
   const estimate = turnReservation(input)
   if (estimate.maxCostUsd === null) return Response.json({ error: 'This model has no verified rate.' }, { status: 503 })
-  const allowed = await maySpend(auth.userId, 'turn', {
-    sessionId: input.sessionId, personaSlug: input.personaId, operationId: input.turnId,
-    kind: 'turn', model: estimate.model, maxCostUsd: estimate.maxCostUsd, resources: estimate.resources,
-  })
-  if (!allowed.ok) return allowed.response
+
+  // THE TICKET PATH (PERSONA-REALISM-REPORT L2). This turn was admitted by
+  // `maySpend` while her previous line was still playing, and the ticket is
+  // the signed proof. It is honoured only when it verifies for this user, this
+  // rep, this turn and this persona, and when this turn's own estimate still
+  // fits the bound it was reserved under; otherwise it is ignored and the turn
+  // is admitted here, exactly as before. The claim runs beside the writer and
+  // gates synthesis — see `CombinedDependencies.admission`.
+  const claims = input.ticket
+    ? await verifyTurnTicket(input.ticket, {
+        userId: auth.userId, sessionId: input.sessionId, operationId: input.turnId, personaSlug: input.personaId,
+      })
+    : null
+  const ticketed = claims !== null && estimate.maxCostUsd <= claims.maxCostUsd
+  // A ticket that did not verify may still name a real reservation, which the
+  // ordinary path must not collide with. That reservation is never claimed and
+  // is released at zero by the next reserve or the end of the rep.
+  const operationId = input.ticket && !ticketed ? `${input.turnId}:r` : input.turnId
+  let context
+  let admission: Promise<boolean> | undefined
+  if (ticketed) {
+    context = claims.context
+    admission = claimVoiceOperation({ userId: auth.userId, sessionId: input.sessionId, operationId })
+  } else {
+    const allowed = await maySpend(auth.userId, 'turn', {
+      sessionId: input.sessionId, personaSlug: input.personaId, operationId,
+      kind: 'turn', model: estimate.model, maxCostUsd: estimate.maxCostUsd, resources: estimate.resources,
+    })
+    if (!allowed.ok) return allowed.response
+    context = allowed.reservation.context
+  }
   const admittedAt = performance.now()
-  const { response, finished } = createCombinedTurn(input, allowed.reservation.context, request.signal, {
+  const { response, finished } = createCombinedTurn(input, context, request.signal, {
+    ...(admission ? { admission } : {}),
     onComplete: async (accounting) => {
+      // A ticket whose claim was refused never owned this reservation — it was
+      // replayed, or already used — so it has nothing here to settle.
+      if (admission && !(await admission)) return
       const llm = accounting.usage.llm
       try {
         const saved = await settleVoiceOperation({
-          userId: auth.userId, sessionId: input.sessionId, operationId: input.turnId,
+          userId: auth.userId, sessionId: input.sessionId, operationId,
           costUsd: accounting.costUsd, status: accounting.status,
           ...(accounting.costUsd !== null && llm ? { resources: {
             llmInputTokens: llm.input, llmOutputTokens: llm.output,
@@ -48,13 +79,14 @@ export async function POST(request: Request): Promise<Response> {
             ...accounting.metadata,
             authMs: Math.round(authenticatedAt - started),
             admissionMs: Math.round(admittedAt - authenticatedAt),
+            ticketed,
             requestToFirstAudioMs: typeof accounting.metadata.firstAudioMs === 'number'
               ? Math.round(admittedAt - started + accounting.metadata.firstAudioMs) : null,
           }),
         })
-        if (!saved.ok) console.error('[nerve] voice usage persistence failed', { transport: 'combined-http', operationId: input.turnId })
+        if (!saved.ok) console.error('[nerve] voice usage persistence failed', { transport: 'combined-http', operationId })
       } catch {
-        console.error('[nerve] voice usage persistence failed', { transport: 'combined-http', operationId: input.turnId })
+        console.error('[nerve] voice usage persistence failed', { transport: 'combined-http', operationId })
       }
     },
   })

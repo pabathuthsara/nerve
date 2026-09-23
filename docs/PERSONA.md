@@ -239,6 +239,44 @@ Two invariants now hold this, both in `conformance.test.ts`:
 The first test could not have caught the second bug. `cedar` was named
 explicitly and was unique, so the casting was deliberate — and wrong.
 
+## Persona v2 — what she has to give (23 September 2026)
+
+`PERSONA-REALISM-REPORT-2026-09-23.md` §7, implemented. The four characters
+had one job, one room and three moods each, and every authored example showed
+the cold register, so a woman who had warmed to him had nothing true left to
+say and nothing to sound like. The fix is **content and dials, never code
+paths** (the report's §12, `PERSONA-AUDIT.md` §7): every field below is read by
+a rule that already existed or by one pure function beside the judgement layer,
+and absent always means the behaviour the roster had before.
+
+| Field | What it is | Read by |
+|---|---|---|
+| `disclosures` | Three true things at rising intimacy — one each for OPEN, ENGAGED, INVESTED. Cass's third is that her dad used to bring her to this museum; Robin's is that she is terrible at small talk and only polite about it | `disclosureFor`, inside the `personalDisclosure` gate clause. The deepest rung is never in her prompt before the band it belongs to |
+| `gated.*.style`, `expressiveGates.teases.style` | HOW she does a gated thing: "teasing him about his taste in books", "a dry challenge, making him defend an opinion" | `gateText` — "You may flirt, the way you do: …". `unlocksAt` still owns when |
+| `expressiveGates.laughs` | The warmth at which a laugh opens (Cass and Nadia 50, Maya 62, Robin 64) | `WarmthSession.decideExpression`, rationed one in four and ENFORCED by the pipeline, which also asks whether his line was meant to be funny (`lib/voice/elevenlabs/humour.ts`) |
+| `expressiveGates.teases` | A tease as a gate (Nadia and Maya 55) rather than the humour ≥ 70 clause, which would ship every turn | `gateClauses`, ranked with the other four |
+| `microReplies` | Her grunts: "Mm.", "Of course.", "I see." | `deadEndReply` — a rescue after a dead end is replaced with one |
+| `attention` | Where her attention goes when he gives her nothing: "the painting in front of you" | `attentionClauses`, replacing the want on a dead end |
+| `wantYields` | Her agenda at INVESTED: "The car can wait a minute." | `wantClauses` |
+| `closingBeat` | A room fact that lands on the wind-down: Robin's car arrives | `lib/data/rep.ts`, prepended to the wind-down direction. It decides nothing |
+| `examplesPerRep`, `examples[].pinned`, `examples[].register` | A rep carries a seeded sample of her examples (nine of twelve); `pinned` lines always ride; four per character are `warm` | `examplesForRep`, seeded with the rep's own rng after the mood draw |
+| `sceneBeats[].opener` | A beat that hands him something to say | `beatsForRep` — a rep carries one opener and one other |
+| `voice.stabilityByBand` | Casting: Robin holds 0.8 until ENGAGED, so the mask slipping is audible | `stabilityForWarmth` |
+| `previousOpeners` | NOT authored: her first line on this user's last three reps, resolved on the server like `memorySummary` | `compileInstructions`, as "# Lines you have opened with before" |
+
+**The locale is US-first** — the market is (`MARKETING-PLAN.md`). "Used
+bookstore", "apartment", "around here", no "reckon", "mate" or "half four".
+`room.place` carries the prose word where the audio scene id is British
+(`bookshop` → a bookstore), and the live judge reads the same word.
+
+**Dials that moved**, each because its compiled band contradicted the
+character (report §1.6): Cass humour 45 → 58; Nadia humour 50 → 62,
+distraction 20 → 35, patience 64 → 70; Maya sharpness 30 → 38, humour
+55 → 62, distraction 20 → 45; Robin talkativeness 35 → 30 (now "you let it
+sit" and `[clipped]`), distraction 30 → 40. **Only Robin's trajectory moved**
+(below); Nadia's and Maya's are conditional in the report on the latency work
+and have not been measured yet.
+
 ## Trajectories
 
 ### The shipped ladder
@@ -251,13 +289,20 @@ for existing is `PAYMENTS-NEW-INTEGRATION.md` §4.
 
 |  | Tess (L1) | Nadia (L2) | Maya (L3) | Robin (L4) |
 |---|---|---|---|---|
-| start | 48 ± 6 | 32 ± 6 | 28 ± 6 | 20 ± 6 |
-| gain | 1.8 | 1.1 | 1.0 | 0.8 |
-| decay | 0.3 | 0.5 | 0.7 | 1.1 |
-| decayPerTurn | 0.1 | 0.2 | 0.25 | 0.35 |
-| maxGainPerTurn | 4.5 | 3.5 | 3.2 | 2.7 |
-| sessionCeiling | 85 | 85 | 82 | 78 |
+| start | 48 ± 6 | 32 ± 6 | 28 ± 6 | 25 ± 6 |
+| gain | 1.8 | 1.1 | 1.0 | 1.0 |
+| decay | 0.3 | 0.5 | 0.7 | 1.0 |
+| decayPerTurn | 0.1 | 0.2 | 0.25 | 0.3 |
+| maxGainPerTurn | 4.5 | 3.5 | 3.2 | 3.2 |
+| sessionCeiling | 85 | 85 | 82 | 82 |
 | hardCeiling | 100 | 100 | 100 | 95 |
+
+**Robin's column moved on 23 September** (PERSONA-REALISM-REPORT §7.4). The old
+curve needed twenty-four turns of perfect play and no three-minute rep delivers
+twenty-four, so nobody had ever heard her mask slip. The report proposed gain
+1.05 and cap 3.3 beside a Maya retune that is conditional on the latency work;
+against Maya's current dials those two would make rung 4 easier than rung 3, so
+they sit AT Maya's and the ladder stays monotonic (`engine.test.ts`).
 
 **Nobody carried a curve with them.** Maya and Robin took the curves already
 authored for their rungs when the roster shrank in August, and Nadia and Maya
@@ -277,10 +322,10 @@ Good play against each, at twelve seconds a turn, arming at 65:
 
 | turns | Tess | Nadia | Maya | Robin |
 |---|---|---|---|---|
-| 12 | 85.0 | 67.4 | 61.4 | 48.1 |
-| **15** — the three-minute rep | **85.0** | **72.6** | **67.0** | **53.9** |
-| 18 | 85.0 | 76.8 | 71.6 | 58.9 |
-| 24 | 85.0 | 83.2 | 78.6 | 67.0 |
+| 12 | 85.0 | 67.4 | 61.4 | 58.6 |
+| **15** — the three-minute rep | **85.0** | **72.6** | **67.0** | **64.5** |
+| 18 | 85.0 | 76.8 | 71.6 | 69.3 |
+| 24 | 85.0 | 83.2 | 78.6 | 76.8 |
 
 Tess is at her session ceiling from about turn 10, which is the point: she arms
 on **turn four**, under a minute into a three-minute rep, so a first-timer who
@@ -293,9 +338,9 @@ So a rep where nothing was said does not produce a number, on the easiest rung
 on the ladder, and the meter is what tells the user the difference. Both halves
 are asserted in `engine.test.ts` rather than left as an intention.
 
-The top rung is **hard and not sealed**: Robin cannot be armed by a merely
-competent rep, and sustained perfect play does eventually reach her. Asserted
-in `engine.test.ts`.
+The top rung is **hard and not sealed**: fifteen turns of perfect play — the
+model rep — still land her short at 64.5, and eighteen arm her. She is below
+Maya at every length. Asserted in `engine.test.ts`.
 
 ### The retired extreme
 

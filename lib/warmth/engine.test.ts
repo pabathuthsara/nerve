@@ -817,9 +817,16 @@ describe('the retuned trajectory', () => {
     // every length on purpose — she is the rung authored to be won, and a
     // sign-up rep a competent first-timer cannot arm would be the wrong first
     // impression of the whole product.
+    //
+    // RE-BASELINED 23 SEPTEMBER, for Robin alone (PERSONA-REALISM-REPORT §7.4).
+    // At the model rep she is still out of reach — the ladder is never won
+    // whole at fifteen turns — but a talkative rep of PERFECT play now reaches
+    // her, which is the difference between a top rung and a wall. The old curve
+    // needed twenty-four turns, which no three-minute rep ever delivers, so
+    // nobody had ever heard her mask slip.
     expect(armedRungs(12)).toEqual([1, 2])
     expect(armedRungs(TURNS_IN_A_REP)).toEqual([1, 2, 3])
-    expect(armedRungs(18)).toEqual([1, 2, 3])
+    expect(armedRungs(18)).toEqual([1, 2, 3, 4])
   })
 
   it('leaves the top rung hard and not sealed', () => {
@@ -832,8 +839,16 @@ describe('the retuned trajectory', () => {
     const robinWarmth = (turns: number) =>
       play(levelTrajectory(4), GOOD, turns, her, 4, rungPersonality(4)).warmth
 
-    expect(robinWarmth(18)).toBeLessThan(ARM_THRESHOLD)
-    expect(robinWarmth(24)).toBeGreaterThanOrEqual(ARM_THRESHOLD)
+    // RE-BASELINED 23 SEPTEMBER (§7.4). Fifteen turns of perfect play — the
+    // model rep — still lands short; eighteen now arms her. Twenty-four used to
+    // be the bar, and a rung only a four-minute rep can reach is a wall.
+    expect(robinWarmth(TURNS_IN_A_REP)).toBeLessThan(ARM_THRESHOLD)
+    expect(robinWarmth(18)).toBeGreaterThanOrEqual(ARM_THRESHOLD)
+    // And she is still the hardest rung at every length.
+    for (const turns of [12, TURNS_IN_A_REP, 18]) {
+      const maya = play(levelTrajectory(3), GOOD, turns, her, 3, rungPersonality(3)).warmth
+      expect(robinWarmth(turns), `@${turns}`).toBeLessThan(maya)
+    }
   })
 
   it('lets a competent first-timer win rung 1, and only by talking', () => {

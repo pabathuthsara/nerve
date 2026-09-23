@@ -123,11 +123,75 @@ export interface GatedBehaviour {
   ceiling: number
   /** Warmth at which it becomes available at all. */
   unlocksAt: number
+  /** How SHE does it. See `GateOnly.style`. */
+  style?: string
 }
 
 /** A behaviour that is simply on or off. */
 export interface GateOnly {
   unlocksAt: number
+  /**
+   * How SHE does it, in her author's words (PERSONA-REALISM-REPORT §5.6).
+   *
+   * `gateText` used to say "You may flirt." for every character on the roster,
+   * so the one clause that was supposed to carry the difference between a
+   * sincere vet nurse and a dry illustrator carried nothing. A style is
+   * CONTENT, authored in the persona file and reviewed in a pull request (rule
+   * 10): "teasing him about his taste in books". It completes "the way you do:
+   * ___" and is never a second opinion about WHEN — `unlocksAt` still owns that,
+   * and there is still exactly one owner of the gate and no per-character
+   * judgement code.
+   *
+   * Absent is the normal case and means the clause the roster has always had.
+   */
+  style?: string
+}
+
+/**
+ * The two behaviours a warm character does that no gate used to name.
+ *
+ * ── WHY THESE ARE NOT PERSONALITY CLAUSES ────────────────────────────────
+ *
+ * Laughter is the strongest interest signal in the conversation-science
+ * literature (Grammer & Eibl-Eibesfeldt 1990; Kurtz & Algoe 2015) and she
+ * laughed zero times in 585 real turns. Teasing is the other half of the
+ * playful register. Both used to be reachable only through `humour >= 70`,
+ * which ships "Tease him if he gives you an opening" on EVERY turn — a
+ * standing order at maximum recency, which rule 5 says reads as an order and
+ * gets performed. Nobody on the roster was above 70, so neither ever shipped.
+ *
+ * As gates they open at a character-specific warmth, ride the rationed
+ * standing-order cadence, and — for `laughs` — are enforced in code: the
+ * synthesiser only ever receives `[laughs]` on a turn the session permitted it
+ * (`WarmthSession.decideExpression`, `lib/voice/elevenlabs/shaping.ts`).
+ *
+ * Optional, and a separate record rather than two more keys on `Gated`, so the
+ * four gates every character and every interviewer already carries — and every
+ * tuning surface that walks `GATE_NAMES` — are byte-for-byte what they were.
+ */
+export type ExpressiveGateName = 'laughs' | 'teases'
+export type ExpressiveGates = Partial<Record<ExpressiveGateName, GateOnly>>
+
+/**
+ * One rung of what she will actually tell him about herself.
+ *
+ * PERSONA-REALISM-REPORT §7: `personalDisclosure` opened onto almost nothing.
+ * The gate said "You may say something real about your life" and her contract
+ * held one job and one sibling, so a character who had warmed to him had
+ * nothing true left to give. The ladder is three true things at rising
+ * intimacy, and the rung is chosen by the SAME band table that owns everything
+ * else (Aron et al. 1997 — closeness comes from disclosure that escalates).
+ *
+ * The text is handed to her only inside the disclosure gate's clause, at the
+ * band it belongs to, so the deepest thing she has is never in her prompt
+ * before she is warm enough to say it — a fact in the cached prefix is a fact
+ * she will eventually volunteer.
+ */
+export interface DisclosureRung {
+  /** The band at which this rung becomes the one she may offer. */
+  band: 'OPEN' | 'ENGAGED' | 'INVESTED'
+  /** One short true thing, second person, as a fact about her life. */
+  text: string
 }
 
 /**
@@ -240,6 +304,15 @@ export interface SceneBeat {
   /** 0-1 through the rep. Authored between 0.15 and 0.7. */
   at: number
   direction: string
+  /**
+   * An event that hands him something to open with, rather than something
+   * that happens to her mid-conversation (PERSONA-REALISM-REPORT R9).
+   *
+   * A character with four beats would be interrupted four times in three
+   * minutes, so a rep carries at most one opener and one other, drawn with the
+   * rep's own seed (`beatsForRep`). Absent means an ordinary beat.
+   */
+  opener?: boolean
 }
 
 /**
@@ -255,6 +328,16 @@ export interface VoiceSelection {
   ids: Partial<Record<ProviderId, string>>
   /** Relative speaking rate. 1.0 is the provider default. */
   pace?: number
+  /**
+   * Her voice's stability per warmth band, when the shared ramp is wrong for
+   * her (PERSONA-REALISM-REPORT R2, §7.4).
+   *
+   * CASTING, not judgement: it decides how the synthesiser renders a line and
+   * never what the line is. Robin holds her voice level until she is genuinely
+   * engaged, because the mask slipping audibly is the reward for her rung.
+   * Absent means `STABILITY_RAMP` in `lib/voice/elevenlabs/persona.ts`.
+   */
+  stabilityByBand?: Partial<Record<'HOSTILE' | 'CLOSED' | 'GUARDED' | 'OPEN' | 'ENGAGED' | 'INVESTED', number>>
 }
 
 /**
@@ -264,6 +347,18 @@ export interface VoiceSelection {
  * she does with a flat one. `note` is for the author and never reaches a model.
  */
 export interface PersonaExample {
+  /**
+   * Always carried, whatever `examplesPerRep` samples. For the one line a
+   * character must never lose — Cass's hello answered with a hello.
+   */
+  pinned?: boolean
+  /**
+   * Which half of her register this shows. `warm` examples demonstrate how she
+   * sounds once she is into him (PERSONA-REALISM-REPORT §7: every authored
+   * example showed the cold register, so nothing taught the warm one). Read by
+   * `examples.test.ts` and the sampler, never by a model.
+   */
+  register?: 'cold' | 'warm'
   /**
    * His line. Deliberately ordinary, and deliberately ANONYMOUS.
    *
@@ -465,6 +560,89 @@ export interface Persona {
    * Absent is valid and means the behaviour this product had before.
    */
   examples?: PersonaExample[]
+
+  /**
+   * How many of `examples` a single rep carries (PERSONA-REALISM-REPORT R9).
+   *
+   * A few-shot block that is the same eight lines every rep is eight lines she
+   * learns to sound like, and the second rep against the same character is the
+   * first one again. When the set is larger than this, `compileInstructions`
+   * keeps every `pinned` example and samples the rest with the rep's own seed —
+   * the same seed that rolls her mood, so every turn of one rep recompiles to
+   * the byte-identical cached prefix and two reps differ.
+   *
+   * Absent means every example, every rep, which is the behaviour a set of
+   * eight or fewer has always had.
+   */
+  examplesPerRep?: number
+
+  /**
+   * Gates beyond the four every character carries. See `ExpressiveGates`.
+   */
+  expressiveGates?: ExpressiveGates
+
+  /**
+   * What she has to give as she warms. See `DisclosureRung`.
+   *
+   * Absent means the disclosure gate keeps the clause it has always had.
+   */
+  disclosures?: DisclosureRung[]
+
+  /**
+   * What she says to a dead end, in her own voice (PERSONA-REALISM-REPORT R7).
+   *
+   * "Mm.", "Yeah.", "Huh." — two words at most. When he gives her nothing and
+   * the writer answers with a ten-word sentence anyway, the pipeline replaces
+   * the line with one of these rather than shipping a rescue, because the
+   * mirror cap cannot bind a first sentence (`capToBudget` always keeps one).
+   * Authored per character because "Of course." is Robin's grunt and nobody
+   * else's.
+   */
+  microReplies?: string[]
+
+  /**
+   * What her attention goes back to when he stops trying.
+   *
+   * Completes "Your attention goes back to ___." and is read ONLY on a dead
+   * end, where it replaces her `want`. On a voice arm "pulling away" has to be
+   * silence or a grunt, not a sentence about her agenda — measured on
+   * 18 September, three consecutive "Okay."s were answered with three
+   * volunteered sentences, each of them her want clause read aloud.
+   */
+  attention?: string
+
+  /**
+   * What her own agenda becomes once she is into him (report §5.2, signal 8).
+   *
+   * "The car can wait a minute." Her `want` is ungated and pulls her away from
+   * him when she is cold; at INVESTED this replaces it, because the most
+   * legible thing a warm stranger does is stop mentioning the thing she was
+   * about to leave for. One authored sentence, second person, about her own
+   * afternoon. Absent keeps the clause every character has always had.
+   */
+  wantYields?: string
+
+  /**
+   * A fact about the room that lands on the wind-down itself.
+   *
+   * Rule 3 decides the ending thirty seconds out and that moment was an
+   * instruction with nothing in the scene behind it. Robin is waiting for a car
+   * and the car never came; now it arrives exactly when she has to decide. It
+   * is prepended to the wind-down direction on the same channel, and it changes
+   * nothing about WHAT is decided — that is still `givesNumber`, and only that.
+   */
+  closingBeat?: string
+
+  /**
+   * What she has already said to this user, on earlier reps, as an opener.
+   *
+   * Resolved server-side like `memorySummary` and never accepted from a
+   * client. Compiled as a short "do not open with these again" note, because a
+   * second rep against the same character whose first line is the first line
+   * of the last rep is the loudest possible tell that nobody is there
+   * (`HUMANNESS-PLAN.md` §7.4, PERSONA-REALISM-REPORT R9).
+   */
+  previousOpeners?: string[]
 
   /**
    * What she would rather be doing, in her own scene.
@@ -746,6 +924,15 @@ export interface VoiceEventMap {
   'user.echo-rejected': { at: number; overlap: number }
   /** The character chose a genuine exit and the live scene must now close. */
   'character.exit': { at: number }
+  /**
+   * Her line opened with a laugh (PERSONA-REALISM-REPORT R3).
+   *
+   * Emitted by the one arm that renders delivery tags, and never by the other,
+   * which is fine: it feeds the laugh's rationing and the rep's telemetry and
+   * nothing that scores. The transcript itself stays tag-free on both arms, so
+   * rule 1's normalised turns are untouched.
+   */
+  'agent.expression': { at: number; laughed: boolean }
   'agent.transcript': { turn: TranscriptTurn; final: boolean }
   'session.end': { summary: SessionSummary }
   error: { error: VoiceError }

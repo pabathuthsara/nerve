@@ -21,6 +21,11 @@ import { DISCLOSURE_WORDS, type UserTurnShape } from './reciprocity'
 import { advanceExit, isDismissal, isUserFarewell, type ClosingDecision, type SceneExit } from './leaving'
 import type { UserTurnKind } from './turn-kind'
 import { personaNotes } from './persona-notes'
+import { isBareQuestion, rapportReasons, withRapport } from './rapport'
+import { particleFor, type Particle } from './particles'
+import { bandFor, bandIndex } from './bands'
+import { classifyOverreach } from './slow'
+import { CONTEMPT_INTENT } from '@/lib/data/rep-rules'
 import type { SteeringContext } from './steering'
 // B2's seam. One selector, reading `persona.track`, with dating as the default
 // branch that reaches exactly the code it reached yesterday. Nothing in
@@ -60,6 +65,44 @@ const MAX_QUESTION_SHARE = 0.4
  * apply beneath it.
  */
 const GREETING_REPLY_WORDS = 4
+
+/**
+ * Her ceiling when she did not catch what he said (PERSONA-REALISM-REPORT R8).
+ * "Sorry, what?" is two words and "Sorry, say that again?" is four.
+ */
+const UNCLEAR_REPLY_WORDS = 4
+
+/**
+ * At most one laugh in this many of her turns (R3). A laugh is the strongest
+ * interest signal a listener reads, and one every other line is a tic.
+ */
+export const LAUGH_SPACING = 4
+
+/**
+ * He has told her his name. Deliberately narrow — "I'm Alex", "my name is
+ * Alex", "call me Alex", "Alex, by the way" — because the cost of a miss is one
+ * withheld permission and the cost of a false positive is her calling him
+ * "Tired".
+ */
+const NAME_GIVEN = /\b(?:i'?m|i am|my name(?:'s| is)|call me|name'?s)\s+[A-Z][a-z]+\b|\b[A-Z][a-z]+,\s+by the way\b/
+
+/** What she did with her voice this rep, for the record. Never read back. */
+export interface ExpressionTelemetry {
+  /** Turns that opened with a laugh. */
+  laughs: number
+  /** Turns a laugh was permitted on. */
+  laughOffers: number
+  /** Turns that opened with a pre-rendered particle. */
+  particles: number
+  /** His lines the judge read as intended jokes (5.4). */
+  jokes: number
+}
+
+/** What the reply state carries about her voice this turn. */
+export interface ExpressionDecision {
+  particle: Particle | null
+  laughAllowed: boolean
+}
 
 export interface WarmthSessionOptions {
   /** The persona, or a getter for it. A getter is what the dev panel needs. */
@@ -220,6 +263,24 @@ export class WarmthSession {
    * stays byte-identical.
    */
   private lastUserKind: UserTurnKind = 'silence'
+  /** His questions in a row with nothing of his own in them (`./rapport.ts`). */
+  private hisQuestionRun = 0
+  /** He has said his name in this rep, so she may use it. */
+  private hisNameGiven = false
+  /**
+   * When he showed her contempt, on the session clock, in seconds. Read by
+   * `contemptWithin` for the number rule (W4a). Fast-layer contempt and a
+   * judged intent at or below `CONTEMPT_INTENT` both land here.
+   */
+  private readonly contemptAt: number[] = []
+  /** A slow judgement read a boundary violation (W4b). Never un-set. */
+  private boundary = false
+  /** The laugh permission for the turn about to be generated (R3). */
+  private laughThisTurn = false
+  private laughOfferedLastTurn = false
+  private turnsSinceLaugh = Number.POSITIVE_INFINITY
+  private turnsSinceParticle = Number.POSITIVE_INFINITY
+  private readonly expression: ExpressionTelemetry = { laughs: 0, laughOffers: 0, particles: 0, jokes: 0 }
 
   constructor(options: WarmthSessionOptions) {
     this.options = options
@@ -270,7 +331,132 @@ export class WarmthSession {
       exit: this.exit,
       ...(this.exit === 'present' ? {} : { closing: this.closingDecision }),
       ...this.openingBriefFlag,
+      // Both are dating-only and both are absent unless true, so a context
+      // built for the interview arm, or on a turn where neither applies, is the
+      // literal it has always been.
+      ...(this.laughThisTurn ? { laughAllowed: true } : {}),
+      ...(this.unclearLastTurn ? { unclear: true } : {}),
+      // Dating only, like the two above; the interview arm reads the context
+      // literal it always has.
+      ...(this.dating ? {
+        greeting: this.lastUserKind === 'greeting',
+        knowsHisName: this.hisNameGiven || Boolean(this.persona.userName && this.persona.memorySummary),
+      } : {}),
     }
+  }
+
+  /** The persona runs under the dating judgement. Read live, like the persona. */
+  private get dating(): boolean {
+    return this.persona.track === 'dating'
+  }
+
+  /** His last turn was misheard (R8). Dating only; see `classifyUserTurn`. */
+  private get unclearLastTurn(): boolean {
+    return this.dating && this.lastUserKind === 'unclear'
+  }
+
+  /** His last turn was a dead end. Sent to the pipeline for R7. */
+  get lastTurnDeadEnd(): boolean {
+    return this.lastUserShape?.deadEnd === true
+  }
+
+  /**
+   * A slow judgement read a boundary violation, and she is leaving
+   * (PERSONA-REALISM-REPORT W4b). Read by the rep to pass `boundaryCrossed`
+   * to `givesNumber`, the one absolute rule 3 has always reserved for this.
+   */
+  get boundaryCrossed(): boolean {
+    return this.boundary
+  }
+
+  /**
+   * He showed her contempt inside the last `windowMs` (W4a). On the session's
+   * own clock, the same one every other timestamp here uses.
+   */
+  contemptWithin(windowMs: number): boolean {
+    const now = this.options.nowSeconds()
+    return this.contemptAt.some((at) => now - at <= windowMs / 1000)
+  }
+
+  /**
+   * What her voice does on the turn about to be generated: a pre-rendered
+   * particle in front of it (R4), and whether she may open with a laugh (R3).
+   *
+   * Called ONCE per turn, by whoever reads the reply state, BEFORE the steering
+   * line is composed — the laugh permission is part of the line, and the
+   * closing hand-over, which both rules defer to, is consumed by composing it.
+   * Deciding records the decision, the way `noteSilence` does: the rationing is
+   * what makes these human, and a decision read twice is a decision made twice.
+   *
+   * Dating only. An interviewer is never handed either.
+   */
+  decideExpression(rng: () => number = this.options.rng ?? Math.random): ExpressionDecision {
+    if (!this.dating) {
+      this.laughThisTurn = false
+      return { particle: null, laughAllowed: false }
+    }
+    const warmth = this.engine.warmth
+    const closing = this.closingHandover || this.exit !== 'present'
+    const his = this.lastUserShape
+    const eligibleTurn = !this.firstExchange && !closing && his !== null && !his.deadEnd
+      && this.lastUserKind !== 'unclear' && this.lastUserKind !== 'dismissal'
+
+    const gate = this.persona.expressiveGates?.laughs
+    const laugh = eligibleTurn
+      && gate !== undefined
+      && warmth >= gate.unlocksAt
+      && bandIndex(bandFor(warmth)) >= bandIndex('OPEN')
+      && this.turnsSinceLaugh >= LAUGH_SPACING
+      && !this.laughOfferedLastTurn
+    this.laughThisTurn = laugh
+    this.laughOfferedLastTurn = laugh
+    if (laugh) this.expression.laughOffers += 1
+
+    const particle = particleFor({
+      warmth,
+      turnsSinceParticle: this.turnsSinceParticle,
+      firstExchange: this.firstExchange,
+      closing,
+      deadEnd: his?.deadEnd === true,
+      unclear: this.lastUserKind === 'unclear',
+      // Whether she may ASK this turn, as the band line itself will say it.
+      mayAsk: this.questionOpenThisTurn,
+      silent: false,
+      // A laugh and a particle are two openings; she gets one.
+    }, rng)
+    const chosen = laugh ? null : particle
+    if (chosen) {
+      this.turnsSinceParticle = 0
+      this.expression.particles += 1
+    }
+    return { particle: chosen, laughAllowed: laugh }
+  }
+
+  /**
+   * Whether the band line she is about to read lets her ask a question.
+   *
+   * The same three rules the band table states in words: never below OPEN; at
+   * OPEN only when he asked her one first ("unless he asked you one first");
+   * above it whenever the §4e quota and the reciprocity gate allow. Read by the
+   * particle rule, which must never put an "Oh." in front of her question.
+   */
+  private get questionOpenThisTurn(): boolean {
+    if (this.questionQuotaSpent()) return false
+    const band = bandFor(this.engine.warmth)
+    if (bandIndex(band) < bandIndex('OPEN')) return false
+    if (band === 'OPEN') return this.lastUserShape?.askedQuestion === true
+    return true
+  }
+
+  /**
+   * The pipeline reports that her line opened with a laugh. The permission was
+   * ours; whether she used it was hers, and only an actual laugh restarts the
+   * spacing.
+   */
+  noteExpression(expression: { laughed: boolean }): void {
+    if (!expression.laughed) return
+    this.turnsSinceLaugh = 0
+    this.expression.laughs += 1
   }
 
   directive(): string {
@@ -482,6 +668,8 @@ export class WarmthSession {
     if (this.firstExchange && this.lastUserKind === 'greeting') {
       return Math.min(band, GREETING_REPLY_WORDS)
     }
+    // She did not catch it, so there is nothing to answer at length (R8).
+    if (this.unclearLastTurn) return Math.min(band, UNCLEAR_REPLY_WORDS)
     return band
   }
 
@@ -560,6 +748,9 @@ export class WarmthSession {
       // pressure, she is broken. The dating arm never reads this — `deadEnd`
       // cannot be true on an opening turn, which already covers it there.
       opening: this.userTurnCount === 0,
+      // R7: a SECOND dead end in a row may be answered with nothing at OPEN.
+      // The dating arm reads it; the interview arm ignores it.
+      consecutiveDeadEnds: this.consecutiveDeadEnds,
     })
   }
 
@@ -571,6 +762,10 @@ export class WarmthSession {
 
   onAgentTurn(turn: TranscriptTurn): void {
     this.agentTurns.push(turn)
+    // Her turns since the last laugh and the last particle, for the rationing
+    // in `decideExpression`. Counted on turns she actually took.
+    this.turnsSinceLaugh += 1
+    this.turnsSinceParticle += 1
     const open = this.exchanges[this.exchanges.length - 1]
     if (open && open.her === null) open.her = turn.text
     // She has now said the line a committed exit is owed. The next thing the
@@ -594,7 +789,7 @@ export class WarmthSession {
     const lastAgent = this.agentTurns[this.agentTurns.length - 1]
     const gapSeconds = lastAgent ? Math.max(0, turn.t_start - lastAgent.t_end) : null
 
-    const score = scoreFast(turn, {
+    const fast = scoreFast(turn, {
       level: this.persona.level,
       // LAYER 2 reaches the scorer here. Without it every character on the
       // ladder is moved by identical arithmetic — see ./temperament.ts.
@@ -610,7 +805,33 @@ export class WarmthSession {
       // is an ANSWER when she just asked him something; it used to cost him six
       // points either way. See `./turn-kind.ts`.
       herLastTurnAsked: lastAgent?.text.trim().endsWith('?') ?? false,
+      // R8. A dating turn came from a transcriber, so a line that does not
+      // parse as English is a mishearing and scores nothing. The interview arm
+      // keeps the classification it has always had.
+      ...(this.dating ? { spoken: true } : {}),
     })
+
+    // W3, the rapport terms (`./rapport.ts`), folded into the same score under
+    // the same temperament. Dating only: they are what the speed-date
+    // literature says builds liking, and an interviewer is not being dated.
+    // A turn that tripped the contempt filter keeps only what they CHARGE —
+    // the hostility guard is a rule over the whole set, wherever the set came
+    // from.
+    const hostile = fast.reasons.some((reason) => reason.code === 'contempt')
+    const rapport = this.dating
+      ? rapportReasons(turn.text, {
+          herLast: lastAgent ?? null,
+          priorQuestionRun: this.hisQuestionRun,
+          kind: fast.kind,
+          penalisesInterview: this.penalisesInterview,
+          paidOpenQuestion: fast.reasons.some((reason) => reason.code === 'open-question'),
+          opening: this.userTurnCount === 1,
+        }).filter((reason) => !hostile || reason.points < 0)
+      : []
+    const score = withRapport(fast, rapport, this.persona.personality)
+    this.hisQuestionRun = isBareQuestion(turn.text) ? this.hisQuestionRun + 1 : 0
+    if (!this.hisNameGiven && NAME_GIVEN.test(turn.text)) this.hisNameGiven = true
+    if (this.dating && hostile) this.contemptAt.push(this.options.nowSeconds())
 
     this.engine.applyFast(score, turn.t_end, turn.text, {
       // CONTEMPT MUST NOT ARM THE REPAIR BONUS.
@@ -656,7 +877,9 @@ export class WarmthSession {
     while (this.exchanges.length > 4) this.exchanges.shift()
 
     // Evidence-driven, with a count-based floor underneath (§2a).
-    const triggers = slowScoreTriggers({
+    // A misheard turn is not sent to the judge either: it would be judging the
+    // transcriber (R8).
+    const triggers = score.kind === 'unclear' ? [] : slowScoreTriggers({
       turnIndex: this.userTurnCount,
       fastRaw: score.raw,
       wordCount: score.wordCount,
@@ -768,6 +991,24 @@ export class WarmthSession {
         Math.round(nowMs() - pending.startedMs),
         pending.turnIndex,
       )
+      if (judged.funny) this.expression.jokes += 1
+      if (!this.dating) return
+      // W4a. A judge reading real hostility counts as contempt for the number
+      // rule, whether or not the lexical filter caught the words.
+      if (judged.intent <= CONTEMPT_INTENT) this.contemptAt.push(this.options.nowSeconds())
+      // W4b. THE BOUNDARY EXIT, WIRED AT LAST.
+      //
+      // `classifyOverreach` has returned `boundary-violation` since round 10
+      // and nothing consumed it but the meter: the engine charged -15 and she
+      // carried on as though he had merely been clumsy. `HUMANNESS-PLAN.md`
+      // item 9 since 6 September. A boundary is where she goes, so it commits
+      // the SAME monotonic exit a dismissal does — one line, and the scene
+      // ends — and it takes the number off the table for good.
+      if (classifyOverreach(judged.intimacy, pending.warmthAtTurn).verdict === 'boundary-violation') {
+        this.boundary = true
+        this.exitByUser = true
+        this.commitExit('wrapping')
+      }
     })
   }
 
@@ -784,8 +1025,17 @@ export class WarmthSession {
     this.fireSlow(awaiting, null)
   }
 
-  telemetry(sessionSeconds: number): WarmthTelemetry & { steeringItemsSent: number } {
-    return { ...this.engine.telemetry(sessionSeconds), steeringItemsSent: this.steeringSent }
+  telemetry(sessionSeconds: number): WarmthTelemetry & { steeringItemsSent: number; expression: ExpressionTelemetry } {
+    return {
+      ...this.engine.telemetry(sessionSeconds),
+      steeringItemsSent: this.steeringSent,
+      expression: { ...this.expression },
+    }
+  }
+
+  /** Her author says an interview loses her (`./rapport.ts`). */
+  private get penalisesInterview(): boolean {
+    return personaNotes(this.persona).dislikes.some((line) => /\binterview/i.test(line))
   }
 
   /**

@@ -1,0 +1,74 @@
+{
+  "voiceId": "pFZP5JQG7iQjIQuC4Bku",
+  "sampleRate": 24000,
+  "persona": "maya",
+  "particles": {
+    "oh": "oh.pcm",
+    "mm": "mm.pcm",
+    "yeah": "yeah.pcm",
+    "hm": "hm.pcm",
+    "well": "well.pcm"
+  },
+  "takes": {
+    "oh": [
+      {
+        "seconds": 0.54,
+        "heard": "Oh",
+        "ok": true
+      },
+      {
+        "seconds": 0.58,
+        "heard": "哦",
+        "ok": true
+      }
+    ],
+    "mm": [
+      {
+        "seconds": 0.54,
+        "heard": "음",
+        "ok": true
+      },
+      {
+        "seconds": 0.48,
+        "heard": "음",
+        "ok": true
+      }
+    ],
+    "yeah": [
+      {
+        "seconds": 0.4,
+        "heard": "Yeah",
+        "ok": true
+      },
+      {
+        "seconds": 0.45,
+        "heard": "Yeah",
+        "ok": true
+      }
+    ],
+    "hm": [
+      {
+        "seconds": 0.49,
+        "heard": "Hmm",
+        "ok": true
+      },
+      {
+        "seconds": 0.38,
+        "heard": "Hm",
+        "ok": true
+      }
+    ],
+    "well": [
+      {
+        "seconds": 0.63,
+        "heard": "Well",
+        "ok": true
+      },
+      {
+        "seconds": 0.71,
+        "heard": "Well",
+        "ok": true
+      }
+    ]
+  }
+}

@@ -159,6 +159,70 @@ describe('ElevenLabs combined adapter', () => {
     expect(provider.getSessionId()).toBe('reserved-session')
   })
 
+  /**
+   * PERSONA-REALISM-REPORT R3, R4, R7: the reply state's new fields reach the
+   * turn request, a particle is played and recorded as the front of her turn,
+   * and a laugh the pipeline let through is reported back for rationing.
+   */
+  it('plays her particle first, tells the pipeline, and keeps it on the record', async () => {
+    const requests: Record<string, unknown>[] = []
+    const provider = new ElevenLabsVoiceProvider({
+      fetchImpl: vi.fn(async (url, init) => {
+        if (String(url).includes('/token')) return Response.json(token())
+        requests.push(JSON.parse(String(init?.body)))
+        return fullReply('[laughs] Probably not.')
+      }),
+      particleFetch: vi.fn(async (url) => String(url).endsWith('manifest.json')
+        ? Response.json({ voiceId: tess.voice.ids.elevenlabs, sampleRate: 24_000, particles: { mm: 'mm.pcm' } })
+        : new Response(new Uint8Array(24_000 * 2 * 0.3))) as unknown as typeof fetch,
+    })
+    provider.setReplyState(() => ({
+      steering: '[Seven or eight words.]', warmth: 70, laughAllowed: true, deadEnd: false,
+      particle: { id: 'mm', text: 'Mm.' },
+    }))
+    const laughs: boolean[] = []
+    provider.on('agent.expression', ({ laughed }) => laughs.push(laughed))
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    await vi.waitFor(async () => { await Promise.resolve(); expect((provider as unknown as { particles: Map<string, unknown> }).particles.size).toBe(1) })
+    final('I only read the last page first.')
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({ laughAllowed: true, particle: 'Mm.' })
+    expect(requests[0]).not.toHaveProperty('deadEnd')
+    // One player: the particle and the reply share it, so a barge-in during
+    // the particle truncates to exactly "Mm.".
+    await vi.waitFor(() => expect(hardware.players[0]?.scheduledSeconds).toBeGreaterThan(0.3))
+    expect(hardware.players).toHaveLength(1)
+    const summary = await provider.end()
+    expect(summary.turns.filter((turn) => turn.speaker === 'agent').map((turn) => turn.text))
+      .toEqual(['Mm. Probably not.'])
+    expect(laughs).toEqual([true])
+  })
+
+  it('plays no particle when this voice has none, and does not tell the pipeline it did', async () => {
+    const requests: Record<string, unknown>[] = []
+    const provider = new ElevenLabsVoiceProvider({
+      fetchImpl: vi.fn(async (url, init) => {
+        if (String(url).includes('/token')) return Response.json(token())
+        requests.push(JSON.parse(String(init?.body)))
+        return fullReply('Probably not.')
+      }),
+      particleFetch: vi.fn(async () => new Response('', { status: 404 })) as unknown as typeof fetch,
+    })
+    provider.setReplyState(() => ({ steering: '[x]', warmth: 30, deadEnd: true, particle: { id: 'hm', text: 'Hm.' } }))
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    final('Ok.')
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({ deadEnd: true })
+    expect(requests[0]).not.toHaveProperty('particle')
+    await vi.waitFor(() => expect(hardware.players).toHaveLength(1))
+    await vi.waitFor(async () => {
+      await Promise.resolve()
+      expect((provider as unknown as { turns: { speaker: string }[] }).turns.some((turn) => turn.speaker === 'agent')).toBe(true)
+    })
+    const summary = await provider.end()
+    expect(summary.turns.filter((turn) => turn.speaker === 'agent').map((turn) => turn.text)).toEqual(['Probably not.'])
+  })
+
   it('never mints or consumes a rep when microphone permission is denied', async () => {
     vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: vi.fn(async () => { throw new Error('denied') }) } })
     const fetchImpl = vi.fn()

@@ -93,6 +93,8 @@ export interface TrackJudgement {
       opening?: boolean
       turnsSinceSilence?: number
       askedDirectly?: boolean
+      /** His dead ends in a row, for the dating arm's second-dead-end rule (R7). */
+      consecutiveDeadEnds?: number
     },
   ): boolean
   /** May she offer something nobody asked for? */
@@ -128,7 +130,10 @@ const DATING: TrackJudgement = {
   sentenceCap: sentenceCapFor,
   mayAsk: mayAskFor,
   maySayNothing: (value, his, options = {}) =>
-    mayStaySilentFor(value, his, { ...(options.silentLastTurn !== undefined ? { silentLastTurn: options.silentLastTurn } : {}) }),
+    mayStaySilentFor(value, his, {
+      ...(options.silentLastTurn !== undefined ? { silentLastTurn: options.silentLastTurn } : {}),
+      ...(options.consecutiveDeadEnds !== undefined ? { consecutiveDeadEnds: options.consecutiveDeadEnds } : {}),
+    }),
   mayVolunteer: mayVolunteerFor,
   // §4e, unchanged. The number that has always been there.
   maxQuestionShare: 0.4,

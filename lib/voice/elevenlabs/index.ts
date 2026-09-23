@@ -75,6 +75,10 @@ import { TtsClient } from './tts'
 import { TurnClient } from './turn'
 import { PcmPlayer } from './player'
 import { SpokenTurn, capToBudget, sanitiseForSpeech } from './truncate'
+import { deadEndReply, enforceDeliveryTags, withoutParticle } from './shaping'
+import { loadParticles, type ParticleBank } from './particles'
+import { particleOnsetMs } from '@/lib/warmth/particles'
+import { TICKET_TTL_MS } from './turn-protocol'
 import { PipelineMeter } from './telemetry'
 import { SAMPLE_INTERVAL_MS, TurnAudibility, analyserRms } from '../audibility'
 import { PIPELINE_MODEL_ID, type MintedPipelineSession } from './mint'
@@ -89,6 +93,21 @@ export interface ElevenLabsAdapterOptions {
   turnEndpoint?: string
   creditsEndpoint?: string
   fetchImpl?: typeof fetch
+  /**
+   * How her pre-rendered particles are fetched (R4). Static files, not paid
+   * routes, so they do not go through `fetchImpl` — which counts and gates the
+   * requests that spend money. Absent means the browser's own `fetch`.
+   */
+  particleFetch?: typeof fetch
+  /**
+   * How the work done AHEAD of a turn is requested: the first-turn prewarm
+   * (L1) and the next turn's reservation (L2). Separate from `fetchImpl`
+   * because neither is a turn and neither may be mistaken for one; absent means
+   * the browser's own `fetch`, and a failure of either is simply the old path.
+   */
+  aheadFetch?: typeof fetch
+  prewarmEndpoint?: string
+  reserveEndpoint?: string
   /** Monotonic milliseconds. Injected for tests. */
   clock?: () => number
 }
@@ -148,6 +167,21 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   private replyShape: ReplyShape = DEFAULT_REPLY_SHAPE
   /** This turn's drawn onset, in ms. Null until the turn asks for one. */
   private onsetForTurn: number | null = null
+  /**
+   * Her pre-rendered particles for this voice (PERSONA-REALISM-REPORT R4).
+   * Empty until loaded, and empty for good if they are not there — a missing
+   * particle is a turn without one, never an error.
+   */
+  private particles: ParticleBank = new Map()
+  /**
+   * The next turn, reserved ahead of time (PERSONA-REALISM-REPORT L2). The id
+   * is fixed when the reservation is asked for, so the ticket names it.
+   */
+  private nextTurn: { turnId: string; ticket: string | null; receivedAt: number; pending: boolean } | null = null
+  /** This turn's reply state, for the fields the request carries. */
+  private replyExtras: { deadEnd: boolean; laughAllowed: boolean; particle: string | null } = {
+    deadEnd: false, laughAllowed: false, particle: null,
+  }
 
   private t0: number | null = null
   private userStartedAtMs: number | null = null
@@ -225,6 +259,13 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       if (context.state === 'suspended') await context.resume()
 
       this.buildOutputGraph(persona, context)
+      // Fire and forget: a particle that has not loaded by the time it is
+      // wanted is simply not played that turn.
+      void this.loadParticleBank(persona, PCM_RATES[minted.pipeline.tts.outputFormat])
+      // L1 and L2, under the count: warm her first turn and reserve it, while
+      // the 3·2·1 is still running and nobody is waiting on either.
+      this.prewarm()
+      this.prepareNextTurn()
       this.userAnalyser = this.makeAnalyser(context, context.createMediaStreamSource(mic))
 
       this.vad = new VadDetector({ silenceMs: minted.pipeline.turn.silenceMs })
@@ -544,6 +585,20 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     const steering = [direction, ...this.pendingSteering].filter(Boolean).join(' ')
     this.pendingSteering = []
 
+    // THE SMALL SOUND IN FRONT OF HER REPLY (R4). Decided by the warmth
+    // session; played only when this voice's audio is actually here, and only
+    // then reported to the pipeline — which takes the writer's own copy of it
+    // off the line. Played on the same player and the same spoken record as the
+    // reply, so what the ear heard, the transcript and a barge-in all agree.
+    const particle = state?.particle && direction.trim() ? state.particle : null
+    const particleAudio = particle ? this.particles.get(particle.id) : undefined
+    const playedParticle = particle && particleAudio ? this.playParticle(particle.text, particleAudio, spoken) : null
+    this.replyExtras = {
+      deadEnd: state?.deadEnd === true,
+      laughAllowed: state?.laughAllowed === true,
+      particle: playedParticle,
+    }
+
     try {
       const result = minted.turn && minted.sessionId
         ? await this.streamTurn(spoken, llmAbort, steering)
@@ -577,8 +632,77 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
         this.llmAbort = null
         this.ttsAbort?.abort()
         this.ttsAbort = null
+        // Her next turn, reserved now, while this one plays out and he thinks.
+        this.prepareNextTurn()
       }
     }
+  }
+
+  /* -------------------------------------------------------------- *
+   * Ahead of the turn (PERSONA-REALISM-REPORT L1, L2)
+   * -------------------------------------------------------------- */
+
+  private aheadFetcher(): typeof fetch | null {
+    return this.options.aheadFetch ?? globalThis.fetch?.bind(globalThis) ?? null
+  }
+
+  /** Whether this rep takes the ahead-of-time paths at all. */
+  private get aheadEligible(): boolean {
+    // Dating only: an interview's context carries the whole brief, which is
+    // too large to ride a ticket, and its turns were never the slow ones.
+    return !this.ended && !!this.minted?.turn && !!this.minted.sessionId && this.persona?.track === 'dating'
+  }
+
+  /** L1. Fire and forget; the route answers before it does the work. */
+  private prewarm(): void {
+    const fetcher = this.aheadFetcher()
+    if (!fetcher || !this.aheadEligible) return
+    void fetcher(this.options.prewarmEndpoint ?? '/api/voice/prewarm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: this.minted!.sessionId, personaId: this.persona!.slug }),
+    }).catch(() => undefined)
+  }
+
+  /**
+   * L2. Reserve the next turn now, so it does not pay for its own admission
+   * when he finishes speaking. At most one outstanding; an unused one is
+   * released at zero by the server the next time one is asked for.
+   */
+  private prepareNextTurn(): void {
+    const fetcher = this.aheadFetcher()
+    if (!fetcher || !this.aheadEligible) return
+    if (this.nextTurn && (this.nextTurn.pending || this.ticketFresh(this.nextTurn))) return
+    const next = { turnId: crypto.randomUUID(), ticket: null as string | null, receivedAt: 0, pending: true }
+    this.nextTurn = next
+    void fetcher(this.options.reserveEndpoint ?? '/api/voice/turn/reserve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: this.minted!.sessionId, personaId: this.persona!.slug, turnId: next.turnId,
+        history: this.historyForModel(),
+      }),
+    }).then(async (response) => {
+      if (!response.ok || response.status === 204) return
+      const body = await response.json() as { turnId?: unknown; ticket?: unknown }
+      if (body.turnId === next.turnId && typeof body.ticket === 'string') {
+        next.ticket = body.ticket
+        next.receivedAt = this.clock()
+      }
+    }).catch(() => undefined).finally(() => { next.pending = false })
+  }
+
+  /** A ticket with at least fifteen seconds of life left, by our own clock. */
+  private ticketFresh(next: { ticket: string | null; receivedAt: number }): boolean {
+    return next.ticket !== null && this.clock() - next.receivedAt < TICKET_TTL_MS - 15_000
+  }
+
+  /** Hand the next turn its ticket, once. A late or stale one is not waited for. */
+  private takeTicket(): { turnId: string; ticket: string } | null {
+    const next = this.nextTurn
+    if (!next || next.pending || !this.ticketFresh(next) || !next.ticket) return null
+    this.nextTurn = null
+    return { turnId: next.turnId, ticket: next.ticket }
   }
 
   private isCurrentResponse(spoken: SpokenTurn, abort: AbortController): boolean {
@@ -592,26 +716,42 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   ): Promise<{ exit: boolean; aborted: boolean }> {
     const minted = this.minted!
     const clips = new Map<string, { text: string; appended: boolean }>()
-    let audibleClipCount = 0
+    // A particle already on the record makes her line a continuation of it.
+    let audibleClipCount = spoken.audioSeconds > 0 ? 1 : 0
+    let laughReported = false
     const client = new TurnClient({
       endpoint: this.options.turnEndpoint ?? minted.turn!.endpoint,
       fetchImpl: this.fetchImpl,
     })
     let counted = { input: 0, output: 0, cachedInput: 0, characters: 0 }
+    // The turn reserved while her last line played, if its ticket is here and
+    // fresh. Otherwise a new id and the ordinary path, exactly as before.
+    const ahead = this.takeTicket()
     return client.stream({
       sessionId: minted.sessionId!,
-      turnId: crypto.randomUUID(),
+      turnId: ahead?.turnId ?? crypto.randomUUID(),
+      ...(ahead ? { ticket: ahead.ticket } : {}),
       personaId: this.persona!.slug,
       history: this.historyForModel(),
       steering,
       warmth: this.warmth,
       wordCap: this.replyWordCap,
       sentenceCap: this.replySentenceCap,
+      ...(this.replyExtras.laughAllowed ? { laughAllowed: true } : {}),
+      ...(this.replyExtras.deadEnd ? { deadEnd: true } : {}),
+      ...(this.replyExtras.particle ? { particle: this.replyExtras.particle } : {}),
     }, {
       onClip: (id, text) => {
         if (!this.isCurrentResponse(spoken, abort)) return
         if (clips.has(id)) throw new Error('Duplicate synthesis clip.')
         clips.set(id, { text, appended: false })
+        // Her laugh, reported so the session can ration it (R3). The clip text
+        // is what the synthesiser was actually given, after the pipeline's own
+        // enforcement, so this is a laugh that will be heard.
+        if (!laughReported && /^\s*\[laughs\]/i.test(text)) {
+          laughReported = true
+          this.emitter.emit('agent.expression', { at: this.now(), laughed: true })
+        }
       },
       onAudio: (clipId, samples, alignment) => {
         if (!this.isCurrentResponse(spoken, abort)) return
@@ -687,10 +827,26 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     // records for `audibility.ts`: written provider-neutral, wired into one
     // adapter, and four days later the arm serving every customer was the one
     // without it.
+    // And the three rules `./shaping.ts` enforces on the combined path, in the
+    // same order — the particle, the tags, the dead-end reply — so the two
+    // paths cannot answer the same turn differently (rule 1's lesson).
+    const persona = this.persona!
+    // No laugh on this path: the humour check that decides whether a permitted
+    // laugh ships lives in the combined route (`./humour.ts`), and a laugh
+    // nobody checked is the laugh at nothing it exists to prevent.
+    const shaped = enforceDeliveryTags(
+      withoutParticle(sanitiseForSpeech(result.text), this.replyExtras.particle),
+      { warmth: this.warmth },
+    )
+    const micro = this.replyExtras.deadEnd
+      ? deadEndReply(stripDeliveryTags(shaped.text), {
+          wordCap: this.replyWordCap, microReplies: persona.microReplies, pick: Math.random,
+        })
+      : null
     const spokenText = capToBudget(
-      sanitiseForSpeech(result.text),
+      micro ?? shaped.text,
       this.replyWordCap,
-      { sentences: this.replySentenceCap },
+      { sentences: this.replySentenceCap, ...(persona.track === 'dating' ? { freeLead: true } : {}) },
     )
     if (spokenText) this.enqueueSynthesis(spokenText, spoken)
     return result
@@ -804,24 +960,75 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     return `${tags[0]} ${text}`
   }
 
+  /**
+   * Load this voice's particles. Never throws; a voice nobody has rendered
+   * particles for simply has none.
+   */
+  private async loadParticleBank(persona: Persona, sampleRate: number): Promise<void> {
+    const voiceId = persona.voice.ids.elevenlabs
+    if (!voiceId || persona.track !== 'dating') return
+    try {
+      const fetcher = this.options.particleFetch ?? globalThis.fetch?.bind(globalThis)
+      if (!fetcher) return
+      this.particles = await loadParticles(voiceId, sampleRate, fetcher)
+    } catch {
+      this.particles = new Map()
+    }
+  }
+
+  /**
+   * Start her turn with a particle, a beat after he stopped (R4).
+   *
+   * Builds the turn's player with the PARTICLE'S onset rather than the reply's
+   * — the particle is her onset, so it is the sound the timing layer is about —
+   * and records it on the spoken turn so a barge-in during it truncates to
+   * exactly "Mm." and the finished turn reads "Mm. Probably not."
+   *
+   * Returns the particle's text, which the pipeline is then told, or null.
+   */
+  private playParticle(text: string, samples: Float32Array, spoken: SpokenTurn): string | null {
+    const context = this.context
+    const minted = this.minted
+    if (!context || !minted || this.player) return null
+    const elapsed = this.userStoppedAtMs === null ? 0 : this.clock() - this.userStoppedAtMs
+    const wait = Math.max(0, particleOnsetMs(Math.random) - elapsed) / 1000
+    const sampleRate = PCM_RATES[minted.pipeline.tts.outputFormat]
+    const player = this.buildPlayer(context, sampleRate, context.currentTime + wait)
+    this.player = player
+    spoken.appendUnaligned(text, samples.length / sampleRate)
+    player.enqueue(samples)
+    return text
+  }
+
   private ensurePlayer(): PcmPlayer {
     if (this.player) return this.player
     const context = this.context
     const minted = this.minted
     if (!context || !minted) throw new VoiceError('session_failed', PROVIDER, 'No audio context.')
 
-    const player = new PcmPlayer({
+    const player = this.buildPlayer(
       context,
-      sampleRate: PCM_RATES[minted.pipeline.tts.outputFormat],
-      destination: this.agentBus ?? context.destination,
+      PCM_RATES[minted.pipeline.tts.outputFormat],
       // The VAD, transcription and generation have already spent some (usually
       // all) of the personality pause. Only genuinely early audio waits.
       //
       // The target is drawn once per turn, not per player: re-rolling it here
       // would make the beat depend on how many times a player happened to be
       // built, and a distribution sampled twice is not the distribution.
-      notBefore: context.currentTime + remainingResponseDelayMs(this.replyOnsetMs(),
+      context.currentTime + remainingResponseDelayMs(this.replyOnsetMs(),
         this.userStoppedAtMs === null ? 0 : this.clock() - this.userStoppedAtMs) / 1000,
+    )
+    this.player = player
+    return player
+  }
+
+  /** One turn's player, with her first-audio bookkeeping. */
+  private buildPlayer(context: AudioContext, sampleRate: number, notBefore: number): PcmPlayer {
+    return new PcmPlayer({
+      context,
+      sampleRate,
+      destination: this.agentBus ?? context.destination,
+      notBefore,
       onFirstAudio: () => {
         const at = this.now()
         this.agentStartedAt = at
@@ -835,8 +1042,6 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
         }
       },
     })
-    this.player = player
-    return player
   }
 
   /* -------------------------------------------------------------- *

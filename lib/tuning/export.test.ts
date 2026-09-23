@@ -44,7 +44,8 @@ describe('dialsToSource', () => {
     // One line per gate, braces inline — the shape `lib/personas/*.ts` uses,
     // so the output pastes in without being reformatted first.
     const { ceiling, unlocksAt } = dialsOf('nadia').gated.flirtiness
-    expect(source).toContain(`flirtiness: { ceiling: ${ceiling}, unlocksAt: ${unlocksAt} },`)
+    // An authored `style` rides on the same line, after the numbers.
+    expect(source).toContain(`flirtiness: { ceiling: ${ceiling}, unlocksAt: ${unlocksAt}`)
   })
 
   it('quotes strings and leaves null alone', () => {

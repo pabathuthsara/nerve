@@ -29,7 +29,7 @@ import {
   type GateName,
   type Persona,
 } from '@/lib/voice/types'
-import { bandDirectiveParts, bandPermissionParts, type DirectiveContext } from './bands'
+import { bandDirectiveParts, bandFor, bandIndex, bandPermissionParts, type DirectiveContext } from './bands'
 import { postureClause, type Posture } from './affect'
 import { reciprocityClauses, type UserTurnShape } from './reciprocity'
 import { isLeaving, type ClosingDecision, type SceneExit } from './leaving'
@@ -122,6 +122,37 @@ export interface SteeringContext extends DirectiveContext {
    * `leavingClauses`.
    */
   closing?: ClosingDecision
+  /**
+   * The session permits a laugh on this turn (PERSONA-REALISM-REPORT R3).
+   *
+   * Decided by `WarmthSession.decideExpression` — gate open, warm enough, rationed
+   * to at most one laugh in four of her turns and never twice running — and
+   * ENFORCED downstream: the pipeline strips a `[laughs]` on any turn this was
+   * not true. The clause only tells her the door is open; whether his line was
+   * actually funny is hers to hear.
+   */
+  laughAllowed?: boolean
+  /**
+   * What reached us of his turn is probably a mishearing (R8). She asks him to
+   * say it again, and nothing else in the line applies.
+   */
+  unclear?: boolean
+  /**
+   * His opener was a greeting BY SHAPE (`classifyUserTurn` said so).
+   *
+   * Absent keeps the old reading — no question and no disclosure — which an
+   * audition on 23 September showed is too wide: "This stuff, um, looks
+   * complicated." is an opener with something in it, and it was answered
+   * "Hey." The session always supplies it.
+   */
+  greeting?: boolean
+  /**
+   * She knows his name: he has said it, or they have met before. Absent keeps
+   * the old behaviour. False withholds the name gate, because "You may use his
+   * name" to a woman who has not been told it produced "Sorry, you said your
+   * name?" to a man who had not.
+   */
+  knowsHisName?: boolean
 }
 
 /**
@@ -138,7 +169,19 @@ export interface SteeringContext extends DirectiveContext {
  *
  * The ceiling still binds, and binding is the point — see `assemble`.
  */
-export const STEERING_BUDGET = 420
+export const STEERING_BUDGET = 500
+
+// ── AND RAISED AGAIN, 23 SEPTEMBER (PERSONA-REALISM-REPORT §5.6, §7) ─────
+//
+// 420 to 500, for the same reason as the last raise and with the same
+// arithmetic behind it. Two things now ride the gate slots that used to carry
+// a bare permission: an authored STYLE ("You may flirt, the way you do: …")
+// and a DISCLOSURE RUNG ("Something true you could tell him, if it fits: …").
+// At 420 the rung was composed and then dropped by `assemble` on exactly the
+// turns it was earned — Cass at warmth 40 lost it every time — so the gate
+// that exists to give her something true to say gave her nothing. Gates are
+// standing orders and ride the rationed cadence, so the extra eighty
+// characters are charged on roughly one turn in four.
 
 /** At most this many personality clauses. Past two it stops being a direction. */
 const MAX_PERSONALITY_CLAUSES = 2
@@ -183,9 +226,11 @@ export function composeSteering(context: SteeringContext): string {
   // four open below 35 and could never use one. Whether she is warm enough is
   // the band's decision and the gate's own, and this line is not allowed a
   // third opinion. See `lib/warmth/reciprocity.ts`.
-  const invited = invitedThisTurn(context)
+  const unclear = context.unclear === true && !isLeaving(context.exit ?? 'present')
+  const invited = invitedThisTurn(context) && !unclear
   const leaving = isLeaving(context.exit ?? 'present')
   const greeting = bareGreeting(context)
+  const deadEnd = context.his?.deadEnd === true
   return assemble([
     // Her own band table when she has one, the shared one otherwise. The band
     // still owns reply length either way — see `BandDirectives`.
@@ -202,22 +247,43 @@ export function composeSteering(context: SteeringContext): string {
     // mood: both stored openers were a greeting followed by a concrete
     // observation lifted straight out of the deterministic mood line.
     greeting ? GREETING_CLAUSE : [],
+    // She did not catch it, and a person says so. Above the posture and the
+    // invitations because nothing else in the line has a referent: he may have
+    // said something lovely, and what reached her was not it.
+    unclear ? UNCLEAR_CLAUSE : [],
     postureClauses(context),
     repairClauses(context),
     invited ? bandPermissionParts(context.warmth, context) : [],
+    // The laugh is a permission the pipeline enforces, rationed by the session
+    // rather than by `includeStanding` — see `SteeringContext.laughAllowed`.
+    // Placed beside the band's invitation because it is one: something she may
+    // do this turn, never something she must.
+    context.laughAllowed && invited && !leaving ? LAUGH_CLAUSE : [],
     // The want is a standing order and a permission to DRIVE, so it rides the
     // same two gates the others do — with one carve-out kept deliberately: it
     // STILL ships on an ordinary dead end mid-rep, because an agenda pulling
     // her away from a man who has given her nothing is exactly right there.
     // What it must not do is fill her very first line to a stranger who has
     // said hello, or argue with an exit she has already committed to.
-    standing && !greeting && !leaving ? wantClauses(context.persona, context.warmth) : [],
+    // ON A DEAD END THE WANT BECOMES WHERE HER ATTENTION GOES
+    // (PERSONA-REALISM-REPORT R7). The carve-out above was right that an
+    // agenda pulling her away from a man who has given her nothing is exactly
+    // the thing to say — and wrong about how it is said. On a voice arm she
+    // voiced it: three "Okay."s were answered with three sentences about the
+    // paintings. Turning away is a grunt or nothing, so on a dead end her
+    // attention goes back to her own afternoon, and it is not a thought to read
+    // aloud. Ships whenever the want would, and in its place.
+    standing && !greeting && !leaving && !unclear
+      ? (deadEnd && context.persona.attention ? attentionClauses(context.persona) : wantClauses(context.persona, context.warmth))
+      : [],
     personalityClauses(context.persona, context.warmth),
     // The gates are. "You may start a topic" and "You may use his name" are
     // permissions to drive, same as the band's invitation, and a line that
     // says both "match him, do not fill the gap" and "start a topic" is the
     // third answer nobody asked for.
-    standing && invited && !leaving ? gateClauses(context.persona, context.warmth) : [],
+    standing && invited && !leaving
+      ? gateClauses(context.persona, context.warmth, context.knowsHisName === false ? { withoutName: true } : {})
+      : [],
   ])
 }
 
@@ -236,6 +302,7 @@ export function composeSteering(context: SteeringContext): string {
 export function bareGreeting(context: SteeringContext): boolean {
   if (!context.firstExchange) return false
   if (!context.his) return false
+  if (context.greeting !== undefined) return context.greeting
   return !context.his.askedQuestion && !context.his.disclosed
 }
 
@@ -251,6 +318,37 @@ export function bareGreeting(context: SteeringContext): boolean {
 const GREETING_CLAUSE = [
   'He has only said hello. Say hello back and nothing else yet.',
 ]
+
+/**
+ * What a person does with a line she did not catch (R8). A shape, not a
+ * script: "Sorry?", "Sorry, what?" and "Say that again?" are all hers to pick.
+ * The contract's clarification rule already forbids a bare "What?".
+ */
+const UNCLEAR_CLAUSE = [
+  'You did not catch what he said. Ask him to say it again, briefly, the way anyone would.',
+]
+
+/**
+ * The laugh, when the session has opened it (R3). "Actually funny" is the
+ * load-bearing half: a character who laughs at everything is laughing at
+ * nothing, and the rationing below her only bounds how often.
+ */
+const LAUGH_CLAUSE = [
+  'If something he just said is actually funny, you may open with [laughs]. Only then.',
+]
+
+/**
+ * Where her attention goes when he has given her nothing (R7).
+ *
+ * Replaces the want on a dead end rather than joining it — two clauses about
+ * her own afternoon on the turn she is least interested in him is the want
+ * performed twice.
+ */
+export function attentionClauses(persona: Persona): string[] {
+  const attention = persona.attention?.trim()
+  if (!attention) return []
+  return [`Your attention goes back to ${attention}. A word or two, if anything.`]
+}
 
 /**
  * She is going, and this is the only thing she needs to be told.
@@ -412,6 +510,11 @@ export function wantClauses(persona: Persona, warmth: number): string[] {
 
   if (warmth < 20) return [`You would rather be ${want}, and it shows.`]
   if (warmth < 60) return [`You would still rather be ${want}. You are not going yet.`]
+  // THE AGENDA YIELDS (PERSONA-REALISM-REPORT §5.2). At INVESTED the thing she
+  // was going to leave for stops being mentioned at all, when her author has
+  // said how; a gain the user can hear rather than read off a meter.
+  const yields = persona.wantYields?.trim()
+  if (yields && bandFor(warmth) === 'INVESTED') return [yields]
   return [`You would rather be ${want}. Bring him into it.`]
 }
 
@@ -502,38 +605,94 @@ export const EXPRESSION_CLAUSE: Record<Persona['personality']['expression'], str
  * ones the model has not been told about on many previous turns, and they are
  * what the user just earned.
  */
-export function gateClauses(persona: Persona, warmth: number): string[] {
-  const open = unlockedGates(persona.gated, warmth)
+export function gateClauses(persona: Persona, warmth: number, options: { withoutName?: boolean } = {}): string[] {
+  // The four every character carries, and `teases` when her author gave her
+  // one (`ExpressiveGates`). `laughs` is NOT ranked here: it is a per-turn
+  // permission the session rations and the pipeline enforces, and it rides
+  // `LAUGH_CLAUSE` rather than competing for a gate slot.
+  const open: Array<{ name: GateName | 'teases'; unlocksAt: number }> = [
+    ...unlockedGates(persona.gated, warmth)
+      .filter((name) => !(options.withoutName && name === 'usesYourName'))
+      .map((name) => ({ name, unlocksAt: persona.gated[name].unlocksAt })),
+    ...(persona.expressiveGates?.teases && warmth >= persona.expressiveGates.teases.unlocksAt
+      ? [{ name: 'teases' as const, unlocksAt: persona.expressiveGates.teases.unlocksAt }]
+      : []),
+  ]
   if (open.length === 0) return []
 
-  const ranked = [...open].sort(
-    (a, b) => persona.gated[b].unlocksAt - persona.gated[a].unlocksAt,
-  )
+  const ranked = [...open].sort((a, b) => b.unlocksAt - a.unlocksAt)
 
   return ranked
     .slice(0, MAX_GATE_CLAUSES)
-    .map((name) => gateText(persona, name))
+    .map(({ name }) => gateText(persona, name, warmth))
     .filter((text): text is string => text !== null)
 }
 
-function gateText(persona: Persona, name: GateName): string | null {
+/**
+ * "the way you do: ___", when her author said how (`GateOnly.style`).
+ *
+ * The permission and the threshold are unchanged; this only says HOW she does
+ * the thing, so "You may flirt." stops being the same sentence from a sincere
+ * vet nurse and a dry illustrator.
+ */
+function styled(base: string, style: string | undefined): string {
+  const how = style?.trim()
+  return how ? `${base.replace(/\.$/, '')}, the way you do: ${how}.` : base
+}
+
+/**
+ * The rung of her disclosure ladder this warmth has reached, if she has one.
+ *
+ * Read off the SAME band table as everything else, so the deepest thing she
+ * has is handed to her only once she is warm enough to say it. See
+ * `DisclosureRung`.
+ */
+export function disclosureFor(persona: Persona, warmth: number): string | null {
+  const ladder = persona.disclosures
+  if (!ladder || ladder.length === 0) return null
+  const reached = bandIndex(bandFor(warmth))
+  let best: string | null = null
+  let bestIndex = -1
+  for (const rung of ladder) {
+    const index = bandIndex(rung.band)
+    if (index <= reached && index > bestIndex) {
+      best = rung.text.trim()
+      bestIndex = index
+    }
+  }
+  return best
+}
+
+function gateText(persona: Persona, name: GateName | 'teases', warmth: number): string | null {
+  if (name === 'teases') {
+    return styled('You may tease him a little.', persona.expressiveGates?.teases?.style)
+  }
   const gate = persona.gated[name]
   switch (name) {
     case 'flirtiness': {
       const ceiling = 'ceiling' in gate ? gate.ceiling : 0
       // An unlocked behaviour with a ceiling of zero is unlocked in name only.
       if (ceiling <= 0) return null
-      return ceiling >= 50 ? 'You may flirt.' : 'You may flirt, barely.'
+      return styled(ceiling >= 50 ? 'You may flirt.' : 'You may flirt, barely.', gate.style)
     }
     case 'personalDisclosure': {
       const ceiling = 'ceiling' in gate ? gate.ceiling : 0
       if (ceiling <= 0) return null
-      return ceiling >= 50
-        ? 'You may say something real about your life.'
-        : 'One small true thing about yourself, no more.'
+      // THE LADDER, when she has one. The gate used to open onto a sentence
+      // with nothing behind it — "say something real about your life" to a
+      // woman whose contract held a job and a sibling. Now it opens onto the
+      // true thing this warmth has reached, and she may use it or not.
+      const rung = disclosureFor(persona, warmth)
+      if (rung) return `You could tell him, if it fits: ${rung}`
+      return styled(
+        ceiling >= 50
+          ? 'You may say something real about your life.'
+          : 'One small true thing about yourself, no more.',
+        gate.style,
+      )
     }
     case 'initiatesTopics':
-      return 'You may start a topic.'
+      return styled('You may start a topic.', gate.style)
     case 'usesYourName':
       // "MAY", ONCE, AND NOT AGAIN.
       //

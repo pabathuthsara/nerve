@@ -30,6 +30,7 @@ import {
 import type { PersonaCompiler } from '../provider'
 import { compileInstructions } from '../openai/persona'
 import { paceFor } from '@/lib/warmth/timing'
+import { bandFor, type WarmthBand } from '@/lib/warmth/bands'
 import {
   resolvePipelineConfig,
   ttsModelSpec,
@@ -220,8 +221,70 @@ export const STABILITY_BY_EXPRESSION: Record<Persona['personality']['expression'
   playful: 0.4,
 }
 
+/**
+ * Where stability sits between her cold end and Natural, per band.
+ *
+ * ── STABILITY FOLLOWS THE BAND (PERSONA-REALISM-REPORT R2) ──────────────
+ *
+ * `ELEVENLABS_STABILITY` is 0.85 in production and it used to win outright for
+ * every dating turn, so her voice was held near v3's "Robust" for the whole rep
+ * — which the vendor's own guide says is "less responsive to directional
+ * prompts". It stayed flat at INVESTED. Nobody could HEAR her warm up, which is
+ * the single most legible thing a listener reads.
+ *
+ * The weapon this file describes above is right when she is cold: a stranger
+ * who warms up on her own between turns is a broken exposure exercise, and a
+ * high stability stops it. It is wrong once she HAS warmed, because then the
+ * flatness is fighting the meter instead of enforcing it. So stability now
+ * follows the band and not her whim — the same band table that owns everything
+ * else — and she still cannot warm up on her own, because her voice moves only
+ * when the meter does.
+ *
+ * The environment dial keeps its job as the COLD END of the ramp rather than a
+ * flat override. 1 is the cold end and 0 is Natural (0.5, the vendor's named
+ * point); the table in the report is this ramp at a cold end of 0.9:
+ *
+ *   HOSTILE, CLOSED   0.9      GUARDED 0.8      OPEN 0.65      ENGAGED+ 0.5
+ *
+ * The two ends are the vendor's named points. The two middles are decimals,
+ * and the 7 September listening test could not tell intermediate decimals
+ * apart from run-to-run variance, so they are OWED AN EAR (report §4, R2).
+ */
+export const STABILITY_RAMP: Record<WarmthBand, number> = {
+  HOSTILE: 1,
+  CLOSED: 1,
+  GUARDED: 0.75,
+  OPEN: 0.375,
+  ENGAGED: 0,
+  INVESTED: 0,
+}
+
+/** v3's documented "Natural", the warm end of every dating ramp. */
+export const NATURAL_STABILITY = 0.5
+
+/**
+ * Her stability at this warmth, for the dating arm.
+ *
+ * `coldEnd` is what the compiler resolved — the env dial when it is set, her
+ * expression's value otherwise. A cold end already at or below Natural (a
+ * `playful` character with no env dial, 0.4) is a character who is never held
+ * flat, and she stays exactly where she was: the ramp only ever LOWERS
+ * stability toward Natural, never raises it.
+ *
+ * A persona's `voice.stabilityByBand` is casting and wins where it speaks.
+ */
+export function stabilityForWarmth(persona: Persona, coldEnd: number, warmth: number): number {
+  if (persona.track !== 'dating') return coldEnd
+  const band = bandFor(warmth)
+  const authored = persona.voice.stabilityByBand?.[band]
+  if (authored !== undefined && Number.isFinite(authored)) return clamp(authored, 0, 1)
+  const warmEnd = Math.min(coldEnd, NATURAL_STABILITY)
+  return Math.round((warmEnd + (coldEnd - warmEnd) * STABILITY_RAMP[band]) * 1000) / 1000
+}
+
 /** Delivery may lean with interest, but the cast voice and expression never
- *  change. Stability remains the authored (or explicitly auditioned) baseline.
+ *  change. Stability follows the band on the dating arm (`stabilityForWarmth`)
+ *  and stays the authored baseline everywhere else.
  *  Three small pace bands avoid a different voice setting on every meter tick.
  *
  *  **`speed` IS INERT ON `eleven_v3_conversational`, WHICH IS WHAT SHIPS.**
@@ -242,7 +305,7 @@ export function deliveryFor(
   const paceBand = interest < 30 ? 15 : interest < 65 ? 40 : 70
   return {
     settings: {
-      stability: compiled.tts.stability,
+      stability: stabilityForWarmth(persona, compiled.tts.stability, interest),
       similarity_boost: compiled.tts.similarity_boost,
       speed: clamp(paceFor(compiled.tts.speed, paceBand), 0.7, 1.2),
     },
@@ -296,7 +359,15 @@ export class ElevenLabsPersonaCompiler implements PersonaCompiler<ElevenLabsPipe
       'Reply with spoken words only. No stage directions, no asterisks, no markdown, no emoji.',
       ...(spec.supportsAudioTags
         ? [
-            'You may open a reply with at most one bracketed delivery tag such as [flat] or [distracted] when it genuinely fits. Never invent tags and never use more than one.',
+            persona.track === 'dating'
+              // THE LIST THE PIPELINE ENFORCES, named here so she is not told
+              // one thing and held to another (`./shaping.ts`). A sigh or a
+              // breath out is the texture a person has and a model never
+              // offers; the laugh is gated per turn, because a character who
+              // laughs at everything is not amused by anything. Dating only:
+              // the other tracks read the line they always have.
+              ? 'You may open a reply with at most one bracketed delivery tag, such as [sighs], [exhales] or [curious], when it genuinely fits. Never [laughs] unless the direction in brackets says you may. Never invent tags and never use more than one.'
+              : 'You may open a reply with at most one bracketed delivery tag such as [flat] or [distracted] when it genuinely fits. Never invent tags and never use more than one.',
           ]
         : ['Never write anything in square brackets.']),
     ].join('\n')

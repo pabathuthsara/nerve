@@ -19,7 +19,9 @@ describe('shared customer and preview steering', () => {
     const fresh = read()
     expect(fresh.warmth).toBeGreaterThan(32)
     expect(fresh.steering).toContain('Straight, no irony.')
-    expect(on).not.toHaveBeenCalled()
+    // The one subscription a stateless provider gets: her laugh, reported back
+    // so it can be rationed (PERSONA-REALISM-REPORT R3). Nothing that steers.
+    expect(on.mock.calls.map(([event]) => event)).toEqual(['agent.expression'])
     expect(reinforce).not.toHaveBeenCalled()
     session.dispose()
   })

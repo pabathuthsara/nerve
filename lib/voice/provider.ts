@@ -56,6 +56,23 @@ export interface ReplyState {
    * `mayStaySilentFor`.
    */
   silent?: boolean
+  /**
+   * His last turn was a dead end (PERSONA-REALISM-REPORT R7). The pipeline then
+   * replaces a first sentence that is a rescue with one of her own micro-replies.
+   */
+  deadEnd?: boolean
+  /**
+   * She may open with a laugh this turn (R3). Decided and rationed by the
+   * warmth session; ENFORCED by the pipeline, which strips a laugh on any turn
+   * this is not true.
+   */
+  laughAllowed?: boolean
+  /**
+   * The pre-rendered particle to play in front of her reply (R4), if any. The
+   * adapter plays it only when it has the audio for this voice, and only then
+   * tells the pipeline, which takes the writer's own copy off the line.
+   */
+  particle?: { id: string; text: string } | null
 }
 
 export interface VoiceProvider {

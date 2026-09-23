@@ -17,6 +17,8 @@ import 'server-only'
 
 import { supabaseAdmin } from './admin'
 import { startSteps } from '@/lib/data/start-funnel'
+import { latencySummary, rungRows, type LatencySummary, type RepSample, type RungRow } from '@/lib/data/rep-latency'
+import { DATING_PERSONAS } from '@/lib/personas'
 
 export interface Overview {
   accounts: number
@@ -303,4 +305,62 @@ export async function logAdminAction(input: {
 function clamp(value: number, low: number, high: number): number {
   if (!Number.isFinite(value)) return low
   return Math.min(high, Math.max(low, Math.round(value)))
+}
+
+export interface RepLatency {
+  days: number
+  overall: LatencySummary
+  rungs: RungRow[]
+}
+
+const EMPTY_LATENCY = (days: number): RepLatency => ({
+  days,
+  overall: { reps: 0, replyGapP50: null, replyGapP90: null, firstReplyP50: null, firstReplyP90: null, agentTurnsPerRep: null },
+  rungs: [],
+})
+
+/** Enough reps to read a median off, few enough to pull in one round trip. */
+const LATENCY_SAMPLE = 400
+
+/**
+ * How long she takes to answer, how many turns a rep delivers, and what that
+ * does to the ladder, per rung (PERSONA-REALISM-REPORT L8, W1).
+ *
+ * Two reads rather than an RPC, because the arithmetic lives in
+ * `lib/data/rep-latency.ts` where it is tested, and a migration for a
+ * dashboard read would be a schema change nobody needs. Dating reps only:
+ * the report's numbers are about the dating arm and an interview's turns are
+ * a different length on purpose.
+ */
+export async function adminRepLatency(days = 14): Promise<RepLatency> {
+  try {
+    const admin = supabaseAdmin()
+    const since = new Date(Date.now() - days * 86_400_000).toISOString()
+    const { data: sessions, error } = await admin
+      .from('sessions')
+      .select('id, persona_slug, peak_warmth, duration_s')
+      .eq('track', 'dating')
+      .gte('started_at', since)
+      .order('started_at', { ascending: false })
+      .limit(LATENCY_SAMPLE)
+    if (error || !sessions || sessions.length === 0) return EMPTY_LATENCY(days)
+    const { data: transcripts } = await admin
+      .from('transcripts')
+      .select('session_id, turns')
+      .in('session_id', sessions.map((row) => row.id))
+    const turnsById = new Map((transcripts ?? []).map((row) => [row.session_id, row.turns]))
+    const samples: RepSample[] = sessions.map((row) => ({
+      personaSlug: row.persona_slug,
+      peakWarmth: row.peak_warmth,
+      durationSeconds: row.duration_s,
+      turns: Array.isArray(turnsById.get(row.id)) ? (turnsById.get(row.id) as unknown as RepSample['turns']) : [],
+    }))
+    return {
+      days,
+      overall: latencySummary(samples),
+      rungs: rungRows(samples, Object.values(DATING_PERSONAS).sort((a, b) => a.level - b.level).map((persona) => persona.slug)),
+    }
+  } catch {
+    return EMPTY_LATENCY(days)
+  }
 }

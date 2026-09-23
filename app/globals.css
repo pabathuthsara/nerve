@@ -2908,6 +2908,7 @@ a.admin-chip { text-decoration: none; }
 .admin-chart__axis { display: flex; justify-content: space-between; gap: 10px; color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 10px; letter-spacing: .06em; }
 
 .admin-readout--top .admin-readout__row { grid-template-columns: minmax(0, 1fr) 5rem 5rem; }
+.admin-readout--latency .admin-readout__row { grid-template-columns: minmax(0, 1fr) repeat(6, minmax(3.2rem, 4.5rem)); }
 .admin-readout--audit .admin-readout__row { grid-template-columns: 6rem minmax(0, 1.4fr) minmax(0, 1fr) 6rem; }
 .admin-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

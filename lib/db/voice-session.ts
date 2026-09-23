@@ -224,6 +224,9 @@ function personaContextFrom(value: Json | undefined): PersonaContext {
     ...(typeof raw?.memorySummary === 'string' ? { memorySummary: raw.memorySummary } : {}),
     ...(typeof raw?.userName === 'string' ? { userName: raw.userName } : {}),
     ...(typeof raw?.interviewBrief === 'string' ? { interviewBrief: raw.interviewBrief } : {}),
+    ...(Array.isArray(raw?.previousOpeners)
+      ? { previousOpeners: raw.previousOpeners.filter((line): line is string => typeof line === 'string').slice(0, 4) }
+      : {}),
   }
 }
 
@@ -270,6 +273,99 @@ export async function reserveVoiceOperation(input: {
       maxCostUsd: input.maxCostUsd, context: personaContextFrom(row.context), expiresAt: row.expires_at,
     } }
   } catch { return UNAVAILABLE }
+}
+
+/**
+ * Claim a turn that was reserved ahead of time (PERSONA-REALISM-REPORT L2).
+ *
+ * One conditional update and no new schema: the reservation row already
+ * exists, `metadata` is `{}` until settlement overwrites it, and the claim
+ * stamps `claimedAt` only where the row is still `reserved`, belongs to this
+ * user and has never been claimed. Exactly one caller can win, so a replayed
+ * ticket gets `false` and its turn is aborted before any synthesis is bought.
+ *
+ * Fails CLOSED, unlike `maySpend`: an unreadable claim is a refused claim,
+ * because the only thing it can cost is the ordinary path on the next try.
+ */
+export async function claimVoiceOperation(input: {
+  userId: string
+  sessionId: string
+  operationId: string
+}): Promise<boolean> {
+  try {
+    const { data, error } = await supabaseAdmin()
+      .from('voice_operations')
+      .update({ metadata: { prereserved: 'true', claimedAt: new Date().toISOString(), source: 'turn-ticket' } })
+      .eq('session_id', input.sessionId)
+      .eq('operation_id', input.operationId)
+      .eq('user_id', input.userId)
+      .eq('kind', 'turn')
+      .eq('state', 'reserved')
+      .filter('metadata->>claimedAt', 'is', null)
+      .select('operation_id')
+    return !error && Array.isArray(data) && data.length === 1
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Release the turns that were reserved ahead of time and never asked for.
+ *
+ * `voice_operation_settle` reads a null cost as the whole reservation — rule
+ * 18, because an abort must not buy free work. A reservation nobody CLAIMED
+ * did no work at all: no request reached the writer or the synthesiser, which
+ * is exactly what the missing `claimedAt` records. Those, and only those,
+ * settle at zero when the rep ends. A claimed turn that never settled keeps
+ * its reservation, as every held turn always has.
+ */
+export async function releaseUnclaimedTurns(input: {
+  userId: string
+  sessionId: string
+}): Promise<UsageWriteResult> {
+  let operationIds: string[]
+  try {
+    const { data, error } = await supabaseAdmin()
+      .from('voice_operations')
+      .select('operation_id')
+      .eq('session_id', input.sessionId)
+      .eq('user_id', input.userId)
+      .eq('kind', 'turn')
+      .eq('state', 'reserved')
+      .filter('metadata->>claimedAt', 'is', null)
+      .filter('metadata->>prereserved', 'eq', 'true')
+    if (error) return { ok: false, message: 'Usage remains reserved until reconciliation.' }
+    operationIds = (data ?? []).map((row) => row.operation_id)
+  } catch {
+    return { ok: false, message: 'Usage remains reserved until reconciliation.' }
+  }
+  let result: UsageWriteResult = { ok: true }
+  for (const operationId of operationIds) {
+    const settled = await settleVoiceOperation({
+      userId: input.userId, sessionId: input.sessionId, operationId,
+      costUsd: 0, status: 'aborted', resources: { llmInputTokens: 0, llmOutputTokens: 0, ttsCharacters: 0 },
+      metadata: { source: 'turn-ticket', released: 'never-claimed' },
+    })
+    if (!settled.ok) result = settled
+  }
+  return result
+}
+
+/**
+ * Mark a reservation as made AHEAD of its turn, so `releaseUnclaimedTurns`
+ * can tell it from an ordinary one that is merely still in flight. Best-effort:
+ * a mark that fails leaves the reservation held, which is the old behaviour.
+ */
+export async function markPrereserved(input: { userId: string; sessionId: string; operationId: string }): Promise<void> {
+  try {
+    await supabaseAdmin()
+      .from('voice_operations')
+      .update({ metadata: { prereserved: 'true' } })
+      .eq('session_id', input.sessionId)
+      .eq('operation_id', input.operationId)
+      .eq('user_id', input.userId)
+      .eq('state', 'reserved')
+  } catch { /* Held, as every reservation always was. */ }
 }
 
 export interface UsageWriteResult { ok: boolean; message?: string; duplicate?: boolean; costUsd?: number }

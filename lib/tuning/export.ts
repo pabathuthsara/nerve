@@ -67,8 +67,11 @@ function block(record: Record<string, unknown>, indent: string): string {
 function gatesBlock(gated: Gated, indent: string): string {
   return Object.entries(gated)
     .map(([key, gate]) => {
-      const inner = Object.entries(gate as Record<string, number>)
-        .map(([field, value]) => `${field}: ${num(value)}`)
+      // A gate may carry an authored `style` string (PERSONA-REALISM-REPORT
+      // §5.6) beside its numbers. It is copied through as written, never
+      // edited here — the panel tunes dials, not prose.
+      const inner = Object.entries(gate as Record<string, unknown>)
+        .map(([field, value]) => `${field}: ${formatScalar(value)}`)
         .join(', ')
       return `${indent}${key}: { ${inner} },`
     })

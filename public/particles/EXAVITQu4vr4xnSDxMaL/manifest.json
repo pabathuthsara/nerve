@@ -1,0 +1,74 @@
+{
+  "voiceId": "EXAVITQu4vr4xnSDxMaL",
+  "sampleRate": 24000,
+  "persona": "robin",
+  "particles": {
+    "oh": "oh.pcm",
+    "mm": "mm.pcm",
+    "yeah": "yeah.pcm",
+    "hm": "hm.pcm",
+    "well": "well.pcm"
+  },
+  "takes": {
+    "oh": [
+      {
+        "seconds": 0.62,
+        "heard": "哦",
+        "ok": true
+      },
+      {
+        "seconds": 0.71,
+        "heard": "哦",
+        "ok": true
+      }
+    ],
+    "mm": [
+      {
+        "seconds": 0.56,
+        "heard": "음",
+        "ok": true
+      },
+      {
+        "seconds": 0.28,
+        "heard": "Hm",
+        "ok": true
+      }
+    ],
+    "yeah": [
+      {
+        "seconds": 0.35,
+        "heard": "Yeah",
+        "ok": true
+      },
+      {
+        "seconds": 0.37,
+        "heard": "Yeah",
+        "ok": true
+      }
+    ],
+    "hm": [
+      {
+        "seconds": 0.21,
+        "heard": "Hm",
+        "ok": true
+      },
+      {
+        "seconds": 0.21,
+        "heard": "Hm",
+        "ok": true
+      }
+    ],
+    "well": [
+      {
+        "seconds": 0.55,
+        "heard": "Well",
+        "ok": true
+      },
+      {
+        "seconds": 0.6,
+        "heard": "Well",
+        "ok": true
+      }
+    ]
+  }
+}

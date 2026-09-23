@@ -31,6 +31,37 @@ export interface TurnRequest {
    * was enforced.
    */
   sentenceCap?: number
+  /**
+   * The session permitted a laugh on this turn (R3, `WarmthSession.decideExpression`).
+   *
+   * A permission the pipeline ENFORCES: `enforceDeliveryTags` removes a
+   * `[laughs]` the writer produced on a turn this is not true, however funny
+   * the writer thought he was. Absent is false, which is the safe direction —
+   * an unpermitted laugh is a character laughing at nothing.
+   */
+  laughAllowed?: boolean
+  /**
+   * His last turn was a dead end (R7). The pipeline then replaces a first
+   * sentence that is a rescue with one of her authored micro-replies
+   * (`deadEndReply`). Absent is false.
+   */
+  deadEnd?: boolean
+  /**
+   * The turn-initial particle already playing in the browser (R4), e.g. "Mm."
+   *
+   * Sent so the pipeline can take the writer's own copy of it off the front of
+   * the line before synthesis — said twice it is a stutter — and so the stored
+   * turn is what the ear heard: the particle and then the line. A string the
+   * browser chooses, from a list it cannot extend: `parseTurnRequest` refuses
+   * anything that is not one of `PARTICLE_TEXTS`.
+   */
+  particle?: string
+  /**
+   * Proof this turn was reserved ahead of time (PERSONA-REALISM-REPORT L2).
+   * See `./ticket.ts`. Absent, or anything that does not verify, is the
+   * ordinary path.
+   */
+  ticket?: string
 }
 
 export type TurnTimingStage = 'llmFirstTokenMs' | 'llmCompleteMs' | 'ttsFirstByteMs'
@@ -67,3 +98,14 @@ export const MAX_REQUESTED_WORD_CAP = 90
 
 /** Transport bound on the sentence ceiling, for the same reason. */
 export const MAX_REQUESTED_SENTENCE_CAP = 8
+
+/**
+ * How long a turn ticket may wait for its turn (PERSONA-REALISM-REPORT L2).
+ *
+ * A turn is reserved while her previous line plays and his next one is being
+ * spoken, which is seconds. Two minutes covers a slow thinker; anything older
+ * is a ticket nobody should still be holding, and the turn simply takes the
+ * ordinary path. Here rather than in `./ticket.ts` so the browser can read it
+ * without bundling the module that signs.
+ */
+export const TICKET_TTL_MS = 120_000

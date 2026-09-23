@@ -67,29 +67,55 @@ export interface ReplyShape {
 export const DEFAULT_REPLY_SHAPE: ReplyShape = { posture: 'level', turnKind: 'ordinary' }
 
 /**
- * Target onset per band, in milliseconds from the user finishing.
+ * How long the pipeline itself takes, at best, from him finishing to her
+ * first sound (PERSONA-REALISM-REPORT R6).
  *
- * The numbers want tuning against real reps; the STRUCTURE is the point. Read
- * the right-hand column out loud — that is what each row is for.
+ * ── WHY THE TABLE BELOW IS OFFSETS NOW ──────────────────────────────────
  *
- *   HOSTILE   900–1400  I am not going to make this easy
- *   CLOSED    700–1100  dispreferred, audibly
- *   GUARDED   500–900   polite reluctance
- *   OPEN      350–650   ordinary
- *   ENGAGED   200–400   engaged, ready
- *   INVESTED  120–280   I was already going to say something
+ * The onsets were authored as ABSOLUTE times from the user finishing —
+ * INVESTED 120-280ms, HOSTILE 900-1400ms — against a pipeline that measured
+ * ~3.4 s median (report §1.1). Every target was therefore already spent by the
+ * time audio existed, `remainingResponseDelayMs` returned zero on essentially
+ * every turn, and the fifth layer was inert: she was equally slow on every
+ * rung, at every warmth, and every line read as "I don't want to" (Stivers et
+ * al. 2009 — gaps past ~700ms are decoded as a dispreferred answer).
+ *
+ * Re-expressed as offsets ABOVE the floor the pipeline can actually reach, the
+ * warm bands play at the floor and the cold bands are held 0.5-1.2 s longer —
+ * a spread a listener can hear the moment the latency work lands, and exactly
+ * zero added delay until it does (a target below the elapsed time adds
+ * nothing). **The floor is an estimate owed a measurement**: re-measure the
+ * first-audio p50 in production after the latency items ship (report L8) and
+ * set it here. Too low and the cold bands are merely slow; too high and the
+ * warm bands are artificially held — so err low.
+ */
+export const RESPONSE_FLOOR_MS = 1000
+
+/**
+ * Target onset per band, as an offset above `RESPONSE_FLOOR_MS`.
+ *
+ * The numbers are the report's R6 table as centres; the STRUCTURE is the point.
+ * Read the right-hand column out loud — that is what each row is for.
+ *
+ *   HOSTILE   +900–1500   I am not going to make this easy
+ *   CLOSED    +600–1000   dispreferred, audibly
+ *   GUARDED   +350–650    polite reluctance
+ *   OPEN      +150–350    ordinary
+ *   ENGAGED   +50–200     engaged, ready
+ *   INVESTED  +0–100      I was already going to say something
  *
  * The width of each row is also its spread: the cold bands are wide because
  * reluctance is erratic, and the warm ones are narrow because somebody who has
- * decided to answer answers.
+ * decided to answer answers. `MAX_RESPONSE_DELAY_MS` still caps the sum, so
+ * HOSTILE tops out at two seconds rather than at the floor plus 1.5.
  */
 const BAND_ONSET: Record<WarmthBand, { low: number; high: number }> = {
-  HOSTILE: { low: 900, high: 1400 },
-  CLOSED: { low: 700, high: 1100 },
-  GUARDED: { low: 500, high: 900 },
-  OPEN: { low: 350, high: 650 },
-  ENGAGED: { low: 200, high: 400 },
-  INVESTED: { low: 120, high: 280 },
+  HOSTILE: { low: 900, high: 1500 },
+  CLOSED: { low: 600, high: 1000 },
+  GUARDED: { low: 350, high: 650 },
+  OPEN: { low: 150, high: 350 },
+  ENGAGED: { low: 50, high: 200 },
+  INVESTED: { low: 0, high: 100 },
 }
 
 /**
@@ -183,7 +209,8 @@ export function responseDelayFor(
   // The slower of the two rows wins, so a posture can only ever hold her back.
   const timedAs = floor && BAND_ONSET[floor].low > BAND_ONSET[band].low ? floor : band
 
-  const onset = draw(BAND_ONSET[timedAs], rng)
+  const onset = RESPONSE_FLOOR_MS
+    + draw(BAND_ONSET[timedAs], rng)
     + draw(TURN_KIND_HESITATION[shape.turnKind], rng)
     - (shape.posture === 'taken' ? TAKEN_LEAD_MS : 0)
 

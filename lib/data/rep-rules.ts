@@ -98,20 +98,47 @@ export function shouldArm(input: {
  * rep that runs its length, or the ending itself for one cut short. Armed is
  * necessary and not sufficient: she also has to still be there.
  *
- * `boundaryCrossed` is the one absolute. Nothing sets it yet — moderation is
- * M4 (§16) — but the rule is written now so that wiring it up later is a
- * caller change rather than a rethink of this function.
+ * `boundaryCrossed` is the one absolute, and since PERSONA-REALISM-REPORT W4b
+ * it is set: a slow judgement of `boundary-violation` commits her exit
+ * (`WarmthSession.boundaryCrossed`), and a rep in that state cannot end in a
+ * number however warm the meter reads.
  */
 export function givesNumber(input: {
   armed: boolean
   warmth: number
   interview: boolean
   boundaryCrossed?: boolean
+  /**
+   * He showed her contempt inside the last `CONTEMPT_WINDOW_MS` — a
+   * precision-filtered contempt turn, or a turn the judge read at intent
+   * `CONTEMPT_INTENT` or below (PERSONA-REALISM-REPORT W4a).
+   *
+   * ── WHY THIS IS RULE 3 AND NOT A SCORE ─────────────────────────────────
+   *
+   * On 18 September a user gave "Fuckwit" as his name, argued with her about
+   * who had said it first — and was offered her number at the wind-down,
+   * because warmth sat at 66. A character who is warm to anybody is
+   * UNSELECTIVE, and unselective interest is valued less (Eastwick et al.
+   * 2007): her yes means something only if she can also say no. A character
+   * who offers her number to somebody who has just insulted her teaches the
+   * one lesson this product must never teach, which is that it works.
+   *
+   * This changes her BEHAVIOUR, never the grade. Outcome is still worth zero
+   * on the scorecard (rule 2) — a user who is refused the number here is graded
+   * exactly as he would have been had she offered it.
+   */
+  contemptRecently?: boolean
 }): boolean {
-  if (input.interview || input.boundaryCrossed) return false
+  if (input.interview || input.boundaryCrossed || input.contemptRecently) return false
   if (!input.armed) return false
   return input.warmth >= KEEP_THRESHOLD
 }
+
+/** How far back contempt still takes the number away. See `givesNumber`. */
+export const CONTEMPT_WINDOW_MS = 45_000
+
+/** A judged intent at or below this counts as contempt for `givesNumber`. */
+export const CONTEMPT_INTENT = -5
 
 /**
  * Time to tell her she is leaving soon.
@@ -181,6 +208,41 @@ export function dueSceneBeat(input: {
   if (!next) return null
   if (next.at > LAST_BEAT_FRACTION) return null
   return input.elapsedFraction >= next.at ? next : null
+}
+
+/**
+ * The beats this rep carries, drawn from everything her author wrote.
+ *
+ * PERSONA-REALISM-REPORT R9. Four beats fired in one three-minute rep is a
+ * character interrupted four times, so a rep carries at most TWO: one opener
+ * (a beat that hands him something to say — the attendant calling closing
+ * time, the child and the spaghetti painting) and one of the rest, drawn with
+ * the rep's own seed and returned in authored time order. Two reps against the
+ * same character now differ in what happens to her, which is the point.
+ *
+ * Two or fewer authored is exactly what was authored, in the same order, so a
+ * character nobody has given more beats behaves as she always has.
+ */
+export const BEATS_PER_REP = 2
+
+export function beatsForRep(
+  beats: readonly SceneBeat[] | undefined,
+  rng: () => number,
+): SceneBeat[] | undefined {
+  if (!beats || beats.length <= BEATS_PER_REP) return beats ? [...beats] : beats
+  const pick = <T,>(pool: readonly T[]): T | undefined =>
+    pool[Math.min(pool.length - 1, Math.floor(Math.max(0, rng()) * pool.length))]
+  const openers = beats.filter((beat) => beat.opener)
+  const others = beats.filter((beat) => !beat.opener)
+  const chosen = [pick(openers), pick(others)].filter((beat): beat is SceneBeat => beat !== undefined)
+  // A character whose beats are all one kind still gets two of them.
+  while (chosen.length < BEATS_PER_REP) {
+    const rest = beats.filter((beat) => !chosen.includes(beat))
+    const next = pick(rest)
+    if (!next) break
+    chosen.push(next)
+  }
+  return chosen.sort((a, b) => a.at - b.at)
 }
 
 /**

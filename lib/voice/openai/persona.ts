@@ -21,6 +21,7 @@ import {
   type Calibration,
   type Personality,
   type Persona,
+  type PersonaExample,
 } from '../types'
 import type { PersonaCompiler } from '../provider'
 
@@ -131,7 +132,11 @@ export function compileInstructions(
   options: { canEndScene?: boolean; rng?: () => number } = {},
 ): string {
   const { personality: p, trajectory } = persona
-  const mood = moodFor(persona, options.rng ?? Math.random)
+  const rng = options.rng ?? Math.random
+  // The mood is drawn FIRST and the example sample after it, from the same
+  // rng, so a character with no sampling reaches the identical mood she always
+  // did — the sample only ever consumes draws after the one that mattered.
+  const mood = moodFor(persona, rng)
 
   // Where she OPENS, not where she can get to. The trajectory's start is the
   // only thing about difficulty the character is ever told, and even then only
@@ -356,7 +361,20 @@ export function compileInstructions(
     // Nothing here contradicts the rules above it: they say what she never
     // does, and this shows how the things she does do actually come out. Being
     // read last is what makes it the answer to "so how do I say this".
-    ...exampleBlock(persona),
+    ...exampleBlock(persona, rng),
+    // WHAT SHE HAS ALREADY OPENED WITH, to this man, on earlier reps (R9,
+    // `HUMANNESS-PLAN.md` §7.4). Resolved on the server like `memorySummary`;
+    // absent on a first meeting and on every other track. Phrased as lines she
+    // has used rather than as a ban list, because the thing that reads as a
+    // machine is the identical first line, not any particular words in it.
+    ...(persona.previousOpeners && persona.previousOpeners.length > 0
+      ? [
+          ``,
+          `# Lines you have opened with before`,
+          `He has heard you open with these on other days. Do not open with any of them again, or anything close.`,
+          ...persona.previousOpeners.slice(0, 4).map((line) => `- ${line}`),
+        ]
+      : []),
     ...(persona.userName && persona.memorySummary
       ? [
           ``,
@@ -391,12 +409,52 @@ export function compileInstructions(
  * stripped here — it explains why a line is in the set, which is exactly the
  * kind of meta-commentary that would push the model back towards performing.
  */
-function exampleBlock(persona: Persona): string[] {
-  const examples = persona.examples
-  if (!examples || examples.length === 0) return []
+/**
+ * The examples THIS rep carries (PERSONA-REALISM-REPORT R9).
+ *
+ * Every pinned example, then a seeded sample of the rest up to
+ * `examplesPerRep`, returned in AUTHORED order so the block still reads as a
+ * range rather than a shuffle. The rng is the rep's own — the one that rolled
+ * her mood — so every turn of one rep recompiles to the byte-identical cached
+ * prefix, and the next rep is a different eight lines.
+ *
+ * A set no larger than `examplesPerRep`, or a persona that sets none, draws
+ * NOTHING from the rng and returns the set untouched, which is what keeps every
+ * character nobody has given more examples on the prompt she had.
+ */
+export function examplesForRep(persona: Persona, random: () => number): PersonaExample[] {
+  const examples = persona.examples ?? []
+  const limit = persona.examplesPerRep
+  if (limit === undefined || examples.length <= limit) return [...examples]
+  const pinned = examples.filter((example) => example.pinned)
+  const pool = examples.filter((example) => !example.pinned)
+  const keep = new Set<PersonaExample>(pinned)
+  // A partial Fisher–Yates over the pool: each draw is one rng call, so the
+  // sample is a pure function of the seed.
+  const shuffled = [...pool]
+  const want = Math.max(0, limit - pinned.length)
+  for (let i = 0; i < Math.min(want, shuffled.length); i += 1) {
+    const j = i + Math.floor(random() * (shuffled.length - i))
+    const swap = shuffled[i]!
+    shuffled[i] = shuffled[j]!
+    shuffled[j] = swap
+    keep.add(shuffled[i]!)
+  }
+  return examples.filter((example) => keep.has(example))
+}
+
+function exampleBlock(persona: Persona, random: () => number): string[] {
+  const examples = examplesForRep(persona, random)
+  if (examples.length === 0) return []
   return [
     `# How you actually sound`,
-    `These are the RANGE of how you talk, not lines to reuse. Never repeat one of them back to him.`,
+    // OTHER PEOPLE, OTHER DAYS (PERSONA-REALISM-REPORT, audition of
+    // 23 September). A few-shot exchange is read as conversation that
+    // HAPPENED: labelled "HIM", Nadia's example "I work in insurance" came back
+    // as "Insurance, you said?" to a user who had never said it — the same frame
+    // break as the Dan leak `examples.test.ts` records, through a line that
+    // named no one. So the lines are labelled as somebody else, and said to be.
+    `These are the RANGE of how you talk, not lines to reuse. They are other conversations with other people on other days. Nothing in them happened with him, and you never repeat one of them back to him.`,
         // NOT "a fragment". The cold bands already ask for one in their own words,
     // and Robin's contract says the opposite in hers ("Complete sentences. You
     // do not trail off.") — her whole mechanic is that warmth shows only in
@@ -416,7 +474,7 @@ function exampleBlock(persona: Persona): string[] {
     // nothing else, and a second opinion about it in the cached prefix is the
     // round-6 failure.
     `You are talking, not writing. You start again, lose the word you wanted, tail off, and answer before you have finished thinking. None of that is a mistake and none of it needs tidying up.`,
-    ...examples.flatMap((example) => [`HIM: ${example.him}`, `YOU: ${example.her}`]),
+    ...examples.flatMap((example) => [`SOMEONE ELSE: ${example.him}`, `YOU: ${example.her}`]),
     ``,
   ]
 }

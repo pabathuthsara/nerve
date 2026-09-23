@@ -325,11 +325,17 @@ describe('Tess — she is still rung 1', () => {
     // order the top two above the highest threshold are always the same two, so
     // the cheap permissions go first. Nadia does not need this: her thresholds
     // sit above the range she actually runs in. Tess opens at 48.
+    //
+    // 23 September: both gates now carry what is HERS (PERSONA-REALISM-REPORT
+    // §5.6, §7.1) — the flirt her author described, and the true thing her
+    // ladder has reached at this warmth — rather than the roster's one sentence.
     for (const warmth of [40, 48, 60, 85]) {
       const line = composeSteering({ persona: tess, warmth })
-      expect(line, `warmth ${warmth}`).toContain('You may flirt.')
-      expect(line, `warmth ${warmth}`).toContain('You may say something real about your life.')
+      expect(line, `warmth ${warmth}`).toContain('You may flirt, the way you do: sincerely')
+      expect(line, `warmth ${warmth}`).toContain('You could tell him, if it fits:')
     }
+    expect(composeSteering({ persona: tess, warmth: 48 })).toContain('Biscuit')
+    expect(composeSteering({ persona: tess, warmth: 85 })).toContain('first time back')
   })
 })
 
@@ -375,8 +381,10 @@ describe('Cass — the fixes that outlived the room they were found in', () => {
     // old literal to the byte.
     expect(scorerPlaceFor('Cass')).toBe('a gallery')
     expect(buildSystemPrompt('Cass', scorerPlaceFor('Cass'))).toContain('talking to in a gallery')
-    expect(scorerPlaceFor('Nadia')).toBe(DEFAULT_SCORER_PLACE)
-    expect(buildSystemPrompt('Nadia', scorerPlaceFor('Nadia'))).toBe(buildSystemPrompt('Nadia'))
+    // Nadia's room became a bookstore on 23 September (US-first, report §7), and
+    // `place` is what the judge reads, so her judge now stands in it too.
+    expect(scorerPlaceFor('Nadia')).toBe('a bookstore')
+    expect(DEFAULT_SCORER_PLACE).toBe('a second-hand bookshop')
   })
 
   it('has a want that completes the sentence built around it', () => {
@@ -385,10 +393,13 @@ describe('Cass — the fixes that outlived the room they were found in', () => {
     // are going", on every turn of every rep.
     //
     // Robin's has the same fault and is still unfixed — PERSONA-AUDIT §3.4.
-    for (const warmth of [10, 40, 80]) {
+    // Below INVESTED. At 80 her agenda YIELDS instead (`wantYields`, §5.2),
+    // which is its own sentence and asserted below.
+    expect(wantClauses(tess, 85)).toEqual([tess.wantYields])
+    for (const warmth of [10, 40, 70]) {
       const [clause] = wantClauses(tess, warmth)
       expect(clause, `warmth ${warmth}`).toMatch(
-        /^You would (still )?rather be getting round the last two rooms before the place shuts[.,]/,
+        /^You would (still )?rather be getting through the last two rooms before closing[.,]/,
       )
     }
   })

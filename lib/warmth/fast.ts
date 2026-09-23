@@ -46,6 +46,16 @@ export interface FastScoreContext {
    */
   herLastTurnAsked?: boolean
   /**
+   * The turn came from a transcriber (PERSONA-REALISM-REPORT R8).
+   *
+   * Passed through to `classifyUserTurn`, which only then may call a turn
+   * `unclear` — and an unclear turn is scored at nothing, in either direction.
+   * The "음." that earned +2.44 (`HUMANNESS-PLAN.md`) and the "Hej der" that
+   * earned a mirrored "Hej." were the meter paying for noise. Absent keeps the
+   * behaviour every fixture and the texting arm have always had.
+   */
+  spoken?: boolean
+  /**
    * Seconds between her finishing and him starting. Null when unknown — the
    * opening turn, or a turn where she never spoke.
    */
@@ -62,6 +72,13 @@ export interface FastReason {
     | 'dead-end-streak'
     | 'filler-rate'
     | 'hesitation'
+    // Paid by `./rapport.ts`, folded in by `withRapport`. Listed here because a
+    // score is one record whichever file a reason came from.
+    | 'follow-up'
+    | 'appreciation'
+    | 'reciprocal-disclosure'
+    | 'interview-mode'
+    | 'topic-hop'
   points: number
   detail: string
 }
@@ -250,7 +267,15 @@ export function scoreFast(turn: TranscriptTurn, context: FastScoreContext): Fast
   const kind = classifyUserTurn(text, {
     ...(context.openingTurn !== undefined ? { opening: context.openingTurn } : {}),
     ...(context.herLastTurnAsked !== undefined ? { herLastTurnAsked: context.herLastTurnAsked } : {}),
+    ...(context.spoken ? { spoken: true } : {}),
   })
+  // NOTHING TO SCORE. He may have said something perfectly good; what reached
+  // us is not it, and a meter that pays or charges for a mishearing is a meter
+  // measuring the transcriber. She asks him to say it again instead — see the
+  // `unclear` clause in `steering.ts`.
+  if (kind === 'unclear') {
+    return { raw: 0, reasons: [], wordCount, deadEnd: false, kind, fillerPerMinute: 0 }
+  }
   const hostile = kind === 'dismissal' || hasHostilityMarker(text)
 
   if (isOpenQuestion(text)) {

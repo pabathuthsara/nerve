@@ -18,7 +18,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { DATING_PERSONAS, PERSONAS, RETIRED_PERSONAS } from './index'
-import { compileInstructions } from '@/lib/voice/openai/persona'
+import { compileInstructions, examplesForRep } from '@/lib/voice/openai/persona'
 import { spokenWordCount } from '@/lib/voice/elevenlabs/truncate'
 import { MAX_BAND_WORDS } from '@/lib/warmth/bands'
 import { seededRandom } from '@/lib/voice/seed'
@@ -167,5 +167,64 @@ describe('his name', () => {
     expect(prompt).toContain('you have met him before')
     // And it still says how rarely people use a name they already have.
     expect(prompt).toContain('never twice in a row')
+  })
+})
+
+/**
+ * PERSONA-REALISM-REPORT §7 and R9: every shipped character shows her WARM
+ * register too, and a rep carries a seeded sample of the set rather than the
+ * same lines every time.
+ */
+describe('persona v2 — the warm half, and a different sample each rep', () => {
+  it('every shipped dating character demonstrates how she sounds into him', () => {
+    for (const persona of SHIPPED) {
+      const warm = (persona.examples ?? []).filter((example) => example.register === 'warm')
+      expect(warm.length, `${persona.slug} has no warm examples`).toBeGreaterThanOrEqual(4)
+    }
+  })
+
+  it('samples the same lines for every turn of one rep, and different lines for another', () => {
+    for (const persona of SHIPPED) {
+      const a1 = examplesForRep(persona, seededRandom('rep-a'))
+      const a2 = examplesForRep(persona, seededRandom('rep-a'))
+      expect(a1, persona.slug).toEqual(a2)
+      if (persona.examplesPerRep !== undefined && (persona.examples?.length ?? 0) > persona.examplesPerRep) {
+        expect(a1.length, persona.slug).toBe(persona.examplesPerRep)
+        const seen = new Set(['rep-b', 'rep-c', 'rep-d', 'rep-e'].map((seed) =>
+          examplesForRep(persona, seededRandom(seed)).map((example) => example.her).join('|')))
+        expect(seen.size, `${persona.slug} always samples the same set`).toBeGreaterThan(1)
+      }
+    }
+  })
+
+  it('always carries the pinned lines, in authored order, and keeps a quarter of the sample short', () => {
+    for (const persona of SHIPPED) {
+      for (const seed of ['x', 'y', 'z', 'w']) {
+        const sample = examplesForRep(persona, seededRandom(seed))
+        for (const pinned of (persona.examples ?? []).filter((example) => example.pinned)) {
+          expect(sample, `${persona.slug} dropped a pinned line`).toContain(pinned)
+        }
+        const order = sample.map((example) => persona.examples!.indexOf(example))
+        expect(order, persona.slug).toEqual([...order].sort((a, b) => a - b))
+        const short = sample.filter((example) => spokenWordCount(example.her) <= 4)
+        expect(short.length, `${persona.slug} @${seed}`).toBeGreaterThanOrEqual(Math.ceil(sample.length / 4))
+      }
+    }
+  })
+
+  it('draws nothing from the rng for a set no larger than its sample', () => {
+    const calls = { n: 0 }
+    const counting = () => { calls.n += 1; return 0.5 }
+    const persona = { ...SHIPPED[0]!, examplesPerRep: undefined }
+    examplesForRep(persona, counting)
+    expect(calls.n).toBe(0)
+  })
+
+  it('hands her the lines she has already opened with, and only when there are some', () => {
+    const persona = SHIPPED[0]!
+    const withOpeners = compileInstructions({ ...persona, previousOpeners: ['Hey. Quiet in here.'] }, { canEndScene: false, rng: seed() })
+    expect(withOpeners).toContain('# Lines you have opened with before')
+    expect(withOpeners).toContain('- Hey. Quiet in here.')
+    expect(compile(persona)).not.toContain('# Lines you have opened with before')
   })
 })

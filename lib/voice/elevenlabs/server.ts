@@ -83,6 +83,8 @@ interface LlmBody {
 export interface PersonaOverlay {
   memorySummary?: string
   userName?: string
+  /** Her earlier first lines to this user (R9). See `recallOpeners`. */
+  previousOpeners?: string[]
   /**
    * The interview brief, appended to the contract (C5).
    *
@@ -108,6 +110,12 @@ export interface PersonaOverlay {
 export async function handleLlmRequest(
   request: Request,
   overlay: PersonaOverlay = {},
+  /**
+   * `maxTokens` lowers the output ceiling for one call. Only the prewarm
+   * (`prewarmPipeline`) sets it, to a single token: the point of that call is
+   * the PREFIX, and a turn's output is never shortened this way.
+   */
+  options: { maxTokens?: number } = {},
 ): Promise<Response> {
   const key = chatApiKey()
   if (!key.ok) return json({ error: key.error.message }, 500)
@@ -158,7 +166,9 @@ export async function handleLlmRequest(
     model: compiled.llm.model,
     messages,
     temperature: compiled.llm.temperature,
-    maxTokens: compiled.llm.maxTokens,
+    maxTokens: options.maxTokens !== undefined
+      ? Math.max(1, Math.min(compiled.llm.maxTokens, Math.round(options.maxTokens)))
+      : compiled.llm.maxTokens,
     signal: request.signal,
   })
 

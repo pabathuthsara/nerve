@@ -12,7 +12,7 @@ import { supabaseAdmin } from '@/lib/db/admin'
 import {
   openVoiceSession, reserveVoiceOperation, settleVoiceOperation, closeVoiceSession,
   activateVoiceSession, serverVoiceSessionExists, refundEmptyVoiceSession,
-  abortVoiceStartupAttempt,
+  abortVoiceStartupAttempt, claimVoiceOperation, markPrereserved, releaseUnclaimedTurns,
 } from '@/lib/db/voice-session'
 
 async function main(): Promise<void> {
@@ -69,6 +69,24 @@ async function main(): Promise<void> {
     check((await settleVoiceOperation({ userId, sessionId, operationId: op.operationId, costUsd: .01, status: 'completed' })).duplicate === true, 'receipt replay stays idempotent')
     const { data: ledger } = await admin.from('usage_ledger').select('cost_cents,usage_source,usage_details').eq('user_id', userId).eq('usage_key', `voice:${sessionId}:test-turn`)
     check(ledger?.length === 1 && ledger[0]?.cost_cents === 1 && ledger[0]?.usage_source === 'server', 'one complete authoritative receipt stored')
+    // PERSONA-REALISM-REPORT L2: a turn reserved AHEAD of time, claimed once,
+    // and released at zero only if it was never claimed.
+    const ahead = (operationId: string) => ({ ...op, operationId })
+    check((await reserveVoiceOperation(ahead('ahead-used'))).ok, 'next turn reserves while the current one plays')
+    check((await reserveVoiceOperation(ahead('ahead-abandoned'))).ok, 'a second ahead reservation is admitted the same way')
+    await markPrereserved({ userId, sessionId, operationId: 'ahead-used' })
+    await markPrereserved({ userId, sessionId, operationId: 'ahead-abandoned' })
+    check(await claimVoiceOperation({ userId, sessionId, operationId: 'ahead-used' }), 'a ticketed turn claims its reservation')
+    check(!(await claimVoiceOperation({ userId, sessionId, operationId: 'ahead-used' })), 'a replayed ticket cannot claim the same reservation twice')
+    check(!(await claimVoiceOperation({ userId: b.id, sessionId, operationId: 'ahead-abandoned' })), 'another user cannot claim this rep\'s reservation')
+    check((await releaseUnclaimedTurns({ userId, sessionId })).ok, 'unclaimed ahead reservations release')
+    const { data: aheadRows } = await admin.from('voice_operations').select('operation_id,state,cost_usd').eq('session_id', sessionId).in('operation_id', ['ahead-used', 'ahead-abandoned'])
+    const abandoned = aheadRows?.find((row) => row.operation_id === 'ahead-abandoned')
+    const used = aheadRows?.find((row) => row.operation_id === 'ahead-used')
+    check(abandoned?.state === 'aborted' && Number(abandoned.cost_usd) === 0, 'an abandoned ahead reservation settles at zero')
+    check(used?.state === 'reserved', 'a claimed turn keeps its reservation until its own receipt')
+    check(!(await claimVoiceOperation({ userId, sessionId, operationId: 'ahead-abandoned' })), 'a released reservation cannot be claimed')
+    check((await settleVoiceOperation({ userId, sessionId, operationId: 'ahead-used', costUsd: .004, status: 'completed', metadata: { noVendorCalls: true } })).ok, 'the claimed turn settles from its own receipt')
     check((await closeVoiceSession({ userId, sessionId })).ok, 'rep closes while grade remains allowed')
     check(!(await refundEmptyVoiceSession({ userId, sessionId })).refunded, 'client cannot refund a rep containing paid turn')
     const grade = { userId, sessionId, operationId: 'grade', kind: 'grade' as const, model: 'test:no-vendor-call', maxCostUsd: .02 }

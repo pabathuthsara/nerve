@@ -30,6 +30,7 @@ import {
   type Calibration,
   type Persona as EnginePersona,
   type ProviderId,
+  type SceneBeat,
   type SessionSummary,
   type TranscriptTurn,
   type TurnMark,
@@ -76,7 +77,9 @@ import { opensOnDesignBrief } from './interview-briefs'
 import { DEFAULT_FIELD, type InterviewFieldId } from './interview-fields'
 import { INTERVIEW_NEXT_STEPS_DIRECTIVE, INTERVIEW_WRAP_UP_DIRECTIVE } from '@/lib/personas/interview/shared'
 import {
+  CONTEMPT_WINDOW_MS,
   WRAP_UP_MS,
+  beatsForRep,
   dueSceneBeat,
   givesNumber,
   inventNumber,
@@ -420,6 +423,11 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
   /** How many authored scene beats have fired this rep. */
   const beatsFiredRef = useRef(0)
   /**
+   * The beats THIS rep carries, drawn at its start (`beatsForRep`, R9). A
+   * character with two or fewer authored carries exactly those.
+   */
+  const repBeatsRef = useRef<SceneBeat[] | undefined>(undefined)
+  /**
    * How many AGENDA beats have fired — the ones that move an interviewer off a
    * thread she has been on too long. Counted separately from scene beats
    * because they are different clocks answering different questions: a scene
@@ -603,6 +611,10 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       const summary = await voice.end(reason)
       await judged
       const telemetry = warmthRef.current?.telemetry(summary.seconds) ?? null
+      // Read before the session is disposed: the number rule's two absolutes
+      // (W4a, W4b), for a rep that ends before the wind-down decided.
+      const boundaryAtEnd = warmthRef.current?.boundaryCrossed ?? false
+      const contemptAtEnd = warmthRef.current?.contemptWithin(CONTEMPT_WINDOW_MS) ?? false
       warmthRef.current?.dispose()
       warmthRef.current = null
 
@@ -642,6 +654,8 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
               armed: armedRef.current,
               warmth: telemetry?.end ?? 0,
               interview,
+              boundaryCrossed: boundaryAtEnd,
+              contemptRecently: contemptAtEnd,
             })))
 
       if (won && !numberRef.current) numberRef.current = inventNumber()
@@ -863,6 +877,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
       armedRef.current = false
       wrappedRef.current = false
       beatsFiredRef.current = 0
+      repBeatsRef.current = beatsForRep(config.persona.sceneBeats, Math.random)
       agendaBeatsRef.current = 0
       probeBeatsRef.current = 0
       lastInterviewBeatAtRef.current = 0
@@ -1332,6 +1347,12 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
             armed: armedRef.current,
             warmth: engine?.warmth ?? 0,
             interview,
+            // W4a and W4b. Selectivity is what makes her yes mean something:
+            // a boundary the judge read, or contempt in the last forty-five
+            // seconds, takes the number off the table however warm the meter
+            // is. Her behaviour only — the grade never sees this.
+            boundaryCrossed: warmthRef.current?.boundaryCrossed ?? false,
+            contemptRecently: warmthRef.current?.contemptWithin(CONTEMPT_WINDOW_MS) ?? false,
           })
           decisionWarmthRef.current = engine?.warmth ?? 0
           closingDecisionRef.current = offering ? 'number' : 'leave'
@@ -1340,11 +1361,16 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
           // so the decision arrives on its own rather than behind a line that
           // still says she would rather be somewhere else.
           warmthRef.current?.handOverToClosing(offering ? 'number' : 'leave')
-          providerRef.current?.reinforce(
-            interview
-              ? (roundType(round).nextSteps ? INTERVIEW_NEXT_STEPS_DIRECTIVE : INTERVIEW_WRAP_UP_DIRECTIVE)
-              : offering ? NUMBER_DIRECTIVE : WRAP_UP_DIRECTIVE,
-          )
+          const directive = interview
+            ? (roundType(round).nextSteps ? INTERVIEW_NEXT_STEPS_DIRECTIVE : INTERVIEW_WRAP_UP_DIRECTIVE)
+            : offering ? NUMBER_DIRECTIVE : WRAP_UP_DIRECTIVE
+          // THE SCENE LANDS ON THE DECISION (report §7.4). Robin's car arrives
+          // exactly when she has to decide, so "That's my car…" is a real event
+          // and not an instruction with nothing behind it. A fact about the
+          // room, prepended on the same channel; it changes nothing about WHAT
+          // was decided, which is `givesNumber` above and nothing else.
+          const closingBeat = interview ? undefined : config.persona.closingBeat?.trim()
+          providerRef.current?.reinforce(closingBeat ? `${closingBeat} ${directive}` : directive)
         }
 
         // The scene, on its own clock. Fired before the wind-down check so a
@@ -1353,7 +1379,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         if (!wrappedRef.current) {
           const elapsedFraction = 1 - remaining / durationMs
           const beat = dueSceneBeat({
-            beats: config.persona.sceneBeats,
+            beats: repBeatsRef.current ?? config.persona.sceneBeats,
             elapsedFraction,
             fired: beatsFiredRef.current,
           })

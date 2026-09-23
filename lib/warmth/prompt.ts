@@ -240,6 +240,14 @@ export function scorerPlaceFor(personaName: string): string {
   return `${/^[aeiou]/i.test(place) ? 'an' : 'a'} ${place}`
 }
 
+/**
+ * Was his line an intended joke? Deliberately narrow: wit, teasing, an absurd
+ * or self-deprecating remark he plainly meant to be funny. A friendly line is
+ * not a joke, and an insult with a laugh on the end is not one either.
+ */
+export const FUNNY_RULE =
+  'FUNNY: true only if his line was plainly MEANT to be funny — a joke, a tease, an absurd or self-deprecating remark. Friendly is not funny. Hostile is never funny. Default false.'
+
 export function buildSystemPrompt(
   personaName: string,
   place: string = DEFAULT_SCORER_PLACE,
@@ -260,10 +268,16 @@ export function buildSystemPrompt(
     'QUOTE: the exact words from HIS line that drove your judgement. Copy them verbatim, at most ten words. If you cannot quote him, return "".',
     'REASON: at most twelve words. Describe, do not advise.',
     '',
+    // PERSONA-REALISM-REPORT 5.4. One boolean, and it is about HIS intent, not
+    // her reaction: whether he meant it as a joke. Recorded against the turn so
+    // the scorecard can say he made her laugh, and so her laughter can be read
+    // against his jokes rather than at random. Not a score — it moves nothing.
+    FUNNY_RULE,
+    '',
     'Examples:',
     '',
     renderFewShots(),
     '',
-    'Reply with JSON only: {"intimacy":n,"intent":n,"quote":"...","reason":"..."}',
+    'Reply with JSON only: {"intimacy":n,"intent":n,"funny":true|false,"quote":"...","reason":"..."}',
   ].join('\n')
 }

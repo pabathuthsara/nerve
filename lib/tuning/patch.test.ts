@@ -44,11 +44,12 @@ describe('applyDialEdits', () => {
     // Both fields live on one line, so the risk is rewriting the line rather
     // than the field. `unlocksAt` is read off the file instead of restated,
     // so this keeps testing that it survived rather than what it happens to be.
-    const unlocksAt = /flirtiness: \{ ceiling: \d+, unlocksAt: (\d+) \}/.exec(NADIA)?.[1]
+    // The gate may carry an authored `style` after its numbers (§5.6).
+    const unlocksAt = /flirtiness: \{ ceiling: \d+, unlocksAt: (\d+)(?:, style: '[^']*')? \}/.exec(NADIA)?.[1]
     expect(unlocksAt).toBeDefined()
     const { source, applied } = applyDialEdits(NADIA, [{ path: 'gated.flirtiness.ceiling', value: 80 }])
     expect(applied).toEqual(['gated.flirtiness.ceiling'])
-    expect(source).toContain(`flirtiness: { ceiling: 80, unlocksAt: ${unlocksAt} },`)
+    expect(source).toContain(`flirtiness: { ceiling: 80, unlocksAt: ${unlocksAt}`)
   })
 
   it('applies several edits in the same layer', () => {
@@ -58,7 +59,7 @@ describe('applyDialEdits', () => {
       { path: 'gated.personalDisclosure.ceiling', value: 96 },
     ])
     expect(applied).toHaveLength(3)
-    expect(source).toContain('flirtiness: { ceiling: 80, unlocksAt: 26 },')
+    expect(source).toContain('flirtiness: { ceiling: 80, unlocksAt: 26')
     expect(source).toContain('personalDisclosure: { ceiling: 96, unlocksAt: 40 },')
   })
 

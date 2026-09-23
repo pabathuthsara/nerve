@@ -21,12 +21,13 @@ import { adminUser } from '@/lib/db/admin-gate'
 import {
   adminDaily,
   adminOverview,
+  adminRepLatency,
   adminStartFunnel,
   adminTopPaths,
   adminTopReferrers,
   recentAdminActions,
 } from '@/lib/db/admin-metrics'
-import { AdminNav, DayBars, Figure, FunnelTable, StatBlock, TopTable, ago, money } from '@/components/admin/panel'
+import { AdminNav, DayBars, Figure, FunnelTable, LatencyTable, StatBlock, TopTable, ago, money } from '@/components/admin/panel'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,13 +49,14 @@ export default async function AdminOverviewPage() {
   if (!user) notFound()
 
   // In parallel: five independent reads, each of which fails soft on its own.
-  const [overview, daily, paths, referrers, funnel, audit] = await Promise.all([
+  const [overview, daily, paths, referrers, funnel, audit, latency] = await Promise.all([
     adminOverview(),
     adminDaily(30),
     adminTopPaths(7, 10),
     adminTopReferrers(7, 8),
     adminStartFunnel(7),
     recentAdminActions(12),
+    adminRepLatency(14),
   ])
 
   const signups30d = daily.reduce((sum, row) => sum + row.signups, 0)
@@ -150,6 +152,10 @@ export default async function AdminOverviewPage() {
           the one D21 is about: `/start` is a single row up there, and the
           eight screens behind it are where the funnel is actually lost. */}
       <FunnelTable rows={funnel} days={7} />
+
+      {/* PERSONA-REALISM-REPORT L8. The two numbers the report is about — her
+          reply gap and turns per rep — and the arm rate per rung they decide. */}
+      <LatencyTable data={latency} />
 
       <div className="admin-grid">
         <TopTable title="Where they landed" rows={paths} head="Path · 7d" empty="No page views yet." />

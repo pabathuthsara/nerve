@@ -67,6 +67,10 @@ import { compileInstructions } from '../lib/voice/openai/persona'
 import { WarmthSession } from '../lib/warmth/session'
 import { bandFor } from '../lib/warmth/bands'
 import { capToBudget, sanitiseForSpeech } from '../lib/voice/elevenlabs/truncate'
+import { deadEndReply, enforceDeliveryTags, withoutParticle } from '../lib/voice/elevenlabs/shaping'
+import { judgeHumour } from '../lib/voice/elevenlabs/humour'
+import { stripDeliveryTags } from '../lib/voice/elevenlabs/persona'
+import { beatsForRep } from '../lib/data/rep-rules'
 import { chatApiKey, completeChat, type ChatMessage } from '../lib/voice/chat'
 import { StabilityMeter, DEFAULT_VERBOSITY_MEDIAN } from '../lib/metrics/stability'
 import { dueSceneBeat, DATING_DURATION_MS, ARM_THRESHOLD, INTERVIEW_THRESHOLD } from '../lib/data/rep-rules'
@@ -146,6 +150,10 @@ interface RepResult {
   cappedTurns: number
   /** Turns she had nothing to say on. See `mayStaySilentFor`. */
   silentTurns: number
+  /** Laughs that shipped, particles played, dead-end rescues replaced. */
+  laughs: number
+  particles: number
+  microReplies: number
   /** Beats that pushed her sideways, and beats that pushed her down (§6.4). */
   agendaBeats: number
   probeBeats: number
@@ -294,6 +302,12 @@ async function runRep(
   let capped = 0
   /** Turns she said nothing at all. */
   let silent = 0
+  /** PERSONA-REALISM-REPORT R3, R4, R7: laughs shipped, particles played, rescues replaced. */
+  let laughs = 0
+  let particles = 0
+  let microReplies = 0
+  /** Two beats a rep, one of them an opener (R9), exactly as the live rep draws them. */
+  const repBeats = beatsForRep(persona.sceneBeats, Math.random)
 
   const maxTurns = persona.track === 'interview' ? INTERVIEW_MAX_TURNS : MAX_TURNS
   const secondsPerExchange = persona.track === 'interview'
@@ -352,6 +366,9 @@ async function runRep(
     // the ceiling depends on the shape of the turn just scored.
     const saysNothing = session.staysSilent
     session.noteSilence(saysNothing)
+    // PERSONA-REALISM-REPORT R3/R4: decided here, in the binder's order —
+    // after the silence, before the directive that carries the laugh.
+    const expression = saysNothing ? { particle: null, laughAllowed: false } : session.decideExpression()
 
     // SHE HAS NOTHING TO SAY. No request, no turn, no cost — the adapter
     // enforces this by making no call at all rather than by asking a model for
@@ -385,7 +402,7 @@ async function runRep(
     // ── what the room does to her, on its own clock ─────────────────────
     const elapsedFraction = (clock * 1000) / repLengthMs
     const beat = dueSceneBeat({
-      beats: persona.sceneBeats,
+      beats: repBeats,
       elapsedFraction,
       fired: beatsFired,
     })
@@ -437,8 +454,34 @@ async function runRep(
     // harness prints — is what a customer would actually have heard.
     // Sanitised first, exactly as `combined.ts` does it, so the sentence count
     // is taken on the punctuation that would actually be spoken.
-    const agentText = capToBudget(sanitiseForSpeech(generated), replyCap, { sentences: replySentences })
-    if (agentText !== generated) capped += 1
+    //
+    // And the three rules the turn route enforces (`lib/voice/elevenlabs/
+    // shaping.ts`), in its order, so an audition hears what a customer would:
+    // the particle she has already said, the tag allowlist and the laugh
+    // permission, the dead-end micro-reply — then the ceiling, with the
+    // leading unit free on the dating arm (R1).
+    const particle = expression.particle?.text ?? null
+    // And the humour check the turn route runs beside the writer (R3): a
+    // permitted laugh ships only on a line that was meant to be funny.
+    const funny = expression.laughAllowed
+      ? (await judgeHumour({ his: userText, herPrior: agentTurns[agentTurns.length - 1] ?? null }, new AbortController().signal)).funny
+      : false
+    const tagged = enforceDeliveryTags(withoutParticle(sanitiseForSpeech(generated), particle), {
+      warmth, laughAllowed: expression.laughAllowed && funny,
+    })
+    const micro = session.lastTurnDeadEnd
+      ? deadEndReply(stripDeliveryTags(tagged.text), { wordCap: replyCap, microReplies: persona.microReplies, pick: Math.random })
+      : null
+    const shaped = capToBudget(micro ?? tagged.text, replyCap, {
+      sentences: replySentences, ...(persona.track === 'dating' ? { freeLead: true } : {}),
+    })
+    if (tagged.laughed && !micro && shaped.startsWith('[laughs]')) { session.noteExpression({ laughed: true }); laughs += 1 }
+    if (particle) particles += 1
+    if (micro) microReplies += 1
+    // What the ear heard and the record keeps: the particle, then the line,
+    // with the delivery tag gone (`stripDeliveryTags`).
+    const agentText = [particle, stripDeliveryTags(shaped)].filter(Boolean).join(' ')
+    if (words(shaped.replace(/^\[[^\]]*\]\s*/, '')) < words(generated.replace(/^\[[^\]]*\]\s*/, ''))) capped += 1
 
     history.push({ role: 'assistant', content: agentText })
     agentTurns.push(agentText)
@@ -458,8 +501,8 @@ async function runRep(
     process.stdout.write(
       `\n  ${String(turn + 1).padStart(2)}  warmth ${warmth.toFixed(0)} ${bandFor(warmth)}\n`
         + `      HIM  ${userText}\n`
-        + `      HER  ${agentText}   [${words(agentText)}w`
-        + `${agentText === generated ? '' : `, capped from ${words(generated)}w`}]\n`,
+        + `      HER  ${shaped.startsWith('[laughs]') ? '[laughs] ' : ''}${agentText}   [${words(agentText)}w`
+        + `${words(shaped.replace(/^\[[^\]]*\]\s*/, '')) < words(generated.replace(/^\[[^\]]*\]\s*/, '')) ? `, capped from ${words(generated)}w` : ''}]\n`,
     )
     for (const line of steer) process.stdout.write(`      →    ${line.content}\n`)
   }
@@ -483,6 +526,9 @@ async function runRep(
     distinctDirectives: directives.size,
     cappedTurns: capped,
     silentTurns: silent,
+    laughs,
+    particles,
+    microReplies,
     agendaBeats: agendaFired,
     probeBeats: probeFired,
   }
@@ -600,6 +646,13 @@ async function main(): Promise<void> {
   // the player never gives her a reason to withdraw simply will not show one.
   console.log(
     `  said nothing at all  ${results.reduce((sum, r) => sum + r.silentTurns, 0)} turns`,
+  )
+  // PERSONA-REALISM-REPORT R3, R4, R7. Zero laughs is not a failure on its own
+  // — he may never have been funny — but zero across a warm rep is the 585-turn
+  // measurement repeating.
+  console.log(
+    `  laughs / particles   ${results.reduce((sum, r) => sum + r.laughs, 0)} / ${results.reduce((sum, r) => sum + r.particles, 0)}`
+    + `  (micro-replies ${results.reduce((sum, r) => sum + r.microReplies, 0)})`,
   )
   console.log(`  breaks / 5 min       ${((totalBreaks / minutes) * 5).toFixed(2)}  (gate < 0.5)`)
   console.log(`  drifts               ${results.reduce((sum, r) => sum + r.drifts, 0)}`)
