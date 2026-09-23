@@ -180,6 +180,18 @@ describe('the transcription envelope', () => {
     }))
   })
 
+  it('prorates Scribe the same way, at its own rate', async () => {
+    // Scribe bills the audio SENT, and a speech-gated socket sends his speech,
+    // a lead-in and a keep-alive — never more than the rep's wall clock, so the
+    // server's own bound still holds.
+    vi.stubEnv('PIPELINE_STT_MODEL', 'scribe_v2_realtime')
+    db.from.mockReturnValue(reserved([{ operation_id: 'stt:one' }]))
+    await settleTranscriptionEnvelope({ userId: 'user-a', sessionId: 'session-a', seconds: 74 })
+    expect(db.rpc).toHaveBeenCalledWith('voice_operation_settle', expect.objectContaining({
+      p_cost_usd: expect.closeTo(0.0065 * 74 / 60, 9), p_resources: { sttAudioMs: 74_000 },
+    }))
+  })
+
   it('never charges beyond the bound it was admitted under', async () => {
     // A rep cannot outrun its own reservation, but the arithmetic must not be
     // able to either — a session row with a nonsense duration is a bug, not a

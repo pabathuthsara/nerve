@@ -98,6 +98,16 @@ describe('owned transcription credential admission', () => {
     expect(mocks.reserve).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-4o-transcribe', maxCostUsd: 0.024 }))
   })
 
+  it('reserves Scribe at its own published rate, in the same four-minute envelope', async () => {
+    // $0.39 an hour is $0.0065 a minute; four minutes is the admission bound,
+    // and `settleTranscriptionEnvelope` prorates it against the rep that ran.
+    vi.stubEnv('PIPELINE_STT_MODEL', 'scribe_v2_realtime')
+    expect((await POST(request())).status).toBe(200)
+    expect(mocks.reserve).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'stt', model: 'scribe_v2_realtime', maxCostUsd: expect.closeTo(0.026, 9), resources: { sttAudioMs: 240_000 },
+    }))
+  })
+
   it('refuses an unknown transcription tariff without opening or minting a rep', async () => {
     vi.stubEnv('PIPELINE_STT_MODEL', 'unpriced-transcriber')
     expect((await POST(request())).status).toBe(503)

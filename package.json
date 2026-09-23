@@ -14,6 +14,7 @@
     "cost:model": "vite-node --config vitest.config.ts scripts/cost-model.ts",
     "grade:calibrate": "vite-node --config vitest.config.ts scripts/grade-calibrate.ts",
     "rep:audition": "vite-node --config vitest.config.ts scripts/rep-audition.ts",
+    "scribe:probe": "vite-node --config vitest.config.ts scripts/scribe-probe.ts",
     "ab:llm": "vite-node --config vitest.config.ts scripts/ab-persona-llm.ts",
     "ab:history": "vite-node --config vitest.config.ts scripts/ab-history-length.ts",
     "grade:collect": "vite-node --config vitest.config.ts scripts/grade-collect.ts",

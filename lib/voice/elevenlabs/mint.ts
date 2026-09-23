@@ -7,8 +7,11 @@
  *  1. There is an ElevenLabs key.
  *  2. There are credits left on it. The free plan has no overage — synthesis
  *     stops, mid-sentence, and the rep is wasted.
- *  3. OpenAI will issue an ephemeral secret for a transcription session, so the
- *     browser can stream microphone audio without ever holding a standing key.
+ *  3. The transcriber will issue a short-lived credential, so the browser can
+ *     stream microphone audio without ever holding a standing key. That is an
+ *     OpenAI ephemeral secret for a transcription session, or — when
+ *     `PIPELINE_STT_MODEL` is `scribe_v2_realtime` — an ElevenLabs single-use
+ *     token (`mintScribeToken`). Exactly one of the two is minted per rep.
  *
  * The compiled character contract deliberately does *not* travel to the
  * browser. The LLM proxy recompiles it from the persona id on every turn, for
@@ -23,9 +26,11 @@ import {
   isUncastVoice,
   type ElevenLabsPipelineConfig,
 } from './persona'
-import { resolvePipelineConfig, type PipelineEnv } from './config'
+import { SCRIBE_REALTIME_MODEL, isScribeModel, resolvePipelineConfig, type PipelineEnv } from './config'
 
 const CLIENT_SECRETS_ENDPOINT = 'https://api.openai.com/v1/realtime/client_secrets'
+/** https://elevenlabs.io/docs/api-reference/tokens/create */
+const SCRIBE_TOKEN_ENDPOINT = 'https://api.elevenlabs.io/v1/single-use-token/realtime_scribe'
 const SUBSCRIPTION_ENDPOINT = 'https://api.elevenlabs.io/v1/user/subscription'
 const SUBSCRIPTION_TIMEOUT_MS = 750
 const SUBSCRIPTION_CACHE_MS = 15_000
@@ -44,10 +49,39 @@ export interface PipelineClientConfig
   llm: { model: string; temperature: number; maxTokens: number }
 }
 
+/**
+ * Which transcriber the browser must open, and with what.
+ *
+ * ABSENT MEANS OPENAI, and that is deliberate rather than lazy. Every mint
+ * before Scribe carried no such field, and an OpenAI-transcribed rep must still
+ * receive a byte-identical session — so the field is only ever WRITTEN for
+ * Scribe, and `{ vendor: 'openai' }` exists in the type to say what its
+ * absence means. `transcriberFor` (./transcriber.ts) is its one reader; never
+ * decide the vendor by probing `clientSecret`.
+ */
+export type MintedTranscription =
+  | { vendor: 'openai' }
+  | {
+    vendor: 'elevenlabs'
+    model: typeof SCRIBE_REALTIME_MODEL
+    /** Single-use, consumed by the WebSocket that opens with it, dead after
+     *  fifteen minutes if nobody does. It is scoped to realtime transcription
+     *  and cannot buy synthesis or read the account. */
+    token: string
+  }
+
 export interface MintedPipelineSession {
   provider: 'elevenlabs'
-  /** Ephemeral OpenAI secret, transcription session only. Short-lived. */
+  /**
+   * Ephemeral OpenAI secret, transcription session only. Short-lived.
+   *
+   * The empty string when `stt.vendor` is `'elevenlabs'`: no OpenAI
+   * transcription session is minted for a Scribe rep, because an unused
+   * credential for a socket nobody opens is only a thing to leak.
+   */
   clientSecret: string
+  /** See `MintedTranscription`. Absent on every OpenAI-transcribed rep. */
+  stt?: MintedTranscription
   model: string
   rate: Rate
   pipeline: PipelineClientConfig
@@ -114,8 +148,12 @@ export async function mintElevenLabsSession(
     )
   }
 
-  const [clientSecret, credits] = await Promise.all([
-    mintTranscriptionSecret(openAiKey, compiled.stt),
+  // One transcription credential, from whichever vendor transcribes. OpenAI's
+  // key is still required above either way: the character model is OpenAI's
+  // whichever transcriber hears him.
+  const scribe = isScribeModel(compiled.stt.model)
+  const [transcription, credits] = await Promise.all([
+    scribe ? mintScribeToken(elevenKey) : mintTranscriptionSecret(openAiKey, compiled.stt),
     readSubscription(elevenKey),
   ])
 
@@ -131,7 +169,7 @@ export async function mintElevenLabsSession(
   const { llm, ...rest } = compiled
   return {
     provider: 'elevenlabs',
-    clientSecret,
+    clientSecret: scribe ? '' : transcription,
     model: PIPELINE_MODEL_ID,
     rate: rateFor('elevenlabs', PIPELINE_MODEL_ID),
     pipeline: {
@@ -145,6 +183,58 @@ export async function mintElevenLabsSession(
       used: credits.used,
       limit: credits.limit,
     },
+    // Last, and only when it is true. Spread in rather than set to undefined so
+    // an OpenAI-transcribed session serialises to exactly the bytes it always
+    // did — `mint.test.ts` pins that.
+    ...(scribe ? { stt: { vendor: 'elevenlabs', model: SCRIBE_REALTIME_MODEL, token: transcription } as const } : {}),
+  }
+}
+
+/**
+ * An ElevenLabs single-use token for one realtime Scribe socket.
+ *
+ * Server only: it spends `ELEVENLABS_API_KEY`, the standing key that also buys
+ * every line of her voice, and the whole point of the token is that the key
+ * never reaches a browser. The token is the browser's credential and nothing
+ * more — it opens one transcription socket, is consumed by it, and expires in
+ * fifteen minutes if unused. The socket itself carries the model, the language
+ * and the audio format in its query string (`scribeUrl`), so there is nothing
+ * to configure here: unlike OpenAI's client secret, this token does not bind a
+ * session shape.
+ *
+ * Bounded like the OpenAI mint, and refused the same way: a rep that cannot
+ * hear him must not start.
+ */
+export async function mintScribeToken(apiKey: string): Promise<string> {
+  try {
+    return await boundedRequest(async (signal) => {
+      const response = await fetch(SCRIBE_TOKEN_ENDPOINT, {
+        method: 'POST',
+        cache: 'no-store',
+        signal,
+        headers: { 'xi-api-key': apiKey },
+      })
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '')
+        throw new VoiceError(
+          'token_mint_failed',
+          'elevenlabs',
+          `Transcription mint refused (${response.status}). ${detail.slice(0, 500)}`,
+        )
+      }
+      // Read off a real response on 23 September 2026: `{ "token": "sutkn_…" }`,
+      // thirty-four characters, and nothing else in the body.
+      const minted = (await response.json()) as { token?: unknown }
+      if (typeof minted.token !== 'string' || !minted.token) {
+        throw new VoiceError('token_mint_failed', 'elevenlabs', 'Transcription mint returned no token.')
+      }
+      return minted.token
+    }, TRANSCRIPTION_MINT_TIMEOUT_MS)
+  } catch (cause) {
+    if (cause instanceof VoiceError) throw cause
+    throw new VoiceError('token_mint_failed', 'elevenlabs', 'Could not reach the transcription mint.', {
+      cause,
+    })
   }
 }
 

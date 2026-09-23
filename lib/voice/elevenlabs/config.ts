@@ -147,6 +147,28 @@ export interface PipelineConfig {
 export const DEFAULT_STT_MODEL = 'gpt-4o-mini-transcribe'
 export const DEFAULT_LLM_MODEL = 'gpt-4.1-mini'
 
+/**
+ * ElevenLabs Scribe v2 Realtime: the streaming transcriber
+ * (`PERSONA-REALISM-REPORT-2026-09-23.md` §3.2, L3).
+ *
+ * Opt-in only, by setting `PIPELINE_STT_MODEL` to this value. The default above
+ * does not move, because every `PIPELINE_*` default is Tier 0 (CLAUDE.md rule
+ * 19), and choosing a transcriber for customers is a measured act, not a side
+ * effect of adding one. The value is the vendor's own `model_id`, so the
+ * string stamped on the ledger and in `pipeline_telemetry` names the model that
+ * actually ran.
+ *
+ * Why it exists: `gpt-4o-mini-transcribe` starts transcribing at commit, so
+ * every reply waits another 625–885 ms for the whole utterance to be read.
+ * Scribe transcribes while he is still speaking, and commit only closes a
+ * segment it has already mostly read.
+ */
+export const SCRIBE_REALTIME_MODEL = 'scribe_v2_realtime'
+
+export function isScribeModel(model: string): boolean {
+  return model === SCRIBE_REALTIME_MODEL
+}
+
 /** Free plan. Ten thousand credits a month and no overage. */
 export const DEFAULT_CREDIT_BUDGET = 10_000
 export const DEFAULT_CREDIT_WARN_AT = 8_000

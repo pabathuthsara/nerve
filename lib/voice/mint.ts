@@ -10,7 +10,8 @@ import { mintOpenAISession } from './openai/mint'
 import { mintElevenLabsSession, type MintedPipelineSession } from './elevenlabs/mint'
 import { type Calibration, type Persona, type ProviderId } from './types'
 import type { MintedSession } from './openai'
-import { resolvePipelineConfig, type PipelineEnv } from './elevenlabs/config'
+import { isScribeModel, resolvePipelineConfig, type PipelineEnv } from './elevenlabs/config'
+import { SCRIBE_REALTIME_USD_PER_MINUTE } from './rates'
 
 export type { MintedSession, MintedPipelineSession }
 
@@ -36,7 +37,8 @@ export interface TranscriptionAllowance {
  * A conservative duration estimate for the directly connected transcriber.
  * It is an admission allowance, not a provider usage receipt.
  *
- * The browser holds the transcription credential and talks to OpenAI itself, so
+ * The browser holds the transcription credential and talks to the transcriber
+ * itself — OpenAI, or ElevenLabs when `PIPELINE_STT_MODEL` names Scribe — so
  * there is no server-side receipt to settle against — which is why this is an
  * envelope rather than a measurement, and why `usdPerMinute` is exported.
  * Charging the whole envelope on every rep put $0.024 in the ledger against a
@@ -45,8 +47,20 @@ export interface TranscriptionAllowance {
  */
 export function pipelineTranscriptionAllowance(): TranscriptionAllowance | null {
   const { model } = resolvePipelineConfig(process.env as PipelineEnv).stt
+  // Scribe is billed by the minute of audio SENT, which is the unit this
+  // envelope was always written in, so it slots in without a conversion: four
+  // minutes of it is $0.026. The settlement prorates it against the seconds the
+  // rep ran exactly as it does the others, and that stays an honest bound for a
+  // speech-gated socket: every microphone sample it sends is a different moment
+  // of the rep, and the only audio that is not — 20 ms of keep-alive per five
+  // idle seconds, and padding on a commit under 0.35 s — is a rounding error
+  // against the idle time the gate never sends. A 24 September probe run that
+  // was almost all speech sent 9.3 s of audio in 12.2 s of wall clock, and
+  // with twenty silent seconds added it sent 9.4 s in 30.9 s — a real rep,
+  // where she talks half the time, sends a smaller share still.
   const perMinute = model === 'gpt-4o-mini-transcribe' ? 0.003
-    : model === 'gpt-4o-transcribe' ? 0.006 : null
+    : model === 'gpt-4o-transcribe' ? 0.006
+    : isScribeModel(model) ? SCRIBE_REALTIME_USD_PER_MINUTE : null
   return perMinute === null
     ? null
     : { model, maxCostUsd: perMinute * 4, audioMs: 240_000, usdPerMinute: perMinute }
