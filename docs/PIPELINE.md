@@ -742,7 +742,10 @@ the OpenAI models. The browser meter prices the milliseconds it sent through a
 `scribe_v2_realtime` row in `PIPELINE_TOKEN_RATES`. That feeds telemetry only,
 and it currently lands under `usage.openai`, because relabelling the vendor
 needs `lib/voice/types.ts`. The privacy page's ElevenLabs line now says it may
-transcribe what the user says.
+transcribe what the user says. **ElevenLabs logs these sessions.** Zero
+retention (`enable_logging=false`) is for enterprise and trial tiers only. On
+our plan the request opens a normal session, a `warning` says it "was not
+applied", and the session is logged anyway, so the URL does not ask for it.
 
 **Before switching it on:** wire `transcriberFor` into `index.ts`, run a real
 microphone rep, and run one twenty-minute interview to its end. The vendor does

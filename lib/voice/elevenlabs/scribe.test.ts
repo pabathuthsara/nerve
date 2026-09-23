@@ -38,6 +38,10 @@ const REAL = {
   // A real token on its second use. The socket had already fired `open`.
   // Followed by close 1000 with no reason.
   authError: '{"message_type":"auth_error","error":"You must be authenticated to use this endpoint."}',
+  // `enable_logging=false` on our plan, straight after `session_started`. The
+  // documentation lists `warning` among the errors; this one is followed by
+  // nothing, and the session works.
+  warning: '{"message_type":"warning","warning":"Zero retention mode was requested (enable_logging=false) but was not applied. Only users from the enterprise or trial tier can use ZRM mode. This session is still being logged."}',
 } as const
 
 const first: TranscriptionTiming = { startedAtMs: 1000, stoppedAtMs: 2000, committedAtMs: 2600 }
@@ -463,6 +467,15 @@ describe('fatal session errors', () => {
     expect(h.onError.mock.calls[0]![0]).toMatchObject({
       fatal: true, message: expect.stringContaining('commit_throttled'),
     })
+  })
+
+  it('does not end a rep on a warning, because the session that sent it carries on', async () => {
+    const h = await harness()
+    h.receive(REAL.warning)
+    h.commit(first)
+    h.receive(REAL.committed)
+    expect(h.onError).not.toHaveBeenCalled()
+    expect(h.onFinal).toHaveBeenCalledOnce()
   })
 
   it('treats an unexpected close as the end of hearing him', async () => {

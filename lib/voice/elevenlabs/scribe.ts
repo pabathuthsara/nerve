@@ -204,8 +204,12 @@ interface Awaiting {
  * and word timings arrive in a SECOND message after the one we act on),
  * `keyterms` (+$0.05 an hour, unpriced here — see `SCRIBE_REALTIME_USD_PER_MINUTE`),
  * `previous_text` (accepted only on a session's first chunk, so it cannot carry
- * per-turn context), and `enable_logging=false` (zero retention is enterprise
- * only, and asking for it on another plan is a refused session).
+ * per-turn context), and `enable_logging=false`. Zero retention is for the
+ * enterprise and trial tiers only, and on ours asking for it changes nothing
+ * but the transcript of the handshake: the session opens, sends a `warning`
+ * that zero-retention mode "was not applied … This session is still being
+ * logged", and is logged (read 24 September 2026). Asking would only put a
+ * privacy we do not get into our own code.
  */
 export function scribeUrl(input: {
   token: string
