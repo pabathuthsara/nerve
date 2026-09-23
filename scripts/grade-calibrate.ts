@@ -14,9 +14,18 @@
  * the thing users actually hit had drifted.
  *
  * Nightly on a schedule. Any dimension off by more than `MAX_DRIFT` fails.
+ *
+ * **It also runs the outcome-invariance pairs** (PERSONA-REALISM S1): each a
+ * real rep finished twice, once with her number and once without, graded both
+ * ways against the same deployed route. Rule 2 says the two grades are the
+ * same grade; `lib/grade/calibration/outcome-pairs.ts` says how the same, and
+ * why. Two calls per pair — pass `--skip-invariance` to measure drift alone,
+ * or run `npm run grade:invariance` to check the pairs with no server at all.
  */
 
 import { GRADE_FIXTURES, MAX_DRIFT, REQUIRED_FIXTURES } from '@/lib/grade/calibration/fixtures'
+import { OUTCOME_PAIRS, runInvariance, type GradeOne } from '@/lib/grade/calibration/outcome-pairs'
+import { clampSubScores } from '@/lib/grade'
 import { SUB_SCORE_KEYS, type SubScores } from '@/lib/grade/types'
 import { loadEnvLocal } from './env'
 
@@ -116,9 +125,41 @@ async function main(): Promise<void> {
     }
   }
 
+  // RULE 2, MEASURED. Before the gates below, because the fixture shortfall
+  // exits non-zero on every run until twenty are hand-scored, and a leak is
+  // worth hearing about before then.
+  let leaked = false
+  if (!process.argv.includes('--skip-invariance')) {
+    const grade: GradeOne = async (input) => {
+      try {
+        const response = await fetch(`${base}/api/grade`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+        })
+        if (!response.ok) return null
+        const card = (await response.json()) as { composite?: unknown; subScores?: unknown }
+        const subScores = clampSubScores(card.subScores)
+        return typeof card.composite === 'number' && subScores ? { composite: card.composite, subScores } : null
+      } catch {
+        return null
+      }
+    }
+    console.log(`\nOutcome invariance · ${OUTCOME_PAIRS.length} pair(s)\n`)
+    const run = await runInvariance(OUTCOME_PAIRS, grade)
+    for (const line of run.lines) console.log(line)
+    for (const failure of run.report.failures) console.log(`  FAIL  ${failure}`)
+    for (const id of run.unreadable) console.log(`  FAIL  ${id} — no grade came back`)
+    leaked = !run.report.ok || run.unreadable.length > 0
+  }
+
   console.log('')
   if (unscored > 0) {
     console.log(`  ${unscored} fixture(s) still have no hand-scored expectation and were skipped.`)
+  }
+  if (leaked) {
+    console.error('\nThe grade moved with the ending, or a pair could not be graded (rule 2).\n')
+    process.exit(1)
   }
   if (scored.length < REQUIRED_FIXTURES) {
     console.error(

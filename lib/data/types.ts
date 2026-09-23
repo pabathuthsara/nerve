@@ -343,6 +343,54 @@ export interface Scorecard {
    * and only one of them is true.
    */
   accuracy: ScorecardAccuracy | null
+  /**
+   * What he did with what she gave him, counted (PERSONA-REALISM S3).
+   *
+   * **Evidence, never points.** Read off the transcript by
+   * `lib/grade/responsiveness.ts` on the scorecard read, with no model — the
+   * rows above still add up to the composite without it. Null on an interview,
+   * where "she asked you something back" is the whole format rather than a
+   * signal, and on a rep with no transcript to read.
+   */
+  responsiveness: ResponsivenessCounts | null
+  /**
+   * At most three timestamped moments where she cooled or warmed and what his
+   * next line did (PERSONA-REALISM S4). Authored sentences from
+   * `lib/grade/signal-reading.ts`, never a line to say. Empty, never null, on
+   * every rep that has none — including every interview.
+   */
+  signals: SignalMoment[]
+}
+
+/** A count with its denominator stated: only the turns that had a chance. */
+export interface CountOf {
+  count: number
+  of: number
+}
+
+export interface ResponsivenessCounts {
+  /** His questions that came out of her last line. */
+  followUps: CountOf
+  /** Coming back to something she said four or more of her turns earlier. */
+  callbacks: number
+  /** Her questions he actually answered. */
+  bidsTurnedToward: CountOf
+  /** Something of his own, straight after she told him something of hers. */
+  reciprocalDisclosures: CountOf
+}
+
+export interface SignalMoment {
+  /** Seconds into the rep, and the same as the screen prints it. */
+  at: number
+  clock: string
+  kind: 'cooling' | 'warming'
+  /** He read it. A miss is marked, never scored. */
+  read: boolean
+  /** Authored and past `assertFactSentence`. */
+  sentence: string
+  /** Her line and his next one, verbatim, shown as the transcript. */
+  her: string
+  his: string
 }
 
 /**

@@ -693,6 +693,80 @@ answered in two words and changed the subject. That was her interest, and you
 missed it." Rule 8 keeps it after the rep, and `assertNoScript` still forbids
 handing him a line.
 
+### 6.1 What landed: S1, S3, S4 and S5 (24 September)
+
+**S1 SHIPPED, and it found the leak it was written to look for.**
+`lib/grade/calibration/outcome-pairs.ts` cuts each collected rep before its own
+ending and finishes it twice: his words and every timestamp identical, her last
+line either offering her number or leaving (`offer`), or answering the same
+clean ask of his with a yes or a no (`ask`). The measured 60% is byte-identical
+by construction, and the test asserts it. The tolerance is derived rather than
+chosen: ±3 on the composite (`JUDGEMENT_WEIGHT × MAX_DRIFT`, plus a point of
+rounding), ±5 on any one dimension (`MAX_DRIFT`), and a mean signed lean inside
+±1.5 once there are three pairs, because noise cancels and a leak does not.
+`npm run grade:invariance` runs it in-process against the route handler itself —
+no server, the machine-caller door, nothing written to the database — and
+`grade:calibrate` runs the same pairs against a deployed route. First run,
+gpt-4.1, four of the ten pairs, about five cents:
+
+| Pair | Kind | Her number | She left | Δ composite | Largest dimension Δ |
+|---|---|---:|---:|---:|---|
+| `maya-2026-08-23-390137` | offer | 59 | 57 | +2 | `close` +22 |
+| `jules-2026-08-23-5c3d6d` | ask | 68 | 65 | +3 | `signalReading` +23 |
+| `maya-2026-08-23-48b7e6` | offer | 71 | 67 | +4 | `signalReading` +13 |
+| `maya-2026-08-23-ad169e` | ask | 67 | 65 | +2 | `signalReading` +7 |
+
+Mean Δ: composite **+2.8**, `close` **+14.8**, `signalReading` **+13.8**,
+`listening` +4.5, `composure` +4.3, `curiosity` +2.8, `opening` +1.5. Every pair
+moved the same way. A second run of the first pair reproduced it (59/57 became
+60/57, `close` +28), so this is not sampling noise: **the judged 40% reads her
+ending as evidence about his process**, chiefly on `signalReading` and `close`,
+and rule 2 is false for it by two to four composite points. The composite
+barely shows it because the measured 60% cannot see an ending; the dimensions
+show it plainly, which is why the gate is per dimension as well. The fix belongs
+in `lib/grade/prompt.ts` (Tier 0) and was not attempted here. **Owed:** the six
+remaining pairs, a prompt change, and this table re-run against it.
+
+**S3 SHIPPED** as `lib/grade/responsiveness.ts`: four counts off the
+transcript, with no model. Follow-ups, over his questions that had a line of
+hers to follow; long-range callbacks, through `referencesAgent` on the same raw
+turns the meter was handed, at `LONG_RANGE_TURNS` and beyond; her questions
+turned toward — answered, or met however briefly, and neither a dead end nor a
+hop; and disclosures traded for hers.
+
+**S4 SHIPPED** as `lib/grade/signal-reading.ts`: the moments she cooled (−3 or
+worse on one of his lines in the stored trace, or two replies of two words or
+fewer running) or warmed (asked, disclosed, laughed), and what his next line
+did — changed tack, gave room or pressed on; picked it up or walked past it. At
+most three, in the order they happened, and one he read is always kept when
+there was one. Every sentence is a template, and `assertFactSentence` refuses
+one that quotes, uses the first person or advises, so no line is ever handed
+over. A reply it cannot place, such as an "Okay." after she went quiet,
+produces no fact at all.
+
+Both are computed on the scorecard read, from the `transcripts` row every rep
+already stores, so every past rep has them and the stored grade did not change
+shape. They render under *Listening, counted* and *Her signals*, **marked Not
+scored**, on dating scorecards only, with no volt. The composite, the metric
+rows and `dating-arm.test.ts` are untouched.
+
+**S5 SHIPPED** as `lib/grade/talk-ratio.ts`. His talk-share band moves with how
+much she was asked to say: her band-time weighted against each band's
+`typicalWords`, relative to OPEN's seven, through `r / (r + (1 − r)·k)`, bounded
+at eight points either way with one point of slack. The bound is the argument:
+band-time is partly his doing, and a man who froze her out must not have his
+monologue excused by the freeze. The live `timeInBand` is never stored, so
+`lib/db/band-time.ts` rebuilds it from `transcripts.warmth` and
+`sessions.start_warmth`, on the caller's own row only, and falls back to §07's
+band on any failure. It reaches the dating grade route as the `bands` argument
+`composeScorecard` already took; `METRIC_BANDS`, `renderMetrics()` and every
+default path are the identical object (`talk-ratio.test.ts`). A rep held
+GUARDED is scored against 43–58%, one held OPEN against 40–55%, and the
+scorecard draws the band the grade was scored against and says why in the note.
+**The grader is still shown §07's 40–55%**, because `renderMetrics` is pinned.
+It is told not to re-judge the measured half, so this should not matter; S2's
+hand scores are where to check.
+
 ---
 
 ## 7. The four characters: settings cards and backstory v2

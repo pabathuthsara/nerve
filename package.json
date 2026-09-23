@@ -13,6 +13,7 @@
     "test": "vitest run",
     "cost:model": "vite-node --config vitest.config.ts scripts/cost-model.ts",
     "grade:calibrate": "vite-node --config vitest.config.ts scripts/grade-calibrate.ts",
+    "grade:invariance": "vite-node --config vitest.config.ts scripts/grade-invariance.ts",
     "rep:audition": "vite-node --config vitest.config.ts scripts/rep-audition.ts",
     "ab:llm": "vite-node --config vitest.config.ts scripts/ab-persona-llm.ts",
     "ab:history": "vite-node --config vitest.config.ts scripts/ab-history-length.ts",

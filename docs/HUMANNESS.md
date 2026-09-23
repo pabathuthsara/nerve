@@ -589,7 +589,7 @@ with a tolerance, then averaged:
 
 | Metric | Target |
 |---|---|
-| talk ratio | 40–55% of the words are his |
+| talk ratio | 40–55% of the speaking time is his — on the dating arm, moved up to eight points either way by how much she was asked to say (`lib/grade/talk-ratio.ts`, PERSONA-REALISM S5) |
 | questions per 3 min | 3–8 — a floor *and* a ceiling; past eight he is running a survey |
 | open : closed ratio | at least 2:1 |
 | fillers per minute | at most 4 |
@@ -617,8 +617,20 @@ them twice.
 - a memory line, filtered through `lib/grade/memory.ts`, which is what she
   remembers about him next time
 
-**Outcome contributes nothing to the composite.** That is §07 and it is checked
-in code.
+**Outcome contributes nothing to the composite.** That is §07 and the
+ARITHMETIC is checked in code. The judged 40% was not checked until 24
+September, and it leaks: `npm run grade:invariance` grades one rep finished two
+ways, identical on his side, and on its first four pairs the grader scored him
++2.8 composite, +14.8 on `close` and +13.8 on `signalReading` when she gave her
+number (PERSONA-REALISM §6.1, S1). Open, and the fix is in `lib/grade/prompt.ts`.
+
+**Beside the grade, never in it** — two evidence sections on the dating
+scorecard, read off the stored transcript and warmth trace with no model and
+labelled *Not scored*: `lib/grade/responsiveness.ts` counts follow-ups,
+long-range callbacks, her questions answered and disclosures traded (S3), and
+`lib/grade/signal-reading.ts` names at most three timestamped moments she
+cooled or warmed and what his next line did (S4), in authored sentences that
+`assertFactSentence` refuses if they quote, speak in the first person or advise.
 
 ### 6.6 Safety — moderation on both streams
 

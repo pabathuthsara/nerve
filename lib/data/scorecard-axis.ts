@@ -19,4 +19,13 @@ export interface Axis {
   format: (value: number) => string
   /** One sentence per verdict. Hand-authored, like every other string (§02). */
   notes: { below: string; inside: string; above: string }
+  /**
+   * Set only on a band that can move per rep (the dating talk ratio,
+   * PERSONA-REALISM S5): the sentence the row's note gains when the stored band
+   * sits above or below `targetMin`–`targetMax`. On the NOTE rather than the
+   * target label, because the label is one mono line in an `auto` column and a
+   * reason appended to it squeezed the note to a word a line at phone width.
+   * Absent is a band that never moves, which is every other row on both tracks.
+   */
+  moves?: { up: string; down: string }
 }

@@ -20,8 +20,11 @@
  * opinion — not a metric with a measured value printed beside it.
  */
 
-import type { MetricBand, Moment, Scorecard, ScorecardAccuracy, Track } from './types'
+import type { MetricBand, Moment, ResponsivenessCounts, Scorecard, ScorecardAccuracy, SignalMoment, Track } from './types'
 import type { Axis } from './scorecard-axis'
+import type { TranscriptTurn as StoredTurn } from '@/lib/voice/types'
+import { responsivenessOf } from '@/lib/grade/responsiveness'
+import { signalFacts } from '@/lib/grade/signal-reading'
 import {
   INTERVIEW_AXES,
   INTERVIEW_FOCUS_INSTRUCTIONS,
@@ -71,6 +74,13 @@ const AXES: Record<string, Axis> = {
       below: 'You left most of the work to her. Room to say more of what you actually think.',
       inside: 'You shared the floor without disappearing from it.',
       above: 'You held the floor. She had to wait for a gap rather than take one.',
+    },
+    // S5. The one dating band that can move per rep — set against how much
+    // she was asked to say (`lib/grade/talk-ratio.ts`). The stored row carries
+    // the band it was scored against; this says why it is not 40–55%.
+    moves: {
+      up: 'Your target sat higher this rep because she kept her answers short.',
+      down: 'Your target sat lower this rep because she had more to say.',
     },
   },
   questionsPer3Min: {
@@ -263,12 +273,19 @@ function toMetricBand(
   if (!axis) return null
 
   const measured = typeof stored.value === 'number'
+  // A band that moved for this rep is drawn where it moved to. The stored
+  // string is the band the grade was actually scored against, which is the
+  // rule the note above `AXES` gives for the day a band moves.
+  const moved = axis.moves ? movedPercentBand(stored.band, axis) : null
   const verdict = stored.verdict === 'below' ? 'LOW' : stored.verdict === 'above' ? 'HIGH' : 'GOOD'
-  const note = stored.verdict === 'below'
+  const verdictNote = stored.verdict === 'below'
     ? axis.notes.below
     : stored.verdict === 'above'
       ? axis.notes.above
       : axis.notes.inside
+  const note = moved && axis.moves
+    ? `${verdictNote} ${moved.min > axis.targetMin ? axis.moves.up : axis.moves.down}`
+    : verdictNote
 
   return {
     key: axis.key,
@@ -277,13 +294,30 @@ function toMetricBand(
     displayValue: measured ? axis.format(stored.value as number) : '—',
     numericValue: measured ? barPosition(stored.value as number, axis) : 0,
     targetLabel: stored.band,
-    targetMin: axis.targetMin,
-    targetMax: axis.targetMax,
+    targetMin: moved?.min ?? axis.targetMin,
+    targetMax: moved?.max ?? axis.targetMax,
     verdict: measured ? verdict : 'GOOD',
     points: measured ? Math.round(((stored.points ?? 0) / 100) * perMetric) : 0,
     maxPoints: Math.round(perMetric),
     note: measured ? note : 'This rep was too short to measure it.',
   }
+}
+
+/**
+ * A stored percentage band that differs from the axis's own, or null.
+ *
+ * `describeBand` writes a talk band as `44%–59%`. Anything else — the §07
+ * band itself, a row from before S5, a string this does not recognise —
+ * reads as not moved, and the axis draws what it always drew.
+ */
+export function movedPercentBand(band: string, axis: Axis): { min: number; max: number } | null {
+  const match = /^(\d{1,3})%–(\d{1,3})%$/.exec(band.trim())
+  if (!match) return null
+  const min = Number(match[1])
+  const max = Number(match[2])
+  if (!(min < max) || max > 100) return null
+  if (min === axis.targetMin && max === axis.targetMax) return null
+  return { min, max }
 }
 
 export interface ScoreRow {
@@ -341,6 +375,12 @@ export function toScorecard(input: {
    * interview arm had a table of its own.
    */
   track?: Track
+  /**
+   * The transcript as stored, for the evidence rows (PERSONA-REALISM S3, S4).
+   * Optional: without it the scorecard is the card it always was, with no
+   * counts and no moments.
+   */
+  turns?: readonly StoredTurn[]
 }): Scorecard {
   const interview = input.track === 'interview'
   const axes = interview ? INTERVIEW_AXES : AXES
@@ -407,7 +447,61 @@ export function toScorecard(input: {
     tryNext: (firstFocus && instructions[firstFocus]) ?? INTERVIEW_TRY_NEXT,
     focus: input.score.focus ?? [],
     accuracy,
+    ...evidenceFrom(interview ? [] : input.turns ?? [], input.events),
   }
+}
+
+/**
+ * S3 and S4, read off the transcript and the warmth trace the rep already
+ * stored. Dating only: on an interview she asks questions for a living, and
+ * "she asked you something back" would be describing the format, not her.
+ *
+ * Computed here rather than at grade time so every rep ever saved gets them,
+ * and nothing about the stored grade has to change shape for them to exist.
+ */
+function evidenceFrom(
+  turns: readonly StoredTurn[],
+  events: readonly StoredWarmthEvent[],
+): { responsiveness: ResponsivenessCounts | null; signals: SignalMoment[] } {
+  if (!turns.some((turn) => turn.speaker === 'user') || !turns.some((turn) => turn.speaker === 'agent')) {
+    return { responsiveness: null, signals: [] }
+  }
+  const counted = responsivenessOf(turns)
+  return {
+    responsiveness: {
+      followUps: counted.followUps,
+      callbacks: counted.callbacks.count,
+      bidsTurnedToward: counted.bidsTurnedToward,
+      reciprocalDisclosures: counted.reciprocalDisclosures,
+    },
+    signals: signalFacts({ transcript: turns, events }).map((fact) => ({
+      at: fact.at,
+      clock: fact.clock,
+      kind: fact.kind,
+      read: fact.read,
+      sentence: fact.sentence,
+      her: fact.her,
+      his: fact.his,
+    })),
+  }
+}
+
+/**
+ * The `transcripts.turns` column, as the turns both adapters emit (§04).
+ *
+ * A row that is not that shape contributes nothing rather than throwing: the
+ * evidence is a reading of the transcript, and a transcript that cannot be
+ * read has no reading.
+ */
+export function storedTurns(value: unknown): StoredTurn[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry): StoredTurn[] => {
+    if (!entry || typeof entry !== 'object') return []
+    const turn = entry as Record<string, unknown>
+    if (turn.speaker !== 'user' && turn.speaker !== 'agent') return []
+    if (typeof turn.text !== 'string' || typeof turn.t_start !== 'number' || typeof turn.t_end !== 'number') return []
+    return [{ speaker: turn.speaker, text: turn.text, t_start: turn.t_start, t_end: turn.t_end }]
+  })
 }
 
 /**
