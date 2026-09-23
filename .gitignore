@@ -29,3 +29,8 @@ public/brand/.fonts.css
 # generated PNGs and zips, rebuilt from the scripts that made them. The scripts
 # are committed; their output is not, for the same reason `public/shots/` is not.
 marketing/
+
+# `npm run llm:bakeoff` raw results — every reply, timing and receipt, ~300KB a
+# run. Re-read with `--from`; never committed. Named narrowly because
+# `outputs/` holds other people's work too.
+outputs/llm-bakeoff-*.json
