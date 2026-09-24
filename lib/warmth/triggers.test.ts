@@ -137,3 +137,15 @@ describe('contempt, caught without consulting the fast score', () => {
     )
   })
 })
+
+describe('"grow up" (23 September)', () => {
+  it('reads the imperative as contempt and the getting-to-know-you question as a question', () => {
+    expect(hasHostilityMarker('Grow up.')).toBe(true)
+    expect(hasHostilityMarker('Oh, grow up.')).toBe(true)
+    expect(hasHostilityMarker('Honestly. Grow up.')).toBe(true)
+    expect(hasHostilityMarker('You need to grow up.')).toBe(true)
+    expect(hasHostilityMarker('Where did you grow up, originally?')).toBe(false)
+    expect(hasHostilityMarker('I grew up near here.')).toBe(false)
+    expect(hasHostilityMarker('Did you grow up around here?')).toBe(false)
+  })
+})

@@ -17,6 +17,17 @@ interface ScoringCall {
   maxOutputTokens: number
   timeoutMs: number
   /**
+   * How many independent samples to ask for in the ONE call (`n`), 1 to 3.
+   *
+   * PERSONA-REALISM-REPORT S6. The same transcript graded twice by the same
+   * model at temperature zero moved one dimension fourteen points (the S1
+   * invariance run of 24 September, on byte-identical pages), so a single
+   * sample is a noisy instrument. The grade route takes the median of three.
+   * One call rather than three, so the input is billed once and it is still one
+   * reservation; the output ceiling is reserved per sample (rule 18).
+   */
+  samples?: number
+  /**
    * The reservation's id on this session, when the default is not free.
    *
    * A bound grade reserves under the literal `'grade'`, which is right while a
@@ -39,9 +50,12 @@ interface Completion {
  * truncation and cancellation. A missing usage receipt retains the reservation
  * as an explicit estimate; it is never silently booked at zero. */
 export async function runScoringCall(options: ScoringCall): Promise<
-  { content: string; model: string } | { response: Response }
+  { content: string; contents: string[]; model: string } | { response: Response }
 > {
-  const { request, userId, kind, model, messages, maxOutputTokens } = options
+  const { request, userId, kind, model, messages } = options
+  const samples = Math.max(1, Math.min(3, Math.round(options.samples ?? 1)))
+  // Every sample can use the whole ceiling, so the reservation is per sample.
+  const maxOutputTokens = options.maxOutputTokens * samples
   const sessionId = options.sessionId
   if (sessionId !== undefined && sessionId !== null
     && (typeof sessionId !== 'string'
@@ -90,8 +104,9 @@ export async function runScoringCall(options: ScoringCall): Promise<
       body: JSON.stringify({
         model,
         temperature: 0,
-        max_tokens: maxOutputTokens,
+        max_tokens: options.maxOutputTokens,
         response_format: { type: 'json_object' },
+        ...(samples > 1 ? { n: samples } : {}),
         messages,
       }),
     })
@@ -156,12 +171,17 @@ export async function runScoringCall(options: ScoringCall): Promise<
   }
 
   if (errorResponse) return { response: errorResponse }
-  if (payload?.choices?.[0]?.finish_reason === 'length') {
-    return { response: NextResponse.json({ error: 'scoring output truncated' }, { status: 502 }) }
-  }
-  const content = payload?.choices?.[0]?.message?.content
-  if (typeof content !== 'string') {
+  // Every whole sample, in order. A truncated one is dropped rather than
+  // failing the grade, as long as one survives.
+  const contents = (payload?.choices ?? [])
+    .filter((choice) => choice.finish_reason !== 'length')
+    .map((choice) => choice.message?.content)
+    .filter((value): value is string => typeof value === 'string')
+  if (contents.length === 0) {
+    if (payload?.choices?.[0]?.finish_reason === 'length') {
+      return { response: NextResponse.json({ error: 'scoring output truncated' }, { status: 502 }) }
+    }
     return { response: NextResponse.json({ error: 'no content' }, { status: 502 }) }
   }
-  return { content, model: typeof payload?.model === 'string' ? payload.model : model }
+  return { content: contents[0]!, contents, model: typeof payload?.model === 'string' ? payload.model : model }
 }

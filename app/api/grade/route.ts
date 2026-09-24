@@ -28,6 +28,8 @@ import { computeDeterministicMetrics } from '@/lib/grade/metrics'
 // read one reaches the table it always did.
 import { datingMetricBands } from '@/lib/grade/talk-ratio'
 import { readBandTimeFor } from '@/lib/db/band-time'
+import { withEndingWithheld } from '@/lib/grade/ending'
+import { medianSample } from '@/lib/grade/samples'
 import type { AccuracyLayer, JudgementLayer, Scorecard, SubScores } from '@/lib/grade/types'
 // The second pass (§8.2). Its own call, its own model, its own budget line, and
 // skipped entirely when the round produced no probes — which is every dating
@@ -52,6 +54,12 @@ export const maxDuration = 60
 
 /** Point this at the strongest text model on the account. */
 const MODEL = process.env.GRADE_MODEL ?? 'gpt-4.1'
+
+/**
+ * Readings per dating grade (PERSONA-REALISM-REPORT S6). Three by default;
+ * `GRADE_SAMPLES=1` restores the single reading if cost ever needs it.
+ */
+const GRADE_SAMPLES = Math.max(1, Math.min(3, Number(process.env.GRADE_SAMPLES ?? 3) || 3))
 
 /**
  * The model that judges correctness (§8.2).
@@ -129,13 +137,20 @@ export async function POST(request: Request): Promise<Response> {
     apiKey,
     maxOutputTokens: SCORING_LIMITS.gradeOutputTokens,
     timeoutMs: SCORING_LIMITS.gradeTimeoutMs,
+    // S6: three readings of a dating rep, one call, the median kept
+    // (`lib/grade/samples.ts`). The interview arm keeps one — its second pass
+    // shares this session's grade envelope.
+    samples: rubric.track === 'dating' ? GRADE_SAMPLES : 1,
     messages: [
       { role: 'system', content: rubric.systemPrompt() },
       {
         role: 'user',
         content: [
           `TRANSCRIPT (${Math.round(sessionSeconds)}s):`,
-          rubric.renderTranscript(transcript, personaName),
+          // S1: on the dating arm the grader never sees HOW it ended — her
+          // reply to his last line is withheld (`lib/grade/ending.ts`). The
+          // measured 60% still reads the whole transcript.
+          rubric.renderTranscript(rubric.track === 'dating' ? withEndingWithheld(transcript) : transcript, personaName),
           '',
           'ALREADY MEASURED:',
           // The track's own targets. The dating block is byte-identical to
@@ -150,17 +165,23 @@ export async function POST(request: Request): Promise<Response> {
   })
   if ('response' in completion) return completion.response
 
-  let parsed: Record<string, unknown>
-  try {
-    const decoded: unknown = JSON.parse(completion.content)
-    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) throw new Error('malformed')
-    parsed = rubric.normalise(decoded as Record<string, unknown>)
-  } catch {
-    return NextResponse.json({ error: 'unparseable' }, { status: 502 })
-  }
-
-  const scores = clampSubScores(parsed)
-  if (!scores) return NextResponse.json({ error: 'unusable scores' }, { status: 502 })
+  // Every usable sample (S6). One that does not parse or carries no scores is
+  // dropped rather than failing a grade the others can still give.
+  const usable = completion.contents.flatMap((content) => {
+    try {
+      const decoded: unknown = JSON.parse(content)
+      if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) return []
+      const normalised = rubric.normalise(decoded as Record<string, unknown>)
+      const sampleScores = clampSubScores(normalised)
+      return sampleScores ? [{ scores: sampleScores, parsed: normalised }] : []
+    } catch {
+      return []
+    }
+  })
+  const chosen = medianSample(usable)
+  if (!chosen) return NextResponse.json({ error: 'unusable scores' }, { status: 502 })
+  const parsed = chosen.parsed
+  const scores = chosen.scores
 
   const rawEvidence = parsed['evidence']
   const evidence: Partial<Record<keyof SubScores, string>> = {}

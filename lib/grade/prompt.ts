@@ -19,10 +19,14 @@ LISTENING        Did he use what she gave him? Picking up her actual words and
                  following them, versus waiting for his turn to talk.
 SIGNAL READING   Did he correctly read how interested she was, and adjust? Missing a
                  clear no scores low. Correctly reading an ambiguous no scores high.
+                 Judge it on the signals she gave DURING the conversation and what
+                 he did with them, never on how it ended.
 COMPOSURE        Did he stay steady? Recovery after an awkward moment counts for more
                  than never having one.
-CLOSE            How did it end? Leaving warmly without pushing scores high, INCLUDING
-                 when he was turned down.
+CLOSE            How did HE close? Reading the moment, leaving warmly or asking plainly
+                 without pushing scores high. Judge only his lines: her final answer is
+                 decided by the practice itself, is withheld from you, and tells you
+                 nothing about how he played.
 
 SCORE THE PROCESS, NEVER THE OUTCOME.
 Whether she gave a number, agreed to anything, or walked away contributes ZERO.

@@ -47,7 +47,7 @@ import {
   referencesAgent,
   wordsIn,
 } from '@/lib/warmth/fast'
-import { asksSomething, classifyUserTurn, type UserTurnKind } from '@/lib/warmth/turn-kind'
+import { asksSomething, classifyUserTurn, isMisheard, type UserTurnKind } from '@/lib/warmth/turn-kind'
 
 /* ------------------------------------------------------------------ *
  * Blocks: one speaker's consecutive turns, read as one turn
@@ -348,6 +348,10 @@ export function responsivenessOf(transcript: readonly TranscriptTurn[]): Respons
       const next = blocks[position + 1]
       if (next?.speaker !== 'user') continue
 
+      // A reply the transcriber misheard ("Hej der", "음") is not evidence of
+      // anything he did (PERSONA-REALISM-REPORT R8): not a bid missed, not a
+      // disclosure unreturned. It is left out of both counts.
+      if (isMisheard(next.text)) continue
       if (herAsks(block.text)) {
         const reading = readBid(block, next)
         bids.push(reading)

@@ -92,7 +92,15 @@ const HOSTILITY = new RegExp([
   /\bwhy\s+are\s+you\s+(?:still|even)\s+(?:here|talking|around|bothering)\b/,
   // Dismissals. Deliberately not bare "whatever" or "I don't care", which are
   // ordinary English about a topic rather than about the person.
-  /\b(?:who cares|nobody cares|couldn'?t care less|get over yourself|grow up|do one)\b/,
+  /\b(?:who cares|nobody cares|couldn'?t care less|get over yourself|do one)\b/,
+  // "GROW UP" ONLY AS AN IMPERATIVE (23 September). It used to be a bare phrase
+  // in the line above, so "Where did you grow up, originally?" — one of the
+  // most ordinary getting-to-know-you questions there is — was contempt, paid
+  // nothing and charged -10 on every rung. Found by the ladder simulation's
+  // own fixture check (`lib/simulation/ladder.ts`). The imperative is still
+  // caught at the start of a sentence, and "you need to grow up" by name.
+  /(?:^|[.!?]\s+)(?:oh,?\s+|just\s+|god,?\s+)?grow up\b/,
+  /\byou\s+(?:need|have|ought|should|want)\s+to\s+grow up\b/,
   /\bthis is (?:a waste of|pointless|stupid|boring)\b/,
 ].map((pattern) => pattern.source).join('|'), 'i')
 

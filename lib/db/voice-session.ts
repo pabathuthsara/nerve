@@ -38,7 +38,9 @@ export function voiceBudgetPolicy(env: Record<string, string | undefined> = proc
     resources: {
       llmInputTokens: 240_000, llmOutputTokens: 6_000,
       warmthInputTokens: 120_000, warmthOutputTokens: 6_000,
-      gradeInputTokens: 24_000, gradeOutputTokens: 2_400,
+      // 3,600 for three grade samples in one call (S6, `runScoringCall`),
+      // plus room for the interview-style second pass the envelope already had.
+      gradeInputTokens: 24_000, gradeOutputTokens: 4_800,
       // At most two credentials: initial connection and one bounded reconnect.
       ttsCharacters: 3_200, sttAudioMs: 480_000,
     },

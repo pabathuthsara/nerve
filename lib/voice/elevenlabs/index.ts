@@ -67,7 +67,8 @@ import { applyRoomConfig, type RoomControls } from '@/lib/audio/types'
 import { PCM_RATES } from './config'
 import { MicCapture } from './capture'
 import { VadDetector, frameRms } from './vad'
-import { RealtimeTranscriber, type TranscriptionTiming } from './stt'
+import { type TranscriptionTiming } from './stt'
+import { transcriberFor, type Transcriber } from './transcriber'
 import { composeSteering } from '@/lib/warmth/steering'
 import { UNSTEERED_SENTENCE_CAP, UNSTEERED_WORD_CAP, sentenceCapFor, wordCapFor } from '@/lib/warmth/bands'
 import { LlmClient, historyFrom, type LlmMessage } from './llm'
@@ -132,7 +133,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   private micStream: MediaStream | null = null
   private capture: MicCapture | null = null
   private vad: VadDetector | null = null
-  private stt: RealtimeTranscriber | null = null
+  private stt: Transcriber | null = null
   private room: Room | null = null
   private userAnalyser: AnalyserNode | null = null
   private agentAnalyser: AnalyserNode | null = null
@@ -271,10 +272,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       this.vad = new VadDetector({ silenceMs: minted.pipeline.turn.silenceMs })
       this.setInterruptible(minted.pipeline.turn.interrupts)
 
-      const stt = new RealtimeTranscriber({
-        clientSecret: minted.clientSecret,
-        model: minted.pipeline.stt.model,
-        sampleRate: minted.pipeline.stt.sampleRate,
+      // OpenAI's transcriber, or Scribe v2 Realtime when the mint said so
+      // (PERSONA-REALISM-REPORT L3, `PIPELINE_STT_MODEL=scribe_v2_realtime`).
+      // Identical surface either way; see `./transcriber.ts`.
+      const stt = transcriberFor(minted, {
         clock: this.clock,
         onDelta: (text, timing) => this.onSttDelta(text, timing),
         onFinal: (text, timing, latencyMs) => this.onSttFinal(text, timing, latencyMs),

@@ -67,7 +67,7 @@ describe('paid scoring calls', () => {
 
   it('reserves once, then records cached provider tokens and request IDs', async () => {
     const response = await runScoringCall(options())
-    expect(response).toEqual({ content: '{}', model: 'gpt-4.1-mini-2025-04-14' })
+    expect(response).toEqual({ content: '{}', contents: ['{}'], model: 'gpt-4.1-mini-2025-04-14' })
     expect(mocks.allowance).not.toHaveBeenCalled()
     expect(mocks.reserve).toHaveBeenCalledOnce()
     expect(mocks.settle).toHaveBeenCalledWith(expect.objectContaining({
@@ -138,6 +138,23 @@ describe('paid scoring calls', () => {
       userId: 'user-1', kind: 'warmth', provider: 'openai', costUsd: expect.any(Number),
       usage: { input: 1_000, output: 100, cachedInput: 800, total: 1_100 },
     }))
+  })
+
+  it('asks for three readings in ONE call and reserves the output ceiling for each (S6)', async () => {
+    upstream.mockResolvedValue(Response.json({
+      id: 'chatcmpl-three', model: 'gpt-4.1-2025-04-14', usage,
+      choices: [
+        { finish_reason: 'stop', message: { content: '{"a":1}' } },
+        { finish_reason: 'length', message: { content: '{"a":' } },
+        { finish_reason: 'stop', message: { content: '{"a":3}' } },
+      ],
+    }))
+    const response = await runScoringCall(options({ kind: 'grade', samples: 3, maxOutputTokens: 1_200 }))
+    expect(upstream).toHaveBeenCalledOnce()
+    expect(JSON.parse(upstream.mock.calls[0]?.[1]?.body as string)).toMatchObject({ n: 3, max_tokens: 1_200 })
+    expect(mocks.reserve).toHaveBeenCalledWith(expect.objectContaining({ resources: expect.objectContaining({ gradeOutputTokens: 3_600 }) }))
+    // The truncated reading is dropped; the two whole ones come back in order.
+    expect(response).toMatchObject({ contents: ['{"a":1}', '{"a":3}'] })
   })
 
   it('does not buy a call when its model has no configured tariff', async () => {

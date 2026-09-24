@@ -40,7 +40,7 @@
 
 import type { TranscriptTurn } from '@/lib/voice/types'
 import { contentWords, wordsIn } from '@/lib/warmth/fast'
-import { classifyUserTurn } from '@/lib/warmth/turn-kind'
+import { classifyUserTurn, isMisheard } from '@/lib/warmth/turn-kind'
 import {
   blocksOf,
   herAsks,
@@ -222,6 +222,8 @@ const LAUGH = /\[(?:laughs?|laughing|chuckles?|giggles?)\]|\b(?:ha){2,}\b|\bhaha
  * or retreat, and this file does not guess which.
  */
 function afterCooling(previous: Block, hers: Block, reply: Block): SignalResponse | null {
+  // A misheard line (R8) is the transcriber's, not his. Nothing is said about it.
+  if (isMisheard(reply.text)) return null
   const kind = classifyUserTurn(reply.text, { herLastTurnAsked: herAsks(hers.text) })
   if (kind === 'dismissal') return 'hostile'
   if (kind === 'silence' || kind === 'acknowledgement' || kind === 'greeting') return null
@@ -249,6 +251,7 @@ function afterQuestion(reading: BidReading): SignalResponse {
 }
 
 function afterDisclosure(hers: Block, reply: Block): SignalResponse | null {
+  if (isMisheard(reply.text)) return null
   const kind = classifyUserTurn(reply.text, { herLastTurnAsked: false })
   if (kind === 'dismissal') return 'dismissed'
   if (kind === 'silence' || kind === 'acknowledgement' || kind === 'greeting') return 'dead-end'
@@ -391,7 +394,8 @@ export function signalFacts(input: {
       }
     }
 
-    if (!reply) continue
+    // A misheard reply (R8) is not his move; nothing is read off it.
+    if (!reply || isMisheard(reply.text)) continue
 
     // WARMING. A question is the strongest bid and is read as one even when
     // it comes with a disclosure attached; a laugh is read only when nothing
@@ -407,7 +411,7 @@ export function signalFacts(input: {
       if (response) {
         push({ at: block.t_start, kind: 'warming', trigger: 'disclosure', response, her: block.text, his: reply.text }, reply)
       }
-    } else if (LAUGH.test(block.text)) {
+    } else if (LAUGH.test(block.text) && !isMisheard(reply.text)) {
       const kind = classifyUserTurn(reply.text, { herLastTurnAsked: false })
       const dropped = kind === 'silence' || kind === 'acknowledgement' || kind === 'dismissal'
       push({
