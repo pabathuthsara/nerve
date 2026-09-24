@@ -190,6 +190,19 @@ const PIPELINE_TOKEN_RATES: Record<string, PipelineTokenRates> = {
   'gpt-4.1-mini': { audioInput: 0, textInput: 0.4, cachedTextInput: 0.1, textOutput: 1.6 },
   'gpt-4.1-nano': { audioInput: 0, textInput: 0.1, cachedTextInput: 0.025, textOutput: 0.4 },
   'gpt-4.1': { audioInput: 0, textInput: 2, cachedTextInput: 0.5, textOutput: 8 },
+  // The character-model candidates `npm run llm:bakeoff` measures (report L6,
+  // `PERSONA-REALISM-REPORT-2026-09-23.md` §3.2). Standard tier, read on
+  // 23 September 2026 off https://developers.openai.com/api/docs/pricing and
+  // each model's own page (…/docs/models/gpt-5-mini, gpt-5-nano, gpt-5.4-mini,
+  // gpt-5.4-nano). Reasoning tokens bill as output and arrive inside
+  // `completion_tokens`, so `priceChatUsage` needs no second field for them.
+  // Priced here rather than in the harness so a turn on any of them, if one
+  // ever ships, is priced by the same card the bake-off chose it on — and
+  // never read as free (see `priceTokens`).
+  'gpt-5-mini': { audioInput: 0, textInput: 0.25, cachedTextInput: 0.025, textOutput: 2 },
+  'gpt-5-nano': { audioInput: 0, textInput: 0.05, cachedTextInput: 0.005, textOutput: 0.4 },
+  'gpt-5.4-mini': { audioInput: 0, textInput: 0.75, cachedTextInput: 0.075, textOutput: 4.5 },
+  'gpt-5.4-nano': { audioInput: 0, textInput: 0.2, cachedTextInput: 0.02, textOutput: 1.25 },
 }
 
 export function pipelineTokenRates(model: string): PipelineTokenRates | null {
