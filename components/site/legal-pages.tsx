@@ -331,7 +331,7 @@ export function PrivacyDocument() {
           <li><strong>Supabase</strong> — database, authentication and file storage. Your rows are readable only by your own account, enforced by row-level security in the database itself rather than by application code.</li>
           <li><strong>Vercel</strong> — application hosting and delivery.</li>
           <li><strong>OpenAI</strong> — the live voice model that speaks with you, the model that grades the transcript afterwards, and the classifier that checks both sides of a conversation against the content bounds in the <Link href={SITE_LINKS.safety}>safety policy</Link>. The classifier sees one turn at a time and returns a verdict; it is not used to train anything.</li>
-          <li><strong>ElevenLabs</strong> — an alternative voice provider, used only for sessions served by it.</li>
+          <li><strong>ElevenLabs</strong> — an alternative voice provider, used only for sessions served by it. On some of those sessions it also turns what you say into text: your microphone audio is streamed to it from just before you start speaking until the pause that ends your turn, and nothing in between turns.</li>
           <li><strong>Our merchant of record</strong> — payment, invoicing and tax, for paid accounts only. They receive what a payment needs and nothing about your sessions.</li>
           <li><strong>Our email provider</strong> — sign-in links, confirmations and the weekly review letter.</li>
         </ul>

@@ -400,6 +400,43 @@ unreliable. All three must emit the identical normalised turn (rule 1), and the
 new vendor needs a line in `components/site/legal-pages.tsx`, because it
 processes user audio.
 
+> **L3 status, 24 September 2026: built and measured, NOT switched on**
+> (branch `pr/scribe`). `lib/voice/elevenlabs/scribe.ts` is `ScribeTranscriber`,
+> a drop-in for `RealtimeTranscriber` with the same options, methods and
+> callbacks, speech-gated with the same 300 ms pre-roll, `commit_strategy=manual`
+> so the end of turn stays ours, and English pinned. With
+> `PIPELINE_STT_MODEL=scribe_v2_realtime` the mint issues an ElevenLabs
+> single-use token (`mintScribeToken`) instead of the OpenAI secret and says so
+> in `stt: { vendor: 'elevenlabs', … }`. Every other value mints the bytes it
+> always did. It is priced at $0.0065/min in both the admission envelope and
+> the meter, and the privacy page names ElevenLabs as a transcriber.
+>
+> Measured with `npm run scribe:probe -- --openai`: the same synthetic audio,
+> real time, 20 ms frames, from Sri Lanka:
+>
+> | | commit → final | partials before commit |
+> |---|---:|---:|
+> | Scribe v2 Realtime (6 segments, 3 runs) | **294, 298, 350, 330, 329, 336 ms** | 5, 3, 5, 3, 5, 3 |
+> | `gpt-4o-transcribe` (2 segments) | 1,409, 816 ms | 0, 0 |
+>
+> Both arms transcribed word for word. A run sends ~9.3 s of audio for ~$0.001.
+> Five behaviours of the real socket are load-bearing and are recorded in the
+> file header with captured fixtures (rule 14). It hangs up after ~15 s without
+> audio, so a 20 ms keep-alive runs every 5 s (held for 90 s). A commit under
+> 0.3 s of audio is fatal, so commits are padded. It commits by itself at ~36 s
+> of audio, so long monologues are split first. A spent token opens and THEN
+> refuses. It repeats a non-empty committed text as a partial 5–50 ms later, and that
+> repeat is dropped.
+>
+> **Owed by hand:** (1) one change in `lib/voice/elevenlabs/index.ts` to build
+> the transcriber through `transcriberFor(minted, …)`; (2) a real-microphone
+> rep, because synthetic speech is the easiest a transcriber will ever hear and
+> this says nothing about accuracy on a nervous man; (3) the vendor's maximum
+> session length is undocumented, and a twenty-minute interview is one socket,
+> so run one interview to its end before enabling Scribe on that track; (4)
+> `pipeline_telemetry` files Scribe's milliseconds and cost under `openai.*`,
+> because relabelling it needs `lib/voice/types.ts`.
+
 **L4 — Semantic end-of-turn.** *infra, $0, −350 ms, and better for nervous
 users.* Replace "600 ms of silence" with: after ~200 ms of silence, run Smart
 Turn v3.2 (8 M parameters, ONNX, ~12 ms on a CPU, 23 languages, listens to

@@ -181,12 +181,40 @@ export interface PipelineTokenRates {
 }
 
 /**
+ * ElevenLabs Scribe v2 Realtime, list price: $0.39 an hour of audio SENT
+ * (https://elevenlabs.io/pricing/api, read 23 September 2026), which is
+ * $0.0065 a minute. "Sent" is the vendor's word and it is what makes a
+ * speech-gated socket cheaper than an open one: ElevenLabs "charges for speech
+ * to text based on the duration of the audio sent for transcription"
+ * (https://elevenlabs.io/docs/overview/capabilities/speech-to-text).
+ *
+ * Keyterm prompting is a separate +$0.05 an hour and entity detection +$0.07.
+ * Neither is requested, and neither may be turned on without this number and
+ * `pipelineTranscriptionAllowance` moving with it — an unpriced option on a
+ * priced model is how an admission envelope quietly stops bounding anything.
+ */
+export const SCRIBE_REALTIME_USD_PER_MINUTE = 0.0065
+
+/**
  * Published list prices. Estimates until a billing period reconciles them —
  * the same caveat the realtime card above carries.
  */
 const PIPELINE_TOKEN_RATES: Record<string, PipelineTokenRates> = {
   'gpt-4o-mini-transcribe': { audioInput: 1.25, textInput: 1.25, cachedTextInput: 1.25, textOutput: 5 },
   'gpt-4o-transcribe': { audioInput: 6, textInput: 2.5, cachedTextInput: 2.5, textOutput: 10 },
+  // NOT A TOKEN RATE, AND IT IS HERE SO THE METER CAN STILL PRICE IT.
+  //
+  // Scribe bills seconds of audio and reports no usage at all, so
+  // `ScribeTranscriber` counts what it sent and reports it through the same
+  // `onUsage` the OpenAI transcriber uses — as MILLISECONDS in the audio slot.
+  // Priced per million of those: $0.0065 a minute is $0.1083 per 1M ms. Without
+  // this row `priceTokens` answers null and `PipelineMeter` reports the whole
+  // rep's cost as unknown, which rule 18 does not allow. The ledger never reads
+  // this card; it is bounded server-side by `pipelineTranscriptionAllowance`.
+  scribe_v2_realtime: {
+    audioInput: (SCRIBE_REALTIME_USD_PER_MINUTE / 60_000) * 1_000_000,
+    textInput: 0, cachedTextInput: 0, textOutput: 0,
+  },
   'gpt-4.1-mini': { audioInput: 0, textInput: 0.4, cachedTextInput: 0.1, textOutput: 1.6 },
   'gpt-4.1-nano': { audioInput: 0, textInput: 0.1, cachedTextInput: 0.025, textOutput: 0.4 },
   'gpt-4.1': { audioInput: 0, textInput: 2, cachedTextInput: 0.5, textOutput: 8 },

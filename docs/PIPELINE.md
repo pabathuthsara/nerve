@@ -28,6 +28,8 @@ number (§05, problem one). We are buying the voice and nothing else.
 | `lib/voice/elevenlabs/vad.ts` | Our detector. Pure — energy in, events out |
 | `lib/voice/elevenlabs/capture.ts` | One mic tap feeding both the VAD and the transcriber |
 | `lib/voice/elevenlabs/stt.ts` | Realtime transcription, driven by our VAD, not theirs |
+| `lib/voice/elevenlabs/scribe.ts` | The same, through ElevenLabs Scribe v2 Realtime: partials while he speaks. Opt-in |
+| `lib/voice/elevenlabs/transcriber.ts` | Which of the two a rep opens, read off the minted session |
 | `lib/voice/elevenlabs/llm.ts` | The character as a streaming text model. Cancellable |
 | `lib/voice/elevenlabs/tts.ts` | Streaming synthesis and character alignment |
 | `lib/voice/elevenlabs/turn-protocol.ts` | Request and event contract for the combined HTTP reply |
@@ -37,7 +39,7 @@ number (§05, problem one). We are buying the voice and nothing else.
 | `lib/voice/elevenlabs/player.ts` | PCM playback with an exact playhead |
 | `lib/voice/elevenlabs/truncate.ts` | What she actually said. The load-bearing piece |
 | `lib/voice/elevenlabs/telemetry.ts` | Per-stage latency, per-vendor cost, the credit guard |
-| `lib/voice/elevenlabs/mint.ts` | Server side: ephemeral secret, credit check |
+| `lib/voice/elevenlabs/mint.ts` | Server side: ephemeral secret or Scribe token, credit check |
 | `lib/voice/elevenlabs/server.ts` | The two proxy handlers |
 | `lib/db/voice-session.ts` | Owned sessions, resource reservations and server usage settlement |
 | `lib/voice/elevenlabs/design.ts` | Voice design briefs and the audition lines |
@@ -686,3 +688,66 @@ steering cadence and the reply budget are all client code.
 One rep is one rep. Warmth has never passed 59 on this code, so ENGAGED and
 INVESTED — the two bands retuned most — are now live and still unexercised by a
 real conversation. That is the thing to watch in the next few reps.
+
+## Streaming transcription, opt-in — 24 September 2026
+
+`PIPELINE_STT_MODEL=scribe_v2_realtime` swaps the transcriber for ElevenLabs
+Scribe v2 Realtime (`PERSONA-REALISM-REPORT-2026-09-23.md` §3.2, L3). The
+default does not move: it is Tier 0 (rule 19), and choosing what hears a
+customer is a measured act.
+
+**What changes, and only when that value is set.** The mint spends
+`ELEVENLABS_API_KEY` on a single-use token (`POST /v1/single-use-token/realtime_scribe`)
+instead of asking OpenAI for a client secret, returns it as
+`stt: { vendor: 'elevenlabs', model, token }`, and leaves `clientSecret` empty.
+On every other value the minted session has no `stt` member at all, and
+`mint.test.ts` pins the key order, so an OpenAI rep receives the bytes it always
+did. The browser picks the class with `transcriberFor(minted, …)` and nothing
+else in the adapter changes: same callbacks, finals released in spoken order,
+the same 300 ms pre-roll, and a fatal error when the socket goes.
+
+**Ours, still.** `commit_strategy=manual`, so the calibrated silence threshold
+still decides when he has finished. Audio is sent only while he speaks, because
+Scribe bills audio SENT ($0.39 an hour).
+
+**What the real socket does**, read on 23 and 24 September and pinned as
+captured fixtures in `scribe.test.ts`:
+
+- it closes after ~15 s with no audio, which is every one of her longer lines on
+  a speech-gated socket. A 20 ms chunk of digital silence goes up every five
+  idle seconds; it held a socket for 90 s with nothing else sent;
+- a commit on under 0.3 s of audio is `commit_throttled` and closes the socket,
+  so every commit is padded to 0.35 s with silence;
+- it commits by itself at ~36 s of audio and the answer arrives unasked, so a
+  monologue is split at the first quiet frame after 20 s, and always by 30 s;
+- a spent or bad token OPENS and then sends `auth_error`, so `connect()`
+  resolves on `session_started`, never on `open`;
+- 5–50 ms after each `committed_transcript` it sends the same text again as a
+  `partial_transcript`. Taken at face value, that repeat captions his next
+  sentence with his last one, so it is dropped.
+
+There is no clear message, so `clear()` commits any speech already sent into a
+slot whose answer is thrown away. Left in the vendor's buffer, the words before
+a mute would lead the next turn.
+
+**Measured** (`npm run scribe:probe -- --openai`, same audio, same machine):
+commit → final **294–350 ms** on Scribe against 816–1,409 ms on
+`gpt-4o-transcribe`, with three to five partials arriving before each commit.
+Word for word on both arms. That audio is synthetic, so this measures latency
+only. Accuracy on a real microphone is still owed.
+
+**Cost.** The admission envelope is four minutes at $0.0065, $0.026, prorated
+by `settleTranscriptionEnvelope` against the seconds the rep ran, the same as
+the OpenAI models. The browser meter prices the milliseconds it sent through a
+`scribe_v2_realtime` row in `PIPELINE_TOKEN_RATES`. That feeds telemetry only,
+and it currently lands under `usage.openai`, because relabelling the vendor
+needs `lib/voice/types.ts`. The privacy page's ElevenLabs line now says it may
+transcribe what the user says. **ElevenLabs logs these sessions.** Zero
+retention (`enable_logging=false`) is for enterprise and trial tiers only. On
+our plan the request opens a normal session, a `warning` says it "was not
+applied", and the session is logged anyway, so the URL does not ask for it.
+
+**Before switching it on:** wire `transcriberFor` into `index.ts`, run a real
+microphone rep, and run one twenty-minute interview to its end. The vendor does
+not document a maximum session length, and `session_time_limit_exceeded` ends a
+rep.
