@@ -521,6 +521,16 @@ describe('what the pipeline holds her line to', () => {
     expect(metadata.microReply).toBe(true)
   })
 
+  it('rule 3: never synthesises a number read out, on the dating arm', async () => {
+    // The wind-down line a real browser rep heard on 24 September.
+    const { clip } = await spoken({ ...input, personaId: 'tess', warmth: 85, wordCap: 15, sentenceCap: 2 }, "Cass. It's 555-0198.")
+    expect(clip).not.toMatch(/\d/)
+    expect(clip).toContain('Cass.')
+    const whole = await spoken({ ...input, personaId: 'tess', warmth: 85, wordCap: 15, sentenceCap: 2 }, '555-0198, call me.')
+    expect(whole.clip).not.toMatch(/\d/)
+    expect(whole.clip.replace(/^\[[^\]]*\]\s*/, '')).toBe('I will put it in your phone.')
+  })
+
   it('accepts only a known particle and only true flags from the browser', async () => {
     const body = (extra: Record<string, unknown>) => new Request('http://x/turn', { method: 'POST', body: JSON.stringify({ ...input, ...extra }) })
     expect(await parseTurnRequest(body({ particle: 'Mm.', laughAllowed: true, deadEnd: true })))

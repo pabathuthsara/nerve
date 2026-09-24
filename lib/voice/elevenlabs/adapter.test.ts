@@ -449,6 +449,72 @@ describe('ElevenLabs combined adapter', () => {
     expect(summary.turns.filter((turn) => turn.speaker === 'agent')).toEqual([])
   })
 
+  describe('Smart Turn at the end of his turn (L4)', () => {
+    /** A detector that answers every probe with `p`, at once. */
+    const answering = (p: number | null) => {
+      const probability = vi.fn(async (_samples: Float32Array) => p)
+      return { detector: { warm: vi.fn(async () => true), probability } as never, probability }
+    }
+    const drive = async (p: number | null, withEndOfTurn = true) => {
+      let now = 1000
+      const { detector, probability } = answering(p)
+      const provider = new ElevenLabsVoiceProvider({
+        fetchImpl: vi.fn(async () => Response.json({ ...token(), ...(withEndOfTurn ? { endOfTurn: { model: 'smart-turn-v3.2' } } : {}) })),
+        clock: () => now, smartTurn: detector,
+      })
+      const stops: number[] = []
+      provider.on('user.speech.stop', () => stops.push(now))
+      await provider.connect(tess, DEFAULT_CALIBRATION)
+      // 20 ms frames at 24 kHz: half a second of him, then silence.
+      const frame = async (amplitude: number) => {
+        now += 20
+        hardware.capture!.onFrame(new Float32Array(480).fill(amplitude))
+        await Promise.resolve()
+      }
+      for (let i = 0; i < 25; i += 1) await frame(0.1)
+      const quietFrom = now
+      for (let i = 0; i < 75 && stops.length === 0; i += 1) await frame(0)
+      const summary = await provider.end()
+      return { waitedMs: (stops[0] ?? Number.NaN) - quietFrom, probability, eot: summary.pipeline?.endOfTurn }
+    }
+
+    it('concedes at the probe when he sounds finished, well inside the calibrated 600 ms', async () => {
+      const { waitedMs, probability } = await drive(0.92)
+      expect(probability).toHaveBeenCalledOnce()
+      // 16 kHz audio of his turn so far is what the model is handed.
+      expect(probability.mock.calls[0]![0]).toBeInstanceOf(Float32Array)
+      expect(waitedMs).toBeGreaterThanOrEqual(200)
+      expect(waitedMs).toBeLessThan(300)
+    })
+
+    it('waits past the calibrated silence when he sounds mid-thought, and never past 1.2 s', async () => {
+      const { waitedMs } = await drive(0.1)
+      expect(waitedMs).toBeGreaterThan(900)
+      expect(waitedMs).toBeLessThanOrEqual(1_000)
+    })
+
+    it('is the calibrated silence exactly when the model has no answer', async () => {
+      const unanswered = await drive(null)
+      const leaning = await drive(0.6)
+      expect(unanswered.waitedMs).toBeGreaterThanOrEqual(600)
+      expect(unanswered.waitedMs).toBeLessThan(640)
+      expect(leaning.waitedMs).toBe(unanswered.waitedMs)
+    })
+
+    it('reports what the model did, so an extension on every turn is visible', async () => {
+      expect((await drive(0.92)).eot).toMatchObject({ probes: 1, answered: 1, early: 1, extended: 0, calibrated: 0, probabilityMedian: 0.92 })
+      expect((await drive(0.1)).eot).toMatchObject({ probes: 1, answered: 1, early: 0, extended: 1, calibrated: 0 })
+      expect((await drive(null)).eot).toMatchObject({ probes: 1, answered: 0, early: 0, extended: 0, calibrated: 1, probabilityMedian: null })
+      expect((await drive(0.92, false)).eot).toBeUndefined()
+    })
+
+    it('is never consulted on a mint that did not ask for it', async () => {
+      const { probability, waitedMs } = await drive(0.92, false)
+      expect(probability).not.toHaveBeenCalled()
+      expect(waitedMs).toBeGreaterThanOrEqual(600)
+    })
+  })
+
   it('keeps each clause’s speech timing and buys one reply after overlapping transcription settles', async () => {
     let now = 1000
     const fetchImpl = vi.fn(async (url: string | URL | Request) => String(url).includes('/token')

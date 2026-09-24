@@ -26,10 +26,11 @@
 import {
   effectiveSharpness,
   unlockedGates,
+  type DisclosureRung,
   type GateName,
   type Persona,
 } from '@/lib/voice/types'
-import { bandDirectiveParts, bandFor, bandIndex, bandPermissionParts, type DirectiveContext } from './bands'
+import { BANDS, bandDirectiveParts, bandFor, bandIndex, bandPermissionParts, type DirectiveContext } from './bands'
 import { postureClause, type Posture } from './affect'
 import { reciprocityClauses, type UserTurnShape } from './reciprocity'
 import { isLeaving, type ClosingDecision, type SceneExit } from './leaving'
@@ -613,7 +614,19 @@ export function gateClauses(persona: Persona, warmth: number, options: { without
   const open: Array<{ name: GateName | 'teases'; unlocksAt: number }> = [
     ...unlockedGates(persona.gated, warmth)
       .filter((name) => !(options.withoutName && name === 'usesYourName'))
-      .map((name) => ({ name, unlocksAt: persona.gated[name].unlocksAt })),
+      .map((name) => ({
+        name,
+        // A DISCLOSURE RUNG IS EARNED WHERE ITS BAND BEGINS. The ranking below
+        // is "most recently earned first", and the disclosure gate used to be
+        // ranked by the warmth its gate opened at — so every rung after the
+        // first was outranked by any gate that opened later. Nadia's opens at
+        // 40, her tease at 55: her ENGAGED and INVESTED rungs, the two truest
+        // things she has, could never reach a line. Ranked by the rung it
+        // would actually say, a deeper rung is as new as it is.
+        unlocksAt: name === 'personalDisclosure'
+          ? Math.max(persona.gated[name].unlocksAt, disclosureEarnedAt(persona, warmth))
+          : persona.gated[name].unlocksAt,
+      })),
     ...(persona.expressiveGates?.teases && warmth >= persona.expressiveGates.teases.unlocksAt
       ? [{ name: 'teases' as const, unlocksAt: persona.expressiveGates.teases.unlocksAt }]
       : []),
@@ -648,19 +661,29 @@ function styled(base: string, style: string | undefined): string {
  * `DisclosureRung`.
  */
 export function disclosureFor(persona: Persona, warmth: number): string | null {
+  return reachedRung(persona, warmth)?.text.trim() ?? null
+}
+
+function reachedRung(persona: Persona, warmth: number): DisclosureRung | null {
   const ladder = persona.disclosures
   if (!ladder || ladder.length === 0) return null
   const reached = bandIndex(bandFor(warmth))
-  let best: string | null = null
+  let best: DisclosureRung | null = null
   let bestIndex = -1
   for (const rung of ladder) {
     const index = bandIndex(rung.band)
     if (index <= reached && index > bestIndex) {
-      best = rung.text.trim()
+      best = rung
       bestIndex = index
     }
   }
   return best
+}
+
+/** The floor of the band her deepest reached rung belongs to; 0 with no ladder. */
+function disclosureEarnedAt(persona: Persona, warmth: number): number {
+  const rung = reachedRung(persona, warmth)
+  return rung ? BANDS.find((spec) => spec.band === rung.band)?.min ?? 0 : 0
 }
 
 function gateText(persona: Persona, name: GateName | 'teases', warmth: number): string | null {

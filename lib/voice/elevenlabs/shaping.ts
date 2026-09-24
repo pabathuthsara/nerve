@@ -15,6 +15,9 @@
  *   `withoutParticle`      R4. A pre-rendered "Mm." has already been heard, so
  *                          a line that opens with its own "Mm," must not say it
  *                          twice.
+ *   `withoutDigits`        Rule 3. She never speaks digits. It was only ever
+ *                          stated, and a browser rep on 24 September heard
+ *                          "Cass. It's 555-0198." at the wind-down.
  *
  * Pure. No network, no audio, no DOM. It runs on the edge inside the turn
  * route and in the browser on the legacy path, and both must reach the same
@@ -187,3 +190,59 @@ export function withoutParticle(text: string, particle: string | null | undefine
 function escape(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
+
+/* ------------------------------------------------------------------ *
+ * Rule 3 — she never speaks digits
+ * ------------------------------------------------------------------ */
+
+/**
+ * A number she is reading out: five or more digits in one run, allowing the
+ * separators a phone number is written with. Five, because a year is four and
+ * the shortest phone number worth the name is seven, and "555-0198" is one run
+ * of seven with a dash in it.
+ */
+const DIGIT_RUN = /\d(?:[\s.\-()]*\d){4,}/gu
+
+function readsANumber(sentence: string): boolean {
+  return (sentence.match(DIGIT_RUN) ?? []).length > 0
+}
+
+/** The spoken form: four or more digit words in a row ("five five five, oh one…"). */
+const DIGIT_WORD = '(?:zero|oh|o|one|two|three|four|five|six|seven|eight|nine|double)'
+const SPOKEN_DIGITS = new RegExp(`\\b${DIGIT_WORD}(?:[\\s,.\\-]+${DIGIT_WORD}){3,}\\b`, 'iu')
+
+export function speaksDigits(sentence: string): boolean {
+  return readsANumber(sentence) || SPOKEN_DIGITS.test(sentence)
+}
+
+/**
+ * Her line with every sentence that reads out a number removed.
+ *
+ * RULE 3, IN CODE. "She never speaks digits" is product law: the number the
+ * rep ends on is the one printed on the card (`inventNumber`), so a number she
+ * improvises out loud is a rep that ends in a contradiction — and on a voice
+ * arm it is also a string of digits read in a stranger's voice, which is not a
+ * thing a person offering her number does. The contract says it and so does
+ * the closing direction ("Never say the digits out loud"), and on 24 September
+ * a real browser rep heard "Cass. It's 555-0198." anyway. A rule only ever
+ * STATED to a text model is kept most of the time; this one is absolute, so it
+ * is enforced here, on the line that arrived whole, before a character of it
+ * is synthesised.
+ *
+ * Whole sentences go, never digits out of the middle of one: "It's" with the
+ * number cut out of it is worse than silence. Short numbers stay — "two
+ * rooms", "at 5", "in 2019" — because the guard is about reading one out.
+ * When nothing is left, `fallback` is said instead, so the offer still lands
+ * in her words. Dating only at the call sites: an interviewer may say a year.
+ */
+export function withoutDigits(text: string, fallback: string): string {
+  const sentences = text.trim().split(/(?<=[.!?…]["'’”)]?)\s+/u).filter(Boolean)
+  const kept = sentences.filter((sentence) => !speaksDigits(sentence))
+  if (kept.length === sentences.length) return text
+  const rest = kept.join(' ').trim()
+  // A leading delivery tag on its own is not a line.
+  return rest.replace(/^\s*(?:\[[^\]]*\]\s*)+$/u, '').trim() ? rest : fallback
+}
+
+/** What she says instead when the whole line was a number read out. */
+export const NUMBER_OFFER_FALLBACK = 'I will put it in your phone.'

@@ -116,3 +116,26 @@ describe('capToBudget — R1, the leading unit', () => {
     expect(capToBudget('Nice to meet you. I am Nadia.', 12, { sentences: 1, freeLead: true })).toBe('Nice to meet you.')
   })
 })
+
+describe('rule 3: she never speaks digits', () => {
+  it('drops the sentence that reads a number out, and only that sentence', async () => {
+    const { withoutDigits, NUMBER_OFFER_FALLBACK } = await import('./shaping')
+    // The line a real browser rep heard on 24 September.
+    expect(withoutDigits("Cass. It's 555-0198. I", NUMBER_OFFER_FALLBACK)).toBe('Cass. I')
+    expect(withoutDigits('Here. 07700 900 123, call me.', NUMBER_OFFER_FALLBACK)).toBe('Here.')
+    expect(withoutDigits('Sure. Five five five, oh one nine eight.', NUMBER_OFFER_FALLBACK)).toBe('Sure.')
+    expect(withoutDigits('(555) 019-8812', NUMBER_OFFER_FALLBACK)).toBe(NUMBER_OFFER_FALLBACK)
+    expect(withoutDigits('[earnest] 555 0198.', NUMBER_OFFER_FALLBACK)).toBe(NUMBER_OFFER_FALLBACK)
+  })
+
+  it('leaves ordinary numbers alone, because the rule is about reading one out', async () => {
+    const { withoutDigits } = await import('./shaping')
+    for (const line of [
+      'Two more rooms before five.',
+      'We close at 5, so.',
+      'I have been doing this since 2019.',
+      'One or two, maybe.',
+      'Oh, one of those.',
+    ]) expect(withoutDigits(line, 'x')).toBe(line)
+  })
+})

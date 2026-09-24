@@ -21,15 +21,16 @@ describe('the transcription credential', () => {
     vi.stubGlobal('fetch', fetchImpl)
     return fetchImpl
   }
-  const mint = (stt: string | undefined) => mintElevenLabsSession(tess, DEFAULT_CALIBRATION, {
+  const mint = (stt: string | undefined, extra: Record<string, string> = {}) => mintElevenLabsSession(tess, DEFAULT_CALIBRATION, {
     elevenLabsApiKey: `standing-eleven-${stt ?? 'default'}`, openAiApiKey: 'standing-openai',
-    pipeline: stt === undefined ? {} : { PIPELINE_STT_MODEL: stt },
+    pipeline: { ...(stt === undefined ? {} : { PIPELINE_STT_MODEL: stt }), ...extra },
   })
 
   it('mints exactly what it always did for every OpenAI transcriber', async () => {
     for (const model of [undefined, 'gpt-4o-mini-transcribe', 'gpt-4o-transcribe']) {
       const fetchImpl = vendors()
-      const minted = await mint(model)
+      // With Smart Turn switched off, which is the pre-L4 product exactly.
+      const minted = await mint(model, { PIPELINE_END_OF_TURN: 'silence' })
       // The pre-Scribe shape, key for key and in order: no `stt` member at all,
       // so an OpenAI rep serialises to the bytes it did before this existed.
       expect(Object.keys(minted)).toEqual(['provider', 'clientSecret', 'model', 'rate', 'pipeline', 'credits'])
@@ -40,6 +41,19 @@ describe('the transcription credential', () => {
       expect(urls).not.toContain(SCRIBE_TOKENS)
       vi.unstubAllGlobals()
     }
+  })
+
+  it('asks the browser for Smart Turn by default, as one member appended last (L4)', async () => {
+    vendors()
+    const minted = await mint(undefined)
+    expect(Object.keys(minted)).toEqual(['provider', 'clientSecret', 'model', 'rate', 'pipeline', 'credits', 'endOfTurn'])
+    expect(minted.endOfTurn).toEqual({ model: 'smart-turn-v3.2' })
+    // The compiled turn is untouched: the calibrated silence is still the
+    // number the gate falls back to, and still the only one a log reads.
+    expect(minted.pipeline.turn).toMatchObject({ mode: 'silence', silenceMs: 600 })
+    vi.unstubAllGlobals()
+    vendors()
+    expect((await mint(undefined, { PIPELINE_END_OF_TURN: 'silence' })).endOfTurn).toBeUndefined()
   })
 
   it('mints one Scribe token and no OpenAI secret when Scribe transcribes', async () => {

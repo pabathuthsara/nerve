@@ -27,7 +27,7 @@ import { DEFAULT_CALIBRATION, type Calibration } from '../types'
 import { priceChatUsage } from '../rates'
 import { resolvePipelineConfig, ttsModelSpec, type PipelineEnv } from './config'
 import { ElevenLabsPersonaCompiler, deliveryFor, stripDeliveryTags } from './persona'
-import { deadEndReply, enforceDeliveryTags, withoutParticle } from './shaping'
+import { NUMBER_OFFER_FALLBACK, deadEndReply, enforceDeliveryTags, withoutDigits, withoutParticle } from './shaping'
 import { PARTICLE_TEXTS } from '@/lib/warmth/particles'
 import { HUMOUR_GRACE_MS, humourBound, humourCost, judgeHumour, type HumourJudge, type HumourVerdict } from './humour'
 import { LlmClient } from './llm'
@@ -364,7 +364,11 @@ export function createCombinedTurn(
               wordCap, microReplies: persona.microReplies, pick: seededRandom(`${input.turnId}:micro`),
             })
           : null
-        const generated = microReply ?? sanitised
+        // Rule 3, last before the cap: she never reads a number out, whatever
+        // the writer did (`withoutDigits`). Dating only — an interviewer may
+        // say a year.
+        const unguarded = microReply ?? sanitised
+        const generated = persona.track === 'dating' ? withoutDigits(unguarded, NUMBER_OFFER_FALLBACK) : unguarded
         microReplied = microReply !== null
         if (dependencies.admission && !(await dependencies.admission)) {
           throw new Error('This turn was not admitted.')

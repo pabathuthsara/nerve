@@ -73,6 +73,7 @@ import {
   KEEP_THRESHOLD,
   NEAR_MISS_POINTS,
   WRAP_UP_MS,
+  beatsForRep,
   dueSceneBeat,
   givesNumber,
   isClosingOver,
@@ -171,15 +172,52 @@ describe('characterization · compiled contracts', () => {
     // alongside, arriving through the fix instead of through the bug.
     // `examples.test.ts` refuses a name or a first-person proper noun in his
     // half now.
+    //
+    // ── RE-BASELINED 24 SEPTEMBER 2026: PERSONA-REALISM-REPORT ──────────
+    //
+    // The report of 23 September, implemented end to end on the
+    // `persona-realism` branch as one signed-off act. Every compiled prompt was
+    // dumped against `elevenlabs-pipeline` and the diff read line by line
+    // before these four were retaken. The five retired characters' contracts
+    // did not move at all; the four shipped ones moved for four reasons:
+    //
+    //   1. PERSONA V2 CONTENT (report §5, P1-P4). Specifics a person has and a
+    //      brief does not: Cass is a vet tech at a small-animal clinic with a
+    //      swim class at the Y and one blue painting she liked; Nadia routes
+    //      trucks and cannot choose between the romance her sister will love
+    //      and the book she should read; Maya works accounts payable and draws
+    //      strangers in a sketchbook; Robin is a retail strategy consultant
+    //      flying out tonight. US register throughout ("store", "bailed",
+    //      "four-thirty"), because the launch market is American.
+    //   2. DIAL MOVES, authored in the persona files and rendered by the
+    //      unchanged personality compiler: distraction up on Nadia, Maya and
+    //      Robin ("Something is half-competing for your attention"), Nadia's
+    //      patience up, Maya sharper ("When you are displeased it shows"),
+    //      Robin's talkativeness down ("You do not carry the conversation").
+    //   3. CONTEMPT IS REMEMBERED (W4). One sentence per character saying an
+    //      insult does not earn the warmth back by persistence — the prompt
+    //      half of `givesNumber`'s new contempt window.
+    //   4. THE EXAMPLES ARE SOMEONE ELSE'S (R6 and the 23 September audition).
+    //      Cass answered "Insurance, you said?" to a man who had never said
+    //      it: the example set's `HIM:` line was read as his. Every example
+    //      line is now `SOMEONE ELSE:` under a header saying those were other
+    //      conversations on other days, the two lines that planted a fact
+    //      were rewritten, and each shipped character gained two warm
+    //      examples, because every authored example was cold and she had no
+    //      register to reach for once he had earned one.
+    //
+    // Sampling (`examplesForRep`) is NOT in these digests: with the fixed seed
+    // and each set at or under its `examplesPerRep`, no example is dropped and
+    // no random number is drawn, which `examples.test.ts` asserts.
     alex: { canEndScene: 'b6891988b7899fd3', stateless: '044f43223c1b272c', length: 7481 },
     erin: { canEndScene: '3f14d8a54fceded4', stateless: 'b086f49dcdbac4fa', length: 8228 },
     jules: { canEndScene: 'b79246fe190e2413', stateless: '8b4a49a3701b1e68', length: 8649 },
-    maya: { canEndScene: '0534afb56941a33d', stateless: 'ee73c6eb82d56d8e', length: 9563 },
-    nadia: { canEndScene: '50e5e3beb148ba27', stateless: '31e9deb5e53ba948', length: 10328 },
+    maya: { canEndScene: 'd732cc90fc839994', stateless: '5a5ab9733cbb878f', length: 10186 },
+    nadia: { canEndScene: 'ae231f66abc413f8', stateless: '75b4fba1d4a22b73', length: 10981 },
     priya: { canEndScene: '55110e31cab449e4', stateless: 'e582989e7cefec41', length: 8594 },
-    robin: { canEndScene: '71bca423df662959', stateless: '3000cd913b25963a', length: 9813 },
+    robin: { canEndScene: 'dda3f37f912d065f', stateless: 'c9586e51d0ef211a', length: 10389 },
     sam: { canEndScene: '0c282e4dd7f3f76d', stateless: '26ab3646768e5911', length: 8370 },
-    tess: { canEndScene: '4e643d917ca52e4b', stateless: '7222c2eb5409beb6', length: 10613 },
+    tess: { canEndScene: 'dabda35761f59afc', stateless: '9971f20eac57b37d', length: 11259 },
   }
 
   it('covers every authored character, so a new one cannot slip past unpinned', () => {
@@ -249,28 +287,44 @@ describe('characterization · the pipeline arm', () => {
   // differently is the `[earnest]` delivery tag, which moves under both.
   //
   // Nothing else about anybody's voice, casting or turn-taking changed.
+  //
+  // RE-BASELINED 24 SEPTEMBER 2026 (PERSONA-REALISM-REPORT). `prompt` moved;
+  // `tts` and `turn` are byte-identical on every character under both
+  // environments, so casting, compiled stability and the calibrated silence
+  // did not move. Under `defaults` only the four shipped characters moved, for
+  // the four contract reasons above. Under `shipped` all nine moved, the five
+  // retired ones by exactly one line: the v3 tag permission names the tags the
+  // pipeline now enforces — `[sighs]`, `[exhales]`, `[curious]` — and forbids
+  // `[laughs]` unless the turn's direction allows it (R3, `shaping.ts`).
+  // Dating track only; the interviewers read the line they always have.
+  //
+  // Two things that DID change what she sounds like are deliberately not in
+  // this table: stability now follows the band at synthesis time (R2, pinned
+  // in the delivery test below), and Smart Turn (L4) is a mint-level member
+  // outside `turn` — `turn.mode` is still `silence` because the calibrated
+  // silence is still the number every pause falls back to.
   const EXPECTED: Record<keyof typeof ENVS, Record<string, { prompt: string; tts: string; turn: string }>> = {
     defaults: {
       alex: { prompt: 'a5a487316b591d2c', tts: '24db3ed2807bb4d4', turn: 'f6acbfc49fa3d135' },
       erin: { prompt: '85ae99ad55bf2137', tts: '4ee49a964282f2b6', turn: 'f6acbfc49fa3d135' },
       jules: { prompt: '8acfcf2e9eb9a200', tts: 'dbb369318facdfdd', turn: 'f5b2229cc620b177' },
-      maya: { prompt: 'f83cb707e20b6919', tts: 'cfe6e672a4864594', turn: 'f5b2229cc620b177' },
-      nadia: { prompt: 'afa133fb0f639057', tts: 'adafe2068533ead8', turn: 'f5b2229cc620b177' },
+      maya: { prompt: '7fcf57de1d591bfc', tts: 'cfe6e672a4864594', turn: 'f5b2229cc620b177' },
+      nadia: { prompt: '425ddbfa9a9d863a', tts: 'adafe2068533ead8', turn: 'f5b2229cc620b177' },
       priya: { prompt: '7466457675b92319', tts: '870c50002ec89bb0', turn: 'f5b2229cc620b177' },
-      robin: { prompt: 'e7987982157375d8', tts: '04d5e936f442ce7f', turn: 'f5b2229cc620b177' },
+      robin: { prompt: 'f70925958f2c1aaf', tts: '04d5e936f442ce7f', turn: 'f5b2229cc620b177' },
       sam: { prompt: '8366f0a690f5c5ad', tts: '61d52974a0e6f66a', turn: 'f6acbfc49fa3d135' },
-      tess: { prompt: 'ef1a7fc5cb751aa5', tts: 'a4d8cd933b426637', turn: 'f5b2229cc620b177' },
+      tess: { prompt: '6eb97cb0e6fea2e7', tts: 'a4d8cd933b426637', turn: 'f5b2229cc620b177' },
     },
     shipped: {
-      alex: { prompt: '83e0f45212e4e515', tts: '68cb66a0513de355', turn: 'f6acbfc49fa3d135' },
-      erin: { prompt: '74145f5062b20866', tts: '15abd07e819da5b5', turn: 'f6acbfc49fa3d135' },
-      jules: { prompt: '01aae49163e20b52', tts: 'e4ce4f2d3895289b', turn: 'f5b2229cc620b177' },
-      maya: { prompt: '7e826a0ddb04a60d', tts: '6ec90fd2c54b374b', turn: 'f5b2229cc620b177' },
-      nadia: { prompt: 'a7b0b0c6ff14aff7', tts: 'bc0ec26ebfa66ab8', turn: 'f5b2229cc620b177' },
-      priya: { prompt: '08558312780c0ddc', tts: 'eaf47d8ed9daad75', turn: 'f5b2229cc620b177' },
-      robin: { prompt: 'c85e8daf84ef4d6f', tts: 'f0da90696682069a', turn: 'f5b2229cc620b177' },
-      sam: { prompt: '455eaa24e9d45b35', tts: '63159e2880527025', turn: 'f6acbfc49fa3d135' },
-      tess: { prompt: '6e358101081cb0ed', tts: 'fa9fbd31881dd6fb', turn: 'f5b2229cc620b177' },
+      alex: { prompt: '6faffe29ebeafec0', tts: '68cb66a0513de355', turn: 'f6acbfc49fa3d135' },
+      erin: { prompt: 'be72efdff884696d', tts: '15abd07e819da5b5', turn: 'f6acbfc49fa3d135' },
+      jules: { prompt: '5d046f25e1d11788', tts: 'e4ce4f2d3895289b', turn: 'f5b2229cc620b177' },
+      maya: { prompt: '9e4c0f0839652427', tts: '6ec90fd2c54b374b', turn: 'f5b2229cc620b177' },
+      nadia: { prompt: 'c28976a76ed3cb1f', tts: 'bc0ec26ebfa66ab8', turn: 'f5b2229cc620b177' },
+      priya: { prompt: '9f0271f3342f5367', tts: 'eaf47d8ed9daad75', turn: 'f5b2229cc620b177' },
+      robin: { prompt: '94b7be30b09e5c0c', tts: 'f0da90696682069a', turn: 'f5b2229cc620b177' },
+      sam: { prompt: '74a5b341b4deec51', tts: '63159e2880527025', turn: 'f6acbfc49fa3d135' },
+      tess: { prompt: '636f59f65d6f2572', tts: 'fa9fbd31881dd6fb', turn: 'f5b2229cc620b177' },
     },
   }
 
@@ -297,11 +351,17 @@ describe('characterization · the pipeline arm', () => {
   it('renders delivery the same way across the ladder', () => {
     const nadia = PERSONAS.nadia!
     const shipped = compile('nadia', ENVS.shipped)
+    // RE-BASELINED 24 September 2026 (R2): stability follows the band. The
+    // env dial is the COLD end now rather than a flat override, so CLOSED is
+    // still 0.85, OPEN sits a quarter of the way to Natural and ENGAGED and
+    // INVESTED reach v3's Natural (0.5). She still cannot warm up on her own:
+    // the voice moves only when the meter does. `speed` and the tag are
+    // unchanged at every rung.
     expect([10, 41, 66, 84].map((warmth) => deliveryFor(nadia, shipped, warmth))).toEqual([
       { settings: { stability: 0.85, similarity_boost: 0.75, speed: 0.9791666666666666 }, deliveryTags: ['[playful]'] },
-      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 1 }, deliveryTags: ['[playful]'] },
-      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 1.025 }, deliveryTags: ['[playful]'] },
-      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 1.025 }, deliveryTags: ['[playful]'] },
+      { settings: { stability: 0.631, similarity_boost: 0.75, speed: 1 }, deliveryTags: ['[playful]'] },
+      { settings: { stability: 0.5, similarity_boost: 0.75, speed: 1.025 }, deliveryTags: ['[playful]'] },
+      { settings: { stability: 0.5, similarity_boost: 0.75, speed: 1.025 }, deliveryTags: ['[playful]'] },
     ])
     // The flash model takes no audio markers, so the same character renders
     // with none. That difference is a property of the model, not of her.
@@ -478,15 +538,22 @@ describe('characterization · the fast scorer', () => {
         openingTurn,
         gapSeconds: 1.2,
       }).raw,
+    // RE-BASELINED 24 September 2026. The scorer did not change — the
+    // no-personality table above is byte-identical — Nadia did: her humour
+    // went up and her patience with it (report P2), so an open question earns
+    // her a little less and a dead end costs her a little less. The rapport
+    // reasons (follow-up, appreciation, reciprocal disclosure, interview mode)
+    // are folded in by the dating session, not by `scoreFast`, so they are
+    // correctly absent from both tables.
     ])).toEqual([
       ['opener', 0],
-      ['open question', 3.4],
+      ['open question', 3.1],
       ['closed question', 0],
-      ['engaged length', 2.3],
+      ['engaged length', 2.1],
       ['callback', 4],
-      ['dead end', -5.2],
-      ['dead-end streak', -12],
-      ['filler', 2.3],
+      ['dead end', -4.8],
+      ['dead-end streak', -11.2],
+      ['filler', 2.4],
     ])
   })
 })
@@ -501,9 +568,24 @@ describe('characterization · the steering line', () => {
     // Re-baselined 8 September with the band table above, and for that reason
     // alone: the want, personality, gate and reciprocity clauses are byte for
     // byte what they were at every rung.
-    expect(digest(lines.join(''))).toBe('aa504c0f919dfdd6')
+    //
+    // RE-BASELINED 24 September 2026 (PERSONA-REALISM-REPORT). The band,
+    // reciprocity and personality clauses are unchanged; the gates moved:
+    //   - the disclosure gate opens onto her LADDER (R8) — the true thing this
+    //     band has reached, "You could tell him, if it fits: ..." — instead of
+    //     "You may say something real about your life", which had nothing
+    //     behind it;
+    //   - a gate says HOW she does it ("the way you do: teasing him about his
+    //     taste in books"), and Nadia has a tease gate at 55;
+    //   - at INVESTED her want YIELDS ("Your sister can wait a few minutes"),
+    //     because an agenda she is still pulling towards at 84 reads as a
+    //     woman trying to leave a conversation she is enjoying;
+    //   - a reached rung is ranked by the band it belongs to, so her ENGAGED
+    //     and INVESTED rungs are not permanently outranked by later gates.
+    //     Found by reading this diff: without it neither could reach a line.
+    expect(digest(lines.join(''))).toBe('4d881c68d9c82d8e')
     expect(lines[2]).toBe(
-      '[Seven or eight words. Twelve at the very most. Say it how it comes out, not tidily. Do not ask a question this turn unless he asked you one first. You may volunteer one small thing. You would still rather be left alone with the shelf you are halfway through. You are not going yet. Light. You may say something real about your life.]',
+      '[Seven or eight words. Twelve at the very most. Say it how it comes out, not tidily. Do not ask a question this turn unless he asked you one first. You may volunteer one small thing. You would still rather be left alone with the shelf you are halfway through. You are not going yet. Light. You could tell him, if it fits: You route trucks for a grocery chain, and you are weirdly good at it.]',
     )
   })
 
@@ -513,7 +595,10 @@ describe('characterization · the steering line', () => {
       warmth: 41,
       his: { words: 1, askedQuestion: false, disclosed: false, deadEnd: true },
     })).toBe(
-      '[Seven or eight words. Twelve at the very most. Say it how it comes out, not tidily. Do not ask a question this turn unless he asked you one first. He gave you almost nothing. Match it. Do not fill the gap for him. You would still rather be left alone with the shelf you are halfway through. You are not going yet. Light.]',
+      // RE-BASELINED 24 September 2026 (R7): on a dead end the want becomes
+      // where her attention goes, and it is not a thought to read aloud. Three
+      // "Okay."s used to be answered with three sentences about the shelf.
+      '[Seven or eight words. Twelve at the very most. Say it how it comes out, not tidily. Do not ask a question this turn unless he asked you one first. He gave you almost nothing. Match it. Do not fill the gap for him. Your attention goes back to the shelf in front of you. A word or two, if anything. Light.]',
     )
   })
 
@@ -600,9 +685,15 @@ describe('characterization · rep timing', () => {
   })
 
   it('fires scene beats on the same clock', () => {
-    const beats = PERSONAS.nadia!.sceneBeats!
-    expect(dueSceneBeat({ beats, elapsedFraction: 0.27, fired: 0 })).toBeNull()
-    expect(dueSceneBeat({ beats, elapsedFraction: 0.28, fired: 0 })).toBe(beats[0])
+    // RE-BASELINED 24 September 2026 (R9). The CLOCK is unchanged; what it is
+    // handed is not. Nadia has five authored beats now, two of them openers,
+    // and a rep draws two (`beatsForRep`): one opener early, one other later,
+    // never four interruptions in three minutes. The clock is pinned on the
+    // pair this seed draws, which is the list the live rep hands it.
+    const beats = beatsForRep(PERSONAS.nadia!.sceneBeats, seed())!
+    expect(beats.map((beat) => [beat.at, beat.opener === true])).toEqual([[0.18, true], [0.46, false]])
+    expect(dueSceneBeat({ beats, elapsedFraction: 0.17, fired: 0 })).toBeNull()
+    expect(dueSceneBeat({ beats, elapsedFraction: 0.18, fired: 0 })).toBe(beats[0])
     expect(dueSceneBeat({ beats, elapsedFraction: 0.99, fired: 1 })).toBe(beats[1])
     expect(dueSceneBeat({ beats, elapsedFraction: 0.99, fired: 2 })).toBeNull()
     expect(dueSceneBeat({ beats: [{ at: 0.8, direction: 'x' }], elapsedFraction: 1, fired: 0 })).toBeNull()
@@ -611,8 +702,15 @@ describe('characterization · rep timing', () => {
 
 describe('characterization · the judgement prompts', () => {
   it('the rubric is unchanged', () => {
-    expect(digest(RUBRIC)).toBe('84c81f28f10db5c6')
-    expect(digest(buildGradeSystemPrompt())).toBe('8abb02957e79074e')
+    // RE-BASELINED 24 September 2026 (report S1). Two rubric paragraphs,
+    // SIGNAL READING and CLOSE, told the grader to read the ending — whether
+    // she left, whether he asked — which is outcome by another name, and the
+    // grade route now withholds the ending from the transcript it is shown
+    // (`lib/grade/ending.ts`). The outcome-invariance pairs measured it: the
+    // same process scored +2.8 higher when she gave her number, and 0 after.
+    // The first line of the rubric is still the one below.
+    expect(digest(RUBRIC)).toBe('0a1f8762575b2b77')
+    expect(digest(buildGradeSystemPrompt())).toBe('e81e4610e1bc4146')
     expect(RUBRIC).toContain('SCORE THE PROCESS, NEVER THE OUTCOME.')
     expect(RUBRIC).toContain('A clean rep that ends in rejection can score 92.')
   })
@@ -635,7 +733,12 @@ describe('characterization · the judgement prompts', () => {
     //      and may answer an insult lightly; that was being read as proof the
     //      exchange was friendly.
     //   3. `INTENT_SCALE` states that intent is independent of intimacy.
-    expect(digest(buildSystemPrompt('Nadia', 'a second-hand bookshop'))).toBe('89255afd728e57fc')
+    //
+    // RE-BASELINED 24 September 2026 (report R3). One rule and one JSON field:
+    // the slow judge also says whether his last turn was actually FUNNY, so
+    // the laugh the pipeline allows is a laugh at something. Intent and
+    // intimacy are untouched, and so are the anchors above.
+    expect(digest(buildSystemPrompt('Nadia', 'a second-hand bookshop'))).toBe('26c743a0463d3406')
   })
 
   /**

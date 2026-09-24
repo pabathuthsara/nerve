@@ -1058,6 +1058,32 @@ export interface PipelineUsage {
   costPerMinuteUsd: number | null
 }
 
+/**
+ * What Smart Turn did this rep (`PERSONA-REALISM-REPORT` L4). Absent on a rep
+ * that ran on the calibrated silence alone.
+ *
+ * The one question it exists to answer is whether the model is moving the
+ * concession in the direction it should — sooner on a finished turn, later on
+ * a mid-thought pause — or quietly adding the extension to every reply, which
+ * is the failure a desk cannot see.
+ */
+export interface EndOfTurnTelemetry {
+  /** Pauses the gate asked the model about. */
+  probes: number
+  /** Asks that came back as a usable probability. */
+  answered: number
+  /** Turns conceded before the calibrated silence: he sounded done. */
+  early: number
+  /** Turns that waited past it: he sounded mid-thought. */
+  extended: number
+  /** Turns conceded at the calibrated silence: no answer, or a middling one. */
+  calibrated: number
+  /** Median probability over the answers; null with none. */
+  probabilityMedian: number | null
+  /** Ask to answer, including the worker round trip. */
+  answerMs: StageStat
+}
+
 export interface PipelineTelemetry {
   ttsModel: string
   sttModel: string
@@ -1068,6 +1094,8 @@ export interface PipelineTelemetry {
   /** Turns whose stored text was shortened to what actually reached the ear. */
   truncatedTurns: number
   usage: PipelineUsage
+  /** See `EndOfTurnTelemetry`. */
+  endOfTurn?: EndOfTurnTelemetry
 }
 
 export interface Rate {

@@ -119,12 +119,16 @@ describe('a directive for a provider that keeps nothing', () => {
 
     const fresh = session.statelessDirective()
     expect(fresh).toContain('Ask about him, tease him, swap names.')
-    expect(fresh).toMatch(/You may (?:start a topic|use his name|flirt)/)
+    // The two most recently earned: at 62 that is her ENGAGED disclosure rung
+    // and the tease, both standing orders like the rest.
+    expect(fresh).toMatch(/You may (?:start a topic|use his name|flirt|tease)/)
+    expect(fresh).toContain('You could tell him, if it fits:')
     expect(fresh).toContain('rather be')
 
     const repeat = session.statelessDirective()
     expect(repeat).not.toContain('Ask about him, tease him, swap names.')
     expect(repeat).not.toMatch(/You may /)
+    expect(repeat).not.toContain('You could tell him')
     expect(repeat).not.toContain('rather be')
 
     // What is left is the half that describes how to respond rather than what

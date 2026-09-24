@@ -70,6 +70,13 @@ export type MintedTranscription =
     token: string
   }
 
+export interface MintedEndOfTurn {
+  model: typeof SMART_TURN_MODEL
+}
+
+/** The model `public/models/` ships, named on the mint so a log says which. */
+export const SMART_TURN_MODEL = 'smart-turn-v3.2'
+
 export interface MintedPipelineSession {
   provider: 'elevenlabs'
   /**
@@ -82,6 +89,13 @@ export interface MintedPipelineSession {
   clientSecret: string
   /** See `MintedTranscription`. Absent on every OpenAI-transcribed rep. */
   stt?: MintedTranscription
+  /**
+   * Present when the browser should ask Smart Turn before conceding a pause
+   * (L4, `EndOfTurnMode`). Absent means the calibrated silence alone, which is
+   * what every mint before it meant, so an old client reading a new mint and a
+   * new client reading an old one both do what they did.
+   */
+  endOfTurn?: MintedEndOfTurn
   model: string
   rate: Rate
   pipeline: PipelineClientConfig
@@ -187,6 +201,7 @@ export async function mintElevenLabsSession(
     // an OpenAI-transcribed session serialises to exactly the bytes it always
     // did — `mint.test.ts` pins that.
     ...(scribe ? { stt: { vendor: 'elevenlabs', model: SCRIBE_REALTIME_MODEL, token: transcription } as const } : {}),
+    ...(config.endOfTurn === 'smart_turn' ? { endOfTurn: { model: SMART_TURN_MODEL } } : {}),
   }
 }
 

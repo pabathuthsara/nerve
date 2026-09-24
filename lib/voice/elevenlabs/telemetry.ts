@@ -120,6 +120,11 @@ export class PipelineMeter {
 
   private bargeIns = 0
   private truncatedTurns = 0
+  /** Null until the rep's gate asks its first question; see `EndOfTurnTelemetry`. */
+  private endOfTurn: {
+    probes: number; early: number; extended: number; calibrated: number
+    probabilities: number[]; answerMs: number[]
+  } | null = null
   private characters = 0
   private sttAudioTokens = 0
   private sttTextTokens = 0
@@ -150,6 +155,33 @@ export class PipelineMeter {
 
   bargeIn(): void {
     this.bargeIns += 1
+  }
+
+  /** Smart Turn was asked about a pause (L4). */
+  endOfTurnProbe(): void {
+    this.eot().probes += 1
+  }
+
+  /** Its answer, and how long it took. A null answer is counted by its absence. */
+  endOfTurnAnswer(probability: number | null, ms: number): void {
+    const eot = this.eot()
+    if (probability !== null && Number.isFinite(probability)) eot.probabilities.push(probability)
+    if (Number.isFinite(ms) && ms >= 0) eot.answerMs.push(Math.round(ms))
+  }
+
+  /** Where a gated turn was conceded, against the silence it would have waited. */
+  endOfTurnConceded(silenceMs: number, calibratedMs: number): void {
+    const eot = this.eot()
+    // A frame is 20 ms; the VAD's clock and the gate's agree to the frame, so
+    // anything inside one frame of the calibrated number IS the calibrated number.
+    if (silenceMs < calibratedMs - 20) eot.early += 1
+    else if (silenceMs > calibratedMs + 20) eot.extended += 1
+    else eot.calibrated += 1
+  }
+
+  private eot() {
+    this.endOfTurn ??= { probes: 0, early: 0, extended: 0, calibrated: 0, probabilities: [], answerMs: [] }
+    return this.endOfTurn
   }
 
   truncated(): void {
@@ -244,6 +276,19 @@ export class PipelineMeter {
       bargeIns: this.bargeIns,
       truncatedTurns: this.truncatedTurns,
       usage: this.usage(sessionSeconds),
+      ...(this.endOfTurn ? {
+        endOfTurn: {
+          probes: this.endOfTurn.probes,
+          answered: this.endOfTurn.probabilities.length,
+          early: this.endOfTurn.early,
+          extended: this.endOfTurn.extended,
+          calibrated: this.endOfTurn.calibrated,
+          probabilityMedian: this.endOfTurn.probabilities.length > 0
+            ? Math.round((percentile(this.endOfTurn.probabilities, 50) ?? 0) * 1000) / 1000
+            : null,
+          answerMs: stat(this.endOfTurn.answerMs),
+        },
+      } : {}),
     }
   }
 

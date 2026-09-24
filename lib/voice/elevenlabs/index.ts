@@ -66,7 +66,9 @@ import { applyRoomConfig, type RoomControls } from '@/lib/audio/types'
 
 import { PCM_RATES } from './config'
 import { MicCapture } from './capture'
-import { VadDetector, frameRms } from './vad'
+import { VadDetector, frameRms, type VadEvent } from './vad'
+import { EndOfTurnGate } from './smart-turn/gate'
+import { sharedSmartTurnDetector, type SmartTurnDetector } from './smart-turn/detector'
 import { type TranscriptionTiming } from './stt'
 import { transcriberFor, type Transcriber } from './transcriber'
 import { composeSteering } from '@/lib/warmth/steering'
@@ -76,7 +78,7 @@ import { TtsClient } from './tts'
 import { TurnClient } from './turn'
 import { PcmPlayer } from './player'
 import { SpokenTurn, capToBudget, sanitiseForSpeech } from './truncate'
-import { deadEndReply, enforceDeliveryTags, withoutParticle } from './shaping'
+import { NUMBER_OFFER_FALLBACK, deadEndReply, enforceDeliveryTags, withoutDigits, withoutParticle } from './shaping'
 import { loadParticles, type ParticleBank } from './particles'
 import { particleOnsetMs } from '@/lib/warmth/particles'
 import { TICKET_TTL_MS } from './turn-protocol'
@@ -109,6 +111,12 @@ export interface ElevenLabsAdapterOptions {
   aheadFetch?: typeof fetch
   prewarmEndpoint?: string
   reserveEndpoint?: string
+  /**
+   * The end-of-turn model (L4). Absent means the page's shared detector,
+   * used only when the mint carries `endOfTurn`; null turns it off whatever
+   * the mint says. Injected for tests.
+   */
+  smartTurn?: SmartTurnDetector | null
   /** Monotonic milliseconds. Injected for tests. */
   clock?: () => number
 }
@@ -133,6 +141,13 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   private micStream: MediaStream | null = null
   private capture: MicCapture | null = null
   private vad: VadDetector | null = null
+  /**
+   * The VAD with Smart Turn's ears on it (L4), when the mint asked for it.
+   * `vad` is then `gate.vad`, so every other call site — ducking, the
+   * activation ratio, flush — reaches the same detector it always did.
+   */
+  private gate: EndOfTurnGate | null = null
+  private turnDetector: SmartTurnDetector | null = null
   private stt: Transcriber | null = null
   private room: Room | null = null
   private userAnalyser: AnalyserNode | null = null
@@ -269,7 +284,19 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       this.prepareNextTurn()
       this.userAnalyser = this.makeAnalyser(context, context.createMediaStreamSource(mic))
 
-      this.vad = new VadDetector({ silenceMs: minted.pipeline.turn.silenceMs })
+      // L4. The model is warmed under the count like everything else here; a
+      // pause that arrives before it is ready is decided on silence alone,
+      // exactly as it was before the gate existed.
+      const detector = minted.endOfTurn ? this.endOfTurnDetector() : null
+      if (detector) void detector.warm()
+      const gate = detector
+        // The capture frames arrive at the context's rate; a browser that
+        // would not honour the requested one still reports the one it chose.
+        ? new EndOfTurnGate({ calibratedMs: minted.pipeline.turn.silenceMs, inputRate: context.sampleRate || sampleRate })
+        : null
+      this.gate = gate
+      this.turnDetector = detector
+      this.vad = gate?.vad ?? new VadDetector({ silenceMs: minted.pipeline.turn.silenceMs })
       this.setInterruptible(minted.pipeline.turn.interrupts)
 
       // OpenAI's transcriber, or Scribe v2 Realtime when the mint said so
@@ -405,12 +432,50 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     vad.setDucked(this.player?.isPlaying ?? false)
 
     const nowMs = this.clock()
-    const event = vad.push(frameRms(frame), nowMs)
+    const gate = this.gate
+    const step = gate ? gate.push(frame, nowMs) : { event: vad.push(frameRms(frame), nowMs), probe: null }
     this.stt?.pushFrame(frame, vad.isSpeaking)
 
-    if (!event) return
+    if (step.probe !== null && gate) this.probeEndOfTurn(gate, step.probe)
+    if (step.event) this.onVadEvent(step.event)
+  }
+
+  private onVadEvent(event: VadEvent): void {
     if (event.type === 'speech.start') this.onUserSpeechStart(event.atMs)
     else this.onUserSpeechStop(event.atMs, event.silenceMs ?? 0)
+  }
+
+  /**
+   * Ask Smart Turn whether the pause the gate is in sounds like the end of
+   * his turn (L4), and hand the answer back.
+   *
+   * Never awaited on the frame path, and never able to hurt the rep: the
+   * detector answers null on any failure, a null answer leaves the gate on
+   * the calibrated silence, and an answer that arrives after the pause has
+   * ended — he spoke again, or the silence ran out first — is discarded by
+   * `gate.answer` itself. The one thing checked here is that the gate is
+   * still this rep's: a rep can end, or the mic be muted, while an inference
+   * is in the worker.
+   */
+  private probeEndOfTurn(gate: EndOfTurnGate, pause: number): void {
+    const detector = this.turnDetector
+    if (!detector) return
+    const askedAt = this.clock()
+    this.meter?.endOfTurnProbe()
+    void detector.probability(gate.turnAudio()).then((probability) => {
+      if (this.gate !== gate || this.ended || this.muted) return
+      const at = this.clock()
+      this.meter?.endOfTurnAnswer(probability, at - askedAt)
+      const stop = gate.answer(pause, probability, at)
+      if (stop) this.onVadEvent(stop)
+    })
+  }
+
+  private endOfTurnDetector(): SmartTurnDetector | null {
+    if (this.options.smartTurn !== undefined) return this.options.smartTurn
+    // Browser only. The shared detector outlives the rep, so the second rep in
+    // a sitting starts with the model already compiled.
+    return typeof window === 'undefined' ? null : sharedSmartTurnDetector()
   }
 
   private onUserSpeechStart(atMs: number): void {
@@ -474,6 +539,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     this.userStartedAtMs = null
     this.userStoppedAtMs = atMs
     this.meter?.record('vadSilenceMs', silenceMs)
+    if (this.gate) this.meter?.endOfTurnConceded(silenceMs, this.gate.calibratedMs)
     this.emitter.emit('user.speech.stop', { at: this.secondsAt(atMs) })
     if (this.ended || this.muted) return
     this.stt?.commit(timing)
@@ -844,8 +910,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
           wordCap: this.replyWordCap, microReplies: persona.microReplies, pick: Math.random,
         })
       : null
+    const unguarded = micro ?? shaped.text
     const spokenText = capToBudget(
-      micro ?? shaped.text,
+      // Rule 3, as on the combined path.
+      persona.track === 'dating' ? withoutDigits(unguarded, NUMBER_OFFER_FALLBACK) : unguarded,
       this.replyWordCap,
       { sentences: this.replySentenceCap, ...(persona.track === 'dating' ? { freeLead: true } : {}) },
     )
@@ -1314,7 +1382,8 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     this.muted = muted
     for (const track of this.micStream?.getAudioTracks() ?? []) track.enabled = !muted
     if (muted) {
-      this.vad?.reset()
+      if (this.gate) this.gate.reset()
+      else this.vad?.reset()
       this.stt?.clear()
       this.userSpeaking = false
       this.replyPending = false
@@ -1405,6 +1474,9 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     this.capture = null
     this.stt = null
     this.vad = null
+    // The detector is the page's, not the rep's: it is left warm for the next.
+    this.gate = null
+    this.turnDetector = null
     this.player = null
     this.spoken = null
     this.room = null

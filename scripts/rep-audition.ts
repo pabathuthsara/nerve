@@ -67,7 +67,7 @@ import { compileInstructions } from '../lib/voice/openai/persona'
 import { WarmthSession } from '../lib/warmth/session'
 import { bandFor } from '../lib/warmth/bands'
 import { capToBudget, sanitiseForSpeech } from '../lib/voice/elevenlabs/truncate'
-import { deadEndReply, enforceDeliveryTags, withoutParticle } from '../lib/voice/elevenlabs/shaping'
+import { NUMBER_OFFER_FALLBACK, deadEndReply, enforceDeliveryTags, withoutDigits, withoutParticle } from '../lib/voice/elevenlabs/shaping'
 import { judgeHumour } from '../lib/voice/elevenlabs/humour'
 import { stripDeliveryTags } from '../lib/voice/elevenlabs/persona'
 import { beatsForRep } from '../lib/data/rep-rules'
@@ -472,7 +472,8 @@ async function runRep(
     const micro = session.lastTurnDeadEnd
       ? deadEndReply(stripDeliveryTags(tagged.text), { wordCap: replyCap, microReplies: persona.microReplies, pick: Math.random })
       : null
-    const shaped = capToBudget(micro ?? tagged.text, replyCap, {
+    const unguarded = micro ?? tagged.text
+    const shaped = capToBudget(persona.track === 'dating' ? withoutDigits(unguarded, NUMBER_OFFER_FALLBACK) : unguarded, replyCap, {
       sentences: replySentences, ...(persona.track === 'dating' ? { freeLead: true } : {}),
     })
     if (tagged.laughed && !micro && shaped.startsWith('[laughs]')) { session.noteExpression({ laughed: true }); laughs += 1 }

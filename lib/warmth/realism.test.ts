@@ -295,3 +295,27 @@ describe('what the first auditions of 23 September found', () => {
     expect(prompt).toContain('Nothing in them happened with him')
   })
 })
+
+describe('the disclosure ladder past its first rung', () => {
+  it('reaches a line on entering every band it was written for, not only the first', async () => {
+    const { PERSONAS } = await import('@/lib/personas')
+    const { composeSteering, disclosureFor } = await import('./steering')
+    const REAL = { words: 12, askedQuestion: false, disclosed: true, deadEnd: false }
+    for (const slug of ['tess', 'nadia', 'maya', 'robin']) {
+      const persona = PERSONAS[slug]!
+      for (const rung of persona.disclosures ?? []) {
+        // Just inside the rung's band: the moment it is earned, which is when
+        // "most recently earned first" must put it on the line. Later in the
+        // same band, gates that open after it may take the slot, as they do
+        // for any gate.
+        // The gate itself must be open too, so a rung below it (Robin's OPEN
+        // one, behind a gate at 60) is one she never reaches, by authoring.
+        const floor = { OPEN: 40, ENGAGED: 60, INVESTED: 80 }[rung.band]
+        const warmth = Math.max(floor, persona.gated.personalDisclosure.unlocksAt) + 1
+        if (disclosureFor(persona, warmth) !== rung.text.trim()) continue
+        const line = composeSteering({ persona, warmth, his: REAL })
+        expect([slug, rung.band, line.includes(rung.text.trim())]).toEqual([slug, rung.band, true])
+      }
+    }
+  })
+})

@@ -20,6 +20,7 @@
     "ab:llm": "vite-node --config vitest.config.ts scripts/ab-persona-llm.ts",
     "ab:history": "vite-node --config vitest.config.ts scripts/ab-history-length.ts",
     "ladder:sim": "vite-node --config vitest.config.ts scripts/ladder-sim.ts",
+    "rep:browser": "vite-node --config vitest.config.ts scripts/rep-browser.ts",
     "llm:bakeoff": "vite-node --config vitest.config.ts scripts/llm-bakeoff.ts",
     "grade:collect": "vite-node --config vitest.config.ts scripts/grade-collect.ts",
     "voice:voices": "vite-node --config vitest.config.ts scripts/voice.ts voices",

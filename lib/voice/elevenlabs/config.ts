@@ -136,6 +136,8 @@ export interface PipelineConfig {
   }
   stt: { model: string }
   llm: { model: string; temperature: number; maxTokens: number }
+  /** See `EndOfTurnMode`. */
+  endOfTurn: EndOfTurnMode
   credits: {
     /** The plan's monthly allowance. Free tier is 10,000. */
     budget: number
@@ -169,6 +171,26 @@ export function isScribeModel(model: string): boolean {
   return model === SCRIBE_REALTIME_MODEL
 }
 
+/**
+ * Who decides that he has finished speaking (`PERSONA-REALISM-REPORT-2026-09-23.md`
+ * §3.2, L4).
+ *
+ * `smart_turn` runs Smart Turn v3.2 in the browser on every pause and lets its
+ * answer move the concession: sooner when he sounds finished, later (up to
+ * 1.6x the calibrated silence, never past 1.2 s) when he sounds mid-thought.
+ * `silence` is the calibrated timer alone, which is what every rep did before.
+ *
+ * ON BY DEFAULT, and the reason it can be: with no answer from the model the
+ * gate emits exactly the events a bare `VadDetector` at the calibrated silence
+ * emits, frame for frame (`smart-turn/gate.test.ts`), and the detector turns
+ * itself off for the page on any failure (`smart-turn/detector.ts`). A phone
+ * that cannot run it gets the product it had. `PIPELINE_END_OF_TURN=silence`
+ * is the kill switch, read at mint, so it takes effect on the next rep without
+ * a client deploy.
+ */
+export type EndOfTurnMode = 'smart_turn' | 'silence'
+export const DEFAULT_END_OF_TURN: EndOfTurnMode = 'smart_turn'
+
 /** Free plan. Ten thousand credits a month and no overage. */
 export const DEFAULT_CREDIT_BUDGET = 10_000
 export const DEFAULT_CREDIT_WARN_AT = 8_000
@@ -187,6 +209,7 @@ export interface PipelineEnv {
   PIPELINE_STT_MODEL?: string | undefined
   PIPELINE_LLM_MODEL?: string | undefined
   PIPELINE_LLM_TEMPERATURE?: string | undefined
+  PIPELINE_END_OF_TURN?: string | undefined
 }
 
 function num(value: string | undefined, fallback: number): number {
@@ -233,6 +256,7 @@ export function resolvePipelineConfig(env: PipelineEnv = {}): PipelineConfig {
       // generation, not a length target — length is the warmth band's job.
       maxTokens: 120,
     },
+    endOfTurn: env.PIPELINE_END_OF_TURN?.trim() === 'silence' ? 'silence' : DEFAULT_END_OF_TURN,
     credits: {
       budget: num(env.ELEVENLABS_CREDIT_BUDGET, DEFAULT_CREDIT_BUDGET),
       warnAt: num(env.ELEVENLABS_CREDIT_WARN_AT, DEFAULT_CREDIT_WARN_AT),

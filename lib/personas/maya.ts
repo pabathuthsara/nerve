@@ -100,10 +100,21 @@ export const maya: Persona = {
   // asserted at that rung: it is the hardest one a good three-minute rep can
   // still arm against (`engine.test.ts`, "the ladder a good player can
   // actually arm").
+  //
+  // RETUNED 24 SEPTEMBER 2026 (PERSONA-REALISM-REPORT W1), start 28 -> 30 and
+  // gain 1.0 -> 1.1, and only after re-measuring. Persona v2 made her harder
+  // twice without touching this block: distraction 45 lowers what a generic
+  // turn earns, and the interview penalty (`lib/warmth/rapport.ts`) is hers.
+  // `npm run ladder:sim` then put a strong player at 11% armed in sixteen turns
+  // — level with Robin at 8%, a rung above her — against 34% before. Each of
+  // the two causes halved it on its own, measured. Rather than undo either
+  // (both are her), the curve gives the ground back: 40% for a strong player
+  // at sixteen turns, 1% competent, with Nadia at 97% and Robin at 8% either
+  // side. Gain is capped at Nadia's by the monotonic ladder test.
   trajectory: {
-    start: 28,
+    start: 30,
     startJitter: 6,
-    gain: 1.0,
+    gain: 1.1,
     decay: 0.7,
     decayPerTurn: 0.25,
     maxGainPerTurn: 3.2,
