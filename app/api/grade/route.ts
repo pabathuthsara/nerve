@@ -23,6 +23,11 @@ import { memoryLineFrom } from '@/lib/grade/memory'
 // roster rather than from the request body.
 import { rubricForPersonaName } from '@/lib/grade/track'
 import { computeDeterministicMetrics } from '@/lib/grade/metrics'
+// S5. The dating talk band, set against how much the character was asked to
+// say. Absent band-time is `METRIC_BANDS` itself, so every path that cannot
+// read one reaches the table it always did.
+import { datingMetricBands } from '@/lib/grade/talk-ratio'
+import { readBandTimeFor } from '@/lib/db/band-time'
 import type { AccuracyLayer, JudgementLayer, Scorecard, SubScores } from '@/lib/grade/types'
 // The second pass (§8.2). Its own call, its own model, its own budget line, and
 // skipped entirely when the round produced no probes — which is every dating
@@ -105,6 +110,15 @@ export async function POST(request: Request): Promise<Response> {
 
   const metrics = computeDeterministicMetrics(transcript, sessionSeconds)
   const rubric = rubricForPersonaName(personaName)
+
+  // PERSONA-REALISM S5. Where she spent the rep, read off the row
+  // `finishSession` wrote before this request was sent. Started now and
+  // awaited after the model call, so it costs no latency; it cannot fail the
+  // grade, only fall back to the §07 band (`lib/db/band-time.ts`). Dating only:
+  // the interview table is its own argument and the band there does not move.
+  const bandTime = rubric.track === 'dating'
+    ? readBandTimeFor({ userId: auth.userId, sessionId: body.sessionId, transcript, sessionSeconds })
+    : Promise.resolve(null)
 
   const completion = await runScoringCall({
     request,
@@ -196,8 +210,10 @@ export async function POST(request: Request): Promise<Response> {
       transcript, sessionSeconds, judgement, outcome, model: completion.model,
       // Sixty percent of the composite, and four of the dating bands score
       // correct interview behaviour at zero. The dating branch passes the
-      // table it always used.
-      bands: rubric.metricBands,
+      // table it always used — with the talk band normalised to her when the
+      // rep left a band-time to normalise from (S5), and `METRIC_BANDS`
+      // itself when it did not.
+      bands: rubric.track === 'dating' ? datingMetricBands(await bandTime) : rubric.metricBands,
       ...(accuracy ? { accuracy } : {}),
     }),
   )

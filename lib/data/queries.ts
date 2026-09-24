@@ -34,7 +34,7 @@ import {
   voicelessPlan,
 } from './allowance'
 import { qualifyingByLevel, uiBand, uiLevel, uiWarmth, unlockProgress, unlockRequirement, unlockedLevels, wonFromOutcome } from './progression'
-import { toScorecard, type StoredMetricScore, type StoredWarmthEvent } from './scorecard'
+import { storedTurns, toScorecard, type StoredMetricScore, type StoredWarmthEvent } from './scorecard'
 import { RANKS, type Rank } from './rank'
 import { INTERVIEWERS, interviewerStyleFor } from '@/lib/personas/interview'
 import { INTERVIEW_SETUP_COLUMNS, setupFromRow, type SetupRow } from '@/lib/db/interview-shape'
@@ -474,7 +474,9 @@ export async function fetchScorecard(sessionId: string): Promise<Scorecard | nul
       .select('composite, metric_scores, focus, went_well, opening, curiosity, listening, signal_reading, composure, close, technical_accuracy, accuracy')
       .eq('session_id', sessionId)
       .maybeSingle(),
-    supabase.from('transcripts').select('warmth').eq('session_id', sessionId).maybeSingle(),
+    // `turns` as well as the gutter since S3/S4: the evidence rows are read
+    // off the transcript itself, on this read, with no model.
+    supabase.from('transcripts').select('turns, warmth').eq('session_id', sessionId).maybeSingle(),
     // Which room this was. It decides which axis table the rows are read
     // against and which instruction "Try this next time" carries — the dating
     // prose on an interview scorecard was telling candidates to make the ask
@@ -491,6 +493,7 @@ export async function fetchScorecard(sessionId: string): Promise<Scorecard | nul
     score,
     events: warmthEvents(transcript?.warmth),
     track: session?.track === 'interview' ? 'interview' : 'dating',
+    turns: storedTurns(transcript?.turns),
   })
 }
 

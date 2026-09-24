@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Check, ChevronDown, ChevronUp, Crosshair, Flame, MicOff, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useInterviewers, useLifetimeStats, usePendingUnlock, usePersonaMemory, usePersonas, useScorecard, useSession, useSessionHistory, useTranscript, useUserState } from '@/lib/data'
-import type { Band, JudgementBand, LifetimeStats, MetricBand, Moment, ScorecardAccuracy, SessionSummary, TranscriptTurn } from '@/lib/data/types'
+import type { Band, CountOf, JudgementBand, LifetimeStats, MetricBand, Moment, ResponsivenessCounts, ScorecardAccuracy, SessionSummary, SignalMoment, TranscriptTurn } from '@/lib/data/types'
 import { techniqueForSubScore, type Technique } from '@/lib/techniques/library'
 import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
 import { LEVEL_NAMES, nextUnlockProgress, qualifyingByLevel, unlockProgressLabel, type UnlockProgress } from '@/lib/data/progression'
@@ -604,7 +604,7 @@ function ScorecardScreen({ session, packsOpen }: { session: SessionSummary; pack
       open from the first credit (§5.10), and the tier mark beside it is the
       roster aperture. Both are dropped rather than relabelled: what is worth
       knowing after an interview is who, how long, and what happened. */}
-<p className="composite-card__context">{session.track === 'dating' && personaLevel ? <Mark name={tierMark(personaLevel)} size={15} /> : null}<span>{session.personaName}{session.track === 'dating' ? ` · Level ${levelLabel}` : ''} · {formatDuration(session.durationMs)} · {outcomeLabel}</span></p></Card>{scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}{scorecard.accuracy ? <TechnicalAccuracy accuracy={scorecard.accuracy} composure={scorecard.judgement?.subScores.find((entry) => entry.key === 'composure')?.value ?? null} /> : null}<section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric, index) => <div key={metric.key} data-reveal={index < rowsShown ? 'shown' : 'pending'}><MetricBandRow metric={metric} /></div>)}{scorecard.judgement ? <div data-reveal={scorecard.metrics.length < rowsShown ? 'shown' : 'pending'}><JudgementRow judgement={scorecard.judgement} /></div> : null}</div></section></div><aside className="scorecard-right"><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} turns={turns} tone="up" /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} turns={turns} tone="down" /><section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card>{/* The mission this rep sets, and the same words Train, the brief
+<p className="composite-card__context">{session.track === 'dating' && personaLevel ? <Mark name={tierMark(personaLevel)} size={15} /> : null}<span>{session.personaName}{session.track === 'dating' ? ` · Level ${levelLabel}` : ''} · {formatDuration(session.durationMs)} · {outcomeLabel}</span></p></Card>{scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}{scorecard.accuracy ? <TechnicalAccuracy accuracy={scorecard.accuracy} composure={scorecard.judgement?.subScores.find((entry) => entry.key === 'composure')?.value ?? null} /> : null}<section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric, index) => <div key={metric.key} data-reveal={index < rowsShown ? 'shown' : 'pending'}><MetricBandRow metric={metric} /></div>)}{scorecard.judgement ? <div data-reveal={scorecard.metrics.length < rowsShown ? 'shown' : 'pending'}><JudgementRow judgement={scorecard.judgement} /></div> : null}</div></section>{scorecard.responsiveness ? <ResponsivenessSection counts={scorecard.responsiveness} /> : null}</div><aside className="scorecard-right"><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} turns={turns} tone="up" /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} turns={turns} tone="down" />{scorecard.signals.length > 0 ? <SignalsSection signals={scorecard.signals} persona={session.personaName} /> : null}<section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card>{/* The mission this rep sets, and the same words Train, the brief
       and the live screen will show until the weakest dimension moves.
       It is the connective tissue the audit said was missing. */}
 {/* DATING ONLY, AND BOTH HALVES ARE.
@@ -766,6 +766,115 @@ function TechnicalAccuracy({ accuracy, composure }: { accuracy: ScorecardAccurac
   )
 }
 
+
+/**
+ * HER SIGNALS, AS FACTS (PERSONA-REALISM S4).
+ *
+ * The judged half scores SIGNAL READING as one number from a model, and it is
+ * the number people argue with most because nothing on the card showed what
+ * it was about. This is what it was about: the moments she cooled or warmed,
+ * with the clock, and what his next line did — read off the transcript and her
+ * warmth trace, with no model and no points.
+ *
+ * **It never hands him a line** (rule 8). Every sentence is authored in
+ * `lib/grade/signal-reading.ts` and refused there if it quotes, speaks in the
+ * first person or advises. Her line and his are printed underneath as the
+ * transcript, labelled by who said them — what was said, never what to say.
+ *
+ * After the rep, never during it (§05), and never a verdict on the outcome: a
+ * moment is marked read or missed, and the card says in so many words that
+ * none of it is scored. No volt — the composite already spends it — and amber
+ * only on "Missed", which is a statement about one line and not the person.
+ */
+function SignalsSection({ signals, persona }: { signals: SignalMoment[]; persona: string }) {
+  return (
+    <section className="signals-section">
+      <div className="section-title"><h2 className="display-md">Her signals</h2><span className="label mute">Not scored</span></div>
+      <ol className="signal-list">
+        {signals.map((signal, index) => (
+          <li key={`${index}-${signal.at}`} className="signal-moment">
+            <div className="signal-moment__head">
+              <span className="data">{signal.clock}</span>
+              <span className={`label signal-moment__verdict${signal.read ? '' : ' signal-moment__verdict--missed'}`}>{signal.read ? 'Read' : 'Missed'}</span>
+            </div>
+            <p className="signal-moment__sentence">{signal.sentence}</p>
+            <dl className="signal-moment__lines">
+              <div><dt className="label">{persona}</dt><dd>{signal.her}</dd></div>
+              <div><dt className="label">You</dt><dd>{signal.his}</dd></div>
+            </dl>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+/**
+ * LISTENING, COUNTED (PERSONA-REALISM S3).
+ *
+ * Four things the conversation literature says build liking and a lexical
+ * pass can see: follow-up questions, callbacks, her questions answered, and
+ * disclosure traded for disclosure. Counted from the transcript on this read
+ * (`lib/grade/responsiveness.ts`), each over the turns that had a chance — so
+ * a question she asked as the rep ended is not a question he failed to answer.
+ *
+ * **Not part of the composite**, and it says so. The rows above add up to the
+ * number at the top without this, and an unscored count sitting inside that
+ * arithmetic would make the audit line lie.
+ */
+function ResponsivenessSection({ counts }: { counts: ResponsivenessCounts }) {
+  const cells: { key: string; label: string; value: string; note: string }[] = [
+    {
+      key: 'follow-ups',
+      label: 'Follow-ups',
+      value: ratioOf(counts.followUps),
+      note: counts.followUps.of > 0
+        ? 'Your questions that came out of her last line.'
+        : 'None of your questions had a line of hers to follow.',
+    },
+    {
+      key: 'callbacks',
+      label: 'Callbacks',
+      value: String(counts.callbacks),
+      note: 'Times you went back to something she had said well before.',
+    },
+    {
+      key: 'bids',
+      label: 'Her questions answered',
+      value: ratioOf(counts.bidsTurnedToward),
+      note: counts.bidsTurnedToward.of > 0
+        ? 'Questions she asked you that you actually answered.'
+        : 'She asked you nothing that you had a turn to answer.',
+    },
+    {
+      key: 'disclosures',
+      label: 'Traded disclosures',
+      value: ratioOf(counts.reciprocalDisclosures),
+      note: counts.reciprocalDisclosures.of > 0
+        ? 'Times she told you something of hers and you offered something of yours.'
+        : 'She told you nothing about herself this rep.',
+    },
+  ]
+  return (
+    <section className="responsiveness-section">
+      <div className="section-title"><h2 className="display-md">Listening, counted</h2><span className="label mute">Not scored</span></div>
+      <div className="responsiveness-grid">
+        {cells.map((cell) => (
+          <div key={cell.key} className="responsiveness-cell">
+            <span className="label">{cell.label}</span>
+            <strong className="data">{cell.value}</strong>
+            <p>{cell.note}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** `3 of 4`, or a dash when there was nothing to count. */
+function ratioOf(count: CountOf): string {
+  return count.of > 0 ? `${count.count} of ${count.of}` : '—'
+}
 
 function WhatWorked({ line }: { line: string }) {
   return <Card className="went-well"><Check size={18} strokeWidth={1.6} className="volt" /><div><span className="label">What worked</span><p>{line}</p></div></Card>
