@@ -622,7 +622,11 @@ ARITHMETIC is checked in code. The judged 40% was not checked until 24
 September, and it leaks: `npm run grade:invariance` grades one rep finished two
 ways, identical on his side, and on its first four pairs the grader scored him
 +2.8 composite, +14.8 on `close` and +13.8 on `signalReading` when she gave her
-number (PERSONA-REALISM §6.1, S1). Open, and the fix is in `lib/grade/prompt.ts`.
+number (PERSONA-REALISM §6.1, S1). **Fixed the same day:** the dating grader
+no longer sees her reply to his last line (`lib/grade/ending.ts`), the SIGNAL
+READING and CLOSE rubric paragraphs stopped pointing it at the ending, and it
+takes the median of three readings from one call (S6). All ten pairs now move
+0 on the composite.
 
 **Beside the grade, never in it** — two evidence sections on the dating
 scorecard, read off the stored transcript and warmth trace with no model and
@@ -876,6 +880,27 @@ The argument, the measurements and the transcripts behind all of these are in
 `PERSONA-AUDIT.md`; the plan they were worked from is `HUMANNESS-PLAN.md`.
 
 ---
+
+### 7.3 The realism layer (24 September 2026)
+
+`PERSONA-REALISM-REPORT-2026-09-23.md` §13 is the record. What it added to the
+judgements above, each in its own file beside the layer it serves:
+
+| Judgement | Where | What it decides |
+|---|---|---|
+| Rapport | `lib/warmth/rapport.ts` | Follow-up questions, appreciation after she shared, reciprocal disclosure, interview mode (only when her contract says so), topic hops. Folded into the fast score under her temperament; `scoreFast` itself is untouched, and the ratio "a dead end costs more than a good question earns" is asserted |
+| A laugh | `WarmthSession.decideExpression` + `lib/voice/elevenlabs/humour.ts` | The session may ALLOW one (her `laughs` gate, never twice running, spaced); the turn route SHIPS one only if a one-token check says his line was meant to be funny. Either alone is a laugh at nothing |
+| A particle | `lib/warmth/particles.ts` | Whether her reply opens with a pre-rendered "Mm." / "Oh." / "Well…", which one for the band, and when |
+| A dead end | `shaping.ts` `deadEndReply`, `reciprocity.ts` | A rescue becomes one of her authored micro-replies; silence is allowed on a second dead end at OPEN; her want becomes where her attention goes |
+| Misheard | `lib/warmth/turn-kind.ts` `isMisheard` | A turn that is mostly non-English script is `unclear`: she asks, it never scores, the scorecard's evidence skips it |
+| Contempt | `lib/data/rep-rules.ts` `givesNumber` | No number within 45 s of contempt or a judged intent of −5 (W4a); a boundary verdict commits her exit (W4b) |
+| What she can reveal | `lib/warmth/steering.ts` `disclosureFor` | The deepest disclosure rung her band has reached, ranked with the gates by the band it belongs to |
+| Digits | `shaping.ts` `withoutDigits` | Rule 3 in code: a sentence that reads a number out is never synthesised |
+| When he has finished | `lib/voice/elevenlabs/smart-turn/` | Smart Turn v3.2 on each pause: sooner when he sounds done, later when he sounds mid-thought, the calibrated silence when it cannot say |
+
+**Refused, with numbers:** the live judge on every turn on `gpt-4.1-nano`
+(§5.4 of the report) — it read "Why are you still here?" as neutral and "are you
+seeing anyone" as under the boundary line, the two things the judge exists for.
 
 ## 8. Where each judgement lives
 

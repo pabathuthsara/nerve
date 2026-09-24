@@ -26,6 +26,7 @@ number (§05, problem one). We are buying the voice and nothing else.
 | `lib/voice/elevenlabs/config.ts` | TTS models, pricing, output format, env dials |
 | `lib/voice/elevenlabs/persona.ts` | The compiler. Same contract in, a different idiom out |
 | `lib/voice/elevenlabs/vad.ts` | Our detector. Pure — energy in, events out |
+| `lib/voice/elevenlabs/smart-turn/` | Smart Turn v3.2 (L4): `gate.ts` wraps the VAD and asks the model about each pause, `policy.ts` is the rule, `detector.ts` and `worker.ts` run ONNX Runtime in a Web Worker and turn themselves off on any failure |
 | `lib/voice/elevenlabs/capture.ts` | One mic tap feeding both the VAD and the transcriber |
 | `lib/voice/elevenlabs/stt.ts` | Realtime transcription, driven by our VAD, not theirs |
 | `lib/voice/elevenlabs/scribe.ts` | The same, through ElevenLabs Scribe v2 Realtime: partials while he speaks. Opt-in |
@@ -35,6 +36,11 @@ number (§05, problem one). We are buying the voice and nothing else.
 | `lib/voice/elevenlabs/turn-protocol.ts` | Request and event contract for the combined HTTP reply |
 | `lib/voice/elevenlabs/turn.ts` | Browser stream reader, completion marker, cancellation and deadline |
 | `lib/voice/elevenlabs/combined.ts` | Server orchestration: LLM to synthesis without a browser round trip |
+| `lib/voice/elevenlabs/shaping.ts` | What happens to her line between the writer and the synthesiser: tags, the laugh, a dead-end reply, the particle, and no digits |
+| `lib/voice/elevenlabs/humour.ts` | The one-token "was his line meant to be funny" check that a permitted laugh waits on |
+| `lib/voice/elevenlabs/particles.ts` | Her pre-rendered "Mm." / "Oh." per voice, loaded at connect |
+| `lib/voice/elevenlabs/prewarm.ts` | The first turn warmed under the countdown (L1) |
+| `lib/voice/elevenlabs/ticket.ts` | The signed ticket that carries turn N+1's reservation (L2) |
 | `lib/voice/elevenlabs/legacy.ts` | Session authorization and streaming usage observation for older clients |
 | `lib/voice/elevenlabs/player.ts` | PCM playback with an exact playhead |
 | `lib/voice/elevenlabs/truncate.ts` | What she actually said. The load-bearing piece |
@@ -747,7 +753,68 @@ retention (`enable_logging=false`) is for enterprise and trial tiers only. On
 our plan the request opens a normal session, a `warning` says it "was not
 applied", and the session is logged anyway, so the URL does not ask for it.
 
-**Before switching it on:** wire `transcriberFor` into `index.ts`, run a real
-microphone rep, and run one twenty-minute interview to its end. The vendor does
+**Before switching it on:** `transcriberFor` is wired into `index.ts` now
+(24 September). Run a real microphone rep, and run one twenty-minute interview
+to its end. The vendor does
 not document a maximum session length, and `session_time_limit_exceeded` ends a
 rep.
+
+## The realism layer — 24 September 2026
+
+`PERSONA-REALISM-REPORT-2026-09-23.md` §13 is the record; this is how the
+pieces sit in the pipeline.
+
+**Ahead of the turn (L1, L2).** At connect, under the 3·2·1, the adapter posts
+`/api/voice/prewarm` — the exact cached prefix at `max_tokens: 1` and a one-word
+synthesis, admitted and settled like any operation — and `/api/voice/turn/reserve`,
+which reserves the NEXT turn and answers with an HMAC ticket
+(`TURN_TICKET_SECRET`, else `SUPABASE_SECRET_KEY` under a label). The turn
+route claims that reservation with a conditional update before synthesis, so a
+ticket buys one turn once; an unclaimed reservation is released when the rep
+finishes or is abandoned. Every turn reserves the one after it while it plays.
+No ticket, or a stale one, is the old admission path.
+
+**When he has finished (L4).** With `endOfTurn` on the mint the adapter holds an
+`EndOfTurnGate` instead of a bare `VadDetector`. The VAD is built at the
+EXTENDED silence (1.6× calibrated, never past 1.2 s); after 200 ms of quiet the
+gate asks Smart Turn once about his turn so far (16 kHz, last 8 s, marked where
+his turn began). p ≥ 0.7 concedes at once, p < 0.5 waits for the extended
+silence, anything else — including no answer — concedes at the calibrated
+silence to the frame. The detector is the page's, warmed at connect, and off for
+the page after any failure. `PIPELINE_END_OF_TURN=silence` at mint removes it.
+In Chrome the answer takes ~170 ms (single-threaded WebAssembly; the threaded
+build needs COOP/COEP). `pipeline_telemetry.endOfTurn` counts early, extended
+and calibrated concessions; watch `extended` against `early`.
+
+**Her line, after it is written (`shaping.ts`).** In this order, on the combined
+route and on the legacy path alike (rule 1's lesson):
+
+1. `withoutParticle` — the "Mm." she already played is not said again;
+2. `enforceDeliveryTags` — one leading tag from a warmth-dependent list;
+   `[laughs]` only when the session allowed it (`decideExpression`) AND
+   `humour.ts` said his line was meant to be funny (a parallel `gpt-4.1-nano`
+   call, 350 ms grace, fails closed);
+3. `deadEndReply` — after a dead end, a rescue that overruns the mirror cap
+   becomes one of her authored `microReplies`;
+4. `withoutDigits` — dating only: a sentence that reads a number out is
+   dropped, and "I will put it in your phone." is said if nothing is left
+   (rule 3);
+5. `capToBudget` — with `freeLead` on the dating arm, so a name or "Yeah." in
+   front does not spend her one sentence (R1).
+
+**The particle (R4).** `decideExpression` may pick a turn-initial particle
+(never twice within three turns, from a band-dependent set). The browser plays
+the pre-rendered clip from `public/particles/<voice>/` at a band-dependent onset
+while the reply is still being generated, and records it as the unaligned head
+of her spoken turn so a barge-in still truncates exactly.
+
+**Stability (R2)** is decided per turn in `deliveryFor`: the env dial is the
+cold end, v3's Natural (0.5) the warm end, the band picks the point.
+
+**Testing all of it at once.** `npm run rep:browser -- tess mic.wav --temp-account`
+runs one whole rep in headless Chrome with the WAV as the microphone (on macOS
+the audio service sandbox has to be disabled for Chrome to read the file) and
+prints the paid routes, the transcript, the stages, the Smart Turn telemetry and
+the ledger. It is the only instrument that exercises the worker, the particles,
+the prewarm and the tickets together, and its first clean run found her reading
+a phone number out loud.

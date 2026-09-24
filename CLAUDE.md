@@ -145,6 +145,32 @@ the real world and log the outcome.
    ceremony. And **a green suite proved none of it**: `npm run text:audition`
    found five defects in four runs that 2,396 passing assertions did not, which
    is `INTERVIEW-TECHNICAL-PLAN` §13.3's lesson arriving a second time.
+   **`docs/PERSONA-REALISM-REPORT-2026-09-23.md` is how the dating characters
+   stopped sounding like an AI, and it SHIPPED on 24 September 2026 on the
+   `persona-realism` branch — read its §13 first.** It was one signed-off
+   Tier 0 act (rule 19) covering latency, rendering, the meter and persona v2,
+   and `dating-arm.test.ts` was re-baselined once for it with every moved
+   digest explained inline. Four things there are worth knowing before
+   touching the voice arm. **Smart Turn decides when he has finished**
+   (`lib/voice/elevenlabs/smart-turn/`, L4): a model in a Web Worker is asked
+   about every pause, concedes at ~370 ms when he sounds done and waits up to
+   1.6× the calibrated silence when he sounds mid-thought; with no answer it
+   is the calibrated silence to the frame, and `PIPELINE_END_OF_TURN=silence`
+   at mint takes it out. `pipeline_telemetry.endOfTurn` is the number to
+   watch — if `extended` dominates `early`, it is adding latency, not removing
+   it. **Her line is shaped in code after it is written** (`shaping.ts`): the
+   tag allowlist, a laugh only when the session allowed it and a parallel check
+   says he was funny, a dead end answered with her own "Mm.", the particle not
+   said twice — and, since a real browser rep heard "Cass. It's 555-0198.",
+   **rule 3's "she never speaks digits" is enforced by `withoutDigits`, not
+   stated**. **`npm run rep:browser` is the instrument that found that**: a
+   whole rep in real Chrome with a WAV for a microphone, on a temporary account
+   with `--temp-account`; the suite, the auditions and the characterization
+   were all green at the time. And **three things were refused on
+   measurement**, with the numbers in §13.4: speculative generation (L5), the
+   live judge on `gpt-4.1-nano` (it read "Why are you still here?" as neutral
+   and "are you seeing anyone" as below the boundary line), and any change of
+   character model.
 3. **`docs/LAUNCH-GAP.md` is what is blocking launch.** Ten numbered blockers,
    the product-promise gaps, and the spec drift that needs a decision rather
    than a ticket.
@@ -260,7 +286,7 @@ future sessions read those markers to decide what to do.
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run lint
-npm test              # vitest, 2021 assertions
+npm test              # vitest, 2,815 assertions
 npm run build:check   # production build into .next-check, never .next
 npm run db:verify     # RLS from a second real account, 84 checks
 npm run db:rep        # the whole rep lifecycle, without a microphone
@@ -284,6 +310,28 @@ npm run rep:audition -- <slug> <player> <reps> [round] [difficulty]
                          # a whole rep without a microphone. The last two are
                          # INTERVIEW ONLY and drive the probe ladder end to end
                          # (INTERVIEW-TECHNICAL-PLAN T11). It spends money.
+npm run rep:browser -- <slug> <mic.wav> [--temp-account]
+                         # one whole rep in real Chrome against the running dev
+                         # server, with a WAV (his lines, long silences between)
+                         # as the microphone. The only instrument that exercises
+                         # Smart Turn's worker, the particles, prewarm and the
+                         # ticketed reservations together. Prints the paid
+                         # routes, the transcript, the stages and the ledger.
+                         # `--temp-account` creates and deletes its own account;
+                         # never fix the dev account with `db:user`, which resets
+                         # a real person's password. It spends money.
+npm run ladder:sim -- 12 14 16   # the difficulty ladder, 2,000 synthetic reps a
+                         # cell through the real engine. Free. Run it before
+                         # any trajectory moves (PERSONA-REALISM §13.3)
+npm run llm:bakeoff      # the character model candidates: latency, band
+                         # obedience, register. It spends money.
+npm run grade:invariance # rule 2 tested: ten reps finished twice, her number
+                         # and no number, graded in-process. It spends money.
+npm run particles:render # her pre-rendered "Mm." / "Oh." per voice (R4), once
+npm run scribe:probe     # Scribe v2 Realtime against the OpenAI transcriber
+npm run smart-turn:check -- [turn.wav ...]
+                         # the end-of-turn model on synthesised or recorded turns
+npm run db:voice         # the voice budget, 50 checks, incl. L2's release path
 npm run text:audition -- <slug> <player> <messages>
                          # a whole texting thread without a keyboard, through
                          # the real meter, steering, exit and presence. Players:
@@ -321,8 +369,13 @@ Never run `next build` into `.next` while a dev server is up — see the note in
    Score process, never result. (§07)
 3. **The rep format is product law.** Three minutes. Warmth 65 *arms* the rep
    silently; thirty seconds from the end she is told either to leave or to
-   offer her number; she keeps it if she is still at 55 or above. She never
-   speaks digits. The rules live in `lib/data/rep-rules.ts` as pure functions
+   offer her number; she keeps it if she is still at 55 or above **and he has
+   not been contemptuous in the last 45 seconds** (`CONTEMPT_WINDOW_MS`, W4a:
+   a character who hands her number to a man who just insulted her teaches
+   that it works). She never speaks digits, **and that is enforced in code**:
+   `withoutDigits` drops a sentence that reads a number out before it is
+   synthesised, because on 24 September a real rep said one anyway. The rules
+   live in `lib/data/rep-rules.ts` as pure functions
    with tests — change them there, not in the hook. **How the result is read is
    part of that file too**: `resultReading` owns `close`, `lateSurge` and
    `nearMiss`, so "she was never interested" and "you missed by four" are one
@@ -585,6 +638,15 @@ Never run `next build` into `.next` while a dev server is up — see the note in
     ceremony this file is for. `tts` and `turn` came through byte-identical on
     every character under both environments, so nothing about her voice, her
     stability or her turn-taking moved.
+    **It was re-baselined a second time on 24 September 2026** for the
+    persona-realism retune, the same way: every compiled prompt dumped against
+    `elevenlabs-pipeline` and read line by line, and the reasons recorded
+    inline beside each table. Two things that DID change what she sounds like
+    are deliberately outside the compiled config and pinned elsewhere:
+    stability now follows the band at synthesis time (the delivery test), and
+    Smart Turn is a mint-level member, so `turn` is still byte-identical.
+    Reading that diff found a real defect (Nadia's deeper disclosure rungs
+    could never reach a line), which is the argument for reading it.
     **A digest that moves without that ceremony is still the bug this file
     exists to catch.** Fifty-two assertions — nine compiled
     contracts by digest and length, nine pipeline configs under two environments,

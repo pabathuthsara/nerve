@@ -177,6 +177,19 @@ creates one append-only receipt. `usage_key` deduplicates receipts, while
 and retain provider usage, timings and request metadata. Client
 `sessions.pipeline_telemetry` is diagnostic data, never billing authority.
 
+**Turn N+1 is reserved while turn N plays** (24 September 2026,
+`PERSONA-REALISM-REPORT` L2), with no schema change. `/api/voice/turn/reserve`
+reserves an ordinary `turn` operation and stamps `metadata.prereserved`; the
+turn route claims it with one conditional update that sets `claimedAt` only
+where the row is still `reserved`, belongs to the caller and has no `claimedAt`
+yet, so a ticket buys one turn once. A reservation nobody claimed is released
+by `releaseUnclaimedTurns` in `finishSession` and `abandonSession` — only rows
+that are `prereserved` and unclaimed, so an in-flight turn is never touched.
+`npm run db:voice` covers the release path. The first turn's prewarm is its own
+`llm` operation (`prewarm:<session>`), and `pipeline_telemetry` now carries an
+optional `endOfTurn` block (Smart Turn's probes and concessions), diagnostic like
+the rest of it.
+
 Daily caps include active envelopes and today's unresolved operations. An old
 abandoned operation remains available for reconciliation but does not consume
 every future day's allowance. A late receipt uses the operation's initiation

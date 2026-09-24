@@ -16,7 +16,12 @@
 > | 2 | `responseDelayFor` — latency as a channel | **shipped** |
 > | 3 | Contempt pre-filter + suppress positives | **shipped** |
 > | 4 | Moods and room tone | **shipped** |
-> | 5–10 | Text-to-Dialogue socket, disfluency, Smart Turn v3, interruption, boundary exit, backchannels | not started |
+> | 5 | Text-to-Dialogue socket | not started — `previous_text` on v3 answers `400 unsupported_model`, so it needs the per-rep socket (`PERSONA-REALISM-REPORT` R5, L9) |
+> | 6 | Disfluency injector | not built; the authored examples (§4.1a) and her micro-replies carry it |
+> | 7 | Smart Turn v3 | **shipped 24 September** as v3.2 in the browser, on by default (`PERSONA-REALISM-REPORT` §13, L4) |
+> | 8 | Interruption as a `distraction` behaviour | not started; 7 was its prerequisite |
+> | 9 | Boundary exit wiring | **shipped 24 September** (`PERSONA-REALISM-REPORT` W4b) |
+> | 10 | Cached backchannels | **half shipped 24 September**: turn-INITIAL particles (R4). Mid-speech backchannels still wait on echo cancellation being proven on laptop speakers |
 >
 > ## The plan was reordered on 6 September, and it was wrong about what mattered
 >
@@ -978,10 +983,10 @@ Estimates are rough and assume you are working alone.
 | 4 | ✅ Moods and room tone | 2–3 days authoring | Zero code; kills the sameness complaint |
 | 5 | Text-to-Dialogue WebSocket, one socket per rep | 3–5 days | Cross-turn prosody; `new_turn` on band change |
 | 6 | Disfluency injector + orthographic reduction | 3–5 days | The imperfection heuristic; also fixes the char-count collision |
-| 7 | Smart Turn v3 | 2–3 days | Stops her interrupting nervous users |
+| 7 | ✅ Smart Turn v3 (v3.2, 24 September) | 2–3 days | Stops her interrupting nervous users |
 | 8 | Interruption as a `distraction` behaviour | 2 days | Only possible after 7; large character payoff |
-| 9 | Boundary exit wiring | hours | Mechanism exists, wire is missing |
-| 10 | Cached backchannels | 1–2 days | Diminishing returns, still real |
+| 9 | ✅ Boundary exit wiring (24 September) | hours | Mechanism exists, wire is missing |
+| 10 | ½ Cached backchannels — turn-initial particles only (24 September) | 1–2 days | Diminishing returns, still real |
 
 **Items 1–4 are roughly a week and should move the needle furthest**, because
 three of the four are attacking channels that are currently at zero rather than
@@ -992,6 +997,13 @@ estimated and its diagnosis was wrong (see §7.2); item 3 needed a tighter filte
 than proposed (§6.1). Nothing in 5–10 is started. Item 5 is the natural next
 one: it is the second half of §2.2 and the buffering that landed in item 1 is
 what makes one socket per rep coherent.
+
+**Items 7, 9 and half of 10 shipped on 24 September 2026** as part of
+`PERSONA-REALISM-REPORT-2026-09-23.md` (its §13 is the record): Smart Turn
+v3.2 decides when he has finished, the boundary verdict commits her exit, and
+her replies can open with a pre-rendered "Mm." or "Oh." in her own voice. Item 5
+is still the natural next one, and it is now blocked on something concrete:
+v3 refuses `previous_text`, so cross-turn prosody needs the socket itself.
 
 ---
 

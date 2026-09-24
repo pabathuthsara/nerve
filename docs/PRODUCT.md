@@ -28,14 +28,17 @@ adding the interview track is characters and a setup flow, not a second engine.
   the rep, silently — no indicator, no sound, nothing. Thirty seconds from the
   end she is told one of two things: wind down and leave, or wind down and
   offer him your number. Which one depends on whether she was ever armed and is
-  still at 55 or above. Ten points of hysteresis, because interest does not
-  work like a switch.
+  still at 55 or above — **and whether he has been contemptuous in the last
+  45 seconds**, which rules the number out whatever the meter says (24
+  September 2026, `LAUNCH-GAP.md` D31). Ten points of hysteresis, because
+  interest does not work like a switch.
 - **Her closing line is allowed to finish.** The clock reads 0:00 and the
   conversation is over; she gets up to twenty seconds to land the last
   sentence. Cutting off the best moment in the product to save model time would
   be a strange trade.
 - **She never speaks digits.** The number on the card is ours, so what is said
-  and what is shown cannot contradict each other.
+  and what is shown cannot contradict each other. Enforced in code since 24
+  September (`withoutDigits`), because a real rep read one out anyway.
 - **Tess is guided, and nobody else is.** Rung 1 carries a script on screen —
   an aim, and for five of the six scored dimensions an example line — read in
   full on the brief and then shown one step at a time during the rep, advancing

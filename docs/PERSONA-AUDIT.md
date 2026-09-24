@@ -1623,3 +1623,46 @@ source and `presentation.test.ts` pins it against `Persona.name`.
 **The pattern in all three is one sentence:** a fact about a character that
 lives in two places will be wrong in one of them. The name, the room and the
 copy each had a second home, and each was stale in a different direction.
+
+## 16. Persona v2, and what reading the re-baseline diff found (24 September)
+
+`PERSONA-REALISM-REPORT-2026-09-23.md` §7 and §13 are the record; this is the
+part that belongs here, because it is about her register and her examples.
+
+**The examples were read as his.** Every example line was labelled `HIM:`, and a
+few-shot exchange is read as conversation that HAPPENED: in the 23 September
+audition Nadia answered "Insurance, you said?" to a user who had never said it,
+because her example set had him say "I work in insurance". It is the Dan leak
+of §15 again, through a line that named nobody. Every example line is now
+`SOMEONE ELSE:`, under a header that says they were other conversations with
+other people on other days, and the two lines that planted a fact about him
+were rewritten ("What do you do, then?"). `examples.test.ts` still refuses a
+name or a first-person proper noun in the other half.
+
+**Every example was cold.** A woman who had warmed to him had nothing to sound
+like, so each shipped character gained warm examples ("Ha. You are dangerous in
+a bookstore."), marked `register: 'warm'`, and a rep says nine of twelve,
+seeded like her mood (`examplesForRep`), with the short pinned ones always kept.
+
+**Reading the characterization diff line by line found a defect**, which is the
+whole argument for the ceremony rule 19 describes. The disclosure gate opens
+onto her ladder — the true thing this band has reached — but gates are ranked
+"most recently earned first", and the disclosure gate was ranked by the warmth
+its GATE opened at. Any gate that opened later outranked it, so Nadia's tease at
+55 and flirt at 45 held both slots from ENGAGED up and her ENGAGED and INVESTED
+rungs — "You and your sister only got close when she moved back last year",
+"You are half-writing a mystery set in a warehouse" — could never reach a line.
+A reached rung now ranks by the band it belongs to; `realism.test.ts` walks all
+four characters and asserts every rung reaches a line on entering its band.
+
+**What a browser rep found that none of this could.** `npm run rep:browser`
+ran Cass end to end in Chrome, and at the wind-down she said "Cass. It's
+555-0198." The contract and the closing direction both say never; rule 3 is
+now enforced by `withoutDigits`, not stated. Two smaller things from the same
+transcript, recorded rather than fixed: she answered "which painting is your
+favourite?" with "Biscuit's not a painting" (the disclosure she had just used,
+misapplied), and "That blue one I said" referred to her backstory as if she had
+told him. Both are the writer treating her contract as shared history — the
+same family as the example leak, and the thing the next listening pass should
+listen for.
+

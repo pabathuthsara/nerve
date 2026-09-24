@@ -206,9 +206,11 @@ describe('characterization · compiled contracts', () => {
     //      examples, because every authored example was cold and she had no
     //      register to reach for once he had earned one.
     //
-    // Sampling (`examplesForRep`) is NOT in these digests: with the fixed seed
-    // and each set at or under its `examplesPerRep`, no example is dropped and
-    // no random number is drawn, which `examples.test.ts` asserts.
+    // Sampling (`examplesForRep`, R9) IS in these digests, under the fixed
+    // seed: each shipped character has twelve examples and says nine a rep,
+    // pinned ones always kept, drawn from the same seeded stream as her mood so
+    // one rep's cached prefix never changes. A change to the draw moves these
+    // four digests; `examples.test.ts` pins the sampler itself.
     alex: { canEndScene: 'b6891988b7899fd3', stateless: '044f43223c1b272c', length: 7481 },
     erin: { canEndScene: '3f14d8a54fceded4', stateless: 'b086f49dcdbac4fa', length: 8228 },
     jules: { canEndScene: 'b79246fe190e2413', stateless: '8b4a49a3701b1e68', length: 8649 },

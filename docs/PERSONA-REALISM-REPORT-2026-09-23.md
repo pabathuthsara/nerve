@@ -1,10 +1,16 @@
 # Persona realism report — 23 September 2026
 
-> **Status: research only. Nothing in this document has been implemented.**
-> It is the input to a deliberate, signed-off change to the dating arm, which is
-> what `CLAUDE.md` rule 19 requires before any Tier 0 file moves. Every item
-> below carries its tier, its latency effect and its cost per rep so it can be
-> accepted or refused one line at a time.
+> **Status: IMPLEMENTED on the `persona-realism` branch, 24 September 2026 —
+> read §13 first.** It is what landed, what was refused on evidence (L5, §5.4's
+> model swap, L6's default), what a real browser rep found that 2,800 green
+> assertions did not (she read a phone number out loud), and what is still
+> owed by hand: the listening passes, S2's hand scores, the US measurement and
+> V1. Everything from §0 to §12 below is the research as written on
+> 23 September and is kept as the record; where §13 disagrees, §13 is what the
+> code does. The whole set was one deliberate, signed-off change to the dating
+> arm, which is what `CLAUDE.md` rule 19 requires, and
+> `lib/characterization/dating-arm.test.ts` was re-baselined once for it with
+> every moved digest explained inline.
 >
 > **The question it answers:** how do the four dating characters stop sounding
 > like an AI — a stranger at the start and, gradually, someone who is into you —
@@ -804,6 +810,12 @@ scorecard draws the band the grade was scored against and says why in the note.
 It is told not to re-judge the measured half, so this should not matter; S2's
 hand scores are where to check.
 
+**The S1 fix landed the same day** (see §13): the dating grader no longer sees
+her reply to his last line (`lib/grade/ending.ts`), the SIGNAL READING and
+CLOSE rubric paragraphs stopped telling it to read the ending, and S6 takes
+the median of three readings from one call. All ten pairs now move **0** on
+the composite.
+
 ---
 
 ## 7. The four characters: settings cards and backstory v2
@@ -1236,6 +1248,163 @@ The history here is long and these are the reversals it cost:
   $0.08 a rep.
 - **Never publish "flirty" anywhere a reviewer reads.** The gate names stay
   internal (`tess.ts`). PG-13 is unchanged on both streams.
+
+---
+
+## 13. What landed on `persona-realism`, 24 September 2026
+
+One branch, one signed-off change, every Tier 0 file it touched named in the
+commit that touched it. The instruments were the suite (2,815 assertions),
+`dating-arm.test.ts` (re-baselined once, reasons inline), `rep:audition`
+(three rounds, all four characters), `ladder:sim`, `llm:bakeoff`,
+`grade:invariance`, `scribe:probe`, `smart-turn:check`, the `db:*` suite, and —
+new, and the one that found the worst defect — **`npm run rep:browser`**: a
+whole rep in real Chrome with a synthesised WAV for a microphone.
+
+### 13.1 Latency
+
+| ID | Status | What landed |
+|---|---|---|
+| **L1** | SHIPPED | `POST /api/voice/prewarm` (`lib/voice/elevenlabs/prewarm.ts`) under the 3·2·1: the exact cached prefix at `max_tokens: 1` and a one-word synthesis, admitted and settled like any operation, bounded by `prewarmReservation`. Answers 202 and never blocks the rep |
+| **L2** | SHIPPED | `POST /api/voice/turn/reserve` reserves turn N+1 while N plays and returns an HMAC ticket (`ticket.ts`, `TURN_TICKET_SECRET`, falling back to `SUPABASE_SECRET_KEY` with a label). The turn route claims the reservation with a conditional update before synthesis; an unclaimed one is released in `finishSession` and `abandonSession`. `db:voice` covers the release path. A turn with no fresh ticket takes the old admission path, so a failure is the old product. Browser rep: 8 of 14 turns ran on a ticket |
+| **L3** | SHIPPED, OPT-IN | Scribe v2 Realtime behind `PIPELINE_STT_MODEL=scribe_v2_realtime`: commit → final **294–350 ms against 816–1,409 ms**. The default did not move (Tier 0). The privacy page names ElevenLabs as a transcriber. **Owed:** switching it on in production is a decision, and one interview rep should run to its end on it first (`PIPELINE.md`) |
+| **L4** | SHIPPED, ON | Smart Turn v3.2 in a Web Worker (`lib/voice/elevenlabs/smart-turn/`), wired through `EndOfTurnGate`: probe at 200 ms of silence, concede at once on p ≥ 0.7, wait up to 1.6× the calibrated silence (never past 1.2 s) on p < 0.5, and the calibrated silence exactly when there is no answer. The mint carries `endOfTurn` when `PIPELINE_END_OF_TURN` is not `silence` (the kill switch). `pipeline_telemetry.endOfTurn` counts early / extended / calibrated turns so an extension on every turn is visible |
+| **L5** | REFUSED ON MEASUREMENT | See 13.4 |
+| **L6** | DECIDED: NO CHANGE | See 13.4 |
+| **L7** | OWED BY HAND | The US measurement has to be made from the US |
+| **L8** | SHIPPED | `/admin` reply-gap and turns-per-rep table (`lib/data/rep-latency.ts`). Baseline on production, 14 days, Cass: reply gap p50 **3.29 s**, first reply p50 **~7.0 s**, **14** turns a rep |
+| **L9** | NOT STARTED | Strategic; R5 needs it (13.2) |
+
+**What the real browser reps measured** (`rep:browser`, Cass, five runs, a
+local dev server in Asia calling US vendors, `gpt-4o-transcribe` as locally
+configured, and a microphone that is macOS `say` reading eight lines on a loop).
+Smart Turn loaded in every run and answered every probe, **p50 ~170 ms** from
+ask to answer in Chrome's single-threaded WebAssembly. The 700 ms mid-thought
+pause written into the WAV ("which is… way less fun than it sounds") stayed one
+turn in every run, where the old 600 ms timer would have cut it. The rest
+**varied from run to run on the same WAV**: one run conceded 9 turns early and 6
+extended (`vadSilenceMs` median 397 ms, perceived gap 3.42 s), another 3 early
+and 11 extended (960 ms, 4.0 s).
+
+**Why, established rather than guessed.** A temporary hook captured the exact
+16 kHz buffers the page handed the model, and Node scored them again: the
+browser's probabilities matched to within the capture's 16-bit rounding (0.019
+against 0.016, 0.954 against 0.956), so the in-browser chain is correct. What
+varies is the model on SYNTHETIC speech: `say` ends a question with a rising
+pitch that Smart Turn reads as unfinished at every trailing silence from 150 to
+400 ms ("Could I get your number?" scored 0.05), and which of its internal
+pauses get probed depends on where the loop sits. `smart-turn-check.ts` warned
+about exactly this. **On five short human recordings the same model scored every
+turn end 0.94–0.99 and conceded at 360 ms against today's 600** — the
+direction the report predicted, and ~240 ms off every turn. Two things to know:
+
+- **An early concession can land between two of his sentences.** A complete
+  sentence followed by a pause of ~370 ms or more concedes; the human
+  recordings showed it on two of five, and a browser run split "A day off is
+  the best." from "What do you do…". The adapter's supersede path disposed of
+  the first generation before a byte of it was heard (her pipeline takes ~2.5 s
+  to speak, which is the protection), and she answered once. The cost is an
+  aborted generation, not an interruption anybody hears.
+- **The number to watch on production is `pipeline_telemetry.endOfTurn`**:
+  `extended` against `early`. Real users on real microphones are the only
+  evidence that counts, and if extensions dominate, `PIPELINE_END_OF_TURN=silence`
+  restores the old product on the next rep.
+
+### 13.2 Rendering
+
+| ID | Status | What landed |
+|---|---|---|
+| **R1** | SHIPPED | `capToBudget({ freeLead: true })`, dating only: a lead of three words or fewer does not spend the one-sentence ceiling, so "Nadia. Nice to meet you." ships whole. Opt-in because texting's digests must not move |
+| **R2** | SHIPPED | `stabilityForWarmth`: the env dial is the COLD end of a ramp to v3's Natural (0.5) — CLOSED 0.85, OPEN 0.631, ENGAGED+ 0.5 on production's 0.85. `voice.stabilityByBand` wins where cast (Robin). **Owed: an ear on the two middle values** |
+| **R3** | SHIPPED | `[laughs]` is a per-turn permission the session rations (`laughs` gate per persona, never twice running, spacing 4) and the turn route enforces: it ships only if a parallel `gpt-4.1-nano` Y/N check (`humour.ts`, fails closed, 350 ms grace) says his line was meant to be funny. `enforceDeliveryTags` allows `[sighs]` at any warmth and `[exhales]`/`[curious]` when warm, and strips mid-line tags. The slow judge also reports `funny` |
+| **R4** | SHIPPED | 20 particles (five words × four voices) rendered once by `npm run particles:render` into `public/particles/<voice>/`, spliced ahead of her line at a band-dependent onset, never twice within three turns; `withoutParticle` stops the writer saying it twice. **Owed: a listening pass on all twenty** |
+| **R5** | DEFERRED | `previous_text` on v3 answers `400 unsupported_model`, so cross-turn prosody needs the Text-to-Dialogue socket, which is L9's per-rep socket. Not started |
+| **R6** | SHIPPED | `RESPONSE_FLOOR_MS = 1000` and `BAND_ONSET` as offsets above it (INVESTED +0 … HOSTILE +900–1,500), capped at the existing 2 s |
+| **R7** | SHIPPED | `deadEndReply` swaps a rescue for one of her authored `microReplies` when the line overruns the mirror cap by more than two words; silence is allowed on a SECOND consecutive dead end at OPEN; on a dead end her `want` becomes `attention` ("Your attention goes back to the shelf in front of you. A word or two, if anything.") |
+| **R8** | SHIPPED | `classifyUserTurn` → `unclear` for mostly non-Latin script or majority-foreign short tokens; she asks, it never scores, and the grader's evidence skips it |
+| **R9** | SHIPPED | Six or seven moods each; four or five beats, two of them openers, two drawn per rep (`beatsForRep`); twelve examples each, nine said per rep (`examplesForRep`, pinned ones always kept, seeded like the mood so the cached prefix holds within a rep); her last three openers to this user are handed back ("Lines you have opened with before") |
+| **Rule 3** | SHIPPED, NEW | `withoutDigits` (`shaping.ts`), on both pipeline paths, dating only: a sentence that reads a number out is dropped before synthesis, and "I will put it in your phone." is said when nothing is left. **Found by `rep:browser`**: at the wind-down Cass said "Cass. It's 555-0198." — against the contract and against the closing direction, both of which say never. It was only ever stated |
+
+### 13.3 The meter, integrity and the four characters
+
+- **W1 — re-measured, and one rung retuned.** `ladder:sim` on the finished
+  engine: Robin is no longer sealed (a strong player at 16 turns reaches
+  ENGAGED 66% of the time and arms 9%), but persona v2 had made Maya harder
+  twice — distraction 45 and her interview penalty each halved her strong
+  player's arm rate, to 11% against Robin's 8%. Her curve took the ground back
+  (start 28 → 30, gain 1.0 → 1.1, the most the monotonic-ladder test allows):
+
+  | Rung (strong / competent / nervous, armed; ENGAGED in brackets) | 12 turns | 14 turns | 16 turns |
+  |---|---:|---:|---:|
+  | Cass | 100% / 98% / 70% | 100% / 100% / 85% | 100% / 100% / 94% |
+  | Nadia | 12% (69%) / 0% / 0% | 47% (96%) / 1% / 0% | 96% / 8% (45%) / 0% |
+  | Maya | 0% (16%) / 0% / 0% | 5% (45%) / 0% / 0% | 40% (88%) / 1% (12%) / 0% |
+  | Robin | 0% / 0% / 0% | 0% (12%) / 0% / 0% | 9% (66%) / 0% / 0% |
+
+  Monotonic at every length. Rungs 3 and 4 are still a strong player's rungs
+  at twelve turns; how many turns production delivers after L1–L4 is L8's to
+  report, and a further retune should wait for that number.
+- **W2 — SHIPPED.** Disclosure ladders (OPEN / ENGAGED / INVESTED) on all four,
+  gate `style`s ("You may flirt, the way you do: …"), `laughs` and `teases`
+  gates, warm examples, `wantYields` at INVESTED, Robin's `closingBeat`. **A
+  defect found while reading the re-baseline diff and fixed:** gates are
+  ranked "most recently earned first", and the disclosure gate was ranked by
+  the warmth its GATE opened at, so every rung after the first was outranked
+  by any gate that opened later — Nadia's ENGAGED and INVESTED rungs could
+  never reach a line. A reached rung now ranks by the band it belongs to.
+- **W3 — SHIPPED** as `lib/warmth/rapport.ts`: follow-up +1 on a paid question
+  (+4 alone), appreciation +1.5, reciprocal disclosure +2, interview mode −2
+  (only for a character whose contract says so — Maya), topic hop −1, all
+  under her temperament. `scoreFast` is byte-identical.
+- **W4a — SHIPPED, rule 3.** No number within 45 s of contempt or a judged
+  intent of −5 or lower (`givesNumber`'s `contemptRecently`). **W4b —
+  SHIPPED.** A boundary verdict commits `wrapping`.
+- **P1–P4 — SHIPPED** as §7 describes: US-first backstories and idiom, dial
+  moves, voices unchanged. **Owed: recasting** (Maya's voice is British) is a
+  casting decision made by ear.
+- **§5.4 — the live judge on every turn on `gpt-4.1-nano` — REFUSED ON
+  MEASUREMENT.** On the twenty calibration turns and eight probes, nano
+  disagreed with the current judge by |Δintent| 1.1 on average but missed the
+  two things the judge exists for: "Why are you still here?" went from intent
+  −6 to 0, and "Can I ask if you are seeing anyone?" from intimacy 65 to 30,
+  under the boundary rule's line. The cadence stays one in three plus the
+  triggers; the `funny` field and the `profanity` route it proposed shipped.
+
+### 13.4 Refused or deferred, with the reason
+
+- **L5, speculative generation.** In a browser, Smart Turn's answer lands at
+  ~370 ms of silence (200 ms probe + ~170 ms inference); the p ≥ 0.7 branch
+  already concedes there, so speculation only helps the 0.5–0.7 band, about
+  230 ms at the default calibration. Against that, `WarmthSession` has no
+  rollback — a speculative turn would have to be scored before it is final —
+  and synthesis runs inside the same request, so "commit only if the final
+  matches" needs a hold-before-TTS mode in the turn route. Revisit with the
+  threaded build (COOP/COEP), where the answer lands at ~340 ms and the gap
+  grows.
+- **L6, the character model.** `npm run llm:bakeoff`, 456 calls, two runs
+  pooled: TTFT p50 ranged 1,048–1,399 ms across six models with gpt-4.1-mini at
+  1,109 — no clear latency win from here. `gpt-4.1-nano` slipped on character
+  facts ("Just off work" from a woman on her day off). `gpt-5.4-mini` obeyed the
+  band best (4% of OPEN replies cut by `capToBudget` against 29%) at the same
+  price. **Owed: a listening A/B with `PIPELINE_LLM_MODEL=gpt-5.4-mini`**; the
+  default stays.
+- **S6's residual noise.** Median-of-three narrowed it; a dimension can still
+  move ±15 on identical input now and then. S2's hand scores are what decide
+  whether that matters.
+
+### 13.5 Owed by hand
+
+1. **Listening passes**: the stability ramp's middle values (R2), all twenty
+   particles (R4), and a laugh in each voice (R3).
+2. **Casting**: whether Maya stays British for a US launch.
+3. **L7**: reply gap and first reply measured from the US, and from Asia again
+   with Scribe on.
+4. **S2**: twenty hand-scored transcripts, the §17 gate.
+5. **V1**: the TTS A/B, and the ElevenLabs startup grant application (§8.4).
+6. **L6**: the `gpt-5.4-mini` A/B above.
+7. **Deploy notes**: `npm run db:seed` for the persona content; `TURN_TICKET_SECRET`
+   is optional; `PIPELINE_END_OF_TURN=silence` is the only switch needed to take
+   Smart Turn back out.
 
 ---
 

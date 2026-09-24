@@ -273,9 +273,9 @@ bookstore", "apartment", "around here", no "reckon", "mate" or "half four".
 character (report §1.6): Cass humour 45 → 58; Nadia humour 50 → 62,
 distraction 20 → 35, patience 64 → 70; Maya sharpness 30 → 38, humour
 55 → 62, distraction 20 → 45; Robin talkativeness 35 → 30 (now "you let it
-sit" and `[clipped]`), distraction 30 → 40. **Only Robin's trajectory moved**
-(below); Nadia's and Maya's are conditional in the report on the latency work
-and have not been measured yet.
+sit" and `[clipped]`), distraction 30 → 40. **Robin's trajectory moved on
+23 September and Maya's on 24 September, after measuring** (below); Nadia's did
+not need to.
 
 ## Trajectories
 
@@ -289,8 +289,8 @@ for existing is `PAYMENTS-NEW-INTEGRATION.md` §4.
 
 |  | Tess (L1) | Nadia (L2) | Maya (L3) | Robin (L4) |
 |---|---|---|---|---|
-| start | 48 ± 6 | 32 ± 6 | 28 ± 6 | 25 ± 6 |
-| gain | 1.8 | 1.1 | 1.0 | 1.0 |
+| start | 48 ± 6 | 32 ± 6 | 30 ± 6 | 25 ± 6 |
+| gain | 1.8 | 1.1 | 1.1 | 1.0 |
 | decay | 0.3 | 0.5 | 0.7 | 1.0 |
 | decayPerTurn | 0.1 | 0.2 | 0.25 | 0.3 |
 | maxGainPerTurn | 4.5 | 3.5 | 3.2 | 3.2 |
@@ -303,6 +303,15 @@ twenty-four, so nobody had ever heard her mask slip. The report proposed gain
 1.05 and cap 3.3 beside a Maya retune that is conditional on the latency work;
 against Maya's current dials those two would make rung 4 easier than rung 3, so
 they sit AT Maya's and the ladder stays monotonic (`engine.test.ts`).
+
+**Maya's column moved on 24 September** (report §13.3, W1), start 28 → 30 and
+gain 1.0 → 1.1 — the most the monotonic test allows, since Nadia is 1.1. Persona
+v2 had made her harder twice without touching her curve: distraction 45 lowers
+what a generic turn earns, and the interview penalty in `lib/warmth/rapport.ts`
+is hers alone. `npm run ladder:sim` then put a strong player at 11% armed in
+sixteen turns, level with Robin's 8% a rung above. Each cause halved it on its
+own; rather than undo either, because both are her, the curve gives the ground
+back: 40% at sixteen turns, with Nadia at 96% and Robin at 9% either side.
 
 **Nobody carried a curve with them.** Maya and Robin took the curves already
 authored for their rungs when the roster shrank in August, and Nadia and Maya
@@ -322,10 +331,10 @@ Good play against each, at twelve seconds a turn, arming at 65:
 
 | turns | Tess | Nadia | Maya | Robin |
 |---|---|---|---|---|
-| 12 | 85.0 | 67.4 | 61.4 | 58.6 |
-| **15** — the three-minute rep | **85.0** | **72.6** | **67.0** | **64.5** |
-| 18 | 85.0 | 76.8 | 71.6 | 69.3 |
-| 24 | 85.0 | 83.2 | 78.6 | 76.8 |
+| 12 | 85.0 | 67.4 | 63.9 | 58.6 |
+| **15** — the three-minute rep | **85.0** | **72.6** | **69.6** | **64.5** |
+| 18 | 85.0 | 76.8 | 74.3 | 69.3 |
+| 24 | 85.0 | 83.2 | 81.2 | 76.8 |
 
 Tess is at her session ceiling from about turn 10, which is the point: she arms
 on **turn four**, under a minute into a three-minute rep, so a first-timer who
