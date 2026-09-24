@@ -1,0 +1,41 @@
+smart-turn-v3.2-cpu.onnx
+
+Smart Turn v3.2, the int8-quantised CPU export, by Daily (pipecat-ai).
+Downloaded unmodified from
+  https://huggingface.co/pipecat-ai/smart-turn-v3/resolve/main/smart-turn-v3.2-cpu.onnx
+Source, training code and data: https://github.com/pipecat-ai/smart-turn
+8,679,182 bytes, SHA-256
+  2bb026316b14a660486a75b1733cd3fbab8c2fd0314dc9af7be49f8cca967e4f
+which is the LFS object id Hugging Face lists for that file (checked
+24 September 2026). If `shasum -a 256` disagrees, the file is not upstream's.
+
+Served to the browser as a static file and run there by
+lib/voice/elevenlabs/smart-turn/ (onnxruntime-web). It reads the user's own
+microphone audio on the user's device; nothing it hears is sent anywhere by it.
+
+Redistributed under the licence it is published with, reproduced in full:
+
+BSD 2-Clause License
+
+Copyright (c) 2024–2025, Daily
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
