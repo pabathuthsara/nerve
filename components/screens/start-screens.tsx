@@ -53,7 +53,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronLeft, Eye, EyeOff } from 'lucide-react'
+import { Check, ChevronLeft, Crosshair, Eye, EyeOff, MapPin, Timer } from 'lucide-react'
 import { signUpWithPassword, type AuthResult } from '@/app/auth/actions'
 import { capture, countStartStep } from '@/components/analytics'
 import { metaTrack } from '@/components/meta-pixel'
@@ -114,6 +114,14 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
   const [answers, setAnswers] = useState<StartAnswers>(opening.answers)
   const shell = useRef<HTMLDivElement | null>(null)
   const entered = useRef(false)
+  /**
+   * Which way the run is moving, so a screen slides in from the side it came
+   * from — forward from the right, back from the left. It is the difference
+   * between a stack of pages and a place you are moving through.
+   */
+  const [dir, setDir] = useState<'fwd' | 'back'>('fwd')
+  /** One pending advance at a time, so a double tap cannot skip a screen. */
+  const leaving = useRef(false)
 
   /** Write on every change, best-effort. Nothing here may break the run. */
   const remember = useCallback((next: StartAnswers) => {
@@ -163,11 +171,14 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
   const steps = startSteps(answers.track)
 
   const goTo = useCallback((next: number) => {
+    setDir(next < step ? 'back' : 'fwd')
     setStep(Math.min(Math.max(next, 0), steps.length - 1))
-  }, [steps.length])
+  }, [steps.length, step])
 
   /** Forward, through the one skip the run allows. */
   const forward = useCallback((from: number, track: Track | null) => {
+    leaving.current = false
+    setDir('fwd')
     setStep(startAdvance(startSteps(track), from, trackGiven))
   }, [trackGiven])
 
@@ -175,6 +186,23 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
     tap()
     remember(next)
     forward(from, next.track)
+  }, [forward, remember])
+
+  /**
+   * A tapped answer, held for a beat before the run moves on.
+   *
+   * Advancing on the same frame as the tap meant the selected state was
+   * never seen — the card lit up on a screen that was already leaving. A
+   * quarter of a second is long enough to register "that one" and short
+   * enough not to read as waiting. Reduced motion moves at once.
+   */
+  const choose = useCallback((next: StartAnswers, from: number) => {
+    if (leaving.current) return
+    leaving.current = true
+    tap()
+    remember(next)
+    const still = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    window.setTimeout(() => forward(from, next.track), still ? 0 : 260)
   }, [forward, remember])
 
   const stepName = steps[step] as StartStep
@@ -216,7 +244,7 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
         ? <button type="button" className="onboarding-back" aria-label="Back to the previous screen" onClick={() => goTo(step - 1)}><ChevronLeft size={24} strokeWidth={1.5} /></button>
         : null}
       <div className="onboarding-shell" ref={shell}>
-        <div className="onboarding-step" key={step}>
+        <div className="onboarding-step" key={step} data-dir={dir}>
           {stepName === 'hook'
             ? <HookStep track={initialTrack} href={continueHref} proof={proof} onStart={() => { tap(); forward(step, answers.track) }} />
             : null}
@@ -225,7 +253,7 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
             ? <TrackStep
                 eyebrow="To start"
                 value={answers.track}
-                onChoose={(value) => { answered('track', value); advance({ ...answers, track: value }, step) }}
+                onChoose={(value) => { answered('track', value); choose({ ...answers, track: value }, step) }}
               />
             : null}
 
@@ -234,7 +262,7 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
                 eyebrow="Your focus"
                 value={answers.focusArea}
                 firstRep={firstRep}
-                onChoose={(value) => { answered('focus', value); advance({ ...answers, focusArea: value }, step) }}
+                onChoose={(value) => { answered('focus', value); choose({ ...answers, focusArea: value }, step) }}
               />
             : null}
 
@@ -364,7 +392,15 @@ function HookStep({ track, href, proof, onStart }: {
   return (
     <section className="onboarding-question start-hook">
       <span className="label">Nerve{track === 'interview' ? ' · Interviews' : ''}</span>
-      <h1 className="display-lg" tabIndex={-1} data-step-heading>{copy.head}</h1>
+      {/* Word by word, so the first thing that moves on the page is the
+          sentence it is selling. The words are spans inside one heading, so a
+          screen reader still reads one sentence. */}
+      <h1 className="display-lg start-hook__head" tabIndex={-1} data-step-heading>
+        {copy.head.split(' ').flatMap((word, index) => [
+          index > 0 ? ' ' : null,
+          <span key={`${word}-${index}`} className="start-word" style={{ ['--w' as string]: index }}>{word}</span>,
+        ])}
+      </h1>
       <p className="onboarding-sub">{copy.sub}</p>
       <div className="start-actions">
         {/* The duration is measured against the five screens that follow,
@@ -470,21 +506,44 @@ function BuildStep({ answers, firstRep, onNext }: {
     )
   }
 
+  /*
+   * THE REVEAL, WITH A HIERARCHY (owner review, 27 Sep).
+   *
+   * Every line on this screen was the same size and weight — a 112px orb, a
+   * small label, a small name, a grey paragraph, a hairline table and another
+   * grey paragraph — so the one screen where the product becomes a person read
+   * like a form. Now it has four clear levels: her (a larger orb and her name
+   * at full display size), her world (the hook, in Ink, at reading size), the
+   * facts (two tiles you can take in at a glance), and the rules (one line,
+   * set apart). The button is the only thing in volt.
+   */
   return (
-    <section className="brief-shell start-build">
-      <div className="start-build__persona"><FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={18} size={112} /></div>
-      <span className="label">Your first rep</span>
-      <h1 className="display-lg" tabIndex={-1} data-step-heading>{firstRep.name}</h1>
-      <p className="brief-hook">{firstRep.hook}</p>
-      <div className="rule-block start-plan">
-        <div><span>Where</span><strong>{firstRep.setting}</strong></div>
-        <div><span>Time</span><strong>3:00</strong></div>
-        {focusLabel ? <div><span>Watching for</span><strong>{focusLabel}</strong></div> : null}
+    <section className="start-build start-reveal">
+      <div className="start-build__persona"><FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={18} size={168} /></div>
+      <span className="label start-reveal__kicker">Your first rep</span>
+      <h1 className="display-xl start-reveal__name" tabIndex={-1} data-step-heading>{firstRep.name}</h1>
+      <p className="start-reveal__hook">{firstRep.hook}</p>
+      <div className="start-reveal__facts">
+        <div className="start-reveal__fact start-reveal__fact--wide">
+          <MapPin size={16} strokeWidth={1.6} aria-hidden="true" />
+          <span className="label">Where</span>
+          <strong>{firstRep.setting}</strong>
+        </div>
+        <div className="start-reveal__fact">
+          <Timer size={16} strokeWidth={1.6} aria-hidden="true" />
+          <span className="label">Time</span>
+          <strong className="data">3:00</strong>
+        </div>
+        {focusLabel ? (
+          <div className="start-reveal__fact start-reveal__fact--full">
+            <Crosshair size={16} strokeWidth={1.6} aria-hidden="true" />
+            <span className="label">Watching for</span>
+            <strong>{focusLabel}</strong>
+          </div>
+        ) : null}
       </div>
-      {/* `mechanism`'s one fact that nothing else on the run says: the field
-          challenge. Two short sentences, the second of which is the §07
-          differentiator the hook has already made once. */}
-      <p className="start-note">She doesn&apos;t know you&apos;re practising, and she can lose interest. Afterwards: a score on how you talked, and one small thing to try for real.</p>
+      <p className="start-reveal__rule">She doesn&apos;t know you&apos;re practising, and she can lose interest.</p>
+      <p className="start-reveal__after">Afterwards: a score on how you talked, and one small thing to try for real.</p>
       <Button size="lg" fullWidth onClick={onNext}>Continue</Button>
     </section>
   )
@@ -565,6 +624,9 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
 
   const zone = typeof Intl === 'undefined' ? '' : Intl.DateTimeFormat().resolvedOptions().timeZone
   const validYear = /^\d{4}$/.test(year) ? Number(year) : null
+  // A year that passes the gate: the field shows it, and the button below it
+  // brightens once — the screen saying "that is all we needed".
+  const yearReady = validYear !== null && yearProblem(year) === null
   const dateOfBirth = birthDateFromYear(validYear)
 
   /** Both doors ask this first. A refusal lands on the field, not in a banner. */
@@ -601,7 +663,7 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
   const error = message ?? state.message
 
   return (
-    <section className="onboarding-question start-account">
+    <section className="onboarding-question start-account" data-ready={yearReady}>
       {/*
         SIX THINGS, NOT TWELVE (27 Sep, owner's call).
 
@@ -634,6 +696,7 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
           placeholder="2001"
           value={year}
           error={yearError ?? undefined}
+          adornment={yearReady ? <span className="start-age-ok" aria-hidden="true"><Check size={16} strokeWidth={2} /></span> : undefined}
           onChange={(event) => onYearChange(event.target.value)}
           onBlur={() => { if (year.length === 4) { const problem = yearProblem(year); if (problem) setYearError(problem) } }}
         />

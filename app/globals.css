@@ -672,9 +672,9 @@ a.record-card:hover { border-color: var(--line-bright); background: var(--surfac
 .skip-link:focus { left: 0.5rem; top: 0.5rem; }
 
 .onboarding-progress { position: absolute; top: 32px; left: 50%; display: flex; align-items: center; gap: 8px; transform: translateX(-50%); }
-.onboarding-progress i { width: 18px; height: 3px; flex-shrink: 0; background: var(--line); transition: background-color 180ms, width 180ms; }
+.onboarding-progress i { width: 18px; height: 3px; flex-shrink: 0; border-radius: 2px; background: var(--line); transition: background-color 260ms, width 420ms cubic-bezier(.16,1,.3,1), box-shadow 420ms; }
 .onboarding-progress i.done { background: var(--line-bright); }
-.onboarding-progress i.current { width: 28px; background: var(--volt); }
+.onboarding-progress i.current { width: 28px; background: var(--volt); box-shadow: 0 0 10px rgba(196, 248, 42, .5); }
 .onboarding-progress__count { margin-left: 6px; white-space: nowrap; color: var(--text-mute); font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .onboarding-progress i { transition: none; } }
 
@@ -3060,15 +3060,6 @@ a.admin-chip { text-decoration: none; }
 .start-plan > div { grid-template-columns: 1fr 1.6fr; }
 .start-note { max-width: 30ch; margin: 2px 0 10px; color: var(--text-mute); font-size: 13.5px; }
 
-@media (prefers-reduced-motion: no-preference) {
-  .start-build > * { animation: start-reveal 260ms cubic-bezier(.2,0,0,1) both; }
-  .start-build > *:nth-child(2) { animation-delay: 60ms; }
-  .start-build > *:nth-child(3) { animation-delay: 110ms; }
-  .start-build > *:nth-child(4) { animation-delay: 155ms; }
-  .start-build > *:nth-child(5) { animation-delay: 195ms; }
-  .start-build > *:nth-child(6) { animation-delay: 230ms; }
-  .start-build > *:nth-child(7) { animation-delay: 260ms; }
-}
 @keyframes start-reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* The one screen on the run that is a form. The heading block above it uses
@@ -3583,4 +3574,112 @@ a.texting-list__row:focus-visible { outline: 1px solid var(--volt); outline-offs
   .scorecard-actions { grid-template-columns: auto auto 1fr; }
   .scorecard-actions .arena-button { width: auto; }
   .scorecard-actions .scorecard-actions__next { grid-column: auto; justify-self: end; }
+}
+
+
+/* ── Onboarding motion (owner's request, 27 Sep) ─────────────────────────────
+   Premium and alive, and never in the way. Every screen of /start and of the
+   signed-in run arrives with its parts in sequence and from the side it came
+   from; the hook's headline rises word by word under a slow ambient light; a
+   tapped answer is held for a beat so the choice is seen; Cass blooms in; and
+   the account screen's button brightens once when the year is accepted.
+   Nothing loops faster than every six seconds, nothing moves text someone is
+   reading, and `prefers-reduced-motion` gets none of it. */
+@media (prefers-reduced-motion: no-preference) {
+  .onboarding-step { animation: none; }
+  .onboarding-step > * > * { animation: step-in 560ms cubic-bezier(.16,1,.3,1) both; }
+  .onboarding-step[data-dir='back'] > * > * { animation-name: step-in-back; }
+  .onboarding-step > * > *:nth-child(2) { animation-delay: 50ms; }
+  .onboarding-step > * > *:nth-child(3) { animation-delay: 100ms; }
+  .onboarding-step > * > *:nth-child(4) { animation-delay: 150ms; }
+  .onboarding-step > * > *:nth-child(5) { animation-delay: 200ms; }
+  .onboarding-step > * > *:nth-child(6) { animation-delay: 250ms; }
+  .onboarding-step > * > *:nth-child(n+7) { animation-delay: 300ms; }
+  .onboarding-step .option-stack > * { animation: step-in 520ms cubic-bezier(.16,1,.3,1) both; }
+  .onboarding-step .option-stack > *:nth-child(1) { animation-delay: 160ms; }
+  .onboarding-step .option-stack > *:nth-child(2) { animation-delay: 215ms; }
+  .onboarding-step .option-stack > *:nth-child(3) { animation-delay: 270ms; }
+  .onboarding-step .option-stack > *:nth-child(4) { animation-delay: 325ms; }
+  .onboarding-step .option-stack > *:nth-child(n+5) { animation-delay: 380ms; }
+
+  /* The hook: the sentence first, a word at a time. */
+  .onboarding-step .start-hook > .start-hook__head { animation: none; }
+  .start-word { display: inline-block; animation: word-rise 620ms cubic-bezier(.16,1,.3,1) both; animation-delay: calc(var(--w, 0) * 55ms + 40ms); }
+  .start-hook > .onboarding-sub { animation-delay: 360ms !important; }
+  .start-hook > .start-actions { animation-delay: 440ms !important; }
+  .start-hook > .start-voice, .start-hook > .start-count { animation-delay: 560ms !important; }
+  .start-hook > .start-exits { animation-delay: 620ms !important; }
+
+  /* The button's one sheen, every six seconds after it has landed. */
+  .start-hook__go { position: relative; overflow: hidden; }
+  .start-hook__go::after { content: ''; position: absolute; top: 0; bottom: 0; left: -45%; width: 32%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent); transform: skewX(-18deg); pointer-events: none; animation: cta-sheen 6s ease-in-out 1.6s infinite; }
+
+  /* A slow light behind the whole run, brightest on the hook. */
+  .start-page { overflow: hidden; }
+  .start-page::before { content: ''; position: absolute; z-index: 0; top: -180px; left: 50%; width: 560px; height: 560px; margin-left: -280px; border-radius: 50%; background: radial-gradient(closest-side, rgba(196, 248, 42, .07), transparent 72%); pointer-events: none; animation: ambient-drift 16s ease-in-out infinite alternate; }
+  .start-page:has(.start-hook)::before { background: radial-gradient(closest-side, rgba(196, 248, 42, .11), transparent 72%); }
+  .start-page > .onboarding-shell, .start-page > .onboarding-progress, .start-page > .onboarding-back { position: relative; z-index: 1; }
+  .start-page > .onboarding-progress { position: absolute; }
+  .start-page > .onboarding-back { position: absolute; }
+
+  /* A chosen answer: it gives, glows, and then the run moves. */
+  .option-card--selected { animation: option-pick 360ms cubic-bezier(.16,1,.3,1); box-shadow: 0 0 0 1px rgba(196, 248, 42, .35), 0 12px 32px -18px rgba(196, 248, 42, .5); }
+  .option-card { transition: border-color 160ms, background-color 160ms, box-shadow 260ms, transform 160ms; }
+
+  /* Cass arrives: the orb blooms, then her halo breathes. */
+  .start-build__persona { animation: persona-bloom 900ms cubic-bezier(.16,1,.3,1) both !important; }
+  .start-build__persona::before { animation: halo-breathe 5.5s ease-in-out 1s infinite; }
+
+  /* The year accepted: a tick, and the button lights once. */
+  .start-age-ok { animation: tick-pop 420ms cubic-bezier(.16,1,.3,1) both; }
+  .start-account[data-ready='true'] .auth-oauth--first .arena-button--primary { animation: ready-pulse 1100ms cubic-bezier(.16,1,.3,1) 120ms; }
+}
+@keyframes step-in { from { opacity: 0; transform: translate3d(22px, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes step-in-back { from { opacity: 0; transform: translate3d(-22px, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes word-rise { from { opacity: 0; transform: translateY(.45em); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes cta-sheen { 0% { left: -45%; } 16% { left: 135%; } 100% { left: 135%; } }
+@keyframes ambient-drift { from { transform: translate3d(-40px, 0, 0) scale(1); } to { transform: translate3d(40px, 40px, 0) scale(1.12); } }
+@keyframes option-pick { 0% { transform: scale(.975); } 60% { transform: scale(1.01); } 100% { transform: none; } }
+@keyframes persona-bloom { from { opacity: 0; transform: scale(.7); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes halo-breathe { 0%, 100% { opacity: .6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
+@keyframes tick-pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+@keyframes ready-pulse { 0% { box-shadow: 0 0 0 0 rgba(196, 248, 42, .55); } 100% { box-shadow: 0 0 0 16px rgba(196, 248, 42, 0); } }
+
+.start-account__age .field__control { max-width: 168px; }
+.start-age-ok { position: absolute; top: 50%; right: 12px; display: grid; place-items: center; color: var(--volt-dim); transform: translateY(-50%); pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) { .start-age-ok { transform: none; top: calc(50% - 8px); } }
+
+
+/* The character reveal (`/start` build screen, 27 Sep). Four levels: her, her
+   world, the facts, the rules. */
+.start-reveal { width: min(100%, 400px); margin-inline: auto; display: grid; justify-items: center; gap: 0; text-align: center; }
+.start-reveal .start-build__persona { margin-bottom: 18px; }
+.start-reveal .start-build__persona::before { inset: -34px; background: radial-gradient(closest-side, rgba(196,248,42,.10), transparent); }
+.start-reveal__kicker { color: var(--text-mute); }
+.start-reveal__name { margin: 6px 0 0; font-size: clamp(3.2rem, 15vw, 4.25rem); line-height: .9; letter-spacing: .01em; }
+.start-reveal__hook { max-width: 30ch; margin: 14px 0 0; color: var(--text); font-size: 17px; line-height: 1.5; text-wrap: balance; }
+.start-reveal__facts { width: 100%; display: grid; grid-template-columns: 1.7fr 1fr; gap: 8px; margin-top: 26px; text-align: left; }
+.start-reveal__fact { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 9px; row-gap: 5px; align-items: center; border: 1px solid var(--line); border-radius: 2px; padding: 12px 14px; background: linear-gradient(180deg, var(--surface), rgba(19,21,17,.4)); }
+.start-reveal__fact svg { color: var(--text-mute); }
+.start-reveal__fact .label { color: var(--text-mute); font-size: 10px; }
+.start-reveal__fact strong { grid-column: 1 / -1; color: var(--text); font-size: 14.5px; font-weight: 500; line-height: 1.35; }
+.start-reveal__fact strong.data { font-size: 22px; font-weight: 400; line-height: 1; }
+.start-reveal__fact--full { grid-column: 1 / -1; }
+.start-reveal__rule { width: 100%; margin: 18px 0 0; border-left: 2px solid rgba(255, 176, 32, .55); padding: 2px 0 2px 12px; color: var(--text); font-size: 14.5px; line-height: 1.5; text-align: left; }
+.start-reveal__after { width: 100%; margin: 10px 0 22px; padding-left: 14px; color: var(--text-mute); font-size: 13px; line-height: 1.5; text-align: left; }
+@media (max-height: 700px) {
+  .start-reveal .start-build__persona { margin-bottom: 8px; }
+  .start-reveal__name { font-size: 3rem; }
+  .start-reveal__facts { margin-top: 18px; }
+}
+@media (max-height: 620px) {
+  .start-page { padding-top: 64px; }
+  .start-reveal .start-build__persona { margin: -22px 0 -8px; }
+  .start-reveal .fluid-persona { transform: scale(.68); }
+  .start-reveal__name { font-size: 2.6rem; }
+  .start-reveal__hook { margin-top: 8px; font-size: 15.5px; }
+  .start-reveal__facts { margin-top: 14px; }
+  .start-reveal__fact { padding: 9px 12px; }
+  .start-reveal__rule { margin-top: 12px; font-size: 13.5px; }
+  .start-reveal__after { margin-bottom: 14px; font-size: 12.5px; }
 }
