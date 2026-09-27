@@ -333,6 +333,15 @@ has.
 
 ### R8 · The unlock requirement is a sentence, not a meter  ·  **shipped 3 Sep** · ~3 hours
 
+> **Redrawn 27 September 2026** (`START-AUDIT-2026-09-27.md` §6). The meter
+> printed "0 of 1 rep at 70+ on Level 01" under a win whenever the grade had
+> not landed, and could not say which of "still scoring" or "under 70" was
+> true. The result screen now counts the process score up onto a 0–100 rail
+> with the 70 line marked, and one sentence from `progressReading`
+> (`lib/data/result-view.ts`): scoring…, N points short, that one counted, or
+> the tier opened — computed from reps started BEFORE this one, so an old rep
+> reopened from history is not credited with a later unlock.
+
 `unlockRequirement` returns `Score 70+ in 2 reps at Level 02` — static copy,
 identical before and after the rep that advanced it. Replace with a meter
 (`1 of 2 reps at 70+ on Level 02`) and render it **on the result screen after
@@ -511,6 +520,12 @@ is the guilt copy §4 rules out. No "we missed you", nothing that scores the
 absence.
 
 ### R16 · `verdict` is smaller than the number it explains  ·  **shipped 3 Sep** · ~1 hour
+
+> **Reversed on 27 September 2026, deliberately, by the owner.** The number is
+> the hero again and the verdict is its caption, on both the scorecard and the
+> new score block on the result screen; both still climb together off the
+> same `useCountUp`. The owner's read was that "63" is what somebody
+> remembers and "Solid" explains it.
 
 `ScorecardScreen` derives `Sloppy / Solid / Sharp / Clean` from the composite.
 It is the most human word on the screen and it renders as `display-md` beneath

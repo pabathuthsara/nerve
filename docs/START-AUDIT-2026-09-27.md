@@ -297,3 +297,64 @@ Interview  https://www.hellonerve.com/start?track=interview&utm_source=google&ut
 `<post-id>`: lower-case letters, digits, `.`, `_`, `-`, up to 40 characters
 (e.g. `0927-cafe-opener`). Anything else is dropped by `normaliseTag` and the
 visit is still counted, untagged.
+
+---
+
+## 6 · The result screen and the scorecard — 27 September 2026
+
+Owner's review of both screens on a phone: too much at the same weight, a
+"Run it back" button with its icon stacked over its label, a level line
+nobody could read, and no sense of reward. What was built:
+
+**The icon bug was global.** Tailwind's preflight makes every `<svg>`
+`display: block`, so inside `Button`'s content span the icon broke onto its
+own line. `.arena-button__content` is `inline-flex` now, which fixes "Run it
+back", "Make a card" and every other icon button in the product.
+
+**Result screen** (`ResultScreen`):
+
+- The process score counts up on the result screen itself, on a win and a
+  loss, on a 0–100 rail with the 70 line marked (`ScoreReveal`,
+  `components/scorecard/visuals.tsx` `ScoreRail`). One sentence under it from
+  `progressReading`: "Scoring your rep…", "7 points short of Level 02 —
+  Receptive.", "That one counted. 1 more…", or "Level 02 — Receptive is
+  open." — the last one with the rail's dot taking the accent once.
+- The band chip became "Engaged · warmth 69".
+- "Run it back" is a full-width outlined button the same height as "See
+  breakdown".
+- "She'll remember" is a quote in her voice, under the button that goes back
+  to her.
+- The page arrives in order: headline, time, score (counting from ~0.65s),
+  actions, memory. The first-result sheets wait 2.6s so they land after it.
+- On a loss the warmth number is smaller, so the process score is the one
+  number that reads as the result.
+
+**Scorecard** (`ScorecardScreen`):
+
+- The number is the hero with the verdict as its caption (R16 reversed,
+  recorded there), plus "+N on your last rep" or "Your first score — the
+  baseline" (`previousComposite`).
+- "Where your points went": one bar split into the parts of the composite,
+  each as wide as it was worth, what was lost hatched amber, the three
+  biggest leaks named and tappable (`PointsBar`, `pointParts`).
+- Metrics that lost more than a fifth of their points are expanded, biggest
+  first, under "What cost you"; the rest fold into one "On target" line
+  (`splitMetrics`). The metric bar is a target zone and a dot, amber when
+  outside the zone.
+- The judged dimensions are a hexagon (`SkillHexagon`) that grows in when it
+  scrolls into view.
+- The two moment cards became one warmth curve across the rep with the best
+  and worst turns marked and a tab between them (`ConversationCurve`). The
+  "she decides · 65" line is drawn on it. Scorer codes ("open-question",
+  "no signal") are sentences now (`momentNote`), and a "worst moment" that
+  rounds to 0 is not shown.
+- "Try this next time" and the mission said the same thing; on dating only
+  the mission and its technique links remain.
+- "Run it back" is pinned above the tab bar; "Transcript", "Make a card" and
+  "Next persona" sit quietly at the end.
+
+Nothing here touches grading, the warmth engine or a persona. Verified on a
+throwaway account with fixture scores at 360, 390 and 1280 wide, then the
+account was deleted. `lib/data/result-view.test.ts` pins the rail sentence,
+the parts arithmetic, the miss/held split, the "previous rep" rule and the
+note copy.

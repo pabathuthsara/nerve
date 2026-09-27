@@ -130,6 +130,11 @@ button { color: inherit; }
 .arena-button--sm { min-height: 36px; padding: 0 12px; font-size: 13px; }
 .arena-button--lg { min-height: 52px; padding: 0 24px; font-size: 17px; }
 .arena-button--full { width: 100%; }
+/* An icon and its label on one line (27 Sep). Tailwind's preflight makes
+   every <svg> `display: block`, so inside the Button component's content span
+   the icon broke onto its own line above the text — "Run it back" and "Make a
+   card" both rendered as an icon stacked over a word. */
+.arena-button__content { display: inline-flex; align-items: center; justify-content: center; gap: 9px; }
 
 .loading-dots { display: inline-flex; gap: 4px; }
 .loading-dots > i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: dot-pulse 900ms infinite ease-in-out; }
@@ -1856,8 +1861,6 @@ input[type='range'] { width: 100%; accent-color: var(--volt); }
 
 @media (min-width: 1024px) {
   .scorecard-grid { grid-template-columns: minmax(0, 1.38fr) minmax(320px, 1fr); gap: 28px; }
-  .scorecard-actions { grid-template-columns: auto auto 1fr; }
-  .scorecard-actions .arena-button:last-child { justify-self: end; }
   .transcript-sticky { left: 240px; bottom: 0; }
 }
 
@@ -3382,4 +3385,175 @@ a.texting-list__row:focus-visible { outline: 1px solid var(--volt); outline-offs
      likely to need it. */
   .text-bubble--typing i { animation: none; }
   .texting-list__row { transition: none; }
+}
+
+
+/* ── The result screen and the scorecard, 27 September 2026 ─────────────────
+   One idea for both: the number is the reward, and it arrives in order. The
+   result reads outcome → time → process score → what to do; the scorecard
+   reads number → where the points went → what cost you → the shape → the
+   conversation → one thing for next rep. Volt stays on the primary action and
+   the verdict word; amber means points lost; everything else is Ink. */
+
+/* The result screen, in sequence. Each child rises in turn; the score's own
+   count-up starts at ~0.65s inside `ScoreReveal`. */
+@media (prefers-reduced-motion: no-preference) {
+  .result-page > * { animation: result-rise 420ms cubic-bezier(.16,1,.3,1) both; }
+  .result-page > *:nth-child(2) { animation-delay: 40ms; }
+  .result-page > *:nth-child(3) { animation-delay: 140ms; }
+  .result-page > *:nth-child(4) { animation-delay: 240ms; }
+  .result-page > *:nth-child(5) { animation-delay: 340ms; }
+  .result-page > *:nth-child(6) { animation-delay: 460ms; }
+  .result-page > *:nth-child(7) { animation-delay: 1250ms; }
+  .result-page > *:nth-child(8) { animation-delay: 1400ms; }
+  .result-page > *:nth-child(9) { animation-delay: 1520ms; }
+  .result-page > *:nth-child(n+10) { animation-delay: 1600ms; }
+  .result-page > .best-beat, .result-page > .sheet-layer { animation: none; }
+}
+@keyframes result-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.result-page { gap: 14px; padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+.result-page h1 { line-height: .95; text-wrap: balance; }
+.result-facts { display: grid; justify-items: center; gap: 6px; }
+.result-band { color: var(--text-mute); }
+.result-band .data { color: var(--text-dim); }
+
+/* The score, counting, on its rail. A panel rather than a card: a hairline
+   top and bottom, so it reads as the next beat of the page and not as a box
+   dropped into it. */
+.score-reveal { width: min(100%, 340px); display: grid; justify-items: center; gap: 10px; margin-top: 6px; border-block: 1px solid var(--line); padding: 18px 0 16px; }
+.score-reveal__number { display: flex; align-items: baseline; justify-content: center; gap: 12px; min-height: 64px; }
+.score-reveal__number strong { color: var(--text); font-size: 60px; font-weight: 400; line-height: 1; letter-spacing: -.02em; }
+.score-reveal__verdict { color: var(--volt); font-family: var(--font-display), sans-serif; font-size: 22px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; transition: color 260ms ease-out; }
+.score-reveal__verdict[data-revealing='true'] { color: var(--text-dim); }
+.score-reveal__pending { color: var(--text-mute); font-size: 48px; letter-spacing: .2em; animation: pending-breathe 1.4s ease-in-out infinite; }
+@keyframes pending-breathe { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.score-reveal__line { margin: 2px 0 0; color: var(--text-dim); font-size: 14px; }
+.score-reveal__line--unlocked, .score-reveal__line--counted { color: var(--text); }
+.score-reveal__line--short { color: var(--amber); }
+.score-reveal__line--pending { color: var(--text-mute); }
+
+.score-rail { width: 100%; padding: 16px 0 4px; }
+.score-rail__track { position: relative; display: block; height: 6px; border-radius: 3px; background: var(--surface-3); }
+.score-rail__fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: linear-gradient(90deg, var(--line-bright), var(--text-dim)); transition: width 120ms linear; }
+.score-rail__line { position: absolute; top: -6px; width: 2px; height: 18px; margin-left: -1px; background: var(--text-mute); }
+.score-rail__line em { position: absolute; bottom: calc(100% + 3px); left: 50%; transform: translateX(-50%); color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 10px; font-style: normal; letter-spacing: .06em; }
+.score-rail__dot { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 4px rgba(232, 234, 228, .12); transition: left 120ms linear; }
+.score-rail--pending .score-rail__track { background: repeating-linear-gradient(90deg, var(--surface-3) 0 6px, transparent 6px 10px); }
+.score-rail--over .score-rail__line { background: var(--text-dim); }
+/* The one time the rail takes the accent: the rep that opened a tier. */
+.score-reveal--opened .score-rail__dot { background: var(--volt); box-shadow: 0 0 0 4px rgba(196, 248, 42, .18); }
+@media (prefers-reduced-motion: no-preference) {
+  .score-reveal--opened .score-rail__dot { animation: rail-open 900ms cubic-bezier(.16,1,.3,1) both; }
+}
+@keyframes rail-open { 0% { box-shadow: 0 0 0 0 rgba(196,248,42,.5); } 100% { box-shadow: 0 0 0 16px rgba(196,248,42,0); } }
+
+/* Her line, in her voice, under the button that goes back to her. */
+.result-memory { width: min(100%, 340px); max-width: none; margin: 4px 0 0; border: 0; border-left: 2px solid var(--line-bright); padding: 2px 0 2px 14px; text-align: left; }
+.result-memory .label { display: block; margin-bottom: 6px; color: var(--text-mute); }
+.result-memory blockquote { margin: 0; color: var(--text); font-size: 15.5px; line-height: 1.5; }
+.result-memory blockquote::before { content: '\201C'; } .result-memory blockquote::after { content: '\201D'; }
+.result-page > .result-lifetime { margin-top: 6px; color: var(--text-mute); font-size: 11px; letter-spacing: .08em; }
+/* On a loss the warmth is context for the score below it, not a second hero
+   number competing with it. */
+.result-page--loss .result-warmth strong, .result-page--near .result-warmth strong { font-size: 26px; }
+
+/* ── The scorecard ────────────────────────────────────────────────────────── */
+.scorecard-page { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+.score-hero { display: grid; gap: 12px; margin: 6px 0 2px; }
+.score-hero > .label { color: var(--text-mute); line-height: 1.6; }
+.score-hero__row { display: flex; align-items: flex-end; gap: 16px; }
+.score-hero__number { color: var(--text); font-size: clamp(5rem, 24vw, 7rem); font-weight: 400; line-height: .82; letter-spacing: -.04em; }
+.score-hero__side { display: grid; gap: 8px; padding-bottom: 6px; }
+.score-hero .verdict { line-height: .9; }
+.score-hero__delta { color: var(--text-dim); font-size: 12px; }
+.score-hero__delta.data { color: var(--text); }
+.score-hero__delta--down.data { color: var(--amber); }
+
+.points-bar { display: grid; gap: 12px; }
+.points-bar__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.points-bar__lost { color: var(--amber); font-size: 13px; }
+.points-bar__track { display: flex; gap: 3px; height: 30px; }
+.points-bar__part { position: relative; min-width: 0; border: 0; padding: 0; border-radius: 2px; cursor: pointer;
+  background: repeating-linear-gradient(135deg, rgba(255,176,32,.28) 0 3px, rgba(255,176,32,.08) 3px 7px); overflow: hidden; }
+.points-bar__part i { position: absolute; inset: 0 auto 0 0; background: var(--text-dim); transform-origin: left center; }
+.points-bar__part:last-child i { background: var(--text); }
+.points-bar__part:focus-visible { outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .points-bar__part i { transform: scaleX(0); transition: transform 700ms cubic-bezier(.16,1,.3,1) var(--delay, 0ms); }
+  .points-bar[data-seen='true'] .points-bar__part i { transform: scaleX(1); }
+}
+.points-bar__leaks { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.7; }
+.points-bar__leaks button { border: 0; padding: 0; background: none; color: var(--text); font: inherit; text-decoration: underline; text-decoration-color: var(--line-bright); text-underline-offset: 3px; cursor: pointer; }
+.points-bar__leaks b { color: var(--amber); font-weight: 400; }
+
+/* The metric bar, readable at a glance: the target is a zone, your value is a
+   dot, and the dot is amber when it is outside the zone. */
+.metric-bar { height: 10px; border-radius: 5px; background: var(--surface-3); }
+.metric-bar i { border-radius: 5px; background: rgba(154, 160, 147, .28); opacity: 1; }
+.metric-bar b { top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--text); transform: translateX(-6px); box-shadow: 0 0 0 3px var(--ground); }
+.metric-row { min-height: 0; }
+.metric-row--low .metric-bar b, .metric-row--high .metric-bar b { background: var(--amber); }
+.held { margin-top: 10px; }
+.held__toggle { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 52px; border: 1px solid var(--line); border-radius: 2px; padding: 10px 14px; background: var(--surface); color: var(--text-dim); text-align: left; cursor: pointer; }
+.held__toggle .label { color: var(--text); }
+.held__list { overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+
+.hexagon, .curve { display: grid; gap: 10px; }
+.hexagon__head, .curve__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.hexagon__points { color: var(--text-dim); font-size: 13px; }
+.hexagon__chart { display: block; width: 100%; max-width: 380px; height: auto; margin: 0 auto; overflow: visible; }
+.hexagon__ring { fill: none; stroke: var(--line); stroke-width: 1; }
+.hexagon__spoke { stroke: var(--line); stroke-width: 1; }
+.hexagon__shape polygon { fill: rgba(232, 234, 228, .10); stroke: var(--text); stroke-width: 1.5; stroke-linejoin: round; }
+.hexagon__shape circle { fill: var(--text); }
+.hexagon__label text { fill: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; }
+.hexagon__label .hexagon__value { fill: var(--text); font-size: 12px; }
+@media (prefers-reduced-motion: no-preference) {
+  .hexagon__shape { transform: scale(0); opacity: 0; transition: transform 900ms cubic-bezier(.16,1,.3,1), opacity 300ms ease-out; }
+  .hexagon[data-seen='true'] .hexagon__shape { transform: scale(1); opacity: 1; }
+}
+
+.curve__head .label { color: var(--text-dim); }
+.curve__chart { display: block; width: 100%; height: auto; overflow: visible; }
+.curve__line { stroke: var(--text-mute); stroke-width: 1; stroke-dasharray: 3 4; }
+.curve__line-label, .curve__axis { fill: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 9px; letter-spacing: .06em; }
+.curve__area { fill: rgba(232, 234, 228, .06); }
+.curve__path { fill: none; stroke: var(--text); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.curve__mark { cursor: pointer; }
+.curve__mark circle:last-child { fill: var(--text); stroke: var(--ground); stroke-width: 2; }
+.curve__mark--down circle:last-child { fill: var(--amber); }
+.curve__halo { fill: transparent; stroke: none; }
+.curve__mark--on .curve__halo { fill: rgba(232, 234, 228, .14); }
+.curve__mark--down.curve__mark--on .curve__halo { fill: rgba(255, 176, 32, .18); }
+@media (prefers-reduced-motion: no-preference) {
+  .curve__path { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 1400ms cubic-bezier(.4,0,.2,1); }
+  .curve__area, .curve__mark { opacity: 0; transition: opacity 400ms ease-out 1100ms; }
+  .curve[data-seen='true'] .curve__path { stroke-dashoffset: 0; }
+  .curve[data-seen='true'] .curve__area, .curve[data-seen='true'] .curve__mark { opacity: 1; }
+}
+.curve__tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.curve__tab { min-height: 40px; border: 1px solid var(--line); border-radius: 2px; background: transparent; color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; cursor: pointer; }
+.curve__tab[aria-selected='true'] { border-color: var(--line-bright); background: var(--surface-2); color: var(--text); }
+.curve__tab--down[aria-selected='true'] { border-color: rgba(255,176,32,.5); color: var(--amber); }
+.curve__moment { display: grid; gap: 8px; border-left: 2px solid var(--line-bright); padding: 4px 0 4px 14px; }
+.curve__moment--down { border-left-color: rgba(255,176,32,.6); }
+.curve__moment blockquote { margin: 0; color: var(--text); font-size: 16px; line-height: 1.5; }
+.curve__moment p { margin: 0; color: var(--text-dim); font-size: 13.5px; }
+.curve__moment b { color: var(--text); font-weight: 400; }
+.curve__moment--down b { color: var(--amber); }
+@media (prefers-reduced-motion: no-preference) { .curve__moment { animation: result-rise 280ms cubic-bezier(.16,1,.3,1) both; } }
+
+.next-rep { display: grid; gap: 12px; }
+.scorecard-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 30px; }
+.scorecard-actions > :only-child, .scorecard-actions .scorecard-actions__next { grid-column: 1 / -1; }
+.scorecard-actions__next { justify-self: center; min-height: 44px; display: inline-flex; align-items: center; color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.scorecard-actions__next:hover { color: var(--text); }
+.scorecard-actions .arena-button { width: 100%; }
+.scorecard-dock .arena-button { width: 100%; }
+@media (min-width: 900px) {
+  .scorecard-dock { display: flex; justify-content: flex-end; }
+  .scorecard-dock .arena-button { width: auto; min-width: 280px; }
+  .scorecard-actions { grid-template-columns: auto auto 1fr; }
+  .scorecard-actions .arena-button { width: auto; }
+  .scorecard-actions .scorecard-actions__next { grid-column: auto; justify-self: end; }
 }

@@ -4,13 +4,15 @@ import Link from 'next/link'
 import { Check, ChevronDown, ChevronUp, Crosshair, Flame, MicOff, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useInterviewers, useLifetimeStats, usePendingUnlock, usePersonaMemory, usePersonas, useScorecard, useSession, useSessionHistory, useTranscript, useUserState } from '@/lib/data'
-import type { Band, JudgementBand, LifetimeStats, MetricBand, Moment, ScorecardAccuracy, SessionSummary, TranscriptTurn } from '@/lib/data/types'
+import type { Band, LifetimeStats, MetricBand, Moment, ScorecardAccuracy, SessionSummary, TranscriptTurn } from '@/lib/data/types'
 import { techniqueForSubScore, type Technique } from '@/lib/techniques/library'
 import { SUB_SCORE_LABELS } from '@/lib/data/scorecard'
-import { LEVEL_NAMES, nextUnlockProgress, qualifyingByLevel, unlockProgressLabel, type UnlockProgress } from '@/lib/data/progression'
-import { pointsShort, resultReading } from '@/lib/data/rep-rules'
+import { LEVEL_NAMES, UNLOCK_SCORE, nextUnlockProgress, qualifyingByLevel } from '@/lib/data/progression'
+import { ARM_THRESHOLD, pointsShort, resultReading } from '@/lib/data/rep-rules'
+import { momentNote, pointParts, previousComposite, progressReading, progressSentence, splitMetrics, type ProgressReading } from '@/lib/data/result-view'
+import { ConversationCurve, PointsBar, ScoreRail, SkillHexagon } from '@/components/scorecard/visuals'
 import { lifetimeLine } from '@/lib/data/counters'
-import { Button, Card, Chip, EmptyState, Skeleton, Tabs } from '@/components/ui'
+import { Button, Card, EmptyState, Skeleton, Tabs } from '@/components/ui'
 import { GRADE_REFUSAL_COPY, gradeEligibility } from '@/lib/grade/eligibility'
 import { FirstLossSheet, FirstWinSheet, LevelUnlockedSheet, PaywallSheet, ScorecardExplainerSheet } from '@/components/modals'
 import { acknowledgeUnlock } from '@/app/profile/actions'
@@ -23,7 +25,7 @@ import { missionFor } from '@/lib/data/mission'
 import { useCountUp, useStagger } from '@/lib/hooks/use-staged-reveal'
 import { SoundKit } from '@/lib/audio/kit'
 import { soundEnabled } from '@/lib/hooks/use-rep-production'
-import { Mark, dimensionMark, tierMark } from '@/components/marks'
+import { Mark } from '@/components/marks'
 import { PackOffer } from '@/components/interview/credits'
 import { creditsAreLow } from '@/lib/data/credit-history'
 import { ROUND_COST_NOTE } from '@/lib/site/plans'
@@ -172,17 +174,33 @@ function ResultScreen({ session }: { session: SessionSummary }) {
     return times.length ? Math.min(...times) : null
   }, [hers])
 
-  // R8. Built from history plus the rep just run, so the bar has already moved
-  // by the time it is first drawn.
-  const nextUnlock = useMemo(() => {
-    if (session.track !== 'dating') return null
+
+  /**
+   * The same gate WITHOUT this rep, so the score rail can say "this one
+   * opened it" only when it did (`progressReading`). The old meter printed
+   * "0 of 1 rep at 70+" under a win whenever the grade had not landed yet.
+   */
+  const repLevel = useMemo(() => personas.find((persona) => persona.id === session.personaId)?.level ?? null, [personas, session.personaId])
+  /**
+   * By START TIME, not "every other rep": a rep opened from history has later
+   * reps in `earlier`, and counting those would tell somebody reviewing their
+   * first rep that it opened a tier their fifth one opened.
+   */
+  const [unlockBefore, unlockAfter] = useMemo(() => {
+    if (session.track !== 'dating') return [null, null]
+    const started = Date.parse(session.startedAt)
     const levelById = new Map(personas.map((persona) => [persona.id, persona.level]))
-    const reps = [...earlier, { ...session, compositeScore: composite }].flatMap((row) => {
+    const prior = earlier.filter((row) => Date.parse(row.startedAt) < started)
+    const toReps = (rows: readonly { personaId: string; compositeScore: number | null }[]) => rows.flatMap((row) => {
       const level = levelById.get(row.personaId)
       return level ? [{ level, composite: row.compositeScore }] : []
     })
-    return nextUnlockProgress(qualifyingByLevel(reps))
-  }, [earlier, personas, session, composite])
+    return [
+      nextUnlockProgress(qualifyingByLevel(toReps(prior))),
+      nextUnlockProgress(qualifyingByLevel(toReps([...prior, { personaId: session.personaId, compositeScore: composite }]))),
+    ]
+  }, [earlier, personas, session.track, session.startedAt, session.personaId, composite])
+  const progress = progressReading({ composite, repLevel, before: unlockBefore, after: unlockAfter })
 
   const context = session.track === 'interview'
     ? (close >= 10 ? 'Your examples had signal, but the evidence did not land consistently.' : 'You were close to a callback.')
@@ -295,65 +313,37 @@ function ResultScreen({ session }: { session: SessionSummary }) {
   // allowed to take the frame. It leaves again in under two seconds.
   const className = `result-page result-page--${tone}${personalBest ? ' result-page--best' : ''}`
   const runItBack = user?.voiceLocked && session.track === 'dating'
-    ? <Button variant={nearMiss ? 'primary' : 'ghost'} size={nearMiss ? 'lg' : 'md'} fullWidth onClick={() => setPaywall(true)}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Button>
-    : <Link className={`arena-button arena-button--${nearMiss ? 'primary arena-button--lg' : 'ghost'} arena-button--full`} href={repHref}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Link>
-  const seeBreakdown = <Link className={`arena-button arena-button--${nearMiss ? 'secondary' : 'primary arena-button--lg'} arena-button--full`} href={scorecardHref}>See breakdown</Link>
+    ? <Button variant={nearMiss ? 'primary' : 'secondary'} size="lg" fullWidth onClick={() => setPaywall(true)}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Button>
+    : <Link className={`arena-button arena-button--${nearMiss ? 'primary' : 'secondary'} arena-button--lg arena-button--full`} href={repHref}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Link>
+  const seeBreakdown = <Link className={`arena-button arena-button--${nearMiss ? 'secondary' : 'primary'} arena-button--lg arena-button--full`} href={scorecardHref}>See breakdown</Link>
 
   return (
     <main className={className}>
       {personalBest ? <BestBeat /> : null}
-      <FluidPersona name={subject?.name ?? session.personaName} personaId={session.personaId} warmth={session.finalWarmth} announceWarmth size={148} dimmed={tone === 'loss'} />
-      {/* **The win headline is Ink, and used to be volt.**
-          Two reasons, and they are the same reason twice. Arena allows volt
-          once per screen and this screen already spends it on the primary
-          action — so the headline and the button were both wrong at once. And
-          §07 says outcome is worth zero: painting "She gave you her number" in
-          the accent colour is the design system scoring the result, which is
-          precisely the substitution RETENTION-AUDIT §2 moves the loud moment
-          off. The win still reads as a win — undimmed orb, the volt ground
-          wash, the duration as the hero — and the accent is reserved for the
-          earned moment and the thing to do next. */}
+      <FluidPersona name={subject?.name ?? session.personaName} personaId={session.personaId} warmth={session.finalWarmth} announceWarmth size={132} dimmed={tone === 'loss'} />
+      {/* Ink, never volt — see the note this replaced in git history: the
+          accent is reserved for the earned moment and the thing to do next,
+          and painting the outcome in it would be the design system scoring
+          the result (§07). */}
       <h1 className={`display-xl${nearMiss ? ' amber' : ''}`}>{headline}</h1>
-      {/* A beat with no explanation is decoration. The wash says something
-          happened; this says what, and it says it in process terms — which is
-          the entire reason the moment was moved off the win (§07). Ink-2, so
-          the frame's one volt stays the frame's one volt. */}
       {personalBest ? <span className="result-best label">Personal best · <span className="data">{composite}</span></span> : null}
 
       {session.won ? (
-        <>
+        <div className="result-facts">
           <span className="result-time data">{formatDuration(session.durationMs)}</span>
-          <Chip tone="band" band={session.finalBand}>{session.track === 'interview' ? interviewBand(session.finalBand) : session.finalBand}</Chip>
-          {/* THE SECOND TRACK READS THIS SCREEN TOO, AND IT USED TO READ IT IN
-              THE OTHER PRODUCT'S WORDS. `headline` and `context` above were
-              guarded when the interview arm shipped; these were not, so a
-              candidate who was asked back was told they had been "faster than
-              your best against her" and that the interviewer would remember
-              them as "she". `interview` is the same flag the band chip on the
-              line above already reads. */}
+          {/* The band, in words and with the number it stands for. "ENGAGED"
+              on its own was a word a new account had no way to read. */}
+          <span className="result-band label">{interview ? interviewBand(session.finalBand) : session.finalBand} · {interview ? 'impression' : 'warmth'} <span className="data">{session.finalWarmth}</span></span>
           {fasterBy !== null ? <p className="result-record">{fasterBy} {fasterBy === 1 ? 'second' : 'seconds'} faster than your best {interview ? 'in this room' : 'against her'}.</p> : null}
-          {freshMemory ? <p className="result-memory"><span className="label">{interview ? 'They\u2019ll remember' : 'She\u2019ll remember'}</span> {freshMemory}</p> : null}
-        </>
+        </div>
       ) : (
         <>
           <div className="result-warmth">
-            {/* The meter has a different name on each arm and always has —
-                `interviewBand` renames every band for the interview track, and
-                this label was the one place still calling it warmth. A
-                candidate does not warm to a recruiter; the recruiter forms an
-                impression of them. */}
             <span className="label">{interview ? 'Their read' : 'Warmth'}</span>
             <strong className="data">{decided}{herBestWarmth === null ? <i>/ {threshold}</i> : null}</strong>
           </div>
-          {/* R12. Score against yourself, not against the bar. `41 — your best
-              against her is 38` is a number that went up; `41 / 65` is a number
-              that lost. Same data, opposite emotion. The threshold is kept and
-              demoted rather than removed, because it is still what decided it. */}
           {herBestWarmth !== null
             ? decided > herBestWarmth
-              // The motivating half of R12, and the reason the comparison is
-              // worth drawing at all: a rep that lost is still allowed to be
-              // the best you have managed against her.
               ? <p className="result-record">Your best {interview ? 'with them' : 'against her'} yet — the last one stopped at <span className="data">{herBestWarmth}</span>. {interview ? 'They decide' : 'She decides'} at <span className="data">{threshold}</span>.</p>
               : <p className="result-record">Your best {interview ? 'with them' : 'against her'} is <span className="data">{herBestWarmth}</span>. {interview ? 'They decide' : 'She decides'} at <span className="data">{threshold}</span>.</p>
             : <span className="label mute">{usingFallback ? 'Where the meter finished' : `Where it stood when ${interview ? 'they' : 'she'} decided`}</span>}
@@ -361,18 +351,34 @@ function ResultScreen({ session }: { session: SessionSummary }) {
         </>
       )}
 
-      {/* R17. One sentence of what to change, on the screen where it is needed,
-          rather than one click away at the lowest motivation point in the loop. */}
+      {/*
+        THE REWARD, ON THE SCREEN PEOPLE ACTUALLY SEE (27 Sep).
+
+        The process score — the only number §07 says is worth anything — lived
+        one tap away behind "See breakdown", while this screen headlined the
+        outcome. It counts up here now, on both a win and a loss (a clean rep
+        that ends in rejection can score 92, and this is where somebody who
+        was just rejected needs to read that), with the 70 line drawn on the
+        rail it lands on. The loud moment is still keyed to a personal best
+        and nothing else (RETENTION-AUDIT §2): a first score is a baseline.
+      */}
+      <ScoreReveal composite={composite} reading={progress} />
+
       {!session.won && scorecard ? <MissionNote mission={missionFor(scorecard.focus)} /> : null}
 
       <div className="result-actions">
         {nearMiss ? <>{runItBack}{seeBreakdown}</> : <>{seeBreakdown}{runItBack}</>}
       </div>
 
-      {/* R8, then R7. What the rep moved, and what it added to. Both below the
-          fold of the decision, because neither is the point of this screen —
-          they are the reason to open the next one. */}
-      <UnlockMeter progress={nextUnlock} />
+      {/* R11, and it is the reason to run it back, so it sits under the button
+          that does. In her voice rather than in the screen's. */}
+      {session.won && freshMemory ? (
+        <figure className="result-memory">
+          <figcaption className="label">{interview ? 'Next time, they\u2019ll remember' : 'Next time, she\u2019ll remember'}</figcaption>
+          <blockquote>{freshMemory}</blockquote>
+        </figure>
+      ) : null}
+
       <LifetimeCounters stats={lifetime} />
 
       <ReportButton sessionId={session.id} />
@@ -420,28 +426,35 @@ function BestBeat() {
 }
 
 /**
- * R8. The gate, as a bar that moved.
+ * R8, redrawn (27 Sep). The score, counting, on a 0–100 rail with the 70 line
+ * marked, and one sentence about what it did to the next tier.
  *
- * `unlockRequirement` returns `Score 70+ in 2 reps at Level 02` before and
- * after the rep that advanced it, which makes the one screen able to show
- * progress show a constant instead. A bar that advanced is the reason somebody
- * runs one more.
- *
- * Ink-2, never volt: Arena allows volt once per screen and on a win the
- * headline already has it. The meter is information, not the accent.
+ * It waits ~0.65s before counting so the headline and the time land first:
+ * the screen reads outcome → time → process score, in that order, which is
+ * the order the eye was already travelling. Reduced motion gets the finished
+ * number on the first frame (`useCountUp`).
  */
-function UnlockMeter({ progress }: { progress: UnlockProgress | null }) {
-  if (!progress) return null
-  const pct = Math.round((progress.have / progress.need) * 100)
+function ScoreReveal({ composite, reading }: { composite: number | null; reading: ProgressReading }) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setArmed(true), 650)
+    return () => window.clearTimeout(timer)
+  }, [])
+  const count = useCountUp(armed ? composite : null, 1100)
+  const pending = composite === null
+  const sentence = progressSentence(reading)
+  const opened = reading.kind === 'unlocked' && count.done
   return (
-    <div className="unlock-meter">
-      <div className="unlock-meter__head">
-        <Mark name={tierMark(progress.level)} size={15} />
-        <span className="label">Level {String(progress.level).padStart(2, '0')} — {LEVEL_NAMES[progress.level]}</span>
+    <section className={`score-reveal${opened ? ' score-reveal--opened' : ''}`} aria-live="polite">
+      <span className="label">Process score</span>
+      <div className="score-reveal__number">
+        {pending
+          ? <span className="score-reveal__pending data" aria-label="Scoring">··</span>
+          : <><strong className="data">{count.value}</strong><span className="score-reveal__verdict" data-revealing={!count.done}>{verdictFor(count.value)}</span></>}
       </div>
-      <span className="unlock-meter__track" role="presentation"><i style={{ width: `${Math.max(3, pct)}%` }} /></span>
-      <span className="label mute">{unlockProgressLabel(progress)}</span>
-    </div>
+      <ScoreRail value={count.value} line={reading.kind === 'none' ? null : UNLOCK_SCORE} pending={pending} />
+      {sentence ? <p className={`score-reveal__line score-reveal__line--${reading.kind}`}>{sentence}</p> : null}
+    </section>
   )
 }
 
@@ -468,7 +481,11 @@ function ScorecardScreen({ session, packsOpen }: { session: SessionSummary; pack
   const { data: turns } = useTranscript(session.id)
   const { data: personas } = usePersonas()
   const { data: user } = useUserState()
+  const { data: history } = useSessionHistory()
   const [paywall, setPaywall] = useState(false)
+  // The rows that held are folded away by default (27 Sep); a tap on the
+  // points bar or the summary line opens them.
+  const [showHeld, setShowHeld] = useState(false)
   // The unlock moment (§12). Read from `unlocks` rather than inferred here:
   // grading is what earns it and grading lands after this screen opens, so a
   // row is the only thing that survives the gap — and it is what makes the
@@ -565,7 +582,6 @@ function ScorecardScreen({ session, packsOpen }: { session: SessionSummary; pack
    */
   const verdict = verdictFor(composite.value)
   const audit = scorecard.metrics.reduce((sum, metric) => sum + metric.points, 0) + (scorecard.judgement?.points ?? 0)
-  const parts = [...scorecard.metrics.map((metric) => String(metric.points)), ...(scorecard.judgement ? [String(scorecard.judgement.points)] : [])]
   /**
    * THE SCORECARD IS NOT BEHIND A PLAN, AND USED TO LOOK LIKE IT WAS.
    *
@@ -595,37 +611,108 @@ function ScorecardScreen({ session, packsOpen }: { session: SessionSummary; pack
   const signalLabel = session.track === 'interview' ? 'Impression' : 'Warmth'
   const personaLevel = personas.find((item) => item.id === session.personaId)?.level ?? null
   const levelLabel = session.track === 'interview' ? 'Interview' : personaLevel ? `${String(personaLevel).padStart(2, '0')} — ${LEVEL_NAMES[personaLevel]}` : '—'
-  return <><header className="scorecard-title"><span className="label">Process score · {session.personaName}</span><h1 className="display-lg">Session breakdown</h1></header><div className="scorecard-grid"><div className="scorecard-left"><Card className="composite-card"><div>{/* R16. The word is the hero and the number is the footnote, which is
-      the way round they were built. `Sloppy / Solid / Sharp / Clean` is the
-      most human thing on this screen and it rendered at `display-md` beneath a
-      five-rem numeral: a number is a measurement, a word is a verdict, and
-      people come back for verdicts. The composite still climbs — it is the
-      same `useCountUp` and the same `land` chord — it just does it beside the
-      verdict rather than over the top of it. */}
-<strong className="verdict display-xl" data-revealing={!composite.done}>{verdict}</strong><span className="composite composite--footnote data">{composite.value}<small>/100</small></span></div>{/* "Level Interview" is what this said on an interview scorecard — the
-      dating rung has no meaning on a track where all four interviewers are
-      open from the first credit (§5.10), and the tier mark beside it is the
-      roster aperture. Both are dropped rather than relabelled: what is worth
-      knowing after an interview is who, how long, and what happened. */}
-<p className="composite-card__context">{session.track === 'dating' && personaLevel ? <Mark name={tierMark(personaLevel)} size={15} /> : null}<span>{session.personaName}{session.track === 'dating' ? ` · Level ${levelLabel}` : ''} · {formatDuration(session.durationMs)} · {outcomeLabel}</span></p></Card>{scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}{scorecard.accuracy ? <TechnicalAccuracy accuracy={scorecard.accuracy} composure={scorecard.judgement?.subScores.find((entry) => entry.key === 'composure')?.value ?? null} /> : null}<section className="metrics-section"><div className="section-title"><h2 className="display-md">Metrics</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.join(' + ')} = {audit}</span></div><div className="metric-list">{scorecard.metrics.map((metric, index) => <div key={metric.key} data-reveal={index < rowsShown ? 'shown' : 'pending'}><MetricBandRow metric={metric} /></div>)}{scorecard.judgement ? <div data-reveal={scorecard.metrics.length < rowsShown ? 'shown' : 'pending'}><JudgementRow judgement={scorecard.judgement} /></div> : null}</div></section></div><aside className="scorecard-right"><MomentSection title="The moment it worked" moment={scorecard.bestMoment} signalLabel={signalLabel} turns={turns} tone="up" /><MomentSection title="The moment it didn't" moment={scorecard.worstMoment} signalLabel={signalLabel} turns={turns} tone="down" /><section><h2 className="display-md">Try this next time</h2><Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card>{/* The mission this rep sets, and the same words Train, the brief
-      and the live screen will show until the weakest dimension moves.
-      It is the connective tissue the audit said was missing. */}
-{/* DATING ONLY, AND BOTH HALVES ARE.
-      `MISSIONS` is authored about a stranger in a shop — "open with something
-      about the room you are both standing in, not about her" — and the library
-      cards `FocusLinks` points at are dating techniques. Neither has an
-      interview equivalent written yet, and a mission telling a candidate to
-      ask her about the room is worse than no mission at all. What replaces it
-      on this track is `scorecard.tryNext`, which is already above and is
-      already interview prose (`lib/data/interview-scorecard.ts`). */}
-{session.track === 'dating' ? <><MissionCard mission={missionFor(scorecard.focus)} kicker="Next rep" /><FocusLinks focus={scorecard.focus} /></> : null}</section></aside></div><div className="scorecard-actions">{/* THE UPGRADE MOMENT, and the best-placed one in the product. Somebody
-    who has just finished the sign-up rep and wants to go again is the whole
-    funnel in one click, so Run it back opens the sheet rather than walking
-    them to a brief that will refuse them. Everything else on this screen —
-    every metric, both moments, the transcript — is theirs either way. */}
-{user?.voiceLocked && session.track === 'dating'
-  ? <Button onClick={() => setPaywall(true)}>Run it back</Button>
-  : <Link className="arena-button arena-button--primary" href={session.track === 'interview' ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`}>Run it back</Link>}<Link className="arena-button arena-button--secondary" href={`/session/${session.id}/transcript`}>Read the transcript</Link><Link className="arena-button arena-button--ghost" href={session.track === 'interview' ? '/interview/interviewers' : '/roster'}>{session.track === 'interview' ? 'Another interviewer' : 'Next persona'}</Link>{session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}</div>{session.track === 'interview' && creditsAreLow(user?.interviewCredits ?? 0) ? <LowCredits packsOpen={packsOpen} /> : null}<ReportButton sessionId={session.id} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={session.track === 'dating' ? session.personaId : null} /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet interview={session.track === 'interview'} open={explainer} onClose={() => setExplainer(false)} /></>
+  const parts = pointParts(scorecard.metrics, scorecard.judgement)
+  const { misses, held } = splitMetrics(scorecard.metrics)
+  const previous = previousComposite(history, session)
+  const interview = session.track === 'interview'
+  const repHref = interview ? `/interview/rep/${session.personaId}/brief` : `/rep/${session.personaId}/brief`
+  const scoredTurns = turns.filter((turn) => turn.warmthAfter !== null).length
+  // A "moment" that moved nothing is not a moment. The worst turn of a rep
+  // where nothing went wrong rounded to 0 and was printed as one.
+  const worst = scorecard.worstMoment && Math.abs(scorecard.worstMoment.delta) >= 1 ? scorecard.worstMoment : null
+  const best = scorecard.bestMoment && Math.abs(scorecard.bestMoment.delta) >= 1 ? scorecard.bestMoment : null
+  const describe = (note: string) => momentNote(note, interview)
+  const pick = (key: string) => {
+    if (held.some((metric) => metric.key === key)) setShowHeld(true)
+    window.requestAnimationFrame(() => document.getElementById(`part-${key}`)?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'center',
+    }))
+  }
+  /**
+   * THE UPGRADE MOMENT, and the best-placed one in the product. Somebody who
+   * has just finished the sign-up rep and wants to go again is the whole
+   * funnel in one click, so Run it back opens the sheet rather than walking
+   * them to a brief that will refuse them. Everything else on this screen —
+   * every metric, both moments, the transcript — is theirs either way.
+   */
+  const runItBack = user?.voiceLocked && session.track === 'dating'
+    ? <Button size="lg" fullWidth onClick={() => setPaywall(true)}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Button>
+    : <Link className="arena-button arena-button--primary arena-button--lg arena-button--full" href={repHref}><RotateCcw size={17} strokeWidth={1.5} /> Run it back</Link>
+
+  /*
+   * THE 27 SEPTEMBER LAYOUT.
+   *
+   * The screen was seven identical hairline rows, two moment cards with a
+   * forty-pixel line in each, and three sections that all said "use a detail
+   * she gave you". Now it reads top to bottom as: the number; where the
+   * hundred points went; the rows that cost points (the ones that did not
+   * are one line); the six judged dimensions as a shape; the conversation as
+   * one curve; one thing for next rep; and Run it back pinned to the bottom.
+   *
+   * R16 is reversed on purpose. It made the verdict word the hero and the
+   * number a footnote; the owner's read of the screen was that the number is
+   * what people remember and "Solid" is its caption, and both still climb
+   * together off the same `useCountUp`.
+   */
+  return <div className="scorecard-page"><div className="scorecard-grid"><div className="scorecard-left">
+    <header className="score-hero">
+      <span className="label">Process score · {session.personaName}{session.track === 'dating' ? ` · Level ${levelLabel}` : ''} · {formatDuration(session.durationMs)} · {outcomeLabel}</span>
+      <div className="score-hero__row">
+        <strong className="score-hero__number data">{composite.value}</strong>
+        <div className="score-hero__side">
+          <span className="verdict display-lg" data-revealing={!composite.done}>{verdict}</span>
+          {previous !== null
+            ? <span className={`score-hero__delta data${scorecard.composite - previous < 0 ? ' score-hero__delta--down' : ''}`}>{scorecard.composite - previous >= 0 ? '+' : '−'}{Math.abs(scorecard.composite - previous)} on your last rep</span>
+            : <span className="score-hero__delta">Your first score — the baseline</span>}
+        </div>
+      </div>
+    </header>
+    {scorecard.judgement?.wentWell ? <WhatWorked line={scorecard.judgement.wentWell} /> : null}
+    {scorecard.accuracy ? <TechnicalAccuracy accuracy={scorecard.accuracy} composure={scorecard.judgement?.subScores.find((entry) => entry.key === 'composure')?.value ?? null} /> : null}
+    <PointsBar parts={parts} onPick={pick} />
+    <section className="metrics-section">
+      {misses.length ? <>
+        <div className="section-title"><h2 className="display-md">What cost you</h2><span className={`audit-total data${audit !== scorecard.composite ? ' danger' : ''}`}>{parts.map((part) => part.points).join(' + ')} = {audit}</span></div>
+        <div className="metric-list">{misses.map((metric, index) => <div key={metric.key} id={`part-${metric.key}`} data-reveal={index < rowsShown ? 'shown' : 'pending'}><MetricBandRow metric={metric} /></div>)}</div>
+      </> : null}
+      {held.length ? (
+        <div className="held">
+          <button type="button" className="held__toggle" aria-expanded={showHeld} onClick={() => setShowHeld((value) => !value)}>
+            <span className="label">On target · {held.length}</span>
+            <span className="held__list">{held.map((metric) => `${metric.label} ${metric.points}`).join(' · ')}</span>
+            {showHeld ? <ChevronUp size={16} strokeWidth={1.5} /> : <ChevronDown size={16} strokeWidth={1.5} />}
+          </button>
+          {showHeld ? <div className="metric-list">{held.map((metric) => <div key={metric.key} id={`part-${metric.key}`}><MetricBandRow metric={metric} /></div>)}</div> : null}
+        </div>
+      ) : null}
+    </section>
+    {scorecard.judgement ? <div id="part-judgement"><SkillHexagon scores={scorecard.judgement.subScores} title={scorecard.judgement.label} points={scorecard.judgement.points} max={scorecard.judgement.maxPoints} /></div> : null}
+  </div><aside className="scorecard-right">
+    {scoredTurns >= 2 && (best || worst)
+      ? <ConversationCurve turns={turns} best={best} worst={worst} label={signalLabel} line={interview ? null : ARM_THRESHOLD} describe={describe} />
+      : <><MomentSection title="The moment it worked" moment={best} signalLabel={signalLabel} turns={turns} tone="up" describe={describe} /><MomentSection title="The moment it didn't" moment={worst} signalLabel={signalLabel} turns={turns} tone="down" describe={describe} /></>}
+    <section className="next-rep">
+      <h2 className="display-md">Your one thing for next rep</h2>
+      {/* DATING ONLY for the mission and the technique links: both are
+          authored about a stranger in a shop and have no interview
+          equivalent yet. The interview arm gets `tryNext`, which is already
+          interview prose. On dating, `tryNext` is dropped — it said the same
+          thing as the mission a card earlier. */}
+      {session.track === 'dating'
+        ? <><MissionCard mission={missionFor(scorecard.focus)} kicker="Next rep" /><FocusLinks focus={scorecard.focus} /></>
+        : <Card className="try-next"><Crosshair size={20} strokeWidth={1.5} className="volt" /><p>{scorecard.tryNext}</p></Card>}
+    </section>
+  </aside></div>
+  <div className="scorecard-actions">
+    <Link className="arena-button arena-button--secondary arena-button--lg" href={`/session/${session.id}/transcript`}>Transcript</Link>
+    {session.won && session.track === 'dating' ? <ShareButton kind="rep_win" sessionId={session.id} label="Make a card" /> : null}
+    <Link className="scorecard-actions__next" href={interview ? '/interview/interviewers' : '/roster'}>{interview ? 'Another interviewer' : 'Next persona'} →</Link>
+  </div>
+  {/* Pinned above the tab bar, like the transcript's (V-series). The one
+      volt on this screen, and the only action the screen exists to lead to. */}
+  <div className="transcript-sticky scorecard-dock">{runItBack}</div>
+  {session.track === 'interview' && creditsAreLow(user?.interviewCredits ?? 0) ? <LowCredits packsOpen={packsOpen} /> : null}<ReportButton sessionId={session.id} /><PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={session.track === 'dating' ? session.personaId : null} /><LevelUnlockedSheet open={pending !== null} onClose={closeUnlock} unlock={pending} /><ScorecardExplainerSheet interview={session.track === 'interview'} open={explainer} onClose={() => setExplainer(false)} /></div>
 }
 
 /**
@@ -670,42 +757,6 @@ function verdictFor(composite: number): string {
   if (composite < 70) return 'Solid'
   if (composite < 85) return 'Sharp'
   return 'Clean'
-}
-
-/**
- * The 40% that is judgement rather than measurement (§07).
- *
- * It sits in the same list as the metrics and carries points the same way, so
- * the audit line adds up to the composite — but it prints its six sub-scores
- * instead of a target band, because there is no band to have missed.
- */
-function JudgementRow({ judgement }: { judgement: JudgementBand }) {
-  return <div className="metric-row"><div className="metric-row__head"><span>{judgement.label}</span><span className="data">{judgement.subScores.length ? `${Math.round(judgement.subScores.reduce((sum, entry) => sum + entry.value, 0) / judgement.subScores.length)}/100` : '—'}</span><strong className="data">{judgement.points}/{judgement.maxPoints}</strong></div><div className="judgement-rows">{judgement.subScores.map((entry) => <JudgementSubRow key={entry.key} entry={entry} />)}</div></div>
-}
-
-/**
- * One judged dimension (V25).
- *
- * The six measured metrics above this got a bar with a target band on it; the
- * six judged ones — the half users actually argue with — got `<Chip>Opening
- * 84</Chip>`, so the more contestable number was the less legible one. Same
- * bar, same reading direction, plus the dimension's own mark, which is the
- * same mark this sub-score carries on Progress, in the library and on the
- * mission it will set.
- *
- * No target band, because there is none to have missed — that is the whole
- * difference between the judged half and the measured half.
- */
-function JudgementSubRow({ entry }: { entry: { key: string; label: string; value: number } }) {
-  const mark = dimensionMark(entry.key)
-  return (
-    <div className="judgement-row">
-      {mark ? <Mark name={mark} size={15} /> : null}
-      <span className="label">{entry.label}</span>
-      <span className="judgement-row__bar" role="presentation"><i style={{ width: `${Math.max(2, Math.min(100, entry.value))}%` }} /></span>
-      <strong className="data">{entry.value}</strong>
-    </div>
-  )
 }
 
 /**
@@ -776,7 +827,7 @@ function WhatWorked({ line }: { line: string }) {
 
 function MetricBandRow({ metric }: { metric: MetricBand }) {
   const marker = Math.min(100, Math.max(0, metric.numericValue))
-  return <div className="metric-row"><div className="metric-row__head"><span>{metric.label}</span><span className="data">{metric.displayValue}</span><strong className="data">{metric.points}/{metric.maxPoints}</strong></div><div className="metric-bar"><i style={{ left: `${metric.targetMin}%`, width: `${Math.max(4, metric.targetMax - metric.targetMin)}%` }} /><b style={{ left: `${marker}%` }} /></div><div className="metric-row__foot"><span className="label">Target {metric.targetLabel}</span><p>{metric.note}</p></div></div>
+  return <div className={`metric-row metric-row--${metric.verdict.toLowerCase()}`}><div className="metric-row__head"><span>{metric.label}</span><span className="data">{metric.displayValue}</span><strong className="data">{metric.points}/{metric.maxPoints}</strong></div><div className="metric-bar"><i style={{ left: `${metric.targetMin}%`, width: `${Math.max(4, metric.targetMax - metric.targetMin)}%` }} /><b style={{ left: `${marker}%` }} /></div><div className="metric-row__foot"><span className="label">Target {metric.targetLabel}</span><p>{metric.note}</p></div></div>
 }
 
 /**
@@ -814,9 +865,9 @@ function MomentTrack({ turns, moment, tone }: { turns: TranscriptTurn[]; moment:
   )
 }
 
-function MomentSection({ title, moment, signalLabel, turns, tone }: { title: string; moment: Moment | null; signalLabel: string; turns: TranscriptTurn[]; tone: 'up' | 'down' }) {
+function MomentSection({ title, moment, signalLabel, turns, tone, describe }: { title: string; moment: Moment | null; signalLabel: string; turns: TranscriptTurn[]; tone: 'up' | 'down'; describe: (note: string) => string }) {
   if (!moment) return null
-  return <section className="moment-section"><h2 className="display-md">{title}</h2><Card className="moment-card"><blockquote>“{moment.quote}”</blockquote><MomentTrack turns={turns} moment={moment} tone={tone} /><div><span className={`data ${moment.delta > 0 ? 'volt' : 'amber'}`}>{moment.delta > 0 ? '+' : ''}{moment.delta}</span><span className="label">{signalLabel} {moment.warmthAfter}</span></div><p>{moment.note}</p></Card></section>
+  return <section className="moment-section"><h2 className="display-md">{title}</h2><Card className="moment-card"><blockquote>“{moment.quote}”</blockquote><MomentTrack turns={turns} moment={moment} tone={tone} /><div><span className={`data ${moment.delta > 0 ? 'volt' : 'amber'}`}>{moment.delta > 0 ? '+' : ''}{moment.delta}</span><span className="label">{signalLabel} {moment.warmthAfter}</span></div><p>{describe(moment.note)}</p></Card></section>
 }
 
 function TranscriptScreen({ session }: { session: SessionSummary }) {
