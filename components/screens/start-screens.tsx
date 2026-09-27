@@ -67,6 +67,8 @@ import { RuleBlock, repGoal } from './rep-format'
 import { tap } from '@/lib/haptics'
 import { MIN_AGE, checkAge } from '@/lib/safety/age'
 import { SIGNUP_REVIEW } from '@/lib/site/reviews'
+import { CAPTURED_REP } from '@/lib/site/captured-rep'
+import { PERSONA_VISUAL } from '@/lib/personas/visual'
 import {
   EMPTY_START_ANSWERS,
   START_FIELD,
@@ -389,12 +391,25 @@ function HookStep({ track, href, proof, onStart }: {
 }) {
   const copy = HOOK_COPY[track === 'dating' || track === 'interview' ? track : 'both']
   const quote = track === 'interview' ? null : SIGNUP_REVIEW
+  const interview = track === 'interview'
   return (
     <section className="onboarding-question start-hook">
-      <span className="label">Nerve{track === 'interview' ? ' · Interviews' : ''}</span>
-      {/* Word by word, so the first thing that moves on the page is the
-          sentence it is selling. The words are spans inside one heading, so a
-          screen reader still reads one sentence. */}
+      {/*
+        THE FIRST SCREEN, REBUILT (owner review, 27 Sep).
+
+        It was a paragraph of claims between two bands of empty black: no
+        picture of the product, nothing that moved but the words, and the one
+        exit most people do not need sitting beside the one they do. Now it
+        opens on the product itself — the first four lines of a real rep,
+        captured, arriving the way they arrived — and the claim follows the
+        evidence instead of standing in for it. Sign-in moved to the corner
+        where people look for it.
+      */}
+      <div className="start-top">
+        <span className="start-wordmark" aria-label="Nerve">Nerve</span>
+        <Link href="/login" className="start-top__login">Log in</Link>
+      </div>
+      {interview ? <span className="label start-hook__kicker">Interview practice</span> : <RepPreview />}
       <h1 className="display-lg start-hook__head" tabIndex={-1} data-step-heading>
         {copy.head.split(' ').flatMap((word, index) => [
           index > 0 ? ' ' : null,
@@ -403,13 +418,10 @@ function HookStep({ track, href, proof, onStart }: {
       </h1>
       <p className="onboarding-sub">{copy.sub}</p>
       <div className="start-actions">
-        {/* The duration is measured against the five screens that follow,
-            not asserted — if a screen is added, re-time it. */}
         <a
           href={href}
           className="arena-button arena-button--primary arena-button--lg arena-button--full start-hook__go"
           onClick={(event) => {
-            // A modified click is somebody opening a tab on purpose.
             if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
             event.preventDefault()
             onStart()
@@ -419,22 +431,6 @@ function HookStep({ track, href, proof, onStart }: {
         </a>
         <p className="start-foot">{copy.free}</p>
       </div>
-      {/*
-        THE PROOF, ON THE SCREEN PEOPLE LEAVE FROM (27 Sep, owner's call).
-
-        The one tester quote lived on the account screen, on the argument that
-        doubt peaks at the form. The first per-step read said otherwise: about
-        seven in eight outside visitors left on THIS screen, and nobody who
-        left here ever saw the quote. The account screen's doubt is "is it
-        free, is it spam", which one line answers; this screen's doubt is "is
-        this real, does it do anything", which is what a named person saying
-        what changed for them answers.
-
-        The quote and the counted line are one block, so the page grows by one
-        thing rather than two. On the interview arm the quote is dropped —
-        it is about talking to strangers — and the counted line stands alone.
-        Counted, never asserted: the number is absent when the read fails.
-      */}
       {quote ? (
         <figure className="start-voice">
           <blockquote>{quote.quote}</blockquote>
@@ -446,12 +442,53 @@ function HookStep({ track, href, proof, onStart }: {
       ) : proof && proof.reps > 0 ? (
         <p className="start-count"><strong>{proof.reps.toLocaleString('en-GB')}</strong> reps run · <strong>{proof.people.toLocaleString('en-GB')}</strong> people training</p>
       ) : null}
-      <nav className="start-exits" aria-label="Other ways in">
+      <nav className="start-exits" aria-label="More about Nerve">
         <Link href="/how-it-works">What is this?</Link>
-        <span aria-hidden="true">·</span>
-        <Link href="/login">I have an account</Link>
       </nav>
     </section>
+  )
+}
+
+/**
+ * The product, before the claim about it: the opening of a real rep.
+ *
+ * Her lines come from `CAPTURED_REP`, which reads the recorded manifest and
+ * cannot be edited here (rule 10). They arrive in the order and roughly the
+ * rhythm they were said, with a typing beat before each of hers, and then the
+ * card stays still. Pure CSS: it is on the page before the JavaScript is, so
+ * the first thing a cold phone paints is the product rather than a gap
+ * waiting to hydrate. No numbers are drawn — the recording has no meter
+ * readings, and a warmth figure invented for decoration would be a claim.
+ */
+function RepPreview() {
+  const rep = CAPTURED_REP
+  const colours = PERSONA_VISUAL[rep.personaId]
+  return (
+    <figure
+      className="rep-preview"
+      aria-label={`The opening of a real rep with ${rep.name}`}
+      style={colours ? { ['--orb-core' as string]: colours.core, ['--orb-deep' as string]: colours.deep, ['--orb-sheen' as string]: colours.sheen } : undefined}
+    >
+      <figcaption className="rep-preview__head">
+        <span className="rep-preview__orb" aria-hidden="true"><i /><i /><b>{rep.name.charAt(0)}</b></span>
+        <span className="rep-preview__who">
+          <strong>{rep.name}</strong>
+          <span className="label">{rep.setting} · a real rep</span>
+        </span>
+        <span className="rep-preview__rec label" aria-hidden="true"><i />Rec</span>
+      </figcaption>
+      <ol className="rep-preview__lines">
+        {rep.lines.map((line, index) => (
+          <li key={index} className={`rep-line rep-line--${line.who}`} style={{ ['--i' as string]: index }}>
+            <span className="label rep-line__who">{line.who === 'you' ? 'You' : rep.name}</span>
+            <span className="rep-line__bubble">
+              {line.who === 'her' ? <span className="rep-line__typing" aria-hidden="true"><i /><i /><i /></span> : null}
+              <span className="rep-line__text">{line.text}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </figure>
   )
 }
 
