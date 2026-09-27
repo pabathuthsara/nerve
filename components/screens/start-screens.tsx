@@ -318,7 +318,7 @@ function StartProgress({ current, rail }: { current: StartStep; rail: readonly S
 const HOOK_COPY: Record<'dating' | 'interview' | 'both', { head: string; sub: string; free: string }> = {
   dating: {
     head: 'The conversation you keep not having.',
-    sub: 'Talk out loud to an AI character for three minutes. She can get bored, get distracted and walk away. You are scored on how you handled it — never on whether it worked.',
+    sub: 'Three minutes, out loud, with an AI character who can walk away. Scored on how you handled it — never on whether it worked.',
     free: 'Free · no card · your first rep is included',
   },
   interview: {
@@ -328,7 +328,7 @@ const HOOK_COPY: Record<'dating' | 'interview' | 'both', { head: string; sub: st
   },
   both: {
     head: 'The conversation you keep not having.',
-    sub: 'Out loud, under time, to someone who is deciding — a stranger you want to talk to, or an interviewer you want to impress. You are scored on how you talked, never on whether it worked.',
+    sub: 'Out loud, under time, to someone who is deciding — a stranger or an interviewer. Scored on how you talked, never on whether it worked.',
     free: 'Free · no card · your first rep is included',
   },
 }
@@ -360,6 +360,7 @@ function HookStep({ track, href, proof, onStart }: {
   onStart: () => void
 }) {
   const copy = HOOK_COPY[track === 'dating' || track === 'interview' ? track : 'both']
+  const quote = track === 'interview' ? null : SIGNUP_REVIEW
   return (
     <section className="onboarding-question start-hook">
       <span className="label">Nerve{track === 'interview' ? ' · Interviews' : ''}</span>
@@ -381,14 +382,34 @@ function HookStep({ track, href, proof, onStart }: {
           <span className="arena-button__content">Set mine up — 30 seconds</span>
         </a>
         <p className="start-foot">{copy.free}</p>
-        {/* §4.4a's counted line, on the screen the traffic actually sees.
-            `/` has carried it since 18 September; every social post links
-            here and skips `/` entirely. Counted, never asserted: absent when
-            the read fails rather than approximate. */}
-        {proof && proof.reps > 0
-          ? <p className="start-count"><strong>{proof.reps.toLocaleString('en-GB')}</strong> reps run · <strong>{proof.people.toLocaleString('en-GB')}</strong> people training</p>
-          : null}
       </div>
+      {/*
+        THE PROOF, ON THE SCREEN PEOPLE LEAVE FROM (27 Sep, owner's call).
+
+        The one tester quote lived on the account screen, on the argument that
+        doubt peaks at the form. The first per-step read said otherwise: about
+        seven in eight outside visitors left on THIS screen, and nobody who
+        left here ever saw the quote. The account screen's doubt is "is it
+        free, is it spam", which one line answers; this screen's doubt is "is
+        this real, does it do anything", which is what a named person saying
+        what changed for them answers.
+
+        The quote and the counted line are one block, so the page grows by one
+        thing rather than two. On the interview arm the quote is dropped —
+        it is about talking to strangers — and the counted line stands alone.
+        Counted, never asserted: the number is absent when the read fails.
+      */}
+      {quote ? (
+        <figure className="start-voice">
+          <blockquote>{quote.quote}</blockquote>
+          <figcaption>
+            {quote.name}
+            {proof && proof.people > 0 ? <> · <span>one of {proof.people.toLocaleString('en-GB')} people training</span></> : null}
+          </figcaption>
+        </figure>
+      ) : proof && proof.reps > 0 ? (
+        <p className="start-count"><strong>{proof.reps.toLocaleString('en-GB')}</strong> reps run · <strong>{proof.people.toLocaleString('en-GB')}</strong> people training</p>
+      ) : null}
       <nav className="start-exits" aria-label="Other ways in">
         <Link href="/how-it-works">What is this?</Link>
         <span aria-hidden="true">·</span>
@@ -528,6 +549,16 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
   const [show, setShow] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const yearField = useRef<HTMLInputElement | null>(null)
+  const emailField = useRef<HTMLInputElement | null>(null)
+  const [emailOpen, setEmailOpen] = useState(false)
+  // A server refusal (an address that already has an account, say) must be
+  // readable, so the form is open whenever there is something to say in it.
+  const withEmail = emailOpen || !!state.message
+  const openEmail = () => {
+    setEmailOpen(true)
+    capture('start_answered', { step: 'account', answer: 'email_opened' })
+    window.requestAnimationFrame(() => emailField.current?.focus())
+  }
 
   useEffect(() => { if (state.ok) router.push(`/verify-email?email=${encodeURIComponent(email)}`) }, [email, router, state.ok])
   useEffect(() => { if (state.message) capture('start_account_failed', { reason: 'server' }) }, [state.message])
@@ -571,18 +602,29 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
 
   return (
     <section className="onboarding-question start-account">
-      <span className="label">Last thing</span>
+      {/*
+        SIX THINGS, NOT TWELVE (27 Sep, owner's call).
+
+        This screen carried an eyebrow, a heading, a sub-line, the year and
+        its hint, Google, a divider, two fields and their hint, a second
+        button, a reassurance line, a tester quote and the terms — about a
+        thousand pixels at phone width, so the last decision a stranger makes
+        began with a scroll. Now: who is waiting, one line of reassurance, one
+        number, one button, a way to use email instead, and the terms.
+
+        The quote moved to the hook, where people actually leave. The eyebrow
+        went because the rail already says "5 of 5". The two reassurances
+        merged into the one line under the heading.
+      */}
       <h1 className="display-lg" tabIndex={-1} data-step-heading>
-        {interview ? 'Your interviewer is ready.' : firstRep ? `${firstRep.name} is ready.` : 'You’re set.'}
+        {interview ? 'Your interviewer is ready.' : firstRep ? `${firstRep.name} is ready.` : 'You\u2019re set.'}
       </h1>
-      <p className="onboarding-sub">
-        One free voice rep and one free five-minute interview, on every account.
-      </p>
+      <p className="onboarding-sub">Free, no card. Recordings delete after 30 days.</p>
 
       <div className="start-account__age">
         <Input
           ref={yearField}
-          label="Year of birth"
+          label={`Year of birth · ${MIN_AGE}+`}
           name="birth_year"
           inputMode="numeric"
           pattern="[0-9]*"
@@ -592,7 +634,6 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
           placeholder="2001"
           value={year}
           error={yearError ?? undefined}
-          hint={yearError ? undefined : `Nerve is ${MIN_AGE}+. Only the year is kept.`}
           onChange={(event) => onYearChange(event.target.value)}
           onBlur={() => { if (year.length === 4) { const problem = yearProblem(year); if (problem) setYearError(problem) } }}
         />
@@ -602,6 +643,7 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
         answers={encodeStartAnswers({ ...answers, birthYear: validYear })}
         first
         primary
+        divider={false}
         beforeSubmit={() => {
           if (!yearOk()) return false
           conversion()
@@ -609,66 +651,69 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
           return true
         }}
       />
-      <form
-        className="auth-form"
-        action={action}
-        onSubmit={(event) => {
-          if (!yearOk()) { event.preventDefault(); return }
-          if (!email.trim().includes('@')) {
-            event.preventDefault()
-            refuse('email', 'That does not look like an email address.')
-            return
-          }
-          if (password.length < 8) {
-            event.preventDefault()
-            refuse('password', 'A password needs at least 8 characters.')
-            return
-          }
-          setMessage(null)
-          conversion()
-          capture('start_account_submitted', {
-            track: answers.track ?? 'dating',
-            door: 'email',
-            focus: answers.focusArea ?? 'none',
-            role: answers.roleTitle ? 'given' : answers.roleAsked ? 'skipped' : 'none',
-            named: answers.named && !!answers.displayName,
-          })
-        }}
-      >
-        {error ? <div className="form-error" role="alert">{error}</div> : null}
-        <input type="hidden" name="timezone" value={zone} readOnly />
-        <input type="hidden" name={START_FIELD} value={encodeStartAnswers({ ...answers, birthYear: validYear })} readOnly />
-        <input type="hidden" name="date_of_birth" value={dateOfBirth} readOnly />
-        <Input label="Email" name="email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} enterKeyHint="next" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} />
-        <Input
-          label="Password"
-          name="password"
-          type={show ? 'text' : 'password'}
-          autoComplete="new-password"
-          enterKeyHint="go"
-          minLength={8}
-          required
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          hint="At least 8 characters."
-          adornment={
-            <button type="button" className="field__eye" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow((value) => !value)}>
-              {show ? <EyeOff size={18} strokeWidth={1.5} /> : <Eye size={18} strokeWidth={1.5} />}
-            </button>
-          }
-        />
-        <Button type="submit" variant="secondary" size="lg" fullWidth loading={busy}>{interview ? 'Start the interview' : 'Start the rep'}</Button>
-        <p className="start-foot">No card, ever · Recordings auto-delete after 30 days</p>
-      </form>
-      {/* The one tester quote is about talking to strangers, so it is shown on
-          the dating arm only — under "Your interviewer is ready." it was a
-          review of the other product. */}
-      {SIGNUP_REVIEW && !interview ? (
-        <figure className="start-proof">
-          <blockquote>{SIGNUP_REVIEW.quote}</blockquote>
-          <figcaption>{SIGNUP_REVIEW.name}</figcaption>
-        </figure>
-      ) : null}
+
+      {/*
+        The email door, one tap away rather than three fields in the way.
+        Everybody saw two fields, a password rule and a second button they
+        were not going to use; most people who have Google take it. Opened, it
+        is the same form as before — same checks, same hidden answers, same
+        server action — and it opens itself if the server has something to
+        say about an address, so an error is never hidden behind the link.
+      */}
+      {!withEmail ? (
+        <button type="button" className="start-email-toggle" onClick={openEmail}>Use email instead</button>
+      ) : (
+        <form
+          className="auth-form start-email"
+          action={action}
+          onSubmit={(event) => {
+            if (!yearOk()) { event.preventDefault(); return }
+            if (!email.trim().includes('@')) {
+              event.preventDefault()
+              refuse('email', 'That does not look like an email address.')
+              return
+            }
+            if (password.length < 8) {
+              event.preventDefault()
+              refuse('password', 'A password needs at least 8 characters.')
+              return
+            }
+            setMessage(null)
+            conversion()
+            capture('start_account_submitted', {
+              track: answers.track ?? 'dating',
+              door: 'email',
+              focus: answers.focusArea ?? 'none',
+              role: answers.roleTitle ? 'given' : answers.roleAsked ? 'skipped' : 'none',
+              named: answers.named && !!answers.displayName,
+            })
+          }}
+        >
+          {error ? <div className="form-error" role="alert">{error}</div> : null}
+          <input type="hidden" name="timezone" value={zone} readOnly />
+          <input type="hidden" name={START_FIELD} value={encodeStartAnswers({ ...answers, birthYear: validYear })} readOnly />
+          <input type="hidden" name="date_of_birth" value={dateOfBirth} readOnly />
+          <Input ref={emailField} label="Email" name="email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} enterKeyHint="next" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          <Input
+            label="Password · 8+ characters"
+            name="password"
+            type={show ? 'text' : 'password'}
+            autoComplete="new-password"
+            enterKeyHint="go"
+            minLength={8}
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            adornment={
+              <button type="button" className="field__eye" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow((value) => !value)}>
+                {show ? <EyeOff size={18} strokeWidth={1.5} /> : <Eye size={18} strokeWidth={1.5} />}
+              </button>
+            }
+          />
+          <Button type="submit" variant="secondary" size="lg" fullWidth loading={busy}>{interview ? 'Start the interview' : 'Start the rep'}</Button>
+        </form>
+      )}
+
       <p className="auth-fine">
         By continuing, you agree to the <Link href="/legal/terms">terms</Link> and <Link href="/legal/privacy">privacy policy</Link>.
       </p>

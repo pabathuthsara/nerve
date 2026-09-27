@@ -130,9 +130,14 @@ export function reviewCountNote(list: readonly Review[] = REVIEWS): string {
  * was just removed, and every extra screen in an eight-screen run is another
  * place to leave.
  *
- * Doubt is not highest after the hook. It is highest on screen eight, where
- * somebody who has answered six questions is asked for an email and a
- * password. So the proof goes there, costs no step, and does not move.
+ * **Moved on 27 September 2026: it is on the hook now, not the form.** The
+ * argument here was that doubt peaks at the sign-up form. The first per-step
+ * read (`START-AUDIT-2026-09-27.md`) said about seven in eight outside
+ * visitors left on the FIRST screen, so the quote was being shown only to the
+ * people who had already decided. It still costs no step: it sits under the
+ * hook's button, merged with the counted line, and the account screen was cut
+ * to six things. The name `SIGNUP_REVIEW` is kept so the test that pins it
+ * keeps meaning the same person.
  *
  * ── AND WHY THIS ONE ─────────────────────────────────────────────────────
  *

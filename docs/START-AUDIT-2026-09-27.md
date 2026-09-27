@@ -241,6 +241,24 @@ it does not weaken it.
 | 1.6 | `page_views.source`/`content` (allow-listed UTMs, first touch per tab), server-written `served` row per `/start` render, admin "Which post" table and `served` at the top of the funnel; TikTok pixel beside the Meta one, unkeyed; dev servers no longer write to the production traffic table | migration, `lib/analytics/record.ts`, `components/tiktok-pixel.tsx`, `components/analytics.tsx` |
 | 1.7 | Google is the primary button on the account screen; "Coming soon" hidden on `/start`; the tester quote shows on the dating arm only | `start-screens.tsx`, `onboarding-questions.tsx` |
 
+**Second pass, same day (owner's call): the quote moved and the account
+screen was cut in half.**
+
+- The tester quote left the account screen for the **hook**, under the button,
+  merged with the counted line ("Mason Hayes · one of 31 people training") and
+  set at body size rather than as a footnote. The account screen's doubt is
+  "is it free, is it spam", which one line answers; the hook's is "is this
+  real", which a named person answers — and the hook is where ~7 in 8 left.
+  Interview links show the counted line only, since the quote is about
+  strangers. The hook's paragraph was cut to one sentence to pay for it.
+- The account screen went from twelve things to six: heading, "Free, no card.
+  Recordings delete after 30 days.", the year (label reads "Year of birth ·
+  18+"), Continue with Google, a **Use email instead** link that opens the
+  same email form in place, and the terms. It fits one phone screen with no
+  scroll, and still does with the email form open. A server error opens the
+  form by itself so it is never hidden. Cost: one extra tap for people who
+  will not use Google.
+
 **Mobile polish pass (owner's request), walked at 360×740, 375×667 and 390×844
 from the funnel through the first scorecard:**
 

@@ -55,7 +55,13 @@ function GoogleMark() {
  * field as optional and writes no cookie when it is empty, so a plain sign-in
  * carries nothing at all.
  */
-export function GoogleButton({ answers = null, label = 'Continue with Google', first = false, primary = false, beforeSubmit }: {
+export function GoogleButton({ answers = null, label = 'Continue with Google', first = false, primary = false, divider: withDivider = true, beforeSubmit }: {
+  /**
+   * Whether to draw the "or" rule at all. `/start`'s account screen draws its
+   * own way to the email form (a link under this button), so a rule saying
+   * "or use an email address" above no email form would be a sign to nothing.
+   */
+  divider?: boolean
   answers?: string | null
   label?: string
   /**
@@ -92,7 +98,7 @@ export function GoogleButton({ answers = null, label = 'Continue with Google', f
   const divider = <div className="auth-or" aria-hidden="true"><span>{first ? 'or use an email address' : 'or'}</span></div>
   return (
     <div className={first ? 'auth-oauth auth-oauth--first' : 'auth-oauth'}>
-      {first ? null : divider}
+      {first || !withDivider ? null : divider}
       <form action={action} onSubmit={(event) => { if (beforeSubmit && !beforeSubmit()) event.preventDefault() }}>
         {answers ? <input type="hidden" name={START_FIELD} value={answers} readOnly /> : null}
         <Button type="submit" variant={primary ? 'primary' : 'secondary'} size="lg" fullWidth loading={busy}>
@@ -102,7 +108,7 @@ export function GoogleButton({ answers = null, label = 'Continue with Google', f
       {/* The action only ever returns to say it could not start. A successful
           press redirects and never comes back to render this. */}
       {state.message ? <p className="auth-fine" role="alert">{state.message}</p> : null}
-      {first ? divider : null}
+      {first && withDivider ? divider : null}
     </div>
   )
 }
