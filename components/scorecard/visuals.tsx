@@ -79,43 +79,53 @@ export function ScoreRail({ value, line, lineLabel, pending = false }: {
  * ------------------------------------------------------------------ */
 
 /**
- * The hundred points, as one bar split into the parts that make it up. Each
- * part is as wide as it was worth; what it scored fills it and what it lost is
- * hatched amber. The biggest leaks are named underneath, because "you lost 37"
- * is only useful once it says where.
+ * The hundred points, said twice as plainly as possible (owner review, 27 Sep).
+ *
+ * The first version was one bar cut into seven unlabelled parts of different
+ * widths, some part-filled, some hatched — accurate, and unreadable without a
+ * legend nobody would read. Now: ONE bar with two segments, kept and lost, each
+ * labelled with its number; then the parts that lost points, one row each,
+ * with their own score and a bar that is the same kind of bar. Nothing on it
+ * needs decoding: grey is what you kept, amber is what you did not.
  */
 export function PointsBar({ parts, onPick }: { parts: readonly PointPart[]; onPick?: (key: string) => void }) {
   const [ref, seen] = useInView<HTMLDivElement>()
-  const total = parts.reduce((sum, part) => sum + part.max, 0) || 100
-  const lost = parts.reduce((sum, part) => sum + part.lost, 0)
-  const leaks = [...parts].filter((part) => part.lost > 0).sort((a, b) => b.lost - a.lost).slice(0, 3)
+  const max = parts.reduce((sum, part) => sum + part.max, 0) || 100
+  const kept = parts.reduce((sum, part) => sum + part.points, 0)
+  const lost = Math.max(0, max - kept)
+  // A one-point loss is a rounding error on this screen, not a lesson. They
+  // are counted in one quiet line rather than given a row each.
+  const leaking = [...parts].filter((part) => part.lost > 0).sort((a, b) => b.lost - a.lost)
+  const leaks = leaking.filter((part) => part.lost >= 2)
+  const crumbs = leaking.filter((part) => part.lost < 2)
+  const crumbPoints = crumbs.reduce((sum, part) => sum + part.lost, 0)
   return (
-    <section className="points-bar" ref={ref} data-seen={seen}>
-      <div className="points-bar__head">
-        <h2 className="display-md">Where your points went</h2>
-        {lost > 0 ? <span className="data points-bar__lost">−{lost}</span> : null}
-      </div>
-      <div className="points-bar__track" role="img" aria-label={parts.map((part) => `${part.label} ${part.points} of ${part.max}`).join(', ')}>
-        {parts.map((part, index) => (
-          <button
-            key={part.key}
-            type="button"
-            className="points-bar__part"
-            style={{ flexBasis: `${(part.max / total) * 100}%`, ['--delay' as string]: `${index * 70}ms` }}
-            onClick={() => onPick?.(part.key)}
-            aria-label={`${part.label}: ${part.points} of ${part.max}`}
-          >
-            <i style={{ width: `${part.max ? (part.points / part.max) * 100 : 0}%` }} />
-          </button>
-        ))}
+    <section className="points" ref={ref} data-seen={seen}>
+      <h2 className="display-md">Where your points went</h2>
+      <div className="points__total" role="img" aria-label={`${kept} kept, ${lost} lost, out of ${max}`}>
+        <span className="points__bar">
+          <i className="points__kept" style={{ width: `${(kept / max) * 100}%` }} />
+          <i className="points__lost" style={{ width: `${(lost / max) * 100}%` }} />
+        </span>
+        <span className="points__legend">
+          <span><b className="data">{kept}</b> kept</span>
+          {lost > 0 ? <span className="points__legend-lost"><b className="data">{lost}</b> lost</span> : null}
+        </span>
       </div>
       {leaks.length ? (
-        <p className="points-bar__leaks">
+        <div className="points__leaks">
+          <span className="label">Lost on</span>
           {leaks.map((part, index) => (
-            <span key={part.key}>{index > 0 ? ' · ' : ''}<button type="button" onClick={() => onPick?.(part.key)}>{part.label}</button> <b className="data">−{part.lost}</b></span>
+            <button key={part.key} type="button" className="points__leak" style={{ ['--delay' as string]: `${index * 80}ms` }} onClick={() => onPick?.(part.key)}>
+              <span className="points__leak-name">{part.label}</span>
+              <span className="points__leak-score data">{part.points}/{part.max}</span>
+              <span className="points__leak-bar" aria-hidden="true"><i style={{ width: `${part.max ? (part.points / part.max) * 100 : 0}%` }} /></span>
+              <b className="points__leak-lost data">−{part.lost}</b>
+            </button>
           ))}
-        </p>
-      ) : <p className="points-bar__leaks">Nothing left on the table.</p>}
+          {crumbs.length ? <p className="points__crumbs">and {crumbPoints} more {crumbPoints === 1 ? 'point' : 'points'} across {crumbs.map((part) => part.label.toLowerCase()).join(' and ')}</p> : null}
+        </div>
+      ) : <p className="points__clean">{crumbs.length ? `Only ${crumbPoints} ${crumbPoints === 1 ? 'point' : 'points'} left on the table.` : 'Nothing left on the table.'}</p>}
     </section>
   )
 }

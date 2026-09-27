@@ -825,9 +825,37 @@ function WhatWorked({ line }: { line: string }) {
   return <Card className="went-well"><Check size={18} strokeWidth={1.6} className="volt" /><div><span className="label">What worked</span><p>{line}</p></div></Card>
 }
 
+/**
+ * One measured metric, readable without a legend (owner review, 27 Sep).
+ *
+ * It was a track with a paler band and a dot, and the target written
+ * separately underneath — so nobody could tell which part of the bar was the
+ * target, or that the dot was them. Now the band is labelled "target" with
+ * its value, the dot is labelled "you" with theirs, and the dot is amber when
+ * it sits outside the band. The labels clamp to the ends so they never leave
+ * the bar.
+ */
 function MetricBandRow({ metric }: { metric: MetricBand }) {
-  const marker = Math.min(100, Math.max(0, metric.numericValue))
-  return <div className={`metric-row metric-row--${metric.verdict.toLowerCase()}`}><div className="metric-row__head"><span>{metric.label}</span><span className="data">{metric.displayValue}</span><strong className="data">{metric.points}/{metric.maxPoints}</strong></div><div className="metric-bar"><i style={{ left: `${metric.targetMin}%`, width: `${Math.max(4, metric.targetMax - metric.targetMin)}%` }} /><b style={{ left: `${marker}%` }} /></div><div className="metric-row__foot"><span className="label">Target {metric.targetLabel}</span><p>{metric.note}</p></div></div>
+  const at = Math.min(100, Math.max(0, metric.numericValue))
+  const zoneLeft = Math.min(100, Math.max(0, metric.targetMin))
+  const zoneWidth = Math.max(4, Math.min(100, metric.targetMax) - zoneLeft)
+  const zoneMid = zoneLeft + zoneWidth / 2
+  const align = (percent: number) => (percent < 18 ? 'start' : percent > 82 ? 'end' : 'center')
+  const inside = metric.verdict === 'GOOD'
+  return (
+    <div className={`metric-row metric-row--${metric.verdict.toLowerCase()}`}>
+      <div className="metric-row__head"><span>{metric.label}</span><strong className="data">{metric.points}/{metric.maxPoints}</strong></div>
+      <div className="gauge" role="img" aria-label={`You: ${metric.displayValue}. Target: ${metric.targetLabel}.`}>
+        <span className={`gauge__you gauge__tag gauge__tag--${align(at)}${inside ? '' : ' gauge__you--out'}`} style={{ left: `${at}%` }}>You · {metric.displayValue}</span>
+        <span className="gauge__track">
+          <i className="gauge__zone" style={{ left: `${zoneLeft}%`, width: `${zoneWidth}%` }} />
+          <b className={`gauge__dot${inside ? '' : ' gauge__dot--out'}`} style={{ left: `${at}%` }} />
+        </span>
+        <span className={`gauge__target gauge__tag gauge__tag--${align(zoneMid)}`} style={{ left: `${zoneMid}%` }}>Target · {metric.targetLabel.replace(/^target\s*/i, '')}</span>
+      </div>
+      <p className="metric-row__note">{metric.note}</p>
+    </div>
+  )
 }
 
 /**

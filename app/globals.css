@@ -3469,30 +3469,57 @@ a.texting-list__row:focus-visible { outline: 1px solid var(--volt); outline-offs
 .score-hero__delta.data { color: var(--text); }
 .score-hero__delta--down.data { color: var(--amber); }
 
-.points-bar { display: grid; gap: 12px; }
-.points-bar__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.points-bar__lost { color: var(--amber); font-size: 13px; }
-.points-bar__track { display: flex; gap: 3px; height: 30px; }
-.points-bar__part { position: relative; min-width: 0; border: 0; padding: 0; border-radius: 2px; cursor: pointer;
-  background: repeating-linear-gradient(135deg, rgba(255,176,32,.28) 0 3px, rgba(255,176,32,.08) 3px 7px); overflow: hidden; }
-.points-bar__part i { position: absolute; inset: 0 auto 0 0; background: var(--text-dim); transform-origin: left center; }
-.points-bar__part:last-child i { background: var(--text); }
-.points-bar__part:focus-visible { outline-offset: 2px; }
+/* Where the points went: one kept/lost bar, then the parts that leaked. */
+.points { display: grid; gap: 14px; }
+.points__total { display: grid; gap: 8px; }
+.points__bar { display: flex; gap: 3px; height: 14px; }
+.points__bar i { display: block; height: 100%; border-radius: 3px; }
+.points__kept { background: var(--text-dim); }
+.points__lost { background: repeating-linear-gradient(135deg, rgba(255,176,32,.55) 0 4px, rgba(255,176,32,.18) 4px 8px); }
+.points__legend { display: flex; justify-content: space-between; color: var(--text-dim); font-size: 13px; }
+.points__legend b { color: var(--text); font-size: 15px; font-weight: 400; }
+.points__legend-lost, .points__legend-lost b { color: var(--amber); }
+.points__leaks { display: grid; gap: 2px; margin-top: 4px; }
+.points__leaks > .label { margin-bottom: 4px; color: var(--text-mute); }
+.points__leak { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name lost" "bar score"; align-items: center; column-gap: 12px; row-gap: 7px; border: 0; border-top: 1px solid var(--line); padding: 12px 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.points__leak:first-of-type { border-top: 0; }
+.points__leak-name { grid-area: name; color: var(--text); font-size: 14.5px; }
+.points__leak-lost { grid-area: lost; color: var(--amber); font-size: 14px; font-weight: 400; }
+.points__leak-bar { grid-area: bar; position: relative; display: block; height: 6px; border-radius: 3px; background: repeating-linear-gradient(135deg, rgba(255,176,32,.45) 0 3px, rgba(255,176,32,.12) 3px 6px); overflow: hidden; }
+.points__leak-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--text-dim); }
+.points__leak-score { grid-area: score; color: var(--text-mute); font-size: 11px; }
+.points__clean { margin: 0; color: var(--text-dim); }
+.points__crumbs { margin: 6px 0 0; color: var(--text-mute); font-size: 12.5px; }
+.metric-row__head strong { color: var(--text-dim); }
+.metric-row--low .metric-row__head strong, .metric-row--high .metric-row__head strong { color: var(--amber); }
 @media (prefers-reduced-motion: no-preference) {
-  .points-bar__part i { transform: scaleX(0); transition: transform 700ms cubic-bezier(.16,1,.3,1) var(--delay, 0ms); }
-  .points-bar[data-seen='true'] .points-bar__part i { transform: scaleX(1); }
+  .points__bar i, .points__leak-bar i { transform-origin: left center; transform: scaleX(0); transition: transform 800ms cubic-bezier(.16,1,.3,1) var(--delay, 0ms); }
+  .points__bar .points__lost { transition-delay: 350ms; }
+  .points[data-seen='true'] .points__bar i, .points[data-seen='true'] .points__leak-bar i { transform: scaleX(1); }
 }
-.points-bar__leaks { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.7; }
-.points-bar__leaks button { border: 0; padding: 0; background: none; color: var(--text); font: inherit; text-decoration: underline; text-decoration-color: var(--line-bright); text-underline-offset: 3px; cursor: pointer; }
-.points-bar__leaks b { color: var(--amber); font-weight: 400; }
 
-/* The metric bar, readable at a glance: the target is a zone, your value is a
-   dot, and the dot is amber when it is outside the zone. */
-.metric-bar { height: 10px; border-radius: 5px; background: var(--surface-3); }
-.metric-bar i { border-radius: 5px; background: rgba(154, 160, 147, .28); opacity: 1; }
-.metric-bar b { top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--text); transform: translateX(-6px); box-shadow: 0 0 0 3px var(--ground); }
-.metric-row { min-height: 0; }
-.metric-row--low .metric-bar b, .metric-row--high .metric-bar b { background: var(--amber); }
+/* A measured metric: the band is labelled "target", the dot is labelled
+   "you", and the dot is amber when it is outside the band. */
+.metric-row { min-height: 0; gap: 12px; }
+.metric-row__head { grid-template-columns: minmax(0,1fr) auto; }
+.metric-row__note { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.5; }
+.gauge { position: relative; height: 58px; margin: 0 8px; }
+.gauge__track { position: absolute; left: 0; right: 0; top: 24px; height: 10px; border-radius: 5px; background: var(--surface-3); }
+.gauge__zone { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: rgba(196, 248, 42, .16); box-shadow: inset 0 0 0 1px rgba(196, 248, 42, .28); }
+.gauge__dot { position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 3px var(--ground); }
+.gauge__dot--out { background: var(--amber); }
+.gauge__tag { position: absolute; white-space: nowrap; font-family: var(--font-mono), monospace; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; }
+.gauge__tag--center { transform: translateX(-50%); }
+.gauge__tag--start { transform: translateX(-8px); }
+.gauge__tag--end { transform: translateX(calc(-100% + 8px)); }
+.gauge__you { top: 0; color: var(--text); }
+.gauge__you--out { color: var(--amber); }
+.gauge__target { top: 42px; color: rgba(196, 248, 42, .75); }
+@media (prefers-reduced-motion: no-preference) {
+  .gauge__dot { animation: gauge-in 700ms cubic-bezier(.16,1,.3,1) both; }
+}
+@keyframes gauge-in { from { transform: scale(.2); opacity: 0; } to { transform: none; opacity: 1; } }
+
 .held { margin-top: 10px; }
 .held__toggle { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 52px; border: 1px solid var(--line); border-radius: 2px; padding: 10px 14px; background: var(--surface); color: var(--text-dim); text-align: left; cursor: pointer; }
 .held__toggle .label { color: var(--text); }
