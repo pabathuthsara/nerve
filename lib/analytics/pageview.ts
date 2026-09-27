@@ -43,8 +43,19 @@
  * build time instead of being possible.
  */
 export const START_STEP_NAMES = [
-  'hook', 'age', 'track', 'build', 'focus', 'role', 'mechanism', 'name', 'account',
+  'hook', 'track', 'build', 'focus', 'role', 'name', 'account',
 ] as const
+
+/**
+ * The row the SERVER writes when it renders `/start` (START-AUDIT §1.6).
+ *
+ * Not in the list above, on purpose: that list is what a browser may claim,
+ * and this is the one step no browser should be able to forge. Every other
+ * row in the funnel is a beacon fired after hydration, so a visitor who left
+ * in the first two seconds — before the JavaScript arrived — was never
+ * counted at all. `served → hook` is that loss, made visible.
+ */
+export const START_SERVED_STEP = 'served'
 
 /** The database CHECK. Repeated here so a refusal happens before the insert. */
 export const MAX_PATH = 128
@@ -222,4 +233,26 @@ export function normaliseStep(path: string, value: unknown): string | null {
   if (typeof value !== 'string') return null
   const step = value.trim()
   return (START_STEP_NAMES as readonly string[]).includes(step) ? step : null
+}
+
+/**
+ * A campaign tag off the link (`utm_source`, `utm_content`), or nothing.
+ *
+ * START-AUDIT §1.6: 67 of 79 visitors in the audit window arrived "direct",
+ * because TikTok's and Instagram's in-app browsers send no referrer, so
+ * nothing could say which of three posts a day brought anybody. The tag is
+ * the one signal those browsers do not strip.
+ *
+ * Allow-listed rather than sanitised, for the reason `normaliseStep` is: this
+ * arrives from a browser that can post anything, and a traffic table with a
+ * free-text column is a log of whatever somebody sends. Lower-case letters,
+ * digits and `._-`, forty characters — enough for `tiktok` and `post-0927a`,
+ * and nothing that could be a sentence, an email address or a URL.
+ */
+export const MAX_TAG = 40
+
+export function normaliseTag(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const tag = value.trim().toLowerCase()
+  return /^[a-z0-9._-]{1,40}$/.test(tag) ? tag : null
 }

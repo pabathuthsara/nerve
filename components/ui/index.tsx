@@ -21,6 +21,7 @@ import {
   type HTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
+  type Ref,
   type TextareaHTMLAttributes,
 } from 'react'
 import { useBreakpoint } from '@/lib/hooks/use-breakpoint'
@@ -139,7 +140,7 @@ interface FieldProps {
   adornment?: ReactNode
 }
 
-export function Input({ label, error, hint, adornment, id: providedId, className = '', ...props }: InputHTMLAttributes<HTMLInputElement> & FieldProps) {
+export function Input({ label, error, hint, adornment, id: providedId, className = '', ...props }: InputHTMLAttributes<HTMLInputElement> & FieldProps & { ref?: Ref<HTMLInputElement> }) {
   const generated = useId()
   const id = providedId ?? generated
   const describedBy = [props['aria-describedby'], hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined

@@ -1323,7 +1323,9 @@ export type Database = {
           device: string
           id: number
           path: string
+          content: string | null
           referrer_host: string | null
+          source: string | null
           step: string | null
           user_id: string | null
           visitor: string
@@ -1334,7 +1336,9 @@ export type Database = {
           device?: string
           id?: never
           path: string
+          content?: string | null
           referrer_host?: string | null
+          source?: string | null
           step?: string | null
           user_id?: string | null
           visitor: string
@@ -1345,7 +1349,9 @@ export type Database = {
           device?: string
           id?: never
           path?: string
+          content?: string | null
           referrer_host?: string | null
+          source?: string | null
           step?: string | null
           user_id?: string | null
           visitor?: string
@@ -1518,6 +1524,10 @@ export type Database = {
       admin_top_referrers: {
         Args: { days: number; lim: number }
         Returns: { host: string; views: number; visitors: number }[]
+      }
+      admin_top_sources: {
+        Args: { days: number; lim: number }
+        Returns: { source: string; content: string | null; visitors: number; reached_account: number; signed_in: number }[]
       }
       admin_user_rows: {
         Args: { search: string | null; lim: number }

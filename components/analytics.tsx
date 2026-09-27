@@ -147,8 +147,18 @@ export function resetPerson(): void {
  */
 function countPageView(pathname: string, step?: string): void {
   if (pathname.startsWith('/admin')) return
+  // A dev server talks to the production project, so a local walk-through
+  // would otherwise be counted as a visitor from Sri Lanka on a desktop.
+  if (LOCAL_HOST.test(window.location.hostname)) return
   try {
-    const body = JSON.stringify({ path: pathname, ref: document.referrer || null, ...(step ? { step } : {}) })
+    const { source, content } = campaignTag()
+    const body = JSON.stringify({
+      path: pathname,
+      ref: document.referrer || null,
+      ...(step ? { step } : {}),
+      ...(source ? { source } : {}),
+      ...(content ? { content } : {}),
+    })
     if (navigator.sendBeacon?.(POST_PATH, new Blob([body], { type: 'application/json' }))) return
     void fetch(POST_PATH, {
       method: 'POST',
@@ -162,6 +172,40 @@ function countPageView(pathname: string, step?: string): void {
 }
 
 const POST_PATH = '/api/pageview'
+
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\]|.*\.local)$/
+
+const TAG_KEY = 'nerve:utm'
+
+/**
+ * The link's campaign tag, first touch within the tab (START-AUDIT §1.6).
+ *
+ * Read off the address bar on the view that carried it and kept in
+ * `sessionStorage`, so the four `/start` screens after the first — which never
+ * touch the URL — still say which post they came from. Session-scoped for the
+ * same reason the run's answers are: privacy clause 07 promises no tracking
+ * cookie, and this is not one. It never leaves the tab except inside the
+ * beacon, and the server allow-lists it again (`normaliseTag`).
+ */
+function campaignTag(): { source: string | null; content: string | null } {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const source = params.get('utm_source')
+    const content = params.get('utm_content')
+    if (source) {
+      const tag = { source, content }
+      window.sessionStorage.setItem(TAG_KEY, JSON.stringify(tag))
+      return tag
+    }
+    const stored = JSON.parse(window.sessionStorage.getItem(TAG_KEY) ?? 'null') as { source?: unknown; content?: unknown } | null
+    return {
+      source: typeof stored?.source === 'string' ? stored.source : null,
+      content: typeof stored?.content === 'string' ? stored.content : null,
+    }
+  } catch {
+    return { source: null, content: null }
+  }
+}
 
 /**
  * A screen inside `/start`, counted as its own view.

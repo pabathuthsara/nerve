@@ -24,6 +24,7 @@ import {
   adminStartFunnel,
   adminTopPaths,
   adminTopReferrers,
+  adminTopSources,
   recentAdminActions,
 } from '@/lib/db/admin-metrics'
 import { AdminNav, DayBars, Figure, FunnelTable, StatBlock, TopTable, ago, money } from '@/components/admin/panel'
@@ -48,13 +49,14 @@ export default async function AdminOverviewPage() {
   if (!user) notFound()
 
   // In parallel: five independent reads, each of which fails soft on its own.
-  const [overview, daily, paths, referrers, funnel, audit] = await Promise.all([
+  const [overview, daily, paths, referrers, funnel, audit, sources] = await Promise.all([
     adminOverview(),
     adminDaily(30),
     adminTopPaths(7, 10),
     adminTopReferrers(7, 8),
     adminStartFunnel(7),
     recentAdminActions(12),
+    adminTopSources(7, 10),
   ])
 
   const signups30d = daily.reduce((sum, row) => sum + row.signups, 0)
@@ -154,6 +156,10 @@ export default async function AdminOverviewPage() {
       <div className="admin-grid">
         <TopTable title="Where they landed" rows={paths} head="Path · 7d" empty="No page views yet." />
         <TopTable title="Where they came from" rows={referrers} head="Referrer · 7d" empty="No referrers yet." />
+        {/* START-AUDIT §1.6. In-app browsers send no referrer, so the table
+            above says "direct" for most of the traffic; the tag on the link
+            is what says which post it was. */}
+        <TopTable title="Which post" rows={sources} head="Tag · 7d" columns={['People', 'Signed in']} empty="No tagged links yet. Put ?utm_source= and &utm_content= on every post link." />
       </div>
 
       <section className="admin-card">

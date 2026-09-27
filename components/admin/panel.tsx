@@ -146,11 +146,14 @@ export function TopTable({
   rows,
   empty,
   head,
+  columns = ['Views', 'People'],
 }: {
   title: string
   rows: readonly TopRow[]
   empty: string
   head: string
+  /** The two number columns' names. Paths and referrers use the default. */
+  columns?: readonly [string, string]
 }) {
   return (
     <section className="admin-card">
@@ -160,7 +163,7 @@ export function TopTable({
       ) : (
         <div className="admin-readout admin-readout--top">
           <div className="admin-readout__row admin-readout__row--head">
-            <span>{head}</span><span>Views</span><span>People</span>
+            <span>{head}</span><span>{columns[0]}</span><span>{columns[1]}</span>
           </div>
           {rows.map((row) => (
             <div key={row.key} className="admin-readout__row">

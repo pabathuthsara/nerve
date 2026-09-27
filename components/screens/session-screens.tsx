@@ -227,7 +227,10 @@ function ResultScreen({ session }: { session: SessionSummary }) {
   useEffect(() => {
     if (!session.won || session.track !== 'dating') return
     try { if (window.localStorage.getItem(FIRST_WIN_SEEN)) return } catch { return }
-    const timer = window.setTimeout(() => setFirstWin(true), 900)
+    // Long enough for the verdict, the time and the band to land first. At
+    // 900ms the sheet rose over "She gave you her number" before it had been
+    // read, on a phone, on the first result anybody ever sees (27 Sep).
+    const timer = window.setTimeout(() => setFirstWin(true), FIRST_SHEET_DELAY_MS)
     return () => window.clearTimeout(timer)
   }, [session.track, session.won])
   const closeFirstWin = () => {
@@ -250,7 +253,7 @@ function ResultScreen({ session }: { session: SessionSummary }) {
       if (window.localStorage.getItem(FIRST_LOSS_SEEN)) return
       if (window.localStorage.getItem(SCORECARD_SEEN) === '1') return
     } catch { return }
-    const timer = window.setTimeout(() => setFirstLoss(true), 1100)
+    const timer = window.setTimeout(() => setFirstLoss(true), FIRST_SHEET_DELAY_MS)
     return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.track, session.won, turnsLoading])
@@ -893,6 +896,8 @@ function FocusLinks({ focus }: { focus: string[] }) {
  * is see an explainer twice. Anything earned goes to `unlocks` (§08, §14).
  */
 const FIRST_WIN_SEEN = 'nerve:first-win-seen'
+/** How long a first result stays unobscured before its one-time sheet rises. */
+const FIRST_SHEET_DELAY_MS = 2600
 const FIRST_LOSS_SEEN = 'nerve:first-loss-seen'
 const SCORECARD_SEEN = 'nerve.scorecard.explained'
 

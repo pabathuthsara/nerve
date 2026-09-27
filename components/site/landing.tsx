@@ -252,7 +252,9 @@ function Hero({ usage }: { usage: UsageProof | null }) {
           with browser chrome. Nothing was cut — it reads immediately after.
         */}
         <div className="hero__actions">
-          <Link href="/start" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
+          {/* START-AUDIT §1.3: the hero is the dating pitch, so the run it
+              opens speaks for dating and skips the track question. */}
+          <Link href="/start?track=dating" className="arena-button arena-button--primary arena-button--lg">Start training free</Link>
           <Link href={SITE_LINKS.howItWorks} className="arena-button arena-button--secondary arena-button--lg">How it works</Link>
         </div>
         <p className="hero__fine">Sign-up includes a voice rep. No card.</p>
@@ -379,7 +381,7 @@ export function ScoringLaw() {
           </li>
         ))}
       </ul>
-      <SectionCall>Get your first scorecard</SectionCall>
+      <SectionCall href="/start?track=dating">Get your first scorecard</SectionCall>
     </SiteSection>
   )
 }
@@ -480,7 +482,7 @@ function Roster() {
           )
         })}
       </ul>
-      <SectionCall>Meet the first one free</SectionCall>
+      <SectionCall href="/start?track=dating">Meet the first one free</SectionCall>
       <p className="site-aside">
         A tier opens when you score 70 or better in two reps at the tier below it.
         Not when you win two — winning is not a thing you can grind, and it is not

@@ -7,6 +7,7 @@ import { ShellFrame } from '@/components/app-shell'
 import { ToastProvider } from '@/components/ui'
 import { Analytics } from '@/components/analytics'
 import { MetaPixel } from '@/components/meta-pixel'
+import { TikTokPixel } from '@/components/tiktok-pixel'
 import { SITE_ORIGIN } from '@/lib/site/origin'
 
 export const metadata: Metadata = {
@@ -79,7 +80,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         sections that wear it, so `/`, the auth run, the onboarding run and a
         live rep are all still bare.
       */}
-      <body><ProductProvider><ToastProvider><ShellFrame>{children}</ShellFrame></ToastProvider><Analytics /><MetaPixel /></ProductProvider></body>
+      <body><ProductProvider><ToastProvider><ShellFrame>{children}</ShellFrame></ToastProvider><Analytics /><MetaPixel /><TikTokPixel /></ProductProvider></body>
     </html>
   )
 }

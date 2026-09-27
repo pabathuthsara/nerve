@@ -115,7 +115,12 @@ export interface EventProps {
    * throw in development rather than let it leave the device.
    */
   start_answered: { step: string; answer: string }
-  start_account_submitted: { track: string; focus: string; role: 'given' | 'skipped' | 'none'; named: boolean }
+  /**
+   * `door` since 27 September, when Google became the primary button on the
+   * account screen: the two doors convert differently and the question of
+   * which one people take is the whole point of promoting one.
+   */
+  start_account_submitted: { track: string; door: 'google' | 'email'; focus?: string; role?: 'given' | 'skipped' | 'none'; named?: boolean }
   /**
    * Why a sign-up did not happen. `server` covers everything Supabase refused
    * — an address that already has an account is the common one, and it is a

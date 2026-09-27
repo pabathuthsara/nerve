@@ -62,9 +62,21 @@ export interface EnglishWaitlist {
   counted: boolean
 }
 
-export function TrackStep({ value, english, onChoose }: {
+export function TrackStep({ value, english, onChoose, eyebrow = 'Step one' }: {
   value: Track | null
-  english: EnglishWaitlist
+  /**
+   * The label above the question. The signed-in run counts ("Step one"); the
+   * `/start` run has a numbered rail above every screen and a skippable track
+   * question, so a second count in words disagreed with the first on one
+   * screen in three. It passes a word that says what the question is about.
+   */
+  eyebrow?: string
+  /**
+   * Absent on `/start` (START-AUDIT §1.7): a disabled "coming soon" row is a
+   * dead choice on a cold run, and the one screen of it that asks a stranger
+   * anything should offer only what they can have. The signed-in run keeps it.
+   */
+  english?: EnglishWaitlist
   onChoose: (value: Track) => void
 }) {
   const [waitlisted, setWaitlisted] = useState(false)
@@ -90,6 +102,7 @@ export function TrackStep({ value, english, onChoose }: {
    * thing it describes has happened.
    */
   const askForEnglish = () => {
+    if (!english) return
     setRecording(true)
     void english.record()
       .then(() => { setRecording(false); setWaitlisted(true) })
@@ -102,7 +115,7 @@ export function TrackStep({ value, english, onChoose }: {
         <span className="label volt">Noted</span>
         <h1 className="display-lg" ref={heading} tabIndex={-1} data-step-heading>English practice opens soon.</h1>
         <p>
-          {english.counted
+          {english?.counted
             ? 'We count who asks, and you have been counted. Both other tracks are live if you want to start building the same conversational control.'
             : 'We count who asks. Both other tracks are live, and either one builds the same conversational control — pick one and you can be talking in about a minute.'}
         </p>
@@ -114,7 +127,7 @@ export function TrackStep({ value, english, onChoose }: {
 
   return (
     <Question
-      eyebrow="Step one"
+      eyebrow={eyebrow}
       title="What are you training for?"
       sub="It decides who you meet and what the reps are about. You can change it later."
     >
@@ -135,7 +148,9 @@ export function TrackStep({ value, english, onChoose }: {
         selected={value === 'interview'}
         onClick={() => onChoose('interview')}
       />
-      <Option label="Speaking English more naturally" sub="Coming soon" mark="dim-listening" busy={recording} aside={<Chip>Soon</Chip>} onClick={askForEnglish} />
+      {english
+        ? <Option label="Speaking English more naturally" sub="Coming soon" mark="dim-listening" busy={recording} aside={<Chip>Soon</Chip>} onClick={askForEnglish} />
+        : null}
     </Question>
   )
 }
@@ -160,7 +175,7 @@ export { FOCUS_OPTIONS }
  * care, and it costs one prop: the orb was already being rendered on the step
  * after this one.
  */
-export function FocusStep({ value, firstRep, onChoose }: { value: FocusArea | null; firstRep: FirstRepCandidate | null; onChoose: (value: FocusArea) => void }) {
+export function FocusStep({ value, firstRep, onChoose, eyebrow = 'Step two' }: { value: FocusArea | null; firstRep: FirstRepCandidate | null; onChoose: (value: FocusArea) => void; eyebrow?: string }) {
   /**
    * ── THIS IS THE DATING ARM'S QUESTION TWO, AND ONLY ITS ─────────────────
    *
@@ -176,7 +191,7 @@ export function FocusStep({ value, firstRep, onChoose }: { value: FocusArea | nu
    */
   return (
     <Question
-      eyebrow="Step two"
+      eyebrow={eyebrow}
       title="What's the hard part?"
       sub="This one earns its keep: it picks who you meet first, your first challenge out in the world, and the technique on your brief."
     >
@@ -219,7 +234,8 @@ export function FocusStep({ value, firstRep, onChoose }: { value: FocusArea | nu
  * and `onboardingResumePath` reads the flag rather than the title, so a skip
  * is a finished step rather than one somebody is returned to forever.
  */
-export function RoleStep({ roleTitle, company, onSubmit }: {
+export function RoleStep({ roleTitle, company, onSubmit, eyebrow = 'Step two' }: {
+  eyebrow?: string
   roleTitle: string | null
   company: string | null
   onSubmit: (value: { roleTitle: string | null; company: string | null }) => void
@@ -229,7 +245,7 @@ export function RoleStep({ roleTitle, company, onSubmit }: {
   const trimmedRole = role.trim()
   return (
     <section className="onboarding-question">
-      <span className="label">Step two</span>
+      <span className="label">{eyebrow}</span>
       <h1 className="display-lg" tabIndex={-1} data-step-heading>What are you interviewing for?</h1>
       <p className="onboarding-sub">
         This is what makes the questions yours rather than generic. The title is enough — how hard the
@@ -286,7 +302,8 @@ export function RoleStep({ roleTitle, company, onSubmit }: {
  * not want to give, and the alternative to a skip is a required field between
  * a new account and its first rep.
  */
-export function NameStep({ value, track = null, onSubmit }: {
+export function NameStep({ value, track = null, onSubmit, eyebrow = 'Step three' }: {
+  eyebrow?: string
   value: string | null
   /**
    * Whose mouth the name comes out of.
@@ -304,7 +321,7 @@ export function NameStep({ value, track = null, onSubmit }: {
   const trimmed = name.trim()
   return (
     <section className="onboarding-question">
-      <span className="label">Step three</span>
+      <span className="label">{eyebrow}</span>
       <h1 className="display-lg" tabIndex={-1} data-step-heading>
         {interview ? 'What should your interviewer call you?' : 'What should she call you?'}
       </h1>

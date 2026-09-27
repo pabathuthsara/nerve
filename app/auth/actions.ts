@@ -277,6 +277,15 @@ export async function signInWithGoogle(form: FormData): Promise<AuthResult> {
   if (answers?.birthYear) {
     const verdict = checkAge(birthDateFromYear(answers.birthYear), new Date())
     if (!verdict.ok) return { ok: false, message: verdict.message }
+  } else if (raw) {
+    /**
+     * A `/start` post with no year (START-AUDIT §1.2, 27 Sep). The year moved
+     * from its own screen to the field above this button, and the screen
+     * refuses the tap without it — but this is the server, and "the screen
+     * would not have sent that" is not a gate. `/login` and `/signup` post no
+     * answers at all and never reach this branch.
+     */
+    return { ok: false, message: 'Enter the year you were born first.' }
   }
 
   const supabase = await supabaseServer()

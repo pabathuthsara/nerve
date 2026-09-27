@@ -190,6 +190,19 @@ the real world and log the outcome.
    And **`interview_setups.complete` is a role title and nothing else**, which
    is why asking for the role before the account is the whole difference
    between landing on a free screener and landing on a setup wizard.
+   **D31 reshaped the run on 27 September 2026 (`START-AUDIT-2026-09-27.md`).**
+   It is five screens and the form — hook, track, build, question two, name,
+   account — and the §16.4 year is the first FIELD of the account screen, above
+   both doors, rather than screen two: the first per-step read put the drop
+   there. `?track=` opens a hook written for that track and skips the track
+   question forward (`startAdvance`); the two arms are still the same length
+   and differ at one index. **The hook's CTA is a link, not an `onClick`** — a
+   tap before hydration was silently lost, and on the one screen ad traffic
+   lands on that is the whole funnel; keep it a link. `page_views` carries
+   `source`/`content` (allow-listed UTMs) and a server-written `served` row per
+   `/start` render, which is the only row that sees a visitor who left before
+   the JavaScript arrived. **Neither ad pixel may be keyed until privacy
+   clause 07 is rewritten** — it says there are no advertising trackers.
    **Its §3b is the 8 September experience audit, Parts 1–8 — all shipped**,
    and it is the shortest description of what the product does now:
    the interview track is a **profile** you set once and a **run**

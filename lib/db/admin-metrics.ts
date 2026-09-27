@@ -17,6 +17,7 @@ import 'server-only'
 
 import { supabaseAdmin } from './admin'
 import { startSteps } from '@/lib/data/start-funnel'
+import { START_SERVED_STEP } from '@/lib/analytics/pageview'
 
 export interface Overview {
   accounts: number
@@ -170,13 +171,17 @@ export async function adminStartFunnel(days = 7): Promise<FunnelRow[]> {
     if (error || !data) return []
 
     const counts = new Map(data.map((row) => [String(row.step), { views: num(row.views), visitors: num(row.visitors) }]))
-    const order = [...startSteps('dating'), ...startSteps('interview')]
+    // `served` first (START-AUDIT §1.6): the render, counted by the server,
+    // so the row under it — `hook`, counted after hydration — shows how many
+    // left before the page could answer a tap.
+    const order = [START_SERVED_STEP, ...startSteps('dating'), ...startSteps('interview')]
       .filter((step, index, all) => all.indexOf(step) === index)
 
-    // Everything is a share of the FIRST screen, not of the previous one.
-    // Step-to-step percentages read well and answer the wrong question: what
-    // an operator needs is how many of the people who arrived are still here.
-    const top = counts.get(order[0] ?? '')?.visitors ?? 0
+    // Everything is a share of the TOP of the run, not of the previous row.
+    // The top is the largest row rather than the first, because `served`
+    // only exists from 27 September and a window that straddles that date
+    // would otherwise report 400% of zero.
+    const top = Math.max(0, ...order.map((step) => counts.get(step)?.visitors ?? 0))
     return order.map((step) => {
       const row = counts.get(step) ?? { views: 0, visitors: 0 }
       return {
@@ -186,6 +191,26 @@ export async function adminStartFunnel(days = 7): Promise<FunnelRow[]> {
         reachedPct: top > 0 ? Math.round((row.visitors / top) * 100) : 0,
       }
     })
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Campaign tags (START-AUDIT §1.6): which post brought people, and whether
+ * they got anywhere. `views` is people and `visitors` is people later seen
+ * signed in — the shape `TopTable` draws, with its column names passed in.
+ */
+export async function adminTopSources(days = 7, limit = 12): Promise<TopRow[]> {
+  try {
+    const { data, error } = await supabaseAdmin()
+      .rpc('admin_top_sources', { days: clamp(days, 1, 180), lim: clamp(limit, 1, 50) })
+    if (error || !data) return []
+    return data.map((row) => ({
+      key: row.content ? `${row.source} · ${row.content}` : row.source,
+      views: num(row.visitors),
+      visitors: num(row.signed_in),
+    }))
   } catch {
     return []
   }

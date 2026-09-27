@@ -316,6 +316,13 @@ commit**, not after it.
 
 ### 2.2 · Move the age gate to screen 2, and make it one field  ·  **SHIPPED 18 September 2026**
 
+> **Moved again on 27 September 2026** (`START-AUDIT-2026-09-27.md` §1.2,
+> `LAUNCH-GAP.md` D31). The first per-step read of the run put the drop at
+> screens one and two, and screen two was this gate. It is now the first
+> field of the account screen, still one year, still checked before anything
+> is created on both doors. The argument below is kept as the record of why
+> it was tried at screen two.
+
 > **Two corrections to what is written below, both found while building it.**
 >
 > **1. The derivation is 31 DECEMBER, not 1 January.** This section says 1

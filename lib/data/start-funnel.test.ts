@@ -8,8 +8,10 @@ import {
   encodeStartAnswers,
   firstRepPreview,
   hasStartAnswers,
+  startAdvance,
   startProfileWrite,
   startOpening,
+  startRail,
   startResumeIndex,
   startInterviewSetup,
   startRosterCandidates,
@@ -52,41 +54,38 @@ describe('the funnel, in order', () => {
     // sequence keyed on this — so a reorder here is a reorder of the chart.
     expect(START_STEPS).toEqual([
       'hook',
-      'age',
       'track',
       'build',
       'focus',
-      'mechanism',
       'name',
       'account',
     ])
   })
 
-  it('puts the age gate second, before anything is invested', () => {
+  it('asks nothing about the person before it asks about the conversation (27 Sep)', () => {
     /**
-     * §16.4 and SIGNUP-FIXES §2.2. It is asserted by POSITION rather than by
-     * presence because the whole argument for moving it is where it sits: a
-     * birthday asked at the point of purchase reads as a data grab and the
-     * same birthday on screen two reads as care. Index 1 on both arms, and
-     * nothing is collected before it.
-     *
-     * It is also what lets the Google door satisfy the gate before the
-     * account exists — `signInWithGoogle` runs `checkAge` on this answer
-     * ahead of the redirect — so moving it later silently weakens §16.4 on
-     * an arm this file does not mention.
+     * START-AUDIT §1.2. The age gate was screen two, and the first per-step
+     * read of the run put the drop there. It is a FIELD on the account screen
+     * now, so no screen before the account asks for anything but what the
+     * reps should be about. §16.4 is held by `signInWithGoogle` and
+     * `signUpWithPassword`, both of which check the year before anything is
+     * created, and by the account screen refusing either door without it.
      */
-    expect(START_STEPS[1]).toBe('age')
-    expect(INTERVIEW_STEPS[1]).toBe('age')
+    for (const steps of [START_STEPS, INTERVIEW_STEPS]) {
+      expect(steps).not.toContain('age')
+      expect(steps.at(-1)).toBe('account')
+      expect(steps[1]).toBe('track')
+    }
   })
 
-  it('shows the character before it argues, and argues only once', () => {
-    // §3.1/§3.2. `build` is the only screen that stops being an argument and
-    // becomes a thing, and it used to arrive after every abstract screen had
-    // taken its cut. It now precedes the one surviving claim screen.
+  it('shows the character before the question that shapes her, and never argues', () => {
+    // §3.1 and START-AUDIT §1.5. `build` is the only screen that stops being
+    // an argument and becomes a thing. The two claim screens are both gone.
     for (const steps of [START_STEPS, INTERVIEW_STEPS]) {
-      expect(steps.indexOf('build')).toBeLessThan(steps.indexOf('mechanism'))
       expect(steps).not.toContain('reframe')
-      expect(steps.filter((step) => step === 'mechanism' || step === 'build')).toHaveLength(2)
+      expect(steps).not.toContain('mechanism')
+      expect(steps.filter((step) => step === 'build')).toHaveLength(1)
+      expect(steps.indexOf('build')).toBe(steps.indexOf('track') + 1)
     }
   })
 
@@ -94,7 +93,7 @@ describe('the funnel, in order', () => {
     // A stranger's first interaction has to be cheap and theirs. Three claims
     // in a row before they have touched anything is the advertisement they
     // just clicked out of.
-    const claims = new Set(['hook', 'mechanism', 'build'])
+    const claims = new Set(['hook', 'build'])
     const runs = START_STEPS.reduce<number>((longest, step, index) => {
       if (!claims.has(step)) return longest
       let run = 1
@@ -134,7 +133,7 @@ describe('the two arms', () => {
 
   it('never runs two claims together on either arm', () => {
     // The same rule as below, asserted on the arm that was added later.
-    const claims = new Set(['hook', 'mechanism', 'build'])
+    const claims = new Set(['hook', 'build'])
     for (const steps of [START_STEPS, INTERVIEW_STEPS]) {
       const runs = steps.reduce<number>((longest, step, index) => {
         if (!claims.has(step)) return longest
@@ -271,11 +270,10 @@ describe('where a reload lands', () => {
 
   it('returns to the first unanswered question, never to an interstitial', () => {
     const stages: [Partial<StartAnswers>, string][] = [
-      // §16.4 outranks everything, in the same order `enforceFrontendGuard`
-      // applies it: a run with answers but no year goes back to the gate
-      // rather than past it.
-      [{ english: true }, 'age'],
-      [{ track: 'dating' }, 'age'],
+      // The year is no longer a screen (27 Sep): it is the first field of
+      // the account, so a run with answers and no year simply carries on.
+      [{ english: true }, 'track'],
+      [{ track: 'dating' }, 'focus'],
       [{ birthYear: 2001 }, 'track'],
       [{ birthYear: 2001, track: 'dating' }, 'focus'],
       [{ birthYear: 2001, track: 'dating', focusArea: 'opening' }, 'name'],
@@ -325,20 +323,32 @@ describe('opening the run', () => {
     expect(answers.track).toBeNull()
   })
 
-  it('skips the hook when the link already named a track, but never the age gate', () => {
+  it('opens a named track on its own hook, with the answer already given', () => {
     /**
-     * `/interviews` is a page about the interview track, so the hook is a
-     * longer version of something they have just read and is skipped.
-     *
-     * The track QUESTION used to be skipped with it and is not any more:
-     * §16.4 sits at index 1, and the one screen a run may never jump over is
-     * the gate. They land on `age` and then meet the track question with
-     * their answer already selected, which is a confirmation rather than a
-     * question.
+     * START-AUDIT §1.3. Every social post links `?track=dating`; the hook
+     * then speaks for that track alone instead of pitching both products to
+     * somebody who clicked a video about one. The hook used to be skipped
+     * for a named track, which suited `/interviews` and nobody else.
      */
     const { answers, index } = open({}, 'interview')
-    expect(START_STEPS[index]).toBe('age')
+    expect(START_STEPS[index]).toBe('hook')
     expect(answers.track).toBe('interview')
+  })
+
+  it('opens past the hook when its button arrived as a plain navigation', () => {
+    // START-AUDIT §1.1: a tap before hydration is a link to `?s=1`, and the
+    // page it loads has to open on the screen the tap was for — skipping the
+    // track question when the link already answered it.
+    const named = startOpening(EMPTY_START_ANSWERS, 'dating', true)
+    expect(START_STEPS[named.index]).toBe('build')
+    const bare = startOpening(EMPTY_START_ANSWERS, null, true)
+    expect(START_STEPS[bare.index]).toBe('track')
+  })
+
+  it('lets a stored run win over the plain-navigation flag', () => {
+    const stored = { track: 'dating' as const, focusArea: 'opening' as const }
+    const { index } = startOpening({ ...EMPTY_START_ANSWERS, ...stored }, null, true)
+    expect(START_STEPS[index]).toBe('name')
   })
 
   it('lets an open session win when it agrees', () => {
@@ -381,6 +391,28 @@ describe('opening the run', () => {
     const stored = { track: 'dating' as const, focusArea: 'flirting' as const }
     const { answers } = open(stored, 'interview')
     expect(answers.focusArea).toBe('flirting')
+  })
+})
+
+describe('the one skip the run allows', () => {
+  it('jumps the track question forward when the link answered it, and only then', () => {
+    const hook = START_STEPS.indexOf('hook')
+    expect(START_STEPS[startAdvance(START_STEPS, hook, true)]).toBe('build')
+    expect(START_STEPS[startAdvance(START_STEPS, hook, false)]).toBe('track')
+    // Every other step is a plain +1 whatever the link said.
+    const build = START_STEPS.indexOf('build')
+    expect(START_STEPS[startAdvance(START_STEPS, build, true)]).toBe('focus')
+  })
+
+  it('never runs past the account', () => {
+    const last = START_STEPS.length - 1
+    expect(startAdvance(START_STEPS, last, true)).toBe(last)
+  })
+
+  it('counts only the screens the run will show', () => {
+    expect(startRail(START_STEPS, false)).toEqual(['track', 'build', 'focus', 'name', 'account'])
+    expect(startRail(START_STEPS, true)).toEqual(['build', 'focus', 'name', 'account'])
+    expect(startRail(INTERVIEW_STEPS, true)).toEqual(['build', 'role', 'name', 'account'])
   })
 })
 

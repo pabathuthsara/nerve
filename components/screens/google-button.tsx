@@ -55,9 +55,23 @@ function GoogleMark() {
  * field as optional and writes no cookie when it is empty, so a plain sign-in
  * carries nothing at all.
  */
-export function GoogleButton({ answers = null, label = 'Continue with Google', first = false }: {
+export function GoogleButton({ answers = null, label = 'Continue with Google', first = false, primary = false, beforeSubmit }: {
   answers?: string | null
   label?: string
+  /**
+   * The screen's one volt (START-AUDIT §1.7). Only `/start`'s account screen
+   * passes it: since 27 September the birth year is a field ABOVE both doors
+   * there, so the reason this button was never primary — the email door was
+   * the one that collected a date — no longer holds on that screen, and the
+   * shorter path gets the accent. `/login` and `/signup` are unchanged.
+   */
+  primary?: boolean
+  /**
+   * Runs before the form posts; `false` stops it. `/start` uses it to refuse
+   * the door until the year above it passes `checkAge`, so the redirect to
+   * Google never starts for an answer the server would refuse anyway.
+   */
+  beforeSubmit?: () => boolean
   /**
    * Whether this is the FIRST door on the screen rather than the second.
    *
@@ -79,9 +93,9 @@ export function GoogleButton({ answers = null, label = 'Continue with Google', f
   return (
     <div className={first ? 'auth-oauth auth-oauth--first' : 'auth-oauth'}>
       {first ? null : divider}
-      <form action={action}>
+      <form action={action} onSubmit={(event) => { if (beforeSubmit && !beforeSubmit()) event.preventDefault() }}>
         {answers ? <input type="hidden" name={START_FIELD} value={answers} readOnly /> : null}
-        <Button type="submit" variant="secondary" size="lg" fullWidth loading={busy}>
+        <Button type="submit" variant={primary ? 'primary' : 'secondary'} size="lg" fullWidth loading={busy}>
           <span className="auth-oauth__label"><GoogleMark />{label}</span>
         </Button>
       </form>

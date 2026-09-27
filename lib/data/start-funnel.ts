@@ -88,15 +88,37 @@ import type { Level, Track } from './types'
  * abstract screen had taken its cut. `reframe`'s argument ("reading about it
  * doesn't transfer") is made better by meeting Cass than by reading a
  * paragraph about meeting Cass, so it was cut rather than moved.
+ *
+ * ── THE 27 SEPTEMBER REORDER (START-AUDIT-2026-09-27 §1.2, §1.5) ─────────
+ *
+ * The first per-step read of this run (`page_views.step`, nine days of it)
+ * put every recorded drop on the first two screens, and screen two was the
+ * age gate. The 18 September argument — a birthday on screen two "reads as
+ * care" — is an argument about tone, and it was paid for in completion: the
+ * first thing a stranger off a dating video was asked to state about
+ * themselves was their birth year, before anything had been asked that was
+ * worth answering.
+ *
+ * **`age` is no longer a screen.** The year is the first field of the
+ * account screen, above both doors, so §16.4 is exactly where it was in the
+ * sense that matters: checked by `checkAge` before `auth.signUp`, and — for
+ * the Google door — before the redirect, because the year still crosses in
+ * the same answers the button posts. The gate did not move later than the
+ * account; it moved later than the questions.
+ *
+ * **`mechanism` is gone.** It was the last claim screen and it repeated the
+ * hook. Its one unique fact, the field challenge, is one line on `build`.
+ *
+ * Six screens and the form is five: hook, track, build, question two, name,
+ * account. A link that already names the track (`?track=`) skips the track
+ * question on the way forward — see `startAdvance`.
  */
 export type StartStep =
   | 'hook'
-  | 'age'
   | 'track'
   | 'build'
   | 'focus'
   | 'role'
-  | 'mechanism'
   | 'name'
   | 'account'
 
@@ -118,29 +140,24 @@ export type StartStep =
  * their track answer with the back arrow has to stay on the screen they were
  * on rather than being teleported. `start-funnel.test.ts` asserts it.
  *
- * The two interstitials that survive — `build` and `mechanism` — are shared
- * positions that branch on their own copy, which is the right split: they
- * make the same argument about two different rooms, and a third list of
- * screens would drift. `age` is shared outright; §16.4 does not have an arm.
+ * The one interstitial that survives — `build` — is a shared position that
+ * branches on its own copy, which is the right split: it introduces two
+ * different rooms, and a third list of screens would drift.
  */
 const DATING_STEPS: readonly StartStep[] = [
   'hook',
-  'age',
   'track',
   'build',
   'focus',
-  'mechanism',
   'name',
   'account',
 ]
 
 const INTERVIEW_STEPS: readonly StartStep[] = [
   'hook',
-  'age',
   'track',
   'build',
   'role',
-  'mechanism',
   'name',
   'account',
 ]
@@ -370,11 +387,9 @@ export function startResumeIndex(answers: StartAnswers): number {
   const steps = startSteps(answers.track)
   const at = (step: StartStep) => steps.indexOf(step)
   if (!hasStartAnswers(answers)) return at('hook')
-  // §16.4 first, and in the same order the signed-in guard enforces it: an
-  // account with no date is sent to the gate ahead of everything else, so a
-  // resume that put somebody past it would be the one screen in the run that
-  // a reload could skip.
-  if (!answers.birthYear) return at('age')
+  // No age branch any more (27 Sep): the year is a field on the account
+  // screen, so a resume can never skip it — every run ends on that screen,
+  // and neither door on it proceeds without the year.
   if (!answers.track) return at('track')
   // Question two, which is a different question on each arm. The interview arm
   // reads the FLAG rather than the title, because "I'm not sure yet" is an
@@ -539,26 +554,55 @@ export function startInterviewSetup(answers: StartAnswers): StartInterviewWrite 
  * changing their mind. `startResumeIndex` then asks whichever question two the
  * new track has and has not had an answer.
  */
-export function startOpening(stored: StartAnswers, asked: Track | null): { answers: StartAnswers; index: number } {
+export function startOpening(
+  stored: StartAnswers,
+  asked: Track | null,
+  begun = false,
+): { answers: StartAnswers; index: number } {
   if (!hasStartAnswers(stored)) {
+    const answers = asked ? { ...EMPTY_START_ANSWERS, track: asked } : EMPTY_START_ANSWERS
+    const steps = startSteps(asked)
     /**
-     * Nothing open. A named track skips the two screens before it — the hook
-     * says what this is, and somebody arriving from `/interviews` has just
-     * read a longer version of it.
-     */
-    if (!asked) return { answers: EMPTY_START_ANSWERS, index: startSteps(null).indexOf('hook') }
-    /**
-     * A named track skips the hook and lands on the age gate.
+     * A named track OPENS on the hook now (27 Sep), and the hook speaks for
+     * that track alone. It used to skip the hook, which was right for the
+     * one caller it was written for — `/interviews`, a page that has just
+     * said everything the hook says — and wrong for every social post, which
+     * is where nearly all of this page's traffic comes from and which had
+     * said nothing at all. One tap on a screen that matches the ad is cheaper
+     * than a first screen that does not.
      *
-     * It used to skip the track question too, and it cannot any more: §16.4
-     * is now screen two, and the one screen a run is not allowed to jump over
-     * is the gate. So `?track=interview` saves the hook — somebody arriving
-     * from `/interviews` has just read a longer version of it — and then
-     * meets the track question with their answer already selected, which is a
-     * confirmation rather than a question.
+     * `begun` is the hook's button arriving as a plain navigation
+     * (`?s=1`), which is what it does when it is tapped before the page has
+     * hydrated — see `HookStep`. It opens on the screen that tap was for.
      */
-    return { answers: { ...EMPTY_START_ANSWERS, track: asked }, index: startSteps(asked).indexOf('age') }
+    if (!begun) return { answers, index: steps.indexOf('hook') }
+    return { answers, index: startAdvance(steps, steps.indexOf('hook'), asked !== null) }
   }
   const answers = asked && stored.track !== asked ? { ...stored, track: asked } : stored
   return { answers, index: startResumeIndex(answers) }
+}
+
+/**
+ * The next screen, and the one skip the run allows.
+ *
+ * A link that already named the track (`?track=dating` under every social
+ * post) has answered the track question before the run began, so the
+ * forward step jumps it. Only forward: the back arrow still reaches it, so
+ * somebody who came in on a dating post and wanted interviews can still say
+ * so. Pure, because it is the difference between a five-screen run and a
+ * six-screen one and that is worth a test rather than a comment.
+ */
+export function startAdvance(steps: readonly StartStep[], from: number, trackGiven: boolean): number {
+  const next = from + 1
+  if (trackGiven && steps[next] === 'track') return Math.min(next + 1, steps.length - 1)
+  return Math.min(next, steps.length - 1)
+}
+
+/**
+ * The screens the progress rail counts: everything after the hook, minus the
+ * track question when the link answered it. A rail that counted a screen the
+ * run is going to skip would open on "2 of 5".
+ */
+export function startRail(steps: readonly StartStep[], trackGiven: boolean): StartStep[] {
+  return steps.slice(1).filter((step) => !(trackGiven && step === 'track'))
 }

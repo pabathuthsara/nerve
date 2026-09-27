@@ -165,9 +165,18 @@ describe('the /start step, on the way into the traffic table', () => {
   })
 
   it('only ever attaches a step to /start', () => {
-    expect(normaliseStep('/start', 'age')).toBe('age')
-    expect(normaliseStep('/', 'age')).toBeNull()
-    expect(normaliseStep('/roster/[persona]', 'age')).toBeNull()
+    expect(normaliseStep('/start', 'track')).toBe('track')
+    expect(normaliseStep('/', 'track')).toBeNull()
+    expect(normaliseStep('/roster/[persona]', 'track')).toBeNull()
+  })
+
+  it('never lets a browser claim the server-only row', () => {
+    // `served` is written by the page render itself. A beacon that could post
+    // it would let anybody inflate the top of the funnel from a console.
+    expect(normaliseStep('/start', 'served')).toBeNull()
+    // And a step the run retired on 27 September stops being accepted.
+    expect(normaliseStep('/start', 'age')).toBeNull()
+    expect(normaliseStep('/start', 'mechanism')).toBeNull()
   })
 
   it('refuses anything that is not an authored screen', () => {

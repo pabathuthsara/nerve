@@ -37,11 +37,9 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server'
-import { createHash } from 'node:crypto'
-import { supabaseAdmin } from '@/lib/db/admin'
-import { secretSupabaseKey } from '@/lib/db/env'
 import { currentUser } from '@/lib/db/server'
-import { countryCode, deviceFor, isBot, normalisePath, normaliseStep, referrerHost } from '@/lib/analytics/pageview'
+import { isBot, normalisePath, normaliseStep, normaliseTag } from '@/lib/analytics/pageview'
+import { insertView, visitorDigest } from '@/lib/analytics/record'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,32 +80,6 @@ function withinBurst(visitor: string, now: number): boolean {
 }
 
 /**
- * The salt behind the visitor digest.
- *
- * `ANALYTICS_SALT` when it is set, so it can be rotated without touching
- * anything else; the Supabase secret otherwise, so this works on a deployment
- * nobody has configured for it. Either way it is server-only and never leaves
- * this process — a digest whose salt is public is a lookup table.
- */
-function salt(): string {
-  return process.env.ANALYTICS_SALT ?? secretSupabaseKey()
-}
-
-function visitorDigest(request: NextRequest, userAgent: string): string {
-  // `x-forwarded-for` is a list; the client is the first entry. Vercel sets
-  // `x-real-ip` too, which is already just the client.
-  const ip =
-    request.headers.get('x-real-ip')
-    ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    ?? 'unknown'
-  const day = new Date().toISOString().slice(0, 10)
-  return createHash('sha256')
-    .update(`${salt()}|${day}|${ip}|${userAgent}`, 'utf8')
-    .digest('hex')
-    .slice(0, 32)
-}
-
-/**
  * Always 204, whatever happened.
  *
  * The browser has nothing to do with the answer and an error body would only
@@ -135,14 +107,15 @@ export async function POST(request: NextRequest) {
   }
   if (!body || typeof body !== 'object') return done()
 
-  const { path: rawPath, ref, step: rawStep } = body as { path?: unknown; ref?: unknown; step?: unknown }
+  const { path: rawPath, ref, step: rawStep, source: rawSource, content: rawContent } =
+    body as { path?: unknown; ref?: unknown; step?: unknown; source?: unknown; content?: unknown }
   const path = normalisePath(rawPath)
   if (!path) return done()
   // Only ever set for `/start`, and only ever an authored screen name. A
   // value this does not recognise is dropped and the view still counts.
   const step = normaliseStep(path, rawStep)
 
-  const visitor = visitorDigest(request, userAgent)
+  const visitor = visitorDigest(request.headers, userAgent)
   if (!withinBurst(visitor, Date.now())) return done()
 
   /**
@@ -160,19 +133,16 @@ export async function POST(request: NextRequest) {
     userId = null
   }
 
-  try {
-    await supabaseAdmin().from('page_views').insert({
-      path,
-      referrer_host: referrerHost(ref, request.nextUrl.hostname),
-      visitor,
-      user_id: userId,
-      country: countryCode(request.headers.get('x-vercel-ip-country')),
-      device: deviceFor(userAgent),
-      step,
-    })
-  } catch {
-    // A traffic counter must never be the reason a page reports an error.
-  }
+  // START-AUDIT §1.6: the campaign tag, when the link carried one.
+  await insertView(request.headers, userAgent, visitor, {
+    path,
+    step,
+    ref,
+    selfHost: request.nextUrl.hostname,
+    source: normaliseTag(rawSource),
+    content: normaliseTag(rawContent),
+    userId,
+  })
 
   return done()
 }

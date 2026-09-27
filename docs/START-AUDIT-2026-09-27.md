@@ -1,0 +1,281 @@
+# `/start` audit — 27 September 2026
+
+> **Status, 27 September 2026 — §2 items 1–6 built on `feat/start-funnel-v2`,
+> plus a mobile polish pass (§5).** `LAUNCH-GAP.md` D31 is the record. What
+> landed differs from the prescription in three places, all recorded in §5.
+> **Owed by hand:** apply `supabase/migrations/20260927090000_page_views_campaign_tag.sql`
+> BEFORE the deploy; tag every post link (§5.4); key the pixels only after
+> privacy clause 07 is rewritten.
+
+A second pass on the door, nine days after `SIGNUP-AUDIT-2026-09-18.md` and
+`SIGNUP-FIXES-2026-09-18.md` shipped almost everything they asked for. This one
+has something the first did not: **`page_views.step`**, so for the first time
+the per-step drop is read from first-party data rather than guessed.
+
+Sources: the production database (`page_views`, `auth.users`, `sessions`), the
+deployed `www.hellonerve.com/start` driven in Playwright as an iPhone 13 and a
+throttled Pixel 5, and this repo at `HEAD` (the uncommitted Heat work is not
+deployed and nothing below is about it).
+
+---
+
+## 0 · What the data says
+
+Window: 18 Sep 12:30 UTC (when `step` started recording) → 27 Sep.
+
+| | |
+|---|---|
+| Accounts created | **0** (last one 18 Sep 11:45 UTC, before this window) |
+| Unique visitors on `/` | 45 — about 30 excluding Sri Lankan desktop (owner / testing) |
+| …of whom opened `/start` | **0 outside visitors** (2 in total, both the owner) |
+| Unique visitors on `/start` | 19 — about 9 outside visitors |
+| Outside visitors past screen 1 (hook → age) | **2** (one US, one CN) |
+| Outside visitors past screen 2 (age → track) | **0** |
+| `/start` visitors per week | 83 → 87 → **12** (weeks of 7, 14, 21 Sep) |
+| Visitors with any referrer | 12 of 79. **67 are "direct"** |
+
+Read it honestly:
+
+1. **Volume is the first problem, not conversion.** About one real person a
+   day reaches `/start`. At that rate a change that doubled signup rate from
+   3% to 6% would take months to show up. So the fixes below should be shipped
+   **as one batch**, on judgement, not A/B tested one at a time.
+2. **Every recorded drop is at the first two screens.** Of ~9 outside
+   visitors, 2 tapped the hook button and none got past the age question. Nine
+   people proves nothing on its own — but it is the same place the code has a
+   measurable defect (§1.1) and the place the run asks its most off-putting
+   question (§1.2).
+3. **The numbers undercount the bounce.** The pageview beacon
+   (`components/analytics.tsx` → `/api/pageview`) fires after hydration, so a
+   visitor who leaves in the first ~2 seconds is never recorded at all.
+4. **You cannot tell which post brought anyone.** In-app browsers (TikTok,
+   Instagram) strip the referrer, and `normalisePath` drops the query string,
+   so `utm_*` never reaches the table either.
+
+The product side still works: 31 accounts, 134 sessions, and almost every
+account that exists ran a rep. The door is still the whole problem.
+
+---
+
+## 1 · Findings, most expensive first
+
+### 1.1 · The first tap on the first screen does nothing — **measured**
+
+The hook's button (`Set mine up — 40 seconds`) is an `onClick` inside a
+`'use client'` tree with no `<form>` or `<a>` behind it. It is **visible at
+~0.4 s and does nothing until hydration finishes at ~1.9 s** on an unthrottled
+phone profile, **~2.9 s at 4× CPU throttle**. A tap in that window is not
+queued — it is lost. Three runs on a throttled Pixel 5: one tap at 0.2 s after
+the button appeared, then five seconds of waiting, **never advanced** (3/3).
+
+That is exactly the visitor paid social sends: a mid-range Android in an
+in-app browser, thumb already moving because the video said "link in bio".
+To them the button is broken, and the recorded hook → age drop (2 of ~9) is
+where they would show up.
+
+**Fix (≈1 h):** make the hook's CTA work without JavaScript. Render it as
+`<a href="/start?s=1">` (or a `<form method="get">`), have `StartPage` read
+`s` and open the run at index 1. Hydrated, the click handler can
+`preventDefault` and advance in place as it does now; unhydrated, it is a plain
+navigation that lands on the age screen. The same treatment for `GO ON` and
+`Set mine up` on the two claim screens costs nothing extra.
+
+### 1.2 · The first question a stranger is asked is "How old are you?"
+
+Screen 1 of 7 is the age gate, moved there on 18 Sep (SIGNUP-FIXES §2.2) on
+the argument that a question asked "while nothing is invested costs less".
+For completion rate that is backwards. Someone who clicked a rizz video is
+asked to state their birth year before they have been asked anything about
+themselves, and in a dating context an up-front 18+ gate reads like the door
+of a different kind of site. It is the least rewarding question in the run,
+placed where tolerance is lowest. 0 of the outside visitors who saw it
+answered it.
+
+**Fix (≈1 h):** keep §16.4 exactly as it is — one year field, `checkAge`,
+before the account exists — but **ask it last**, as the first field on the
+account screen, above `Continue with Google`. The year still crosses the
+Google redirect because it is still asked before sign-in, so the reason the
+gate moved (no `/onboarding/age` after Google) still holds. The run then opens
+with the two most interesting questions it has: what are you training for, and
+here is who you'll meet.
+
+### 1.3 · Every social link lands on a page that pitches two products
+
+All Buffer links point at bare `/start` (see `nerve-marketing` memory: "every
+post link is hellonerve.com/start"). So someone who watched a dating clip
+lands on: *"…a stranger you want to talk to, **or an interviewer you want to
+impress**"*, and three screens later is asked which of the two they meant.
+The first two seconds are spent reconciling the ad with the page.
+
+`?track=` already exists (`startOpening`), but it only skips the hook and
+still shows the track screen as a pre-selected "confirmation".
+
+**Fix (≈1 h):**
+- Every dating post links `/start?track=dating&utm_source=tiktok&utm_content=<post-id>`;
+  interview ads link `?track=interview`.
+- With a known track, the hook speaks for that track only (dating: *talk to
+  her out loud for three minutes*; interview: the screener), and the **track
+  screen is skipped**, not confirmed. Back from the next screen can still
+  reach it.
+
+### 1.4 · `/start` has none of the proof the homepage now has
+
+Since 18 Sep, `/` carries a 10-second voice sample (`HEAR WHAT THIS IS 10S`,
+`public/hero/intro.mp3`), a counted line (`134 reps run · 31 people
+training`) and five named tester quotes. **All social traffic skips `/`**, and
+the screen it lands on is a headline, a paragraph and a button — no sound, no
+image, no number. The only proof in the run is one quote on the last screen.
+
+**Fix (≈2 h):** put the counted line and a play button on the hook, under
+the button. Better than the intro narration: `public/hero/` already holds a
+real 50-second exchange with Nadia (`manifest.json`, her half captured from
+`gpt-realtime` with `scripted: false`, his half recorded). Eight seconds of
+that answers "what is this" better than the paragraph does, and it satisfies
+rule 10 as it stands — hers captured, his authored. The `CASS` screen is the
+second place for sound, if a captured line of hers is ever recorded.
+
+### 1.5 · The run is longer than it says
+
+The button promises 40 seconds; the run is 7 screens, two of which ask
+nothing (`build` — Cass, and `mechanism` — "Inside, then outside"). Cass earns
+her place: it is the only moment the product becomes a thing. `mechanism` is
+the last surviving claim screen and repeats what the hook already said.
+
+**Fix (≈30 min):** cut `mechanism`; move its one unique fact (the field
+challenge) into one line on the Cass screen. With §1.2 and §1.3 the dating run
+becomes:
+
+| # | Now (7 + hook) | Proposed (5 + hook) |
+|---|---|---|
+| 0 | hook | hook — track-specific, voice sample, count |
+| 1 | age | Cass — who you'll meet |
+| 2 | track | focus — what's the hard part |
+| 3 | Cass | name (skippable) |
+| 4 | focus | account — year · Google · email |
+| 5 | mechanism | |
+| 6 | name | |
+| 7 | account | |
+
+(The track screen stays for anyone who arrives without `?track=`.) The "same
+length, differ at one index" property of `DATING_STEPS`/`INTERVIEW_STEPS`
+survives: both lists lose the same two entries.
+
+### 1.6 · Measurement is still off, nine days after "one environment variable"
+
+Checked on the live page today: `fbq`, `posthog` and `ttq` are all
+`undefined`, and the only host contacted is `www.hellonerve.com`. The Meta
+pixel and PostHog are built and unkeyed (`LAUNCH-GAP.md` B7); a TikTok pixel
+does not exist in the code at all, although TikTok ads have been run.
+
+**Fix (≈2 h):**
+1. Set `NEXT_PUBLIC_META_PIXEL_ID` and the PostHog key in Vercel, redeploy.
+2. Add a TikTok pixel beside `components/meta-pixel.tsx`, same env-gated
+   pattern, `CompleteRegistration` on the account submit.
+3. Add a first-touch `source` to `page_views` (from `utm_source` /
+   `utm_content`, allow-listed like `step`) so the admin panel can say which
+   post a visitor came from. This is the only way to learn which of the three
+   daily posts is worth making more of.
+4. Count the landing server-side (in `middleware.ts`, bots filtered as now)
+   so the pre-hydration bounce in §0.3 becomes visible.
+
+### 1.7 · Smaller things on the screens
+
+- **Google is the fast path and it is styled as the secondary one.** On the
+  account screen the lime button is `START THE REP`, under two fields; Google
+  is an outline. Make Google the hot button and the email form the fallback.
+- **`Speaking English more naturally — Coming soon`** is a disabled option on
+  the track screen. A dead choice on a 7-screen run from a cold visitor is
+  noise; hide it until it ships.
+- **~130–170 px of empty space above the question** on the age and name
+  screens at 390×844 (the hook was fixed on 18 Sep; the question screens were not).
+- The display font swaps in late on `/start` (fallback sans for the first
+  ~2 s, then Barlow Condensed), so the first thing a slow phone sees is a
+  headline that visibly changes shape. `font-display` / preloading the 700
+  weight on this route would stop it.
+
+---
+
+## 2 · What to do, in order
+
+Ship 1–5 as one batch. At ~1 visitor a day there is nothing to A/B.
+
+| # | Change | Effort | Why first |
+|---|---|---|---|
+| 1 | Hook CTA works before hydration (§1.1) | 1 h | A measured defect on the one screen where the data says people leave |
+| 2 | Tag every link `?track=…&utm_source=…&utm_content=…`; track-specific hook; skip the track screen when known (§1.3) | 1 h + relinking Buffer | Message match, and one screen fewer |
+| 3 | Age gate → first field on the account screen (§1.2) | 1 h | Stop opening with the gate |
+| 4 | Voice sample + counted line on the hook (§1.4) | 2 h | The proof exists; the traffic never sees it |
+| 5 | Cut `mechanism`; Google as the primary button; hide "Coming soon" (§1.5, §1.7) | 1 h | Seven screens → five |
+| 6 | Pixel + PostHog keys, TikTok pixel, `source` column, server-side landing count (§1.6) | 2 h | Makes the next 100 visits readable |
+
+Then the real constraint: **traffic**. None of the above matters at 12
+visitors a week. The channels already identified in memory — YouTube Shorts
+(~63% US audience), Reddit answers, and the interview track on Google search —
+are where the next week's effort goes.
+
+## 3 · Still refused
+
+Nothing here reopens a refusal from D21 or SIGNUP-FIXES §5.6: no rep before
+the account (rule 11, §16.4), no paywall in the run, no statistic on any
+screen (rule 12), no fabricated proof, no countdowns. §1.2 moves the age gate;
+it does not weaken it.
+
+## 4 · Docs to touch when these ship
+
+- `LAUNCH-GAP.md` D21 and D24 — the run's new shape; B7 when the keys land.
+- `SIGNUP-FIXES-2026-09-18.md` §2.2 — record that the gate moved again, and why.
+- `lib/data/start-funnel.test.ts` — the step lists and the equal-length property.
+- `components/site/legal-pages.tsx` — only if what `/start` keeps changes (it should not).
+
+---
+
+## 5 · What landed — 27 September 2026
+
+| § | Change | Where |
+|---|---|---|
+| 1.1 | Hook CTA is an `<a href="/start?…&s=1">`; hydrated it advances in place, unhydrated it navigates and `startOpening(…, begun)` opens the next screen. Query string (track, UTMs) is carried. Verified with JavaScript **blocked**: the tap lands on `build` (named track) or `track` (bare) | `start-screens.tsx` `HookStep`, `app/start/page.tsx` |
+| 1.2 | `age` is not a step. Year is the first field on the account screen, above both doors; both refuse without a passing year; `signInWithGoogle` refuses a `/start` post with no year | `AccountStep`, `google-button.tsx` `beforeSubmit`, `app/auth/actions.ts` |
+| 1.3 | `?track=` opens a hook written for that track and skips the track question forward (`startAdvance`); the rail drops the skipped screen (`startRail`); link previews per track (`generateMetadata`); landing hero/section CTAs link `?track=dating` | `start-funnel.ts`, `landing.tsx`, `app/start/page.tsx` |
+| 1.4 | Counted "reps run · people training" line on the hook. **No audio** — decided by the owner | `HookStep` |
+| 1.5 | `mechanism` cut; its field-challenge line is on `build`. Run: hook → track → build → focus/role → name → account (5 screens, 4 when the link names the track) | `start-funnel.ts` |
+| 1.6 | `page_views.source`/`content` (allow-listed UTMs, first touch per tab), server-written `served` row per `/start` render, admin "Which post" table and `served` at the top of the funnel; TikTok pixel beside the Meta one, unkeyed; dev servers no longer write to the production traffic table | migration, `lib/analytics/record.ts`, `components/tiktok-pixel.tsx`, `components/analytics.tsx` |
+| 1.7 | Google is the primary button on the account screen; "Coming soon" hidden on `/start`; the tester quote shows on the dating arm only | `start-screens.tsx`, `onboarding-questions.tsx` |
+
+**Mobile polish pass (owner's request), walked at 360×740, 375×667 and 390×844
+from the funnel through the first scorecard:**
+
+- **Every text field zoomed the page on iPhone.** The body is 14px and fields
+  inherited it; iOS zooms any focused field under 16px and does not zoom back.
+  16px on `pointer: coarse`. This touched the account form, name, role and
+  every signed-in field.
+- Tap feedback on touch (`hover: none`): buttons give on press, option cards
+  darken. Before, a tap had no acknowledgement until the next screen.
+- 44px targets on touch for `arena-button--sm`, the report link and (38px)
+  the room switcher.
+- Numbered eyebrows ("Step two") on `/start` disagreed with the rail once the
+  track question could be skipped; `/start` passes words instead.
+- The first-win / first-loss sheets rose 0.9–1.1s after the result, over the
+  verdict; now 2.6s.
+- Short-phone rules (≤ 700px tall) so the hook's CTA and the build screen fit
+  above the fold on an SE or an in-app browser.
+
+**Deviations from §2:** the year sits on the account screen rather than a
+screen of its own (it is one field; a screen would be the thing we removed);
+`?track=` now opens on the hook rather than skipping it, because nearly all
+traffic arrives from posts and a matching hook is the message-match fix; and
+§1.6's "server-side landing count" is scoped to `/start` rather than every
+route (it is the only page ads point at, and a middleware write on every
+request is a cost on every request).
+
+### 5.4 · Link format for posts
+
+```
+TikTok     https://www.hellonerve.com/start?track=dating&utm_source=tiktok&utm_content=<post-id>
+Instagram  https://www.hellonerve.com/start?track=dating&utm_source=instagram&utm_content=<post-id>
+YouTube    https://www.hellonerve.com/start?track=dating&utm_source=youtube&utm_content=<post-id>
+Interview  https://www.hellonerve.com/start?track=interview&utm_source=google&utm_content=<ad-id>
+```
+
+`<post-id>`: lower-case letters, digits, `.`, `_`, `-`, up to 40 characters
+(e.g. `0927-cafe-opener`). Anything else is dropped by `normaliseTag` and the
+visit is still counted, untagged.

@@ -111,6 +111,14 @@ button { color: inherit; }
 
 .arena-button:hover:not(:disabled) { transform: translateY(-1px); }
 .arena-button:active:not(:disabled) { transform: translateY(0); }
+/* A phone has no hover, so the lift above never happens and a tap had no
+   acknowledgement until the next screen arrived. A press that gives is the
+   difference between a control and a picture of one. */
+@media (hover: none) {
+  .arena-button:hover:not(:disabled) { transform: none; }
+  .arena-button:active:not(:disabled) { transform: scale(.985); filter: brightness(.94); }
+  .option-card:active:not(:disabled) { background: var(--surface-2); border-color: var(--line-bright); }
+}
 .arena-button:disabled { cursor: not-allowed; opacity: 0.48; }
 .arena-button--primary { background: var(--volt); color: var(--ground); }
 .arena-button--primary:hover:not(:disabled) { background: #d1ff45; }
@@ -164,6 +172,24 @@ button { color: inherit; }
 .arena-input:hover { border-color: var(--line-bright); }
 .arena-input:focus { border-color: var(--volt); }
 .arena-input--error { border-color: var(--red); }
+/*
+  iOS Safari zooms the page into any focused field whose text is under 16px,
+  and it does not zoom back out. The body is 14px and every field inherited it,
+  so on an iPhone the account form, the year, the name and the role each
+  lurched the page sideways the moment they were tapped — on the screens where
+  a stranger is deciding whether this is a real product. 16px on touch devices
+  only; a desktop keeps the 14px the layout was drawn at.
+*/
+@media (pointer: coarse) {
+  .arena-input, .arena-textarea, .text-rep__compose textarea { font-size: 16px; }
+  /* 44px is the smallest target a thumb hits reliably (Apple HIG, WCAG 2.5.5).
+     The small button, the room switcher and the report link were 30–37px —
+     drawn for a cursor, and every one of them sits on a screen a new account
+     sees in its first five minutes. */
+  .arena-button--sm { min-height: 44px; }
+  .track-switcher button { min-height: 38px; }
+  .report-link { min-height: 44px; padding-inline: 10px; }
+}
 .arena-textarea { min-height: 128px; resize: vertical; }
 .field__hint { color: var(--text-mute); font-size: 12px; }
 
@@ -2998,7 +3024,7 @@ a.admin-chip { text-decoration: none; }
   .start-page:has(.start-hook) { align-items: start; padding-top: 72px; }
 }
 
-.start-hook > .onboarding-sub, .start-claim > .onboarding-sub { max-width: 42ch; }
+.start-hook > .onboarding-sub { max-width: 42ch; }
 .start-hook > h1 { max-width: 18ch; }
 
 /* The actions sit apart from the copy rather than in the stack with it: on
@@ -3055,20 +3081,10 @@ a.admin-chip { text-decoration: none; }
   letter-spacing: .08em; text-transform: uppercase;
   opacity: .75;
 }
-.start-age__form { margin-top: 26px; }
-/* One number, so the field does not run the width of the screen and invite a
-   date into it. */
-.start-age__form .field { max-width: 180px; }
-.start-age__form .field input { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: .08em; }
 /* §2.1 step 4: when Google is the FIRST door the divider sits below it, so
    the spacing is mirrored. */
 .auth-oauth--first { margin-top: 26px; margin-bottom: 4px; }
 
-.start-beats { display: grid; gap: 2px; margin: 22px 0 0; padding: 0; list-style: none; border-block: 1px solid var(--line); }
-.start-beats li { display: grid; grid-template-columns: 22px 1fr; align-items: start; gap: 14px; padding: 16px 0; border-top: 1px solid var(--line); }
-.start-beats li:first-child { border-top: 0; }
-.start-beats strong { display: block; margin-bottom: 4px; font-family: var(--font-mono), monospace; font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--text); }
-.start-beats p { margin: 0; color: var(--text-dim); font-size: 14.5px; line-height: 1.5; }
 
 /* The build screen. It reveals what the run already knows — see the note in
    `start-screens.tsx` about why this is a stagger and not a progress bar. */
@@ -3093,6 +3109,51 @@ a.admin-chip { text-decoration: none; }
    gets rather than the question's own 10px gap. */
 .start-account .auth-form { margin-top: 22px; }
 .start-account .auth-fine { margin-top: 18px; }
+
+/* ── START-AUDIT-2026-09-27 ───────────────────────────────────────────────
+   The hook's counted line and its two exits, the year on the account screen,
+   and the note on the build screen that absorbed `mechanism`. */
+
+/* The counted line (§1.4). The same register as `.hero__proof` on `/`, so a
+   visitor who saw both reads one fact, not two. */
+.start-count { margin: 0; color: var(--text-mute); font-family: var(--font-mono), monospace; font-size: 11px; letter-spacing: .05em; text-align: center; font-variant-numeric: tabular-nums; }
+.start-count strong { color: var(--text-dim); font-weight: 400; }
+
+/* The two ways out, on one line, each a 44px target. They used to be two
+   stacked paragraphs that pushed the page past the fold on a short phone. */
+.start-exits { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 18px; color: var(--text-mute); font-size: 13px; }
+.start-exits a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; color: var(--text-mute); text-decoration: underline; text-decoration-color: var(--line-bright); text-underline-offset: 4px; transition: color 120ms; }
+.start-exits a:hover, .start-exits a:focus-visible { color: var(--text-dim); }
+
+/* The hook's CTA is an <a> styled as the button (§1.1). Anchors are inline
+   by default and the button class is inline-flex; the full-width modifier
+   exists, but text-decoration and colour have to be pinned for an <a>. */
+.start-hook__go { text-decoration: none; }
+.start-hook__go:visited { color: var(--ground); }
+
+/* The year, on the account screen (§1.2). One number, so the field does not
+   run the width of the screen and invite a date into it; the hint sits under
+   it at full width so the 18+ sentence never wraps into a column. */
+.start-account__age { margin-top: 22px; }
+.start-account__age .arena-input { max-width: 168px; font-family: var(--font-mono), monospace; font-variant-numeric: tabular-nums; letter-spacing: .1em; }
+.start-account .auth-oauth--first { margin-top: 18px; }
+.start-account .auth-oauth--first .arena-button--primary { box-shadow: 0 0 0 1px rgba(196, 248, 42, .08), 0 10px 28px -14px rgba(196, 248, 42, .45); }
+
+/* The build screen's persona gets a quiet halo so it reads as the thing the
+   screen is about, not as an icon above a heading. */
+.start-build__persona { position: relative; display: grid; place-items: center; }
+.start-build__persona::before { content: ''; position: absolute; inset: -18px; border-radius: 50%; background: radial-gradient(closest-side, rgba(196, 248, 42, .07), transparent); pointer-events: none; }
+.start-build .start-note { max-width: 34ch; line-height: 1.55; }
+
+/* Short phones (≤ 700px tall — an SE, most Androids in an in-app browser
+   with its own toolbar). The run's screens are designed for the fold, and
+   the fold is ~560px here. */
+@media (max-height: 700px) {
+  .start-page { padding-top: 76px; padding-bottom: 32px; }
+  .start-page:has(.start-hook) { padding-top: 40px; }
+  .start-hook .start-actions { margin-top: 20px; }
+  .start-build .fluid-persona { transform: scale(.82); margin-block: -10px; }
+}
 
 
 /* ── Texting ──────────────────────────────────────────────────────────────
