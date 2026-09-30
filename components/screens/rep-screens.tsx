@@ -224,7 +224,9 @@ export function RepBriefScreen({
   // objectives for the same three minutes, which is the round-6 failure wearing
   // an interface. The live screen has always made that choice; this one had not.
   const briefScript = interview ? null : guidedScriptFor(personaId)
-  const back = interview ? '/interview/interviewers' : `/roster/${personaId}`
+  // Back to where the tap came from. The roster opens the brief directly now,
+  // so going "back" into her profile would be going somewhere never visited.
+  const back = interview ? '/interview/interviewers' : '/roster'
   const minutes = Math.round(interviewDurationMs(round) / 60_000)
   const hasHistory = !firstEver && !interview && Boolean(progress && progress.attempts > 0)
   const hasMemory = !firstEver && !interview && Boolean(memory.data)
@@ -320,6 +322,7 @@ export function RepBriefScreen({
             quota — a link rather than a button, because a person hesitating
             here should not be handed a second thing that looks like the action. */}
         {!interview ? <Link className="brief-alt" href="/texting">Not ready to talk? Try texting</Link> : null}
+        {!interview ? <Link className="brief-alt brief-alt--quiet" href={`/roster/${personaId}`}>About {subject.name}: her record, what she responds to</Link> : null}
       </div>
       {!interview && !firstEver ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}
     </section>

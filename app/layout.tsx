@@ -35,6 +35,13 @@ export const metadata: Metadata = {
     type: 'website',
   },
   twitter: { card: 'summary_large_image', title: 'NERVE — Conversation training', description: 'Practice the conversations you usually avoid.' },
+  /**
+   * Added to a home screen, it is an app (30 September 2026). `black` rather
+   * than `black-translucent`: translucent draws the page UNDER the status bar,
+   * and every top bar here would then need a safe-area inset it has never had.
+   */
+  appleWebApp: { capable: true, title: 'NERVE', statusBarStyle: 'black' },
+  icons: { apple: '/pwa/apple-touch-icon.png' },
 }
 
 /**
@@ -53,6 +60,10 @@ export const viewport: Viewport = {
   themeColor: '#0B0C0A',
   colorScheme: 'dark',
   interactiveWidget: 'resizes-content',
+  // Switches on the `env(safe-area-inset-bottom)` the tab bar, sheets, toasts
+  // and detail action already carry — without it they all read zero, and an
+  // installed app's tab bar sat under the home indicator.
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {

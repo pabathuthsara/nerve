@@ -336,3 +336,15 @@ screen at desktop and phone width, signed in:
   swarm cannot; she sits in the upper right now and fades downward.
 - **Framing**: `LIVE_DISTANCE` 3.9 → 3.5 so a live avatar fills its slot, and
   the character detail avatar 180 → 208px.
+
+**After the first production look (30 September 2026):** the Train card's swarm
+is centred again (an upper-right placement read as off centre) in the card's
+upper part, fading downward, and the level chip has a dark backing so a wisp
+behind it cannot cost it legibility. The roster card now opens the brief
+directly rather than the profile sheet, whose "Start rep" opened the brief whose
+Start opened the rep — two Starts for one rep; the profile is a link from the
+brief. The app is installable (`app/manifest.ts`, `public/pwa/` from
+`scripts/pwa-icons.mjs`, `appleWebApp`, `viewport-fit=cover` so the existing
+safe-area insets apply) and the page no longer rubber-bands
+(`overscroll-behavior: none`, `overflow-x: clip` on the root). No service worker:
+a cached build or balance in an installed app is worse than a network request.

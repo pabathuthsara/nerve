@@ -27,11 +27,17 @@
 
 * { box-sizing: border-box; }
 
-html { background: var(--ground); }
+/* No rubber band (30 September 2026). The page stretching past its edges — in
+   every direction on iOS, and sideways wherever anything is a pixel too wide —
+   is the loudest "this is a web page" tell there is, and it is worse installed.
+   Scroll containers inside (sheets, tabs) keep their own `contain`. */
+html { background: var(--ground); overscroll-behavior: none; }
+html, body { overflow-x: clip; }
 
 body {
   margin: 0;
   min-width: 0;
+  overscroll-behavior: none;
   background:
     radial-gradient(circle at 84% -10%, rgba(196, 248, 42, 0.055), transparent 31rem),
     var(--ground);
@@ -510,13 +516,17 @@ button { color: inherit; }
 }
 .today-card__visual { position: absolute; inset: 0; background: linear-gradient(150deg, rgba(196,248,42,.07), transparent 36%), linear-gradient(180deg, transparent 24%, rgba(11,12,10,.12) 42%, rgba(11,12,10,.96) 86%), radial-gradient(circle at 50% 24%, #343a2f 0, #1d211a 24%, #10120e 68%); }
 .today-card__grain { position: absolute; inset: 0; opacity: .13; background-image: repeating-linear-gradient(17deg, transparent 0 3px, rgba(232,234,228,.035) 3px 4px), repeating-linear-gradient(103deg, transparent 0 7px, rgba(232,234,228,.018) 7px 8px); mix-blend-mode: soft-light; pointer-events: none; }
-/* The card has always layered her behind its text, which the faint ring orb
-   could afford and a bright swarm cannot: centred, her smoke sat behind the
-   level chip and the setting. She lives in the upper right now, clear of the
-   left-aligned name, and fades out downward (30 September). */
-.today-card__persona { position: absolute; z-index: 1; inset: -6% -10% 36% 30%; width: auto !important; height: auto !important; mask-image: linear-gradient(to bottom, #000 58%, transparent 96%); }
+/* Centred across the card, in its upper part, and fading out downward before
+   the text (30 September). The card layers her behind the name and level chip,
+   which the faint ring orb could afford and a bright swarm cannot — so the box
+   stops above the text rather than running down behind it, and the fade does
+   the rest. An upper-right placement kept the text clear but read as off
+   centre. */
+.today-card__persona { position: absolute; z-index: 1; inset: -6% 12% 42% 12%; width: auto !important; height: auto !important; mask-image: linear-gradient(to bottom, #000 55%, transparent 92%); }
 .today-card__persona .fluid-persona__initial { font-size: clamp(25px, 5vw, 42px); }
 .today-card__content { position: absolute; z-index: 2; inset: auto 0 0; display: grid; gap: 10px; padding: 22px; }
+/* Her smoke can drift behind the level chip; a backing keeps it legible. */
+.today-card__content .arena-chip { justify-self: start; background: rgba(11, 12, 10, .78); backdrop-filter: blur(4px); }
 .today-card__hook { max-width: 33rem; margin: 0 0 6px; color: var(--text-dim); font-size: 15px; }
 .today-card__action { display: grid; gap: 4px; margin-top: 8px; }
 
@@ -818,6 +828,7 @@ a.record-card:hover { border-color: var(--line-bright); background: var(--surfac
    that Start is the only thing on this screen shaped like the action. */
 .brief-alt { margin-top: 2px; color: var(--text-mute); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
 .brief-alt:hover { color: var(--text-dim); }
+.brief-alt--quiet { margin-top: -4px; font-size: 12.5px; text-decoration-color: var(--line-bright); }
 .brief-offline { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--amber); font-size: 12px; }
 .brief-gate > svg { color: var(--text-mute); }
 .rule-block { width: 100%; margin: 10px 0 14px; border-block: 1px solid var(--line); }

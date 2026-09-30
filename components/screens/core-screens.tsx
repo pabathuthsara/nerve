@@ -182,7 +182,13 @@ function WarmthTrack({ value, won }: { value: number; won: boolean }) {
 function PersonaCard({ persona, progress }: { persona: Persona; progress?: PersonaProgress }) {
   const record = !progress || progress.attempts === 0 ? 'NOT ATTEMPTED' : progress.wins > 0 && progress.bestTimeMs ? `WON — ${formatTime(progress.bestTimeMs)} BEST` : `0/${progress.attempts} — BEST WARMTH ${progress.bestWarmth}`
   const content = <article className="persona-card"><div className="persona-card__portrait"><FluidPersona name={persona.name} personaId={persona.id} warmth={SHOWCASE_WARMTH} fill motion="still" /><span className="persona-card__index data">0{persona.level}</span></div><div className="persona-card__copy"><div><h3 className="display-md">{persona.name}</h3><span className="label">{persona.settingShort}</span></div><span className={`persona-card__record${progress?.wins ? ' volt' : ''}`}>{record}</span>{progress && progress.attempts > 0 ? <WarmthTrack value={progress.bestWarmth} won={progress.wins > 0} /> : null}</div></article>
-  return <Link href={`/roster/${persona.id}`} className="persona-card-link">{persona.locked && persona.unlockRequirement ? <LockOverlay requirement={persona.unlockRequirement}>{content}</LockOverlay> : content}</Link>
+  // Straight to the brief (30 September 2026). A card used to open her profile
+  // — a long sheet on a phone — whose "Start rep" opened the brief, whose Start
+  // opened the rep: two Starts for one rep. The brief is the screen with the
+  // goal and the pre-microphone checks, so it is the one a tap should reach;
+  // her profile is a link from it. A locked character still opens her profile,
+  // which is where the unlock is explained.
+  return <Link href={persona.locked ? `/roster/${persona.id}` : `/rep/${persona.id}/brief`} className="persona-card-link">{persona.locked && persona.unlockRequirement ? <LockOverlay requirement={persona.unlockRequirement}>{content}</LockOverlay> : content}</Link>
 }
 
 function formatTime(ms: number) { const m = Math.floor(ms / 60000); const s = Math.floor((ms % 60000) / 1000); return `${m}:${String(s).padStart(2, '0')}` }
