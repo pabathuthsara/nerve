@@ -335,7 +335,13 @@ Never run `next build` into `.next` while a dev server is up — see the note in
 3. **The rep format is product law.** Three minutes. Warmth 65 *arms* the rep
    silently; thirty seconds from the end she is told either to leave or to
    offer her number; she keeps it if she is still at 55 or above. She never
-   speaks digits. The rules live in `lib/data/rep-rules.ts` as pure functions
+   speaks digits. **The same decision is taken EARLY if he asks for her number
+   or says he is leaving** (30 September 2026, `asksForHerNumber` in
+   `lib/warmth/number-ask.ts`, wired in `lib/data/rep.ts`): armed and at 55 or
+   above, she says yes and the rep ends on that line; leaving otherwise, she
+   says goodbye; asking while not armed decides nothing. It is the same rule
+   (`givesNumber`) reached sooner — before it, a farewell ended the rep and the
+   end-of-rep rule awarded a number she had just refused out loud. The rules live in `lib/data/rep-rules.ts` as pure functions
    with tests — change them there, not in the hook. **How the result is read is
    part of that file too**: `resultReading` owns `close`, `lateSurge` and
    `nearMiss`, so "she was never interested" and "you missed by four" are one

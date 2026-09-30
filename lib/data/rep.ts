@@ -38,6 +38,7 @@ import { WarmthSession } from '@/lib/warmth/session'
 // Read-only, and it is the same reader `turn-kind.ts` uses to decide whether
 // HIS turn asked something. The guided rail asks it about hers.
 import { asksSomething } from '@/lib/warmth/turn-kind'
+import { asksForHerNumber } from '@/lib/warmth/number-ask'
 import { bindVoiceSteering } from '@/lib/warmth/voice-steering'
 import { HttpSlowScorer } from '@/lib/warmth/slow'
 import {
@@ -325,6 +326,26 @@ const NUMBER_DIRECTIVE = [
 ].join(' ')
 
 /** The other shape. She is leaving, and that is all. */
+/**
+ * The closing decision, taken EARLY because he asked for it (30 September 2026).
+ *
+ * The wind-down directive assumes half a minute of conversation left; this one
+ * is her last line, now. Same content — the offer in her own words, never a
+ * digit — because it is the same decision on the same rule (`givesNumber`),
+ * only reached by him asking or leaving rather than by the clock.
+ */
+const EARLY_NUMBER_DIRECTIVE = [
+  '(This is your last line. You have enjoyed this and you would like to hear from him again.',
+  'Say yes and offer him your number in your own words. Warm, a little flirty, brief.',
+  'Do not say any digits out loud, just make the offer. Then say goodbye.)',
+].join(' ')
+
+/** He is leaving and she is not offering: a goodbye, and nothing that sounds like a yes. */
+const EARLY_LEAVE_DIRECTIVE = [
+  '(He is heading off. This is your last line: say goodbye in your own words, briefly.',
+  'Do not offer him your number and do not ask him anything.)',
+].join(' ')
+
 const WRAP_UP_DIRECTIVE = [
   '(You need to leave in about half a minute.',
   'Start winding the conversation down naturally. Do not announce a time.)',
@@ -506,6 +527,12 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
    * something explicit does not get her number for the first eighty seconds.
    */
   const safetyEndedRef = useRef(false)
+  /**
+   * End on her very next line: he asked for her number and she is offering it.
+   * A farewell already ends there (`WarmthSession.exitByUser`); an ask does not
+   * leave, so the rep has to. See `EARLY_NUMBER_DIRECTIVE`.
+   */
+  const endAfterHerLineRef = useRef(false)
   const incidentsRef = useRef<RepIncidents>(emptyIncidents())
   const incidentsStopRef = useRef<(() => void) | null>(null)
   const agentSpeakingRef = useRef(false)
@@ -1056,6 +1083,40 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
           setUserTurns((count) => count + 1)
         }
         warmthRef.current?.onUserTurn(turn)
+
+        // HE ASKED FOR HER NUMBER, OR HE IS LEAVING (30 September 2026).
+        //
+        // The number used to be decided only at the thirty-second wind-down.
+        // Asking earlier got an improvised "no, not now" from a model nobody had
+        // told she was willing — and then, because a farewell ended the rep, the
+        // end-of-rep rule read the meter and awarded the number anyway. So the
+        // decision is taken HERE, on the same rule, before her reply is bought
+        // (the directive is queued now and the adapter reads it when it
+        // responds), and her words and the result can no longer disagree:
+        //
+        //   · armed and warm enough (`givesNumber`) → she says yes and offers
+        //     it in her own words, and the rep ends on that line, as a win;
+        //   · he is leaving and she is not → she says goodbye, as a loss;
+        //   · he asked and she is not willing → nothing is decided, and she
+        //     answers as herself. The rep goes on.
+        //
+        // Dating only. An interview ends on its clock, and nobody asks for a
+        // number in one.
+        const session = warmthRef.current
+        if (!interview && session && !wrappedRef.current && !safetyEndedRef.current && !finishedRef.current) {
+          const leaving = session.sceneExit !== 'present'
+          const offering = givesNumber({ armed: armedRef.current, warmth: session.engine.warmth, interview })
+          if (leaving || (offering && asksForHerNumber(turn.text))) {
+            wrappedRef.current = true
+            decisionWarmthRef.current = session.engine.warmth
+            closingDecisionRef.current = offering ? 'number' : 'leave'
+            if (offering) numberRef.current = inventNumber()
+            // A farewell already ends on her next line; an ask has to be told to.
+            if (!leaving) endAfterHerLineRef.current = true
+            session.handOverToClosing(offering ? 'number' : 'leave')
+            providerRef.current?.reinforce(offering ? EARLY_NUMBER_DIRECTIVE : EARLY_LEAVE_DIRECTIVE)
+          }
+        }
         publish(voice)
       })
 
@@ -1101,7 +1162,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         // state is up to date, her audio has already drained so she is heard
         // before the rep ends — and `ReplyState` must not be read a second time
         // in a turn, because reading it is what records the silence decision.
-        if (warmthRef.current?.shouldEndScene) {
+        if (warmthRef.current?.shouldEndScene || endAfterHerLineRef.current) {
           void stopRef.current?.('character')
           return
         }

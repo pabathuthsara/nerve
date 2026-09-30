@@ -801,3 +801,23 @@ stability and voice are untouched.
 **Still owed by hand:** a live rep on the chosen tags, cold and warm, and a
 listen for whether one-word replies still stretch under `[flat]` or `[bored]`.
 If they do, the next step is no tag at all under three words.
+
+## The number, when he asks — 30 September 2026
+
+The number was decided only at the thirty-second wind-down. A real rep against
+Cass, armed at 66 and peaking at 71.7: *"So Cass, I have to go. Can I get your
+number before I go, though?"* — *"No, not now. What's your name then?"* — and
+the rep ended and awarded him her number. The farewell committed the exit
+(`isUserFarewell`), her line was steered as a plain goodbye because nothing had
+decided otherwise, and the end-of-rep rule then read the meter and said yes.
+
+Now, when he asks for her number (`asksForHerNumber`, `lib/warmth/number-ask.ts`,
+narrow and tested) or says he is leaving, `lib/data/rep.ts` takes the closing
+decision on the spot, on the wind-down's own rule (`givesNumber`), before her
+reply is bought: armed and at 55 or above, `EARLY_NUMBER_DIRECTIVE` (yes, in her
+own words, no digits, goodbye) and the rep ends on that line as a win; leaving
+otherwise, `EARLY_LEAVE_DIRECTIVE` and a loss; asking while not armed decides
+nothing and she answers as herself. Through `createCombinedTurn` on that exact
+line: armed → "Yeah, I can give it to you."; not armed → "Alright then. Take
+care." Dating only. **Owed by hand:** a live rep that asks while armed, since
+the hook itself needs a microphone.
