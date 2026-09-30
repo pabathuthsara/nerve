@@ -19,7 +19,7 @@
  * TTS models
  * ------------------------------------------------------------------ */
 
-export type ElevenLabsTtsModelId = 'eleven_flash_v2_5' | 'eleven_v3_conversational'
+export type ElevenLabsTtsModelId = 'eleven_flash_v2_5' | 'eleven_v3_conversational' | 'eleven_v4_turbo'
 
 export interface TtsModelSpec {
   id: ElevenLabsTtsModelId
@@ -66,6 +66,22 @@ export const TTS_MODELS: Record<ElevenLabsTtsModelId, TtsModelSpec> = {
     // Unverified against v3 specifically. The player degrades to proportional
     // truncation when alignment does not arrive, so a wrong guess here costs
     // precision on a barge-in, not correctness.
+    supportsTimestamps: true,
+  },
+  // Released 28 September 2026 as v3 conversational's realtime successor, and
+  // billed at the same half-credit multiplier (`GET /v1/models` reports 0.5 for
+  // both), so the rate is carried over unchanged rather than re-derived.
+  // Measured 29 September on Tess's voice through `stream/with-timestamps`:
+  // median first byte ~400ms against v3's ~580ms, full character alignment on
+  // every line, and a blind pick over v3 on ten of ten of her real lines.
+  // Plain `eleven_v4` was preferred as often and is ruled out by latency, not
+  // by ear: ~1.9s to first byte, and twice the price.
+  eleven_v4_turbo: {
+    id: 'eleven_v4_turbo',
+    nominalFirstByteMs: 150,
+    usdPer1kChars: 0.05,
+    creditsPerChar: 1,
+    supportsAudioTags: true,
     supportsTimestamps: true,
   },
 }

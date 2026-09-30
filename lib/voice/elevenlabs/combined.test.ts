@@ -198,15 +198,16 @@ describe('combined HTTP voice stream', () => {
     expect(events.some((event) => event.type === 'error')).toBe(true)
     expect(events.some((event) => event.type === 'done')).toBe(false)
     // 200 uncached + 800 cached input and 20 output on gpt-4.1-mini, plus the
-    // 36 characters submitted to v3 Conversational at $0.05/1k — none of which
-    // was synthesised, hence `characters: 0`.
+    // 33 characters submitted at $0.05/1k — `[flat] That is a lovely
+    // question.`, the usual tag for Tess's band at 30 (`WARMTH_TAGS`, GUARDED) — none of
+    // which was synthesised, hence `characters: 0`.
     const llmUsd = (200 * 0.4 + 800 * 0.1 + 20 * 1.6) / 1_000_000
-    const ttsCeilingUsd = 36 * 0.05 / 1_000
+    const ttsCeilingUsd = 33 * 0.05 / 1_000
     expect(settled).toHaveBeenCalledWith(expect.objectContaining({
       status: 'failed',
       costUsd: expect.closeTo(llmUsd + ttsCeilingUsd, 9),
       usage: expect.objectContaining({
-        tts: expect.objectContaining({ attemptedCharacters: 36, characters: 0, costUsd: 0 }),
+        tts: expect.objectContaining({ attemptedCharacters: 33, characters: 0, costUsd: 0 }),
       }),
       metadata: expect.objectContaining({ ttsRequestIds: ['tts-clip-1'] }),
     }))

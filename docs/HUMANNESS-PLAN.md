@@ -908,6 +908,10 @@ plan that leans on speaking rate as a warmth channel needs Flash or needs to
 stop. Left in the request because it is correct for Flash; recorded beside the
 code so nobody auditions against it.
 
+**29 September: `eleven_v4_turbo`, the model that now ships, drops it too** —
+0.7, 1.0 and 1.2 gave 3.84 s, 3.84 s and 3.76 s on Tess's voice. The finding
+above carries over unchanged (`PIPELINE.md`, the v4 Turbo section).
+
 **Stability was being set from outside the repo.** `ELEVENLABS_STABILITY=0.85`
 in the production environment overrode `STABILITY_BY_EXPRESSION` for every
 persona on this arm. On dating that is deliberate and stays. It also silently

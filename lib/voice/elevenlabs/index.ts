@@ -36,7 +36,7 @@
 import { VoiceEmitter } from '../emitter'
 import { makeTurn, sortTurns } from '../transcript'
 import { mintRefusal } from '../refusal'
-import { deliveryFor, stripDeliveryTags } from './persona'
+import { deliveryFor, stripDeliveryTags, tagReply } from './persona'
 import type { ReplyState, VoiceProvider } from '../provider'
 import {
   SESSION_CAP_SECONDS,
@@ -795,13 +795,11 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
    * turn — repeating them mid-reply makes her restart her own prosody.
    */
   private withDeliveryTags(text: string): string {
-    const tags = this.minted && this.persona
-      ? deliveryFor(this.persona, this.minted.pipeline, this.warmth).deliveryTags
-      : []
-    if (tags.length === 0) return text
-    // The model may have opened with its own tag; two would fight.
-    if (/^\s*\[/.test(text)) return text
-    return `${tags[0]} ${text}`
+    if (!this.minted || !this.persona) return text
+    const tags = deliveryFor(this.persona, this.minted.pipeline, this.warmth).deliveryTags
+    // An empty tag list leaves the text exactly as it arrived; `tagReply`
+    // decides whether a tag the model opened with yields or is replaced.
+    return tags.length === 0 ? text : tagReply(text, tags, this.persona)
   }
 
   private ensurePlayer(): PcmPlayer {

@@ -456,6 +456,23 @@ describe('the TTS model dial', () => {
     expect(
       resolvePipelineConfig({ ELEVENLABS_TTS_MODEL: 'eleven_v3_conversational' }).tts.model,
     ).toBe('eleven_v3_conversational')
+    // Without its own entry this would resolve to Flash — the unknown-model
+    // fallback below — and setting the variable would silently downgrade her.
+    expect(
+      resolvePipelineConfig({ ELEVENLABS_TTS_MODEL: 'eleven_v4_turbo' }).tts.model,
+    ).toBe('eleven_v4_turbo')
+  })
+
+  it('tags and aligns on v4 Turbo exactly as on v3', () => {
+    const v3 = ttsModelSpec('eleven_v3_conversational')
+    const v4 = ttsModelSpec('eleven_v4_turbo')
+    expect(v4.supportsAudioTags).toBe(v3.supportsAudioTags)
+    expect(v4.supportsTimestamps).toBe(v3.supportsTimestamps)
+    expect(v4.usdPer1kChars).toBe(v3.usdPer1kChars)
+    const turbo = new ElevenLabsPersonaCompiler({ ELEVENLABS_TTS_MODEL: 'eleven_v4_turbo' })
+    const v3Compiler = new ElevenLabsPersonaCompiler({ ELEVENLABS_TTS_MODEL: 'eleven_v3_conversational' })
+    expect(turbo.compile(nadia, DEFAULT_CALIBRATION).delivery_tags)
+      .toEqual(v3Compiler.compile(nadia, DEFAULT_CALIBRATION).delivery_tags)
   })
 
   it('ignores a model it does not know rather than failing a rep', () => {
@@ -470,14 +487,13 @@ describe('the TTS model dial', () => {
     })
     expect(flash.compile(nadia, DEFAULT_CALIBRATION).delivery_tags).toEqual([])
     expect(v3.compile(nadia, DEFAULT_CALIBRATION).delivery_tags.length).toBeGreaterThan(0)
-    // Layer 2 decides how she sounds; warmth decides how much she gives — so
-    // her expression tag is there whatever the meter says, and whatever she has
-    // most recently been tuned to.
+    // With no live warmth the expression is still the tag. On a dating turn
+    // the band decides since 29 September 2026 (`WARMTH_TAGS`), because v4
+    // Turbo performs a constant `[playful]` as flirting while she turns him down.
     const expression = EXPRESSION_TAG[nadia.personality.expression]
-    for (const warmth of [0, 40, 100]) {
-      expect(compileDeliveryTags(nadia, warmth)).toContain(expression)
-    }
     expect(compileDeliveryTags(nadia)).toContain(expression)
+    expect([0, 40, 100].map((warmth) => compileDeliveryTags(nadia, warmth)))
+      .toEqual([['[flat]', '[bored]'], ['[warm]', '[curious]'], ['[warm]', '[amused]']])
   })
 
   it('lets the ear override the persona on the tuning dials', () => {

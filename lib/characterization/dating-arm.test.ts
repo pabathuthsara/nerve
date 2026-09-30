@@ -222,12 +222,13 @@ describe('characterization · the pipeline arm', () => {
    * pass or fail by accident. Both shapes are pinned explicitly instead: the
    * defaults, and the three keys the deployment actually sets. The second is
    * the one customers hear, and it is the reason `deliveryTags` is non-empty in
-   * one table and empty in the other — only the v3 model takes audio markers.
+   * one table and empty in the other — Flash, the default, takes no audio
+   * markers; the shipped model does.
    */
   const ENVS = {
     defaults: {} as PipelineEnv,
     shipped: {
-      ELEVENLABS_TTS_MODEL: 'eleven_v3_conversational',
+      ELEVENLABS_TTS_MODEL: 'eleven_v4_turbo',
       ELEVENLABS_STABILITY: '0.85',
       PIPELINE_STT_MODEL: 'gpt-4o-transcribe',
     } as PipelineEnv,
@@ -249,6 +250,27 @@ describe('characterization · the pipeline arm', () => {
   // differently is the `[earnest]` delivery tag, which moves under both.
   //
   // Nothing else about anybody's voice, casting or turn-taking changed.
+  //
+  // RE-BASELINED 29 September 2026: `shipped` moved from
+  // `eleven_v3_conversational` to `eleven_v4_turbo`, signed off by the product
+  // owner after a blind pick of v4 over v3 on ten of ten of Tess's real lines.
+  // Under `shipped`, `tts` moved on all nine characters and nothing else did:
+  // every `prompt` and `turn` digest is byte-identical, and a field-by-field
+  // diff of the compiled `tts` object shows `model` as the only key that
+  // differs. Delivery tags are unchanged because both models read them.
+  // `defaults` did not move at all. Speed stays inert on v4 Turbo (measured,
+  // see `deliveryFor`), so no character's tempo moved either.
+  //
+  // The same day, and signed off separately after two live reps: the DELIVERY
+  // ladder below moved from a constant `[playful]` to the band's pair in
+  // `WARMTH_TAGS` — flat/bored cold, warm/curious in the middle, warm/amused
+  // warm — and the `prompt` digests moved on every character for one reason:
+  // the `# Output` line that let her open with any tag became
+  // `DATING_TAG_RULE`, which asks for one of those five on every reply and
+  // says when each is earned. `tagReply` bounds her choice by band. v4 Turbo
+  // performed the constant tag as flirting on lines that were turning him
+  // down. `tts` and `turn` did not move for this, and neither did `defaults`'
+  // prompt — Flash takes no tags, so its line still forbids brackets.
   const EXPECTED: Record<keyof typeof ENVS, Record<string, { prompt: string; tts: string; turn: string }>> = {
     defaults: {
       alex: { prompt: 'a5a487316b591d2c', tts: '24db3ed2807bb4d4', turn: 'f6acbfc49fa3d135' },
@@ -262,15 +284,15 @@ describe('characterization · the pipeline arm', () => {
       tess: { prompt: 'ef1a7fc5cb751aa5', tts: 'a4d8cd933b426637', turn: 'f5b2229cc620b177' },
     },
     shipped: {
-      alex: { prompt: '83e0f45212e4e515', tts: '68cb66a0513de355', turn: 'f6acbfc49fa3d135' },
-      erin: { prompt: '74145f5062b20866', tts: '15abd07e819da5b5', turn: 'f6acbfc49fa3d135' },
-      jules: { prompt: '01aae49163e20b52', tts: 'e4ce4f2d3895289b', turn: 'f5b2229cc620b177' },
-      maya: { prompt: '7e826a0ddb04a60d', tts: '6ec90fd2c54b374b', turn: 'f5b2229cc620b177' },
-      nadia: { prompt: 'a7b0b0c6ff14aff7', tts: 'bc0ec26ebfa66ab8', turn: 'f5b2229cc620b177' },
-      priya: { prompt: '08558312780c0ddc', tts: 'eaf47d8ed9daad75', turn: 'f5b2229cc620b177' },
-      robin: { prompt: 'c85e8daf84ef4d6f', tts: 'f0da90696682069a', turn: 'f5b2229cc620b177' },
-      sam: { prompt: '455eaa24e9d45b35', tts: '63159e2880527025', turn: 'f6acbfc49fa3d135' },
-      tess: { prompt: '6e358101081cb0ed', tts: 'fa9fbd31881dd6fb', turn: 'f5b2229cc620b177' },
+      alex: { prompt: '5d3291453ebfee30', tts: 'b15883e5e0f54c14', turn: 'f6acbfc49fa3d135' },
+      erin: { prompt: '65653ad18166c56a', tts: '09aaec322e13f40e', turn: 'f6acbfc49fa3d135' },
+      jules: { prompt: '39732e01325f60d4', tts: 'fbfd31db8427136e', turn: 'f5b2229cc620b177' },
+      maya: { prompt: '14973d8ae0be19d0', tts: '41f35eccb7225a33', turn: 'f5b2229cc620b177' },
+      nadia: { prompt: 'd1689bf478fec484', tts: '0730696d43596408', turn: 'f5b2229cc620b177' },
+      priya: { prompt: 'de87f715bd6ac217', tts: 'ff8f8693f27ce9d1', turn: 'f5b2229cc620b177' },
+      robin: { prompt: '7439aa86fe7f8da7', tts: '1d4a1080320d4247', turn: 'f5b2229cc620b177' },
+      sam: { prompt: '280990319fe2d9fe', tts: 'cdd5bc4efbff7f08', turn: 'f6acbfc49fa3d135' },
+      tess: { prompt: '10f1f1090c8b073d', tts: '2adccdb1e2aea742', turn: 'f5b2229cc620b177' },
     },
   }
 
@@ -298,10 +320,10 @@ describe('characterization · the pipeline arm', () => {
     const nadia = PERSONAS.nadia!
     const shipped = compile('nadia', ENVS.shipped)
     expect([10, 41, 66, 84].map((warmth) => deliveryFor(nadia, shipped, warmth))).toEqual([
-      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 0.9791666666666666 }, deliveryTags: ['[playful]'] },
-      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 1 }, deliveryTags: ['[playful]'] },
-      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 1.025 }, deliveryTags: ['[playful]'] },
-      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 1.025 }, deliveryTags: ['[playful]'] },
+      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 0.9791666666666666 }, deliveryTags: ['[flat]', '[bored]'] },
+      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 1 }, deliveryTags: ['[warm]', '[curious]'] },
+      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 1.025 }, deliveryTags: ['[warm]', '[amused]'] },
+      { settings: { stability: 0.85, similarity_boost: 0.75, speed: 1.025 }, deliveryTags: ['[warm]', '[amused]'] },
     ])
     // The flash model takes no audio markers, so the same character renders
     // with none. That difference is a property of the model, not of her.

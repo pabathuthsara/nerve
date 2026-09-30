@@ -30,6 +30,7 @@ import {
 import type { PersonaCompiler } from '../provider'
 import { compileInstructions } from '../openai/persona'
 import { paceFor } from '@/lib/warmth/timing'
+import { bandFor, type WarmthBand } from '@/lib/warmth/bands'
 import {
   resolvePipelineConfig,
   ttsModelSpec,
@@ -138,7 +139,14 @@ export function compileDeliveryTags(persona: Persona, warmth?: number): string[]
   const p = persona.personality
 
   // Expression is the constant; warmth only decides how much is being given,
-  // never how it sounds. That separation is the whole point of layer 2.
+  // never how it sounds. That separation is the whole point of layer 2 — and
+  // it held only while the shipping model mostly ignored the tag. On a dating
+  // turn with a live warmth the band decides instead, and the list is exactly
+  // the two tags that band allows. See `WARMTH_TAGS` and `tagReply`.
+  if (persona.track === 'dating' && warmth !== undefined) {
+    const { usual, when } = WARMTH_TAGS[bandFor(warmth)]
+    return [usual, when]
+  }
   tags.push(EXPRESSION_TAG[p.expression])
 
   // The sharpness curve, if a live warmth is supplied. A stranger who is
@@ -167,6 +175,76 @@ export const EXPRESSION_TAG: Record<Persona['personality']['expression'], string
   dry: '[dry]',
   earnest: '[earnest]',
   flat: '[flat]',
+}
+
+/**
+ * The dating arm's delivery tags, by warmth band. 29 September 2026.
+ *
+ * **Why the meter now decides how she sounds.** `eleven_v4_turbo` obeys a
+ * leading tag far more strongly than v3 conversational did, and the tag that
+ * rode the first clip of every turn was her constant expression. So Nadia said
+ * "Not mourning." and "No, you didn't." as `[playful]`, and Tess every line as
+ * `[earnest]` — on a live rep both read as flirting while turning him down, and
+ * one-word replies were stretched to carry the whole emotion. The words were
+ * cold; the performance was not. Rendered with and without the tag, the tag
+ * was the whole difference.
+ *
+ * **Two tags per band: the usual one, and the one a moment earns.** Picked by
+ * the product owner, by ear, from candidates rendered on v4 Turbo:
+ *
+ *   cold (under 40)   [flat],  [bored]   when he is dull, rude or dismissive
+ *   middle (40–59)    [warm],  [curious] when he asks her something
+ *   warm (60+)        [warm],  [amused]  when he is funny or pays a compliment
+ *
+ * **She chooses; the band bounds.** Whether a line was a joke or a compliment
+ * is a question about meaning, which the model writing her reply can answer
+ * and a lexical rule cannot — so the prompt asks her to open every reply with
+ * one tag and says when each is earned (`DATING_TAG_RULE`). `tagReply` then
+ * keeps her choice only if this band allows it and otherwise sends the usual
+ * one, so she can never sound amused while she is cold or bored while she is
+ * warm, whatever she wrote. Nothing is angry on purpose: a cold stranger here
+ * loses interest and says no politely, and an irritated voice would make a
+ * rejection feel like a punishment.
+ *
+ * Dating only. Interviewers keep `EXPRESSION_TAG`; their warmth means
+ * something else and has not been heard on v4.
+ */
+export const WARMTH_TAGS: Record<WarmthBand, { usual: string; when: string }> = {
+  HOSTILE: { usual: '[flat]', when: '[bored]' },
+  CLOSED: { usual: '[flat]', when: '[bored]' },
+  GUARDED: { usual: '[flat]', when: '[bored]' },
+  OPEN: { usual: '[warm]', when: '[curious]' },
+  ENGAGED: { usual: '[warm]', when: '[amused]' },
+  INVESTED: { usual: '[warm]', when: '[amused]' },
+}
+
+/** What a dating character is told about the tags. Static, so it stays in the cached prefix. */
+export const DATING_TAG_RULE =
+  'Open every reply with exactly one delivery tag, chosen by what he just said: '
+  + '[bored] only when he gave you nothing at all, like "ok" or "cool", or was rude or dismissive; '
+  + '[curious] when he asked you a question; '
+  + '[amused] when he was funny or paid you a compliment; '
+  + 'otherwise [flat] if you are not interested in him, or [warm] if you are. '
+  + 'Never use any other tag and never more than one.'
+
+/**
+ * Put the turn's delivery tag in front of her reply.
+ *
+ * On the dating arm `tags` is the band's pair from `WARMTH_TAGS`: a tag she
+ * opened with survives only if it is one of them, and anything else — a tag
+ * this band does not allow, a `[playful]` of her own, or no tag at all — is
+ * replaced by the usual one. Elsewhere her own tag still wins, because two
+ * would fight.
+ */
+export function tagReply(text: string, tags: readonly string[], persona: Pick<Persona, 'track'>): string {
+  const trimmed = text.trim()
+  if (tags.length === 0) return trimmed
+  const opening = trimmed.match(/^\[([^\]]+)\]\s*/)
+  if (!opening) return `${tags[0]} ${trimmed}`
+  if (persona.track !== 'dating') return trimmed
+  const chosen = `[${opening[1]!.trim().toLowerCase()}]`
+  const rest = trimmed.slice(opening[0].length)
+  return `${tags.includes(chosen) ? chosen : tags[0]} ${rest}`
 }
 
 /**
@@ -232,7 +310,12 @@ export const STABILITY_BY_EXPRESSION: Record<Persona['personality']['expression'
  *  below is therefore computed, sent, and discarded by the vendor on every
  *  turn. It is left in place because it is correct for Flash and costs
  *  nothing, but DO NOT TUNE AGAINST IT while v3 is the shipping model — a
- *  listening pass on these numbers is a listening pass on nothing. */
+ *  listening pass on these numbers is a listening pass on nothing.
+ *
+ *  **`eleven_v4_turbo` drops it too.** Measured 29 September on Tess's voice,
+ *  one line: 0.7, 1.0 and 1.2 gave 3.84s, 3.84s and 3.76s. So moving to v4
+ *  Turbo does not wake up the pace bands, and no character's tempo moves with
+ *  the model. */
 export function deliveryFor(
   persona: Persona,
   compiled: Pick<ElevenLabsPipelineConfig, 'tts' | 'delivery_tags'>,
@@ -296,7 +379,9 @@ export class ElevenLabsPersonaCompiler implements PersonaCompiler<ElevenLabsPipe
       'Reply with spoken words only. No stage directions, no asterisks, no markdown, no emoji.',
       ...(spec.supportsAudioTags
         ? [
-            'You may open a reply with at most one bracketed delivery tag such as [flat] or [distracted] when it genuinely fits. Never invent tags and never use more than one.',
+            persona.track === 'dating'
+              ? DATING_TAG_RULE
+              : 'You may open a reply with at most one bracketed delivery tag such as [flat] or [distracted] when it genuinely fits. Never invent tags and never use more than one.',
           ]
         : ['Never write anything in square brackets.']),
     ].join('\n')

@@ -26,7 +26,7 @@ import { withInterviewBrief } from '@/lib/personas/interview/overlay'
 import { DEFAULT_CALIBRATION, type Calibration } from '../types'
 import { priceChatUsage } from '../rates'
 import { resolvePipelineConfig, ttsModelSpec, type PipelineEnv } from './config'
-import { ElevenLabsPersonaCompiler, deliveryFor } from './persona'
+import { ElevenLabsPersonaCompiler, deliveryFor, tagReply } from './persona'
 import { LlmClient } from './llm'
 import { handleLlmRequest, handleTtsRequest, type PersonaOverlay } from './server'
 import { parseAlignment } from './tts'
@@ -195,9 +195,7 @@ export function createCombinedTurn(
       const enqueue = (plainText: string) => {
         if (!plainText.trim()) return
         const clipId = String(clips++)
-        const tagged = delivery.deliveryTags.length && clipId === '0' && !/^\s*\[[^\]]+\]/.test(plainText)
-          ? `${delivery.deliveryTags[0]} ${plainText.trim()}`
-          : plainText.trim()
+        const tagged = clipId === '0' ? tagReply(plainText, delivery.deliveryTags, persona) : plainText.trim()
         chain = chain.then(async () => {
           if (abort.signal.aborted || failure) return
           if (attemptedCharacters + tagged.length > MAX_TURN_TTS_CHARACTERS) throw new Error('The reply exceeded its synthesis allowance.')

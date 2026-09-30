@@ -267,9 +267,10 @@ the historical Realtime measurement.
 
 ## Cost
 
-ElevenLabs bills characters. Both TTS models bill **$0.05 per 1,000 characters
-— identically**, so Flash is not the cheap option and v3 is not the expensive
-one; the choice is latency against expressiveness.
+ElevenLabs bills characters. Every TTS model in `config.ts` is booked at
+**$0.05 per 1,000 characters — identically** (Flash, v3 conversational and, since
+29 September, v4 Turbo), so none of them is the cheap option; the choice is
+latency against expressiveness.
 
 Submitted characters include delivery tags and audio discarded by a barge-in.
 They are a conservative synthesis estimate, not an assertion that every failed
@@ -686,3 +687,117 @@ steering cadence and the reply budget are all client code.
 One rep is one rep. Warmth has never passed 59 on this code, so ENGAGED and
 INVESTED — the two bands retuned most — are now live and still unexercised by a
 real conversation. That is the thing to watch in the next few reps.
+
+## The shipping model moves to `eleven_v4_turbo` — 29 September 2026
+
+ElevenLabs released v4 and v4 Turbo on 28 September. Turbo is the realtime
+successor to `eleven_v3_conversational` and bills at the same half-credit
+multiplier (`GET /v1/models` reports 0.5 for both, 1.0 for plain `eleven_v4`),
+so the choice was made by ear and by latency, never by cost.
+
+**What was measured, on Tess's cast voice with her production settings**
+(stability 0.85, similarity 0.75, speed 1.02), through `stream/with-timestamps`
+exactly as `server.ts` calls it, from a laptop in Sri Lanka:
+
+| Model | median first byte | range | alignment |
+|---|---|---|---|
+| `eleven_v3_conversational` | ~580 ms | 450 ms – 2.7 s | full |
+| `eleven_v4_turbo` | **~400 ms** | 355 – 770 ms | full |
+| `eleven_v4` | ~1.9 s | 1.1 – 2.6 s | full |
+
+- **A blind pick.** Ten of her real lines from recent reps, three renderings
+  each, shuffled per line. The product owner picked v4 or v4 Turbo on **ten of
+  ten** and v3 on none; v4 against Turbo split five–five and was called
+  indistinguishable. One listener and one voice — strong enough to ship behind a
+  one-line rollback, not a claim about every character.
+- **Plain `eleven_v4` is ruled out by latency, not by ear**: ~1.9 s of silence
+  before every reply, at twice the price.
+- **`speed` is inert on Turbo too**: 0.7, 1.0 and 1.2 gave 3.84 s, 3.84 s and
+  3.76 s. So the move does not wake up `deliveryFor`'s pace bands and no
+  character's tempo moves with it (`HUMANNESS-PLAN.md` §7.5).
+- **End to end through `createCombinedTurn`**, three turns with Tess on the
+  local environment: TTS first byte 213–334 ms after the text was ready, full
+  alignment on every clip, accounting settled on every turn.
+
+**What changed in code:** one entry in `TTS_MODELS`, which is the whole switch.
+Without it, `ELEVENLABS_TTS_MODEL=eleven_v4_turbo` is an unknown id and
+`resolvePipelineConfig` falls back to **Flash** — setting the variable alone
+would have silently downgraded her. `pipeline.test.ts` now pins that it
+resolves. `dating-arm.test.ts`'s `shipped` environment was re-baselined with
+the ceremony rule 19 asks for: `tts` moved on all nine characters, a
+field-by-field diff shows `model` as the only key that differs, and every
+`prompt` and `turn` digest is byte-identical.
+
+**Rollback** is `ELEVENLABS_TTS_MODEL=eleven_v3_conversational` in Vercel and a
+redeploy. No code has to move back.
+
+**Owed by hand:**
+- A live rep on a microphone against Nadia and one interviewer. Only Tess's
+  voice has been heard on Turbo, and every cast voice was designed on v3;
+  ElevenLabs says professional clones need retraining for v4.
+- The cost ledger still books both models at 1 credit and $0.05 per 1,000
+  characters. The vendor reports a 0.5 multiplier for both, so if the dashboard
+  agrees, every recorded TTS cost is up to 2x high. Reconcile against the
+  ElevenLabs usage page before changing the rate.
+
+### The first live rep found the tag — and the tag now follows warmth
+
+The first live reps on v4 Turbo, Nadia and Tess, both sounded **flirty while
+turning him down, and drew out every short word**. The transcripts were cold
+("Not mourning.", "No, you didn't.", "This isn't really the kind of place for
+small talk."), so it was the rendering, not the text. The cause was the tag on
+the first clip of every turn: her constant expression, `[playful]` for Nadia and
+`[earnest]` for Tess. v3 conversational mostly ignored it; v4 performs it. The
+same lines rendered with and without the tag settled it by ear, and the blind
+test above never saw it because those samples were untagged.
+
+So on the dating arm **the band bounds the tag and she chooses within it**
+(`WARMTH_TAGS`, `DATING_TAG_RULE` and `tagReply` in `persona.ts`). Each band
+allows two tags — the usual one, and the one a moment earns — picked by the
+product owner by ear from candidates rendered on v4 Turbo:
+
+| Band | Warmth | Usual | Earned by |
+|---|---|---|---|
+| HOSTILE, CLOSED, GUARDED | under 40 | `[flat]` | `[bored]` — he gave her nothing ("ok", "cool"), or was rude or dismissive |
+| OPEN | 40–59 | `[warm]` | `[curious]` — he asked her a question |
+| ENGAGED, INVESTED | 60+ | `[warm]` | `[amused]` — he was funny, or paid her a compliment |
+
+**Why she chooses.** Whether a line was a joke or a compliment is a question
+about meaning. The model writing her reply can answer it and a lexical rule
+cannot, so `DATING_TAG_RULE` (a static line in the `# Output` block, so the
+cached prefix survives) asks her to open every reply with one of the five tags
+and says when each is earned. **Why the band bounds it.** `tagReply` keeps her
+choice only if her current band allows it and otherwise sends the usual tag:
+she can never sound amused while she is cold or bored while she is warm,
+whatever she wrote, and a `[playful]` of her own is replaced rather than
+obeyed. Nothing is angry on purpose: a cold stranger here loses interest and
+says no politely, and an irritated voice would make a rejection feel like a
+punishment. Interviewers keep `EXPRESSION_TAG` and their own tag still wins;
+that arm has not been heard on v4.
+
+**Measured through `createCombinedTurn` on Nadia**, two runs per situation.
+The rule took two rewordings, and both misses are worth knowing:
+
+- The first wording ("[curious] when he asked you something you want to
+  answer", "[bored] when he was dull") produced `[warm]` for a question and
+  `[flat]` for "ok". The model reads "something you want to answer" as a
+  judgement it declines to make.
+- The second ("[bored] when he gave you a one-word or throwaway reply")
+  over-fired: an ordinary cold line got `[bored]` on every run.
+- The shipped wording ("[bored] only when he gave you nothing at all, like
+  \"ok\" or \"cool\"") gave 15 of 16 as intended: ordinary cold lines `[flat]`,
+  "ok" and rudeness `[bored]`, a mid-warmth question `[curious]`, a joke and a
+  compliment `[amused]`, an ordinary warm line `[warm]`. The one miss was
+  "Cool. I'm just looking around too." read as `[bored]` once in two, which is
+  defensible.
+
+The shipped `prompt` digest moved on all nine dating characters for this, and
+for nothing else: substituting the old `# Output` line back into the new
+prompt reproduces every previous digest exactly. `tts`, `turn` and the
+`defaults` environment did not move. This retires layer 2's "expression is the
+constant, warmth never decides how she sounds" for the dating arm's tag;
+stability and voice are untouched.
+
+**Still owed by hand:** a live rep on the chosen tags, cold and warm, and a
+listen for whether one-word replies still stretch under `[flat]` or `[bored]`.
+If they do, the next step is no tag at all under three words.
