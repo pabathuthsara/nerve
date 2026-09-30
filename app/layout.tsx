@@ -42,6 +42,11 @@ export const metadata: Metadata = {
    */
   appleWebApp: { capable: true, title: 'NERVE', statusBarStyle: 'black' },
   icons: { apple: '/pwa/apple-touch-icon.png' },
+  // Next renders `capable` above as the generic `mobile-web-app-capable`, not
+  // the `apple-` one iOS reads, so the home-screen icon opened in Safari —
+  // app-like until the first scroll brought the toolbar back. Stated
+  // explicitly rather than trusted to the framework.
+  other: { 'apple-mobile-web-app-capable': 'yes' },
 }
 
 /**
