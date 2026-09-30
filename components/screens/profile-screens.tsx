@@ -19,6 +19,7 @@ import { planWaitlistFlag } from '@/lib/data/ui-flags'
 import { dayCount } from '@/lib/data/rank'
 import { Mark, tierMark } from '@/components/marks'
 import { FluidPersona } from '@/components/fluid-persona'
+import { SHOWCASE_WARMTH } from '@/lib/personas/visual'
 import { recordLabel, type RepRecord } from '@/lib/data/records'
 import {
   BILLING_NOTE, CHECKOUT_UNCONFIGURED_NOTE, PUBLIC_PLANS, TRIAL_DAYS, TRIAL_NOTE, checkoutNoteFor,
@@ -124,7 +125,7 @@ function RecordCard({ record }: { record: RepRecord }) {
     // simply not cleared.
     return (
       <article className="record-card record-card--empty">
-        <FluidPersona name={record.personaName} personaId={record.personaId} warmth={10} size={44} />
+        <FluidPersona name={record.personaName} personaId={record.personaId} warmth={SHOWCASE_WARMTH} size={44} />
         <div>
           <span className="label">{recordLabel(record.level, false)}</span>
           <strong className="display-md">{record.personaName}</strong>

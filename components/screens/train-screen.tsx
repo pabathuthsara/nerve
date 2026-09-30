@@ -18,6 +18,7 @@ import { PaywallSheet } from '@/components/modals'
 import { TRIAL_DAYS, planById } from '@/lib/site/plans'
 import { ShareButton } from '@/components/share/share-button'
 import { FluidPersona } from '@/components/fluid-persona'
+import { SHOWCASE_WARMTH } from '@/lib/personas/visual'
 import { MissionCard } from '@/components/mission'
 import { missionFor } from '@/lib/data/mission'
 import { Mark, fieldTierMark, rankMark } from '@/components/marks'
@@ -125,7 +126,6 @@ function TrainContent() {
   // `chooseTodayPersona`, so it decides the first rep and then gets out of the
   // way of the rotation.
   const persona = chooseTodayPersona(personas, progress, user?.currentLevel ?? 1, user?.focusArea)
-  const personaProgress = persona ? progress.find((item) => item.personaId === persona.id) : undefined
   const last = sessions[0]
   const challenge = assignment?.challenge
   const remaining = user?.repsRemainingToday ?? 0
@@ -159,7 +159,7 @@ function TrainContent() {
           {loading || !persona ? <Skeleton height={430} /> : (
             <article className="today-card">
               <div className="today-card__visual" />
-              <FluidPersona name={persona.name} personaId={persona.id} warmth={personaProgress && personaProgress.attempts > 0 ? personaProgress.bestWarmth : 18} fill className="today-card__persona" />
+              <FluidPersona name={persona.name} personaId={persona.id} warmth={SHOWCASE_WARMTH} fill className="today-card__persona" />
               <div className="today-card__grain" />
               <div className="today-card__content">
                 <div><Chip tone="band" band={levelTone(persona.level)}>Level {String(persona.level).padStart(2, '0')} — {LEVEL_NAMES[persona.level]}</Chip></div>

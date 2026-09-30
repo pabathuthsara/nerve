@@ -48,7 +48,7 @@
  * finishes over answers nobody stored.
  */
 
-import { Check, ChevronLeft, LogOut, Mic, MicOff } from 'lucide-react'
+import { Check, ChevronLeft, LogOut, MapPin, Mic, MicOff, Timer } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -90,8 +90,10 @@ import { SCREENER_ROUND, roundType } from '@/lib/data/interview-credits'
 import { MIN_AGE } from '@/lib/safety/age'
 import { tap } from '@/lib/haptics'
 import { FluidPersona } from '@/components/fluid-persona'
+import { HowItWorksFigure } from '@/components/modals'
+import { SHOWCASE_WARMTH } from '@/lib/personas/visual'
 import { Mark } from '@/components/marks'
-import { RuleBlock, repGoal } from './rep-format'
+import { repGoal } from './rep-format'
 import { chooseTodayPersona } from '@/lib/data/progression'
 import type { FirstRepCandidate } from '@/lib/data/first-rep'
 import type { FocusArea } from '@/lib/data/focus'
@@ -1018,7 +1020,7 @@ function InterviewReadyStep({ name, roleTitle }: { name: string | null; roleTitl
               aria-busy={starting === interviewer.id}
               onClick={() => { tap(); void start(interviewer.id) }}
             >
-              <FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} size={40} />
+              <FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={SHOWCASE_WARMTH} size={40} />
               <span><strong>{interviewer.name}</strong><small>{interviewer.styleLabel}</small></span>
             </button>
           ))}
@@ -1082,34 +1084,52 @@ function ReadyStep({ firstRep, name }: { firstRep: FirstRepCandidate | null; nam
     )
   }
 
+  /*
+   * On the reveal's structure (30 September 2026), like the `/start` reveal
+   * this user met a few screens ago and the brief every later rep opens on —
+   * her, her world, the goal set apart, the facts as tiles. It was the one
+   * brief-like screen left in the old flat stack, and it is the last thing a
+   * brand-new account reads before its first rep.
+   */
   return (
-    <section className="brief-shell">
-      <FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={18} size={132} />
-      <h1 className="display-lg" tabIndex={-1} data-step-heading>{firstRep.name}</h1>
-      <span className="label">{firstRep.setting}</span>
-      {/* D23 · THE SCREEN A FIRST REP ACTUALLY MEETS.
-          `RepBriefScreen` is the brief for somebody who picked a character off
-          the roster. A brand-new account never reaches it: this step goes
-          straight to `/rep/<id>/live`, so this is the last thing read before
-          the microphone opens, for the one user who has never seen any of it.
-          The goal was promoted to a headline over there and this screen kept
-          only the table — which, once the goal row left the table, meant a
-          first-time user was shown LESS than before. Both screens read
-          `repGoal` now, for the same reason both read `RuleBlock`. */}
-      <p className="brief-goal">{repGoal(false)}</p>
-      <button type="button" className="brief-how" onClick={() => setOpen(true)}>How does this work?</button>
-      <p className="brief-hook">{firstRep.hook}</p>
-      <RuleBlock interview={false} />
-      <Button size="lg" fullWidth loading={starting} onClick={() => void start(`/rep/${firstRep.id}/live`)}>
-        {name ? `Start, ${name}` : 'Start'}
-      </Button>
+    <section className="start-reveal brief-reveal">
+      <div className="start-build__persona"><FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={SHOWCASE_WARMTH} size={168} /></div>
+      <span className="label start-reveal__kicker">Your first rep</span>
+      <h1 className="display-xl start-reveal__name" tabIndex={-1} data-step-heading>{firstRep.name}</h1>
+      <p className="start-reveal__hook">{firstRep.hook}</p>
+      {/* D23 · THE SCREEN A FIRST REP ACTUALLY MEETS. A brand-new account
+          never reaches `RepBriefScreen`: this step goes straight to
+          `/rep/<id>/live`, so this is the last thing read before the
+          microphone opens. Both screens read `repGoal`, and both set it apart
+          as the most prominent line after her name. */}
+      <p className="brief-reveal__goal">{repGoal(false)}</p>
+      <button type="button" className="brief-how brief-reveal__how" onClick={() => setOpen(true)}>How does this work?</button>
+      <div className="start-reveal__facts">
+        <div className="start-reveal__fact start-reveal__fact--wide">
+          <MapPin size={16} strokeWidth={1.6} aria-hidden="true" />
+          <span className="label">Where</span>
+          <strong>{firstRep.setting}</strong>
+        </div>
+        <div className="start-reveal__fact">
+          <Timer size={16} strokeWidth={1.6} aria-hidden="true" />
+          <span className="label">Time</span>
+          <strong className="data">3:00</strong>
+          <small className="brief-reveal__ends">then she leaves</small>
+        </div>
+      </div>
+      <p className="start-reveal__after">Afterwards: a score on how you talked, and one small thing to try for real.</p>
+      <div className="brief-reveal__actions">
+        <Button size="lg" fullWidth loading={starting} onClick={() => void start(`/rep/${firstRep.id}/live`)}>
+          {name ? `Start, ${name}` : 'Start'}
+        </Button>
+      </div>
       <HowItWorks open={open} onClose={() => setOpen(false)} />
     </section>
   )
 }
 
 export function HowItWorks({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return <Sheet open={open} onClose={onClose} title="How a rep works"><div className="how-list">{['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end. Nothing she decides is scored.'].map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet>
+  return <Sheet open={open} onClose={onClose} title="How a rep works"><div className="how-list">{['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end. Nothing she decides is scored.'].map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><HowItWorksFigure /></Sheet>
 }
 
 export { FOCUS_OPTIONS }

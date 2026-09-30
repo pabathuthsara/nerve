@@ -68,7 +68,7 @@ import { tap } from '@/lib/haptics'
 import { MIN_AGE, checkAge } from '@/lib/safety/age'
 import { SIGNUP_REVIEW } from '@/lib/site/reviews'
 import { CAPTURED_REP } from '@/lib/site/captured-rep'
-import { PERSONA_VISUAL } from '@/lib/personas/visual'
+import { SHOWCASE_WARMTH, PERSONA_VISUAL } from '@/lib/personas/visual'
 import {
   EMPTY_START_ANSWERS,
   START_FIELD,
@@ -556,7 +556,7 @@ function BuildStep({ answers, firstRep, onNext }: {
    */
   return (
     <section className="start-build start-reveal">
-      <div className="start-build__persona"><FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={18} size={168} /></div>
+      <div className="start-build__persona"><FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={SHOWCASE_WARMTH} size={168} /></div>
       <span className="label start-reveal__kicker">Your first rep</span>
       <h1 className="display-xl start-reveal__name" tabIndex={-1} data-step-heading>{firstRep.name}</h1>
       <p className="start-reveal__hook">{firstRep.hook}</p>

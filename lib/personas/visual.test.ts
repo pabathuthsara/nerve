@@ -119,24 +119,33 @@ describe('visualFor', () => {
 })
 
 describe('lodFor', () => {
+  const particles = (lod: ReturnType<typeof lodFor>) => lod.texture[0] * lod.texture[1]
+
   it('scales detail with measured pixels, not with a prop', () => {
     // The bug this replaces: every `fill` call site left `size` at its default
     // of 96, so the 430px live stage rendered at the smallest tier.
-    const card = lodFor(112, 2)
-    const stage = lodFor(430, 2)
-    expect(stage.tubular).toBeGreaterThan(card.tubular)
-    expect(stage.radial).toBeGreaterThan(card.radial)
+    expect(particles(lodFor(430, 2))).toBeGreaterThan(particles(lodFor(112, 2)))
   })
 
   it('never falls as size rises', () => {
     let previous = lodFor(1, 1)
-    for (const size of [40, 96, 132, 180, 240, 330, 430, 900]) {
+    for (const size of [40, 96, 132, 180, 240, 330, 430, 680, 900]) {
       const next = lodFor(size, 2)
-      expect(next.radial).toBeGreaterThanOrEqual(previous.radial)
-      expect(next.tubular).toBeGreaterThanOrEqual(previous.tubular)
-      expect(next.motes).toBeGreaterThanOrEqual(previous.motes)
+      expect(particles(next)).toBeGreaterThanOrEqual(particles(previous))
+      expect(next.fps).toBeGreaterThanOrEqual(previous.fps)
       previous = next
     }
+  })
+
+  it('gives the live stage on a phone the full 65k the product owner tuned', () => {
+    // A 360px-wide phone stage at DPR 2.
+    expect(particles(lodFor(360, 2))).toBe(65536)
+  })
+
+  it('only spends 131k on a desktop-sized box', () => {
+    expect(particles(lodFor(680, 2))).toBe(131072)
+    // A phone Train card, by its shorter side.
+    expect(particles(lodFor(390, 2))).toBe(65536)
   })
 
   it('caps the device-pixel ratio at two', () => {

@@ -14,6 +14,8 @@ import {
   interviewsLine, planById, repsLine,
 } from '@/lib/site/plans'
 import { PackOffer } from '@/components/interview/credits'
+import { FluidPersona } from '@/components/fluid-persona'
+import { HOUSE_VISUAL } from '@/lib/site/house-visual'
 
 interface OpenProps { open: boolean; onClose: () => void }
 
@@ -174,11 +176,24 @@ export function HowItWorksSheet({ open, onClose, interview = false, minutes }: O
     ? [
       'Talk out loud, like the real thing.',
       `You have ${minutes ?? 20} minutes, and it runs the full length.`,
-      'Her form shows the impression you are making.',
+      // Interviewers are men and women; the dating line's "her" was wrong on
+      // Marcus and Dan.
+      'Their form shows the impression you are making.',
       'The callback is decided by the grade afterwards, and is worth zero points.',
     ]
     : ['Talk out loud.', 'You have three minutes.', 'Her form shows how she feels.', 'She decides at the end. Nothing she decides is scored.']
-  return <Sheet open={open} onClose={onClose} title={interview ? 'How an interview works' : 'How a rep works'}><div className="how-list">{steps.map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><div className="ring-illustration" aria-hidden="true"><i /><i /><i /></div></Sheet>
+  return <Sheet open={open} onClose={onClose} title={interview ? 'How an interview works' : 'How a rep works'}><div className="how-list">{steps.map((item, index) => <div key={item}><span className="data">0{index + 1}</span><p>{item}</p></div>)}</div><HowItWorksFigure /></Sheet>
+}
+
+/**
+ * The picture under "how it works": what "her form" means, drawn by the thing
+ * itself. It was three hard-coded crimson rings — a drawing of the orb the
+ * particle avatar replaced, in a red Arena keeps for semantics. It is the house
+ * visual rather than a character, because this sheet explains every character
+ * and must not wear one's identity (the same rule `hero-voice.tsx` follows).
+ */
+export function HowItWorksFigure() {
+  return <div className="how-figure" aria-hidden="true"><FluidPersona name="Nerve" visual={HOUSE_VISUAL} warmth={62} size={132} motion="still" /></div>
 }
 
 /**

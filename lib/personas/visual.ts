@@ -138,16 +138,27 @@ export function visualFor(name: string, personaId?: string): PersonaVisual {
   return { ...PERSONA_VISUAL[fallbackKey]!, seed }
 }
 
-/** How much geometry, and how many device pixels, a given on-screen size earns. */
+/**
+ * The warmth every PORTRAIT of a character is drawn at. 30 September 2026.
+ *
+ * Outside a rep the avatar is who she is, not how a conversation is going, so
+ * every roster card, brief, strip and list shows her in her full colour and
+ * form. Before this, most screens passed 10–18 — "her at rest" — and with the
+ * particle avatar that is a pale grey wisp, which undersold every character on
+ * every screen but the one where she is earned.
+ *
+ * Three places still pass a real warmth, because there it IS the meter: the
+ * live rep stage, the result screen (her last frame of the rep, announced to a
+ * screen reader), and the texting thread header (a live conversation too).
+ */
+export const SHOWCASE_WARMTH = 72
+
+/** How many particles, and how many device pixels, a given on-screen size earns. */
 export interface VisualLod {
-  /** Segments around the tube. */
-  radial: number
-  /** Segments around the ring. */
-  tubular: number
+  /** Simulation texture, width × height. One particle per texel. */
+  texture: readonly [number, number]
   /** Device-pixel ratio ceiling. */
   pixelRatio: number
-  /** Motes drifting around her. */
-  motes: number
   /** Frames per second this instance is allowed. */
   fps: number
 }
@@ -157,14 +168,23 @@ export interface VisualLod {
  *
  * Six of the seven call sites pass `fill` and no size, so a prop-driven ladder
  * silently rendered the 430px live stage at the 96px tier — which is what the
- * faceting on the live orb was. Buckets are stepped so that a few pixels of
- * layout drift cannot thrash geometry rebuilds.
+ * faceting on the old orb was, and the rule outlived it. Buckets are stepped
+ * so that a few pixels of layout drift cannot thrash a swarm rebuild.
+ *
+ * The particle avatar (30 September 2026) spends particles instead of
+ * geometry: 8k on a thumbnail, 65k on a phone's live stage — what the product
+ * owner tuned by eye and ran on a phone — and 131k on a desktop hero card.
+ * Callers pass the box's SHORTER side: the swarm is round and fits it, and a
+ * tall phone card measured by its height would have bought 131k on a phone.
  */
 export function lodFor(cssSize: number, devicePixelRatio: number): VisualLod {
   const dpr = Math.min(Math.max(devicePixelRatio, 1), 2)
   const pixels = Math.max(1, cssSize) * dpr
-  if (pixels <= 180) return { radial: 14, tubular: 96, pixelRatio: dpr, motes: 10, fps: 24 }
-  if (pixels <= 360) return { radial: 20, tubular: 144, pixelRatio: dpr, motes: 16, fps: 30 }
-  if (pixels <= 720) return { radial: 32, tubular: 224, pixelRatio: dpr, motes: 28, fps: 60 }
-  return { radial: 44, tubular: 320, pixelRatio: dpr, motes: 44, fps: 60 }
+  if (pixels <= 180) return { texture: [128, 64], pixelRatio: dpr, fps: 24 }
+  if (pixels <= 340) return { texture: [128, 128], pixelRatio: dpr, fps: 30 }
+  if (pixels <= 640) return { texture: [256, 128], pixelRatio: dpr, fps: 60 }
+  if (pixels <= 1100) return { texture: [256, 256], pixelRatio: dpr, fps: 60 }
+  // A desktop hero card. 65k spread over a box this size resolves into single
+  // strands and reads as fur rather than smoke, so the density scales with it.
+  return { texture: [512, 256], pixelRatio: dpr, fps: 60 }
 }

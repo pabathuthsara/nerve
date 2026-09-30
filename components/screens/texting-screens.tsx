@@ -38,6 +38,7 @@ import type { InboxRow, TextingPersonaView, ThreadDebrief } from '@/lib/texting/
 import { capture } from '@/components/analytics'
 import { Button, EmptyState, Sheet, Skeleton, useToast } from '@/components/ui'
 import { FluidPersona } from '@/components/fluid-persona'
+import { SHOWCASE_WARMTH } from '@/lib/personas/visual'
 import { DistressModal } from '@/components/modals'
 
 /* ------------------------------------------------------------------ *
@@ -152,7 +153,7 @@ function TextingInboxContent({ rows, allowance }: { rows: InboxRow[]; allowance:
           const body = (
             <>
               <span className="texting-list__avatar">
-                <FluidPersona name={row.persona.name} personaId={row.persona.slug} warmth={34} size={44} />
+                <FluidPersona name={row.persona.name} personaId={row.persona.slug} warmth={SHOWCASE_WARMTH} size={44} />
               </span>
               <span className="texting-list__body">
                 <span className="texting-list__name">

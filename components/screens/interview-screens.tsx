@@ -43,6 +43,7 @@ import { CVReplaceSheet } from '@/components/modals'
 import { Mark } from '@/components/marks'
 import { useProduct } from '@/components/product-provider'
 import { FluidPersona } from '@/components/fluid-persona'
+import { SHOWCASE_WARMTH } from '@/lib/personas/visual'
 import { removeCv, saveInterviewSetup, uploadCv } from '@/app/interview/actions'
 import { CreditsPanel, CreditsSummary } from '@/components/interview/credits'
 import {
@@ -219,7 +220,7 @@ function InterviewHome() {
    * One number, and one sentence explaining what it cannot buy.
    */
 
-  return <><div className="train-grid interview-home"><section>{loading ? <Skeleton height={520} /> : setup?.complete && interviewer ? <article className="interview-hero"><div className="interview-hero__top"><span className="label">Next interview</span><span className="interview-hero__meta"><Chip tone="volt">{round.label}</Chip><span className="label">{round.credits === 0 ? 'Free' : `${round.credits} credit${round.credits === 1 ? '' : 's'}`} · {user?.interviewCredits ?? 0} in the account</span></span></div><div className="interview-role"><span className="label">Role</span><h1 className="display-xl">{setup.roleTitle}</h1><p>{setup.company}</p></div><div className="interviewer-strip"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} size={72} /><div><strong>{interviewer.name}</strong><span className="label">{interviewer.styleLabel}</span></div></div>{/* A RUN STARTS AT THE INTERVIEWER (A1). It used to start at a Start
+  return <><div className="train-grid interview-home"><section>{loading ? <Skeleton height={520} /> : setup?.complete && interviewer ? <article className="interview-hero"><div className="interview-hero__top"><span className="label">Next interview</span><span className="interview-hero__meta"><Chip tone="volt">{round.label}</Chip><span className="label">{round.credits === 0 ? 'Free' : `${round.credits} credit${round.credits === 1 ? '' : 's'}`} · {user?.interviewCredits ?? 0} in the account</span></span></div><div className="interview-role"><span className="label">Role</span><h1 className="display-xl">{setup.roleTitle}</h1><p>{setup.company}</p></div><div className="interviewer-strip"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={SHOWCASE_WARMTH} size={72} /><div><strong>{interviewer.name}</strong><span className="label">{interviewer.styleLabel}</span></div></div>{/* A RUN STARTS AT THE INTERVIEWER (A1). It used to start at a Start
       button over whatever was last saved, with the picker bolted on after a
       three-step wizard — so the two dials worth changing per interview were
       the two hardest to reach. Interviewer → setup → go, every time. */}
@@ -626,7 +627,7 @@ export function InterviewerPicker({ inRun = true }: { inRun?: boolean }) {
       design exists to avoid: she decides how warm, how patient and how hard to
       please, and the difficulty slider on the run setup decides how hard the
       questions are. Saying so here is what makes the other control legible. */}
-<div className="screen-heading"><span className="label">{inRun ? 'Step one of two' : 'Choose the pressure'}</span><h1 className="display-lg">Your interviewer</h1><p>Who is in the room: how warm they are, how patient, how hard to please. How hard the <em>questions</em> are is the next screen. All four are open — pick the one you are actually walking into.</p></div>{!loading && interviewers.length === 0 ? <EmptyState mark="state-roster" title="No interviewers yet" description="The next interviewer is being prepared." /> : <div className="interviewer-grid">{loading ? Array.from({ length: 4 }, (_, index) => <Skeleton key={index} height={300} />) : interviewers.map((interviewer) => <button key={interviewer.id} className={`interviewer-card${selectedInterviewerId === interviewer.id ? ' selected' : ''}`} aria-pressed={selectedInterviewerId === interviewer.id} onClick={() => choose(interviewer.id)}><div className="interviewer-portrait"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} fill /></div><div><Chip tone="volt">{interviewer.styleLabel}</Chip><h2 className="display-md">{interviewer.name}</h2><p>{interviewer.blurb}</p></div><span className="select-line"><Check size={15} strokeWidth={1.5} /> {selectedInterviewerId === interviewer.id ? (inRun ? 'Selected' : 'Your interviewer') : 'Select'}</span></button>)}</div>}</>
+<div className="screen-heading"><span className="label">{inRun ? 'Step one of two' : 'Choose the pressure'}</span><h1 className="display-lg">Your interviewer</h1><p>Who is in the room: how warm they are, how patient, how hard to please. How hard the <em>questions</em> are is the next screen. All four are open — pick the one you are actually walking into.</p></div>{!loading && interviewers.length === 0 ? <EmptyState mark="state-roster" title="No interviewers yet" description="The next interviewer is being prepared." /> : <div className="interviewer-grid">{loading ? Array.from({ length: 4 }, (_, index) => <Skeleton key={index} height={300} />) : interviewers.map((interviewer) => <button key={interviewer.id} className={`interviewer-card${selectedInterviewerId === interviewer.id ? ' selected' : ''}`} aria-pressed={selectedInterviewerId === interviewer.id} onClick={() => choose(interviewer.id)}><div className="interviewer-portrait"><FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={SHOWCASE_WARMTH} fill motion="still" /></div><div><Chip tone="volt">{interviewer.styleLabel}</Chip><h2 className="display-md">{interviewer.name}</h2><p>{interviewer.blurb}</p></div><span className="select-line"><Check size={15} strokeWidth={1.5} /> {selectedInterviewerId === interviewer.id ? (inRun ? 'Selected' : 'Your interviewer') : 'Select'}</span></button>)}</div>}</>
 }
 
 /**
@@ -722,7 +723,7 @@ function RunSetup({ packsOpen }: { packsOpen: boolean }) {
         <h1 className="display-lg">Set up this interview</h1>
 
         <div className="run-setup__who">
-          <FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={16} size={56} />
+          <FluidPersona name={interviewer.name} personaId={interviewer.id} warmth={SHOWCASE_WARMTH} size={56} />
           <div><strong>{interviewer.name}</strong><span className="label">{interviewer.styleLabel} · {setup.roleTitle}</span></div>
           <Link className="text-action" href="/interview/interviewers">Change</Link>
         </div>

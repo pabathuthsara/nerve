@@ -37,6 +37,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Chip, Input } from '@/components/ui'
 import { FluidPersona } from '@/components/fluid-persona'
+import { SHOWCASE_WARMTH } from '@/lib/personas/visual'
 import { Mark, focusMark, type MarkName } from '@/components/marks'
 import type { FirstRepCandidate } from '@/lib/data/first-rep'
 import type { FocusArea } from '@/lib/data/focus'
@@ -200,7 +201,7 @@ export function FocusStep({ value, firstRep, onChoose, eyebrow = 'Step two' }: {
       ))}
       {value && firstRep ? (
         <p className="focus-preview" aria-live="polite">
-          <FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={18} size={42} />
+          <FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={SHOWCASE_WARMTH} size={42} />
           <span><span className="label">First up</span> {firstRep.name} — {firstRep.setting.toLowerCase()}</span>
         </p>
       ) : null}

@@ -43,6 +43,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Play, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react'
 import { FluidPersona } from '@/components/fluid-persona'
+import { SHOWCASE_WARMTH } from '@/lib/personas/visual'
 import { HOUSE_VISUAL } from '@/lib/site/house-visual'
 import { capture } from '@/components/analytics'
 
@@ -162,7 +163,7 @@ export function HeroVoice() {
         <FluidPersona
           name="Nerve"
           visual={HOUSE_VISUAL}
-          warmth={playing && !muted ? 62 : 34}
+          warmth={playing && !muted ? 86 : SHOWCASE_WARMTH}
           fill
           interactive
           speaking={playing && !muted ? 'persona' : 'none'}

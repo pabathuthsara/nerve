@@ -802,3 +802,15 @@ spends a real screener credit and a real interviewer, and §13.3 of
 `INTERVIEW-TECHNICAL-PLAN.md` is emphatic that a green suite proves nothing
 about how a round sounds. `npm run rep:audition -- dan-whitfield <player> 1
 screener` is the instrument. Nor has either arm been walked on a phone.
+
+## The ready step, on the reveal's structure — 30 September 2026
+
+`ReadyStep` — the last screen a brand-new account reads before its first rep —
+was the one brief-like screen left in the old flat stack, a few screens after
+the same user met the character on `/start`'s reveal. It uses the reveal's
+classes now, like `RepBriefScreen`: the avatar with its halo, "Your first rep",
+her name at display size, the hook, the goal set apart (still the most
+prominent line after her name, D23), Where and Time as tiles, the "Afterwards"
+line, then Start. `RuleBlock` is no longer on it; `/start`'s interview arm still
+uses it. **Owed by hand:** it could not be seen in a browser without a fresh
+account — the first new sign-up after deploy should be looked at.

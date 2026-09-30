@@ -2,14 +2,50 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { visualFor, type PersonaVisual } from '@/lib/personas/visual'
-import { mountAvatar, onContextLost, type Speaking, type StageHandle, type StageStatus } from './stage'
+import {
+  mountLive,
+  releaseLiveSlot,
+  renderStill,
+  STILL_WARMTH_STEP,
+  tryAcquireLiveSlot,
+  type LiveHandle,
+  type Speaking,
+  type StageStatus,
+} from './particles'
 
 export type { Speaking, StageStatus }
+
+/**
+ * `live` runs the simulation in its own renderer; `still` shows one captured
+ * frame, turned and breathed by CSS; `auto` is live for a single large avatar
+ * and still for anything small. A grid of several must pass `still`: the live
+ * budget is first come first served, and a grid that is half alive reads as a
+ * bug.
+ */
+export type AvatarMotion = 'auto' | 'live' | 'still'
+
+/**
+ * The avatar's LAYOUT size, ignoring transforms.
+ *
+ * `getBoundingClientRect` includes them, and several screens scale the avatar
+ * — the reveal's arrival animation starts it at 70%, and the phone brief draws
+ * it at 72% — so a 168px avatar measured mid-animation as ~85px, and was
+ * mounted as a still with a thumbnail's initial on it. What the avatar IS is
+ * its layout box; how it is being drawn this instant is not.
+ */
+function layoutBox(element: HTMLElement): { width: number; height: number } {
+  return { width: element.offsetWidth, height: element.offsetHeight }
+}
+
+/** Below this measured size, `auto` is always a still. */
+const LIVE_MIN_CSS = 120
+
+type Mode = 'pending' | 'live' | 'still' | 'fallback'
 
 interface FluidPersonaProps {
   name: string
   personaId?: string
-  /** 0–100, as the meter reports it. Chroma and openness follow this. */
+  /** 0–100, as the meter reports it. Size, colour and restlessness follow this. */
   warmth?: number
   /** Ignored when `fill` is set. Detail is measured, never taken from here. */
   size?: number
@@ -25,13 +61,15 @@ interface FluidPersonaProps {
   personaLevel?: number
   /** 'connecting' holds her drawn-in and quiet until the session is actually up. */
   status?: StageStatus
+  /** See `AvatarMotion`. */
+  motion?: AvatarMotion
   /**
    * A visual to draw instead of the one `visualFor` derives from the name.
    *
    * Additive and off by default — every existing caller resolves exactly as
-   * it did. It exists for the one surface that needs the 3D effect without
-   * being a character: the landing page's house voice, which speaks AUTHORED
-   * words and so must not wear a persona's identity (rule 10).
+   * it did. It exists for the one surface that needs the effect without being
+   * a character: the landing page's house voice, which speaks AUTHORED words
+   * and so must not wear a persona's identity (rule 10).
    *
    * Without it the hash fallback in `visualFor` chose a roster hue by
    * accident, and on `/` it chose Nadia's crimson — Red is semantic in Arena
@@ -60,23 +98,28 @@ export function FluidPersona({
   userLevel = 0,
   personaLevel = 0,
   status = 'idle',
+  motion = 'auto',
   visual: override,
   className = '',
 }: FluidPersonaProps) {
   const mountRef = useRef<HTMLSpanElement | null>(null)
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const handleRef = useRef<StageHandle | null>(null)
+  const liveCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const stillCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const handleRef = useRef<LiveHandle | null>(null)
   const pushRef = useRef<() => void>(() => {})
   const pointerRef = useRef({ x: 0, y: 0, active: false })
-  const retryRef = useRef(0)
-  const recoveryCount = useRef(0)
-  const [failed, setFailed] = useState(false)
+  const [mode, setMode] = useState<Mode>('pending')
   const [ready, setReady] = useState(false)
-  const [generation, setGeneration] = useState(0)
+  const [stillSize, setStillSize] = useState(0)
+  // Her initial is for thumbnails. On a large avatar it sat in the densest
+  // part of the smoke, and every large avatar already has her name beside it
+  // in display type. The ring orb had a hollow centre for it; the swarm does not.
+  const [large, setLarge] = useState(!fill && size >= LIVE_MIN_CSS)
 
   const visual = useMemo(() => override ?? visualFor(name, personaId), [override, name, personaId])
   const initial = name.trim().charAt(0).toUpperCase()
   const normalizedWarmth = Math.min(100, Math.max(0, warmth))
+  const stillWarmth = Math.round(normalizedWarmth / STILL_WARMTH_STEP) * STILL_WARMTH_STEP
 
   const push = useCallback(() => {
     handleRef.current?.push({
@@ -94,71 +137,133 @@ export function FluidPersona({
   pushRef.current = push
   useEffect(push, [push])
 
-  // A lost context cannot be recovered in place: the shared renderer is torn
-  // down and every mounted avatar drops to the CSS fallback. One retry, once
-  // the browser has had a moment, then the fallback stands.
-  useEffect(() => {
-    const unsubscribe = onContextLost(() => {
-      handleRef.current = null
-      setReady(false)
-      setFailed(true)
-      window.clearTimeout(retryRef.current)
-      if (recoveryCount.current >= 1) return
-      recoveryCount.current += 1
-      retryRef.current = window.setTimeout(() => {
-        setFailed(false)
-        setGeneration((value) => value + 1)
-      }, 1500)
-    })
-    return () => { unsubscribe(); window.clearTimeout(retryRef.current) }
-  }, [])
-
+  // Decide live or still, and mount the live one. Re-run only when she is a
+  // different character or the caller changes the rule.
   useEffect(() => {
     const mount = mountRef.current
-    const canvas = canvasRef.current
-    if (!mount || !canvas) return
-
+    if (!mount) return
     let disposed = false
+    let acquired = false
+    let handle: LiveHandle | null = null
     setReady(false)
-    setFailed(false)
-    let handle: StageHandle | null = null
-    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setMode('pending')
+
+    const bounds = layoutBox(mount)
+    const wantsLive = motion === 'live' || (motion === 'auto' && Math.min(bounds.width, bounds.height) >= LIVE_MIN_CSS)
+    const canvas = liveCanvasRef.current
+    if (!wantsLive || !canvas || !tryAcquireLiveSlot()) {
+      setMode('still')
+      return
+    }
+    acquired = true
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     const measure = () => {
-      const bounds = mount.getBoundingClientRect()
-      handle?.measure(bounds.width, bounds.height)
+      const box = layoutBox(mount)
+      handle?.measure(box.width, box.height)
     }
     const resizeObserver = new ResizeObserver(measure)
     const intersectionObserver = new IntersectionObserver(([entry]) => { handle?.setVisible(entry?.isIntersecting ?? true) }, { rootMargin: '120px' })
-    const onMotionChange = () => handle?.setReducedMotion(motion.matches)
+    const onMotionChange = () => handle?.setReducedMotion(reducedMotion.matches)
+    const toStill = () => {
+      if (disposed) return
+      handleRef.current = null
+      handle?.dispose()
+      handle = null
+      if (acquired) releaseLiveSlot()
+      acquired = false
+      setReady(false)
+      setMode('still')
+    }
 
-    void mountAvatar({ visual, canvas, reducedMotion: motion.matches, onFirstFrame: () => { if (!disposed) setReady(true) } })
+    void mountLive({
+      canvas,
+      visual,
+      reducedMotion: reducedMotion.matches,
+      onFirstFrame: () => { if (!disposed) setReady(true) },
+      onLost: toStill,
+    })
       .then((mounted) => {
-        if (disposed || !mounted) {
+        if (disposed) {
           mounted?.dispose()
-          if (!disposed && !mounted) setFailed(true)
+          return
+        }
+        if (!mounted) {
+          toStill()
           return
         }
         handle = mounted
         handleRef.current = mounted
+        setMode('live')
         measure()
         pushRef.current()
         resizeObserver.observe(mount)
         intersectionObserver.observe(mount)
-        motion.addEventListener('change', onMotionChange)
+        reducedMotion.addEventListener('change', onMotionChange)
       })
-      .catch(() => { if (!disposed) setFailed(true) })
+      .catch(toStill)
 
     return () => {
       disposed = true
       resizeObserver.disconnect()
       intersectionObserver.disconnect()
-      motion.removeEventListener('change', onMotionChange)
+      reducedMotion.removeEventListener('change', onMotionChange)
       handleRef.current = null
       handle?.dispose()
+      if (acquired) releaseLiveSlot()
     }
-    // `size` is deliberately absent: it changes the element's box, the
-    // ResizeObserver sees that, and nothing needs rebuilding.
-  }, [generation, visual])
+  }, [motion, visual])
+
+  useEffect(() => {
+    const mount = mountRef.current
+    if (!mount) return
+    const measure = () => {
+      const box = layoutBox(mount)
+      setLarge(Math.min(box.width, box.height) >= LIVE_MIN_CSS)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(mount)
+    return () => observer.disconnect()
+  }, [])
+
+  // A still follows its box: measured, rounded, so layout drift does not
+  // re-render it. It is a SQUARE on the box's shorter side, centred — a
+  // desktop roster portrait is a wide strip, and stretching a square frame
+  // across it (then turning it) smeared her into a diagonal streak.
+  useEffect(() => {
+    const mount = mountRef.current
+    if (!mount || mode !== 'still') return
+    const measure = () => {
+      const box = layoutBox(mount)
+      setStillSize(Math.round(Math.min(box.width, box.height) / 8) * 8)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(mount)
+    return () => observer.disconnect()
+  }, [mode])
+
+  // Render the still for this character, warmth bucket and size.
+  useEffect(() => {
+    if (mode !== 'still' || stillSize < 8) return
+    let cancelled = false
+    void renderStill(visual, stillWarmth, stillSize).then((frame) => {
+      const canvas = stillCanvasRef.current
+      if (cancelled) return
+      if (!frame || !canvas) {
+        setMode('fallback')
+        return
+      }
+      canvas.width = frame.width
+      canvas.height = frame.height
+      const context = canvas.getContext('2d')
+      context?.clearRect(0, 0, canvas.width, canvas.height)
+      context?.drawImage(frame, 0, 0)
+      setReady(true)
+    })
+    return () => { cancelled = true }
+  }, [mode, stillSize, stillWarmth, visual])
 
   const pointerMove = (event: ReactPointerEvent<HTMLSpanElement>) => {
     if (event.pointerType === 'touch') return
@@ -189,7 +294,8 @@ export function FluidPersona({
     'fluid-persona',
     `fluid-persona--mode-${visual.mode}`,
     fill ? 'fluid-persona--fill' : '',
-    failed || !ready ? 'fluid-persona--fallback' : '',
+    mode === 'still' ? 'fluid-persona--still' : '',
+    mode === 'fallback' || !ready ? 'fluid-persona--fallback' : '',
     ready ? 'fluid-persona--ready' : '',
     className,
   ].filter(Boolean).join(' ')
@@ -204,8 +310,15 @@ export function FluidPersona({
       onPointerMove={interactive ? pointerMove : undefined}
       onPointerLeave={interactive ? pointerLeave : undefined}
     >
-      <canvas ref={canvasRef} className="fluid-persona__canvas" aria-hidden="true" />
-      <span className="fluid-persona__initial" aria-hidden="true">{initial}</span>
+      {/* Two canvases because a canvas that has held a WebGL context can never
+          become a 2D one, and a still is drawn with 2D. The live one is always
+          in the tree, hidden when unused, so a still that becomes a different
+          character can still go live. */}
+      <canvas ref={liveCanvasRef} className="fluid-persona__canvas" aria-hidden="true" hidden={mode === 'still' || mode === 'fallback'} />
+      {mode === 'still'
+        ? <canvas ref={stillCanvasRef} className="fluid-persona__canvas fluid-persona__still" aria-hidden="true" style={{ width: stillSize, height: stillSize }} />
+        : null}
+      {large ? null : <span className="fluid-persona__initial" aria-hidden="true">{initial}</span>}
     </span>
   )
 }

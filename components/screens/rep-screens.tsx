@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ChevronLeft, LockKeyhole, MicOff, WifiOff } from 'lucide-react'
+import { ChevronLeft, LockKeyhole, MapPin, MicOff, Timer, WifiOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { useInterviewers, useLatestFocus, useLifetimeStats, usePersona, usePersonaMemory, usePersonaProgress, useUserState } from '@/lib/data'
@@ -19,14 +19,15 @@ import { INTERVIEW_BAND_LABEL } from '@/lib/warmth/interview/bands'
 import type { Band } from '@/lib/data/types'
 import { TOP_TIER } from '@/lib/data/progression'
 import { Button, Skeleton } from '@/components/ui'
-import { RuleBlock, repGoal, repGoalShort } from './rep-format'
+import { repGoal, repGoalShort } from './rep-format'
 import { ConnectionLostModal, DistressModal, EndRepModal, HowItWorksSheet, MicBlockedSheet, MicLostModal, MicPrimerSheet, PaywallSheet, TrainingWheelsOffModal } from '@/components/modals'
 import { micPermission, type MicPermission } from '@/lib/data/mic'
 import { PhoneNumberCard, TimeArc } from '@/components/rep-visuals'
 import { useOnlineStatus } from '@/lib/hooks/use-online-status'
 import { FluidPersona } from '@/components/fluid-persona'
+import { SHOWCASE_WARMTH } from '@/lib/personas/visual'
 import { capture } from '@/components/analytics'
-import { MissionLine, MissionNote } from '@/components/mission'
+import { MissionLine, MissionTile } from '@/components/mission'
 import { GuidedBrief, GuidedLine } from '@/components/guided'
 import { guidedPromptFor, guidedScriptFor } from '@/lib/data/guided'
 import { missionFor } from '@/lib/data/mission'
@@ -192,15 +193,18 @@ export function RepBriefScreen({
   }
 
   const loading = userLoading || (interview ? interviewersLoading : personaLoading)
-  if (loading) return <main className="brief-page"><div className="brief-shell"><Skeleton width={96} height={96} style={{ borderRadius: '50%' }} /><Skeleton width={160} height={34} /><Skeleton height={180} /></div></main>
+  // The skeleton is the reveal's shape — her, her name, the goal, the tiles —
+  // so the screen does not jump when she arrives (§02).
+  if (loading) return <main className="brief-page"><div className="start-reveal brief-reveal"><Skeleton width={168} height={168} style={{ borderRadius: '50%' }} /><Skeleton width={180} height={52} style={{ marginTop: 24 }} /><Skeleton width={260} height={20} style={{ marginTop: 14 }} /><Skeleton height={56} style={{ marginTop: 20 }} /><Skeleton height={132} style={{ marginTop: 20 }} /></div></main>
   if (!subject) return <BriefGate title="Rep not found" description="That training partner is not available." href={interview ? '/interview/interviewers' : '/roster'} />
   if (subject.locked) return <BriefGate title={`${subject.name} is locked`} description={interview ? 'Reach level 4 to unlock this interviewer.' : persona?.unlockRequirement ?? 'Keep training to unlock this rep.'} href={interview ? '/interview/interviewers' : '/roster'} locked />
   // §4.4. The shape, and — on a round that probes — how hard the questions are.
   // A round that changes what the interview IS cannot be a quiet dropdown
   // default, and this is the last screen before the microphone opens.
+  // The interviewer's style is the kicker above their name now, so the round
+  // tile starts at the round rather than saying it twice.
   const setting = interview
     ? [
-      interviewer?.styleLabel ?? 'Interviewer',
       roundType(round).label,
       ROUND_SHAPE_LABEL[roundType(round).shape],
       ...(probeLadderEnabled({ round, field })
@@ -221,6 +225,9 @@ export function RepBriefScreen({
   // an interface. The live screen has always made that choice; this one had not.
   const briefScript = interview ? null : guidedScriptFor(personaId)
   const back = interview ? '/interview/interviewers' : `/roster/${personaId}`
+  const minutes = Math.round(interviewDurationMs(round) / 60_000)
+  const hasHistory = !firstEver && !interview && Boolean(progress && progress.attempts > 0)
+  const hasMemory = !firstEver && !interview && Boolean(memory.data)
   /**
    * ── THE BRIEF, RESTRUCTURED (D23) ─────────────────────────────────────
    *
@@ -251,34 +258,72 @@ export function RepBriefScreen({
    *    to prevent. It renders below Start for everybody else, so it stops
    *    competing with the script for the same attention.
    */
-  return <main className={`brief-page${curtain ? ' brief-page--curtain' : ''}`}>
+  /*
+   * ── THE BRIEF, ON THE REVEAL'S STRUCTURE (30 September 2026) ──────────
+   *
+   * Rebuilt on the `/start` character reveal (owner review, 27 September),
+   * whose argument applies here unchanged: every line on this screen was the
+   * same size and weight, so the screen where somebody is about to talk to her
+   * read like a form. It shares the reveal's classes rather than copying them,
+   * so the two cannot drift. Four levels:
+   *
+   *   1. Her — the avatar with its halo, a kicker, her name at display size.
+   *   2. Her world — the hook, in Ink, at reading size.
+   *   3. The goal — D23's rule survives the rebuild: it is the most prominent
+   *      line after her name, set apart the way the reveal sets its rule apart,
+   *      with the explainer link directly under it.
+   *   4. The facts — tiles: where, how long and how it ends, and what this rep
+   *      is for (the mission, or Tess's script in its place).
+   *
+   * D23's other two rules are untouched: Start is the only button, and "last
+   * time" — your best, her memory — appears only for somebody who has one.
+   */
+  return <main className={`brief-page brief-page--reveal${curtain ? ' brief-page--curtain' : ''}`}>
     <Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link>
-    <section className="brief-shell">
-      <FluidPersona name={subject.name} personaId={subject.id} warmth={progress && progress.attempts > 0 ? progress.bestWarmth : 18} size={132} />
-      <h1 className="display-lg">{subject.name}</h1>
-      <span className="label">{setting}</span>
-      <p className="brief-goal">{repGoal(interview, Math.round(interviewDurationMs(round) / 60_000))}</p>
-      <button type="button" className="brief-how" onClick={() => setHow(true)}>How does this work?</button>
-      <p className="brief-hook">{hook}</p>
-      {!firstEver && !interview && progress && progress.attempts > 0
-        ? <span className="label mute">Your best: warmth {progress.bestWarmth}{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</span>
-        : null}
-      {!firstEver && !interview
-        ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} />
-        : null}
-      <RuleBlock interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} />
-      {!interview && !briefScript ? <MissionNote mission={mission} /> : null}
-      {briefScript ? <GuidedBrief script={briefScript} /> : null}
+    <section className="start-reveal brief-reveal">
+      <div className="start-build__persona"><FluidPersona name={subject.name} personaId={subject.id} warmth={SHOWCASE_WARMTH} size={168} /></div>
+      <span className="label start-reveal__kicker">{interview ? interviewer?.styleLabel ?? 'Interviewer' : `Level ${String(level).padStart(2, '0')}`}</span>
+      <h1 className="display-xl start-reveal__name">{subject.name}</h1>
+      <p className="start-reveal__hook">{hook}</p>
+      <p className="brief-reveal__goal">{repGoal(interview, minutes)}</p>
+      <button type="button" className="brief-how brief-reveal__how" onClick={() => setHow(true)}>How does this work?</button>
+      <div className="start-reveal__facts">
+        <div className="start-reveal__fact start-reveal__fact--wide">
+          <MapPin size={16} strokeWidth={1.6} aria-hidden="true" />
+          <span className="label">{interview ? 'The round' : 'Where'}</span>
+          <strong>{setting}</strong>
+        </div>
+        <div className="start-reveal__fact">
+          <Timer size={16} strokeWidth={1.6} aria-hidden="true" />
+          <span className="label">Time</span>
+          <strong className="data">{interview ? `${minutes}:00` : '3:00'}</strong>
+          <small className="brief-reveal__ends">{interview ? 'then it ends' : 'then she leaves'}</small>
+        </div>
+        {!interview && !briefScript ? <MissionTile mission={mission} /> : null}
+      </div>
+      {briefScript ? <div className="brief-reveal__guided"><GuidedBrief script={briefScript} /></div> : null}
+      {hasHistory || hasMemory ? (
+        <div className="brief-reveal__last">
+          <span className="label">Last time</span>
+          {hasHistory && progress
+            ? <p className="brief-reveal__best">Your best: warmth <span className="data">{progress.bestWarmth}</span>{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</p>
+            : null}
+          {hasMemory ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} /> : null}
+        </div>
+      ) : null}
+      {firstEver ? <p className="start-reveal__after">Afterwards: a score on how you talked, and one small thing to try for real.</p> : null}
       {!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}
-      <Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button>
-      {/* The way out of the microphone, offered at the exact moment somebody is
-          deciding whether to grant it (P1). Same character, no permission, no
-          quota — a link rather than a button now, because a person hesitating
-          here should not be handed a second thing that looks like the action. */}
-      {!interview ? <Link className="brief-alt" href="/texting">Not ready to talk? Try texting</Link> : null}
+      <div className="brief-reveal__actions">
+        <Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button>
+        {/* The way out of the microphone, offered at the exact moment somebody is
+            deciding whether to grant it (P1). Same character, no permission, no
+            quota — a link rather than a button, because a person hesitating
+            here should not be handed a second thing that looks like the action. */}
+        {!interview ? <Link className="brief-alt" href="/texting">Not ready to talk? Try texting</Link> : null}
+      </div>
       {!interview && !firstEver ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}
     </section>
-    <HowItWorksSheet open={how} onClose={() => setHow(false)} interview={interview} minutes={Math.round(interviewDurationMs(round) / 60_000)} />
+    <HowItWorksSheet open={how} onClose={() => setHow(false)} interview={interview} minutes={minutes} />
     <PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={interview ? null : personaId} interview={interview} packsOpen={packsOpen} credits={credits} cost={cost} roundLabel={roundType(round).label} reason={interview ? creditNote : undefined} />
     <TrainingWheelsOffModal interview={interview} open={trainingOff} onClose={() => { setTrainingOff(false); setCurtain(true); window.setTimeout(() => router.push(interview ? `/interview/rep/${personaId}/live` : `/rep/${personaId}/live`), 560) }} />
     <MicPrimerSheet open={primer} onClose={() => setPrimer(false)} onAllow={() => { rememberPrimer(); setPrimer(false); start() }} />
@@ -674,7 +719,10 @@ function TechniqueOfTheSession({ focus }: { focus: 'opening' | 'sustaining' | 'f
   if (loading || !card) return null
   return (
     <Link href={`/library/${card.slug}`} className="brief-technique">
-      <span className="label">{fromGrade ? 'Work on' : 'You said the hard part is'} · {fromGrade ? card.title : plan?.label}</span>
+      {/* "From the library", not "Work on": the mission tile above Start is
+          what this rep is for, and a second card with the same verb read as a
+          second objective for the same three minutes (D23). */}
+      <span className="label">{fromGrade ? 'From the library' : 'You said the hard part is'} · {fromGrade ? card.title : plan?.label}</span>
       <p>{fromGrade ? card.summary : `${card.title}. ${card.summary}`}</p>
     </Link>
   )

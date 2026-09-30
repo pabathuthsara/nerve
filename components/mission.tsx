@@ -56,6 +56,23 @@ export function MissionCard({ mission, kicker = 'Your mission' }: { mission: Mis
   )
 }
 
+/**
+ * The mission as a fact tile, for the brief (30 September 2026).
+ *
+ * The brief was rebuilt on the `/start` reveal's structure — her, her world,
+ * the goal, the facts — and the mission is one of the facts: what this rep is
+ * for. Same content as `MissionNote`, in the tile the reveal uses.
+ */
+export function MissionTile({ mission }: { mission: Mission }) {
+  return (
+    <div className="start-reveal__fact start-reveal__fact--full">
+      <Mark name={missionMark(mission)} size={16} />
+      <span className="label">Working on · {mission.target}</span>
+      <strong>{mission.objective}</strong>
+    </div>
+  )
+}
+
 export function MissionNote({ mission }: { mission: Mission }) {
   return (
     <p className="mission-note">

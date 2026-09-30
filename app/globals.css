@@ -168,9 +168,23 @@ button { color: inherit; }
 .fluid-persona__canvas { position: absolute; z-index: 1; inset: 0; display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 320ms ease; }
 .fluid-persona--ready .fluid-persona__canvas { opacity: 1; }
 .fluid-persona__initial { position: absolute; z-index: 2; inset: 50% auto auto 50%; color: rgba(255,255,255,.9); font-family: var(--font-sans), sans-serif; font-size: clamp(12px, 15%, 46px); font-weight: 400; line-height: 1; text-shadow: 0 1px 10px rgba(11,12,10,.9); transform: translate(-50%, -50%); pointer-events: none; }
-.fluid-persona--fallback::before, .fluid-persona--fallback::after { content: ''; position: absolute; z-index: 1; inset: 22%; border: 2px solid var(--persona-core); border-radius: 46% 54% 41% 59% / 57% 38% 62% 43%; opacity: .72; transform: rotate(-14deg); }
-.fluid-persona--fallback::after { inset: 29% 16%; border-color: var(--persona-sheen); opacity: .34; transform: rotate(24deg); }
-@media (prefers-reduced-motion: no-preference) { .fluid-persona--ready .fluid-persona__canvas { animation: persona-in 420ms cubic-bezier(.2,0,0,1) both; } }
+/* The particle avatar (30 September 2026). Before she is drawn, and on a
+   device that cannot run the simulation, she is a soft cloud in her own
+   colours: the same shape as what arrives, never a spinner (§02). */
+.fluid-persona__canvas[hidden] { display: none; }
+/* A still is a square centred in its box, never stretched to the box. Width
+   and height are set inline from the measured shorter side. */
+.fluid-persona__still { inset: auto; left: 50%; top: 50%; translate: -50% -50%; }
+.fluid-persona--fallback::before { content: ''; position: absolute; z-index: 1; inset: 18%; border-radius: 50%; background: radial-gradient(circle at 46% 44%, color-mix(in srgb, var(--persona-sheen) 38%, transparent), color-mix(in srgb, var(--persona-core) 30%, transparent) 42%, transparent 72%); filter: blur(2px); }
+@media (prefers-reduced-motion: no-preference) {
+  .fluid-persona--ready .fluid-persona__canvas { animation: persona-in 420ms cubic-bezier(.2,0,0,1) both; }
+  /* A still is one captured frame, so it is kept alive by turning and
+     breathing it — slowly enough that a roster of them reads as calm. */
+  .fluid-persona--ready .fluid-persona__still { animation: persona-in 420ms cubic-bezier(.2,0,0,1) both, persona-turn 140s linear infinite, persona-breathe 9s ease-in-out infinite; }
+  .fluid-persona--mode-1 .fluid-persona__still, .fluid-persona--mode-3 .fluid-persona__still, .fluid-persona--mode-5 .fluid-persona__still, .fluid-persona--mode-7 .fluid-persona__still { animation-direction: normal, reverse, normal; }
+}
+@keyframes persona-turn { to { rotate: 360deg; } }
+@keyframes persona-breathe { 50% { scale: 1.035; } }
 .field { display: grid; gap: 7px; }
 .arena-input { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 2px; padding: 10px 12px; outline: 0; background: var(--surface-2); color: var(--text); transition: border 120ms; }
 .arena-input::placeholder { color: var(--text-mute); }
@@ -496,7 +510,11 @@ button { color: inherit; }
 }
 .today-card__visual { position: absolute; inset: 0; background: linear-gradient(150deg, rgba(196,248,42,.07), transparent 36%), linear-gradient(180deg, transparent 24%, rgba(11,12,10,.12) 42%, rgba(11,12,10,.96) 86%), radial-gradient(circle at 50% 24%, #343a2f 0, #1d211a 24%, #10120e 68%); }
 .today-card__grain { position: absolute; inset: 0; opacity: .13; background-image: repeating-linear-gradient(17deg, transparent 0 3px, rgba(232,234,228,.035) 3px 4px), repeating-linear-gradient(103deg, transparent 0 7px, rgba(232,234,228,.018) 7px 8px); mix-blend-mode: soft-light; pointer-events: none; }
-.today-card__persona { position: absolute; z-index: 1; inset: -14% -2% 18% -2%; width: auto !important; height: auto !important; mask-image: linear-gradient(to bottom, #000 64%, transparent 96%); }
+/* The card has always layered her behind its text, which the faint ring orb
+   could afford and a bright swarm cannot: centred, her smoke sat behind the
+   level chip and the setting. She lives in the upper right now, clear of the
+   left-aligned name, and fades out downward (30 September). */
+.today-card__persona { position: absolute; z-index: 1; inset: -6% -10% 36% 30%; width: auto !important; height: auto !important; mask-image: linear-gradient(to bottom, #000 58%, transparent 96%); }
 .today-card__persona .fluid-persona__initial { font-size: clamp(25px, 5vw, 42px); }
 .today-card__content { position: absolute; z-index: 2; inset: auto 0 0; display: grid; gap: 10px; padding: 22px; }
 .today-card__hook { max-width: 33rem; margin: 0 0 6px; color: var(--text-dim); font-size: 15px; }
@@ -827,10 +845,8 @@ a.record-card:hover { border-color: var(--line-bright); background: var(--surfac
 .distress-list span { color: var(--text-dim); white-space: nowrap; }
 .distress-list small { color: var(--text-mute); font-size: 12.5px; }
 
-.ring-illustration { position: relative; width: 150px; height: 150px; margin: 28px auto 4px; }
-.ring-illustration i { position: absolute; inset: 18px 8px; border: 1px solid #ff365d; border-radius: 42% 58% 36% 64% / 57% 38% 62% 43%; background: linear-gradient(135deg, rgba(255,42,83,.18), transparent 55%); opacity: .64; transform: rotate(-16deg); }
-.ring-illustration i:nth-child(2) { inset: 24px 5px; border-color: #8e1839; border-radius: 58% 42% 63% 37% / 42% 58% 36% 64%; transform: rotate(23deg); }
-.ring-illustration i:nth-child(3) { inset: 35px 19px; border-color: #ff9b83; border-radius: 48% 52% 61% 39% / 58% 44% 56% 42%; background: radial-gradient(circle at 35% 30%, rgba(255,83,99,.3), rgba(80,0,24,.12) 45%, transparent 72%); transform: rotate(5deg); }
+.how-figure { display: grid; place-items: center; margin: 22px auto 0; }
+.how-figure .fluid-persona__initial { display: none; }
 
 .screen-heading { display: grid; gap: 8px; margin: 8px 0 34px; }
 .screen-heading > p { max-width: 520px; margin: 0; color: var(--text-dim); font-size: 15px; }
@@ -3751,6 +3767,38 @@ a.texting-list__row:focus-visible { outline: 1px solid var(--volt); outline-offs
 .start-reveal__fact--full { grid-column: 1 / -1; }
 .start-reveal__rule { width: 100%; margin: 18px 0 0; border-left: 2px solid rgba(255, 176, 32, .55); padding: 2px 0 2px 12px; color: var(--text); font-size: 14.5px; line-height: 1.5; text-align: left; }
 .start-reveal__after { width: 100%; margin: 10px 0 22px; padding-left: 14px; color: var(--text-mute); font-size: 13px; line-height: 1.5; text-align: left; }
+/* The rep brief, rebuilt on the reveal (30 Sep). It shares every class above
+   and adds only what the reveal has no need for: the goal as the set-apart
+   line, the time tile's ending, the guided script, "last time", and the
+   actions. */
+.brief-reveal { width: min(100%, 420px); }
+.brief-reveal__goal { width: 100%; margin: 22px 0 0; border-left: 2px solid rgba(255, 176, 32, .55); padding: 4px 0 4px 14px; color: var(--text); font-family: var(--font-display), sans-serif; font-size: 21px; font-weight: 700; line-height: 1.22; text-align: left; text-wrap: balance; }
+.brief-reveal__how { justify-self: start; margin: 8px 0 0 16px; }
+.brief-reveal__ends { grid-column: 1 / -1; color: var(--text-mute); font-size: 12px; line-height: 1.3; }
+.brief-reveal__guided { width: 100%; margin-top: 14px; text-align: left; }
+.brief-reveal__last { width: 100%; display: grid; gap: 8px; margin-top: 20px; text-align: left; }
+.brief-reveal__last > .label { color: var(--text-mute); }
+.brief-reveal__best { margin: 0; color: var(--text-dim); font-size: 14px; }
+.brief-reveal .start-reveal__after { margin: 16px 0 0; }
+.brief-reveal .brief-offline { margin-top: 16px; }
+.brief-reveal__actions { width: 100%; display: grid; justify-items: center; gap: 12px; margin-top: 24px; }
+.brief-reveal .brief-technique { width: 100%; margin-top: 20px; text-align: left; }
+/* On a phone, Start has to be on the first screen even for somebody with a
+   "last time" block — a returning user was scrolling to find the one button.
+   The same tightening the reveal does on short screens, applied by width. */
+@media (max-width: 560px) {
+  .brief-page--reveal { padding-top: 40px; padding-bottom: 28px; }
+  .brief-reveal .start-build__persona { margin: -16px 0 -10px; }
+  .brief-reveal .fluid-persona { transform: scale(.8); }
+  .brief-reveal .start-reveal__name { font-size: 2.9rem; }
+  .brief-reveal .start-reveal__hook { margin-top: 8px; font-size: 15.5px; }
+  .brief-reveal__goal { margin-top: 14px; font-size: 18.5px; }
+  .brief-reveal__how { margin-top: 6px; }
+  .brief-reveal .start-reveal__facts { margin-top: 14px; }
+  .brief-reveal .start-reveal__fact { padding: 9px 12px; }
+  .brief-reveal__last { margin-top: 12px; gap: 6px; }
+  .brief-reveal__actions { margin-top: 16px; }
+}
 @media (max-height: 700px) {
   .start-reveal .start-build__persona { margin-bottom: 8px; }
   .start-reveal__name { font-size: 3rem; }
