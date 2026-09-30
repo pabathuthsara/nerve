@@ -463,6 +463,15 @@ describe('the TTS model dial', () => {
     ).toBe('eleven_v4_turbo')
   })
 
+  it('lifts v4 Turbo to v3 loudness and leaves every other model untouched', () => {
+    // v4 Turbo renders ~5 dB quieter (measured 30 Sep); the lift sits above
+    // that gap, and a rollback to v3 must reach the speakers unchanged.
+    expect(ttsModelSpec('eleven_v4_turbo').outputLiftDb).toBeGreaterThanOrEqual(5)
+    expect(ttsModelSpec('eleven_v4_turbo').outputLiftDb).toBeLessThanOrEqual(9)
+    expect(ttsModelSpec('eleven_v3_conversational').outputLiftDb).toBe(0)
+    expect(ttsModelSpec('eleven_flash_v2_5').outputLiftDb).toBe(0)
+  })
+
   it('tags and aligns on v4 Turbo exactly as on v3', () => {
     const v3 = ttsModelSpec('eleven_v3_conversational')
     const v4 = ttsModelSpec('eleven_v4_turbo')

@@ -106,10 +106,13 @@ describe('the number', () => {
     expect(givesNumber({ ...base, warmth: 99, boundaryCrossed: true })).toBe(false)
   })
 
-  it('reads as a mobile number and never as a place-holder', () => {
-    const number = inventNumber(() => 0.42)
-    expect(number).toMatch(/^\+94 7\d \d{3} \d{4}$/)
-    expect(number).not.toContain('000 0000')
+  it('reads as a US number and is always in the block reserved for fiction', () => {
+    // 555-0100 to 555-0199 can never ring a real person. A random real-format
+    // number could, and the card presents it as "her number".
+    for (const r of [0, 0.13, 0.42, 0.77, 0.999]) {
+      expect(inventNumber(() => r)).toMatch(/^\+1 \(\d{3}\) 555-01\d{2}$/)
+    }
+    expect(inventNumber(() => 0.42)).not.toContain('+94')
   })
 })
 

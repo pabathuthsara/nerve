@@ -64,7 +64,8 @@ import { Room } from '@/lib/audio/engine'
 import { sceneForRoom } from '@/lib/audio/scenes'
 import { applyRoomConfig, type RoomControls } from '@/lib/audio/types'
 
-import { PCM_RATES } from './config'
+import { PCM_RATES, ttsModelSpec } from './config'
+import { dbToGain } from '@/lib/audio/impulse'
 import { MicCapture } from './capture'
 import { VadDetector, frameRms } from './vad'
 import { RealtimeTranscriber, type TranscriptionTiming } from './stt'
@@ -321,10 +322,28 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     this.agentBus = bus
     this.agentAnalyser = this.makeAnalyser(context, bus)
 
+    // Loudness, per model (`TtsModelSpec.outputLiftDb`). The analyser above
+    // taps the dry bus, so the orb reads what she said rather than the lift.
+    // A model rendered at the level we want passes straight through — no
+    // limiter in the path — so a rollback to it sounds exactly as it did.
+    const liftDb = this.minted ? ttsModelSpec(this.minted.pipeline.tts.model).outputLiftDb : 0
+    let out: AudioNode = bus
+    if (liftDb > 0) {
+      const lift = context.createGain()
+      lift.gain.value = dbToGain(liftDb)
+      const limiter = context.createDynamicsCompressor()
+      limiter.threshold.value = -6
+      limiter.knee.value = 4
+      limiter.ratio.value = 12
+      limiter.attack.value = 0.002
+      limiter.release.value = 0.1
+      out = bus.connect(lift).connect(limiter)
+    }
+
     // Null while procedural acoustics are off — see `roomAcousticsEnabled`.
     const scene = sceneForRoom(persona.room.reverbIr)
     if (!scene) {
-      bus.connect(context.destination)
+      out.connect(context.destination)
       return
     }
 
@@ -333,7 +352,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     // and is never gated by whether she is talking (§1).
     const room = new Room(context, { scene })
     applyRoomConfig(room, persona.room)
-    bus.connect(room.handles.input)
+    out.connect(room.handles.input)
     room.arm()
     this.room = room
 

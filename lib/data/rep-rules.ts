@@ -297,10 +297,18 @@ export function pointsShort(points: number): string {
  * speak digits, because a number she improvises out loud and a number printed
  * on the screen would be a rep that ends in a contradiction. Random per rep,
  * so two wins are not the same trophy.
+ *
+ * **A US number, and always a FICTIONAL one (30 September 2026).** It was a
+ * random Sri Lankan mobile — wrong for a product sold in the US, and worse, a
+ * random real-format number can belong to a real person, printed on a card as
+ * "her number" for somebody to dial. 555-0100 to 555-0199 is the block the US
+ * numbering plan reserves for fiction, so it can never ring anyone; the area
+ * code is a real, recognisable one so the number reads as a place.
  */
+const AREA_CODES = ['212', '213', '305', '310', '312', '323', '347', '415', '512', '617', '646', '702', '718', '737', '917'] as const
+
 export function inventNumber(random: () => number = Math.random): string {
-  const prefixes = ['70', '71', '72', '74', '75', '76', '77', '78']
-  const prefix = prefixes[Math.floor(random() * prefixes.length)] ?? '77'
-  const block = (length: number) => String(Math.floor(random() * 10 ** length)).padStart(length, '0')
-  return `+94 ${prefix} ${block(3)} ${block(4)}`
+  const area = AREA_CODES[Math.floor(random() * AREA_CODES.length)] ?? '415'
+  const line = String(Math.floor(random() * 100)).padStart(2, '0')
+  return `+1 (${area}) 555-01${line}`
 }

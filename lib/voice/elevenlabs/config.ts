@@ -44,6 +44,13 @@ export interface TtsModelSpec {
   /** Whether the `/with-timestamps` variant returns character alignment.
    *  Alignment is what makes barge-in truncation exact rather than estimated. */
   supportsTimestamps: boolean
+  /**
+   * Make-up gain on her voice, in dB, applied in the browser behind a limiter.
+   *
+   * Zero means her audio reaches the speakers exactly as the vendor rendered
+   * it. See `eleven_v4_turbo` for the one model that needs it.
+   */
+  outputLiftDb: number
 }
 
 export const TTS_MODELS: Record<ElevenLabsTtsModelId, TtsModelSpec> = {
@@ -54,6 +61,7 @@ export const TTS_MODELS: Record<ElevenLabsTtsModelId, TtsModelSpec> = {
     creditsPerChar: 1,
     supportsAudioTags: false,
     supportsTimestamps: true,
+    outputLiftDb: 0,
   },
   eleven_v3_conversational: {
     id: 'eleven_v3_conversational',
@@ -67,6 +75,7 @@ export const TTS_MODELS: Record<ElevenLabsTtsModelId, TtsModelSpec> = {
     // truncation when alignment does not arrive, so a wrong guess here costs
     // precision on a barge-in, not correctness.
     supportsTimestamps: true,
+    outputLiftDb: 0,
   },
   // Released 28 September 2026 as v3 conversational's realtime successor, and
   // billed at the same half-credit multiplier (`GET /v1/models` reports 0.5 for
@@ -83,6 +92,14 @@ export const TTS_MODELS: Record<ElevenLabsTtsModelId, TtsModelSpec> = {
     creditsPerChar: 1,
     supportsAudioTags: true,
     supportsTimestamps: true,
+    // v4 Turbo renders ~5 dB quieter than v3 conversational: measured 30
+    // September on the same two lines, Cass −24.5 vs −19.1 dBFS RMS and Nadia
+    // −24.1 vs −20.0, peaks −6 to −7 dBFS against −3. Reported on an iPhone as
+    // "really low even at full volume", where iOS's call-mode processing while
+    // the microphone is open lowers playback further. +7 dB puts her a little
+    // above v3's level; the limiter behind it (`buildOutputGraph`) keeps the
+    // peaks the lift would push past full scale from clipping.
+    outputLiftDb: 7,
   },
 }
 

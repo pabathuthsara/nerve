@@ -821,3 +821,21 @@ nothing and she answers as herself. Through `createCombinedTurn` on that exact
 line: armed → "Yeah, I can give it to you."; not armed → "Alright then. Take
 care." Dating only. **Owed by hand:** a live rep that asks while armed, since
 the hook itself needs a microphone.
+
+## Her loudness on v4 Turbo, and the number on the card — 30 September 2026
+
+Reported on an iPhone as "really low even at full volume". Measured on the same
+two lines: v4 Turbo renders **~5 dB quieter** than v3 conversational (Cass
+−24.5 vs −19.1 dBFS RMS, Nadia −24.1 vs −20.0; peaks −6 to −7 against −3). On
+iOS that stacks with the call-mode processing Safari applies to playback while
+the microphone is open. `TtsModelSpec.outputLiftDb` is now a per-model make-up
+gain applied in `buildOutputGraph` behind a limiter (threshold −6 dB, ratio 12):
++7 dB for v4 Turbo, 0 for v3 and Flash, which pass through with no limiter in
+the path so a rollback sounds exactly as it did. The analyser still taps the dry
+bus. **Owed by hand:** whether this iPhone routes to the earpiece rather than the
+loudspeaker while the mic is open — if so, that is a separate fix.
+
+The number on the win card was a random Sri Lankan mobile: wrong for a US
+product, and a random real-format number can belong to a real person.
+`inventNumber` now returns a US number in 555-0100–0199, the block reserved for
+fiction, behind a real area code.
