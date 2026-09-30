@@ -1,13 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { ChevronLeft, LockKeyhole, MapPin, MicOff, Timer, WifiOff } from 'lucide-react'
+import { ChevronLeft, LockKeyhole, MicOff, WifiOff } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { useInterviewers, useLatestFocus, useLifetimeStats, usePersona, usePersonaMemory, usePersonaProgress, useUserState } from '@/lib/data'
-import { techniqueBySlug, techniqueForSubScore } from '@/lib/techniques/library'
-import { focusPlan } from '@/lib/data/focus'
-import { MemoryLine } from './memory-line'
+import { useInterviewers, useLatestFocus, usePersona, useUserState } from '@/lib/data'
 import { DATING_DURATION_MS, useRepSession, type LiveRepConfig, type SpeakingState } from '@/lib/data/rep'
 import { WRAP_UP_MS } from '@/lib/data/rep-rules'
 import { interviewDurationMs, interviewWrapUpMs } from '@/lib/data/interview-rules'
@@ -27,7 +24,7 @@ import { useOnlineStatus } from '@/lib/hooks/use-online-status'
 import { FluidPersona } from '@/components/fluid-persona'
 import { SHOWCASE_WARMTH } from '@/lib/personas/visual'
 import { capture } from '@/components/analytics'
-import { MissionLine, MissionTile } from '@/components/mission'
+import { MissionLine, MissionNote } from '@/components/mission'
 import { GuidedBrief, GuidedLine } from '@/components/guided'
 import { guidedPromptFor, guidedScriptFor } from '@/lib/data/guided'
 import { missionFor } from '@/lib/data/mission'
@@ -118,23 +115,8 @@ export function RepBriefScreen({
   const { data: persona, loading: personaLoading } = usePersona(personaId)
   const { data: interviewers, loading: interviewersLoading } = useInterviewers()
   const { data: user, loading: userLoading } = useUserState()
-  const { data: progressRaw } = usePersonaProgress(personaId)
-  const progress = Array.isArray(progressRaw) ? null : progressRaw
-  // Dating only. An interviewer carrying a memory of your last attempt is a
-  // different feature with different rules, and it is not this one (§08).
-  const memory = usePersonaMemory(interview ? '' : personaId)
-  /**
-   * Whether this account has ever finished a rep (D23).
-   *
-   * **Lifetime, not per character.** `progress.attempts` is already on this
-   * screen and is the obvious thing to reach for, but it counts attempts
-   * against THIS persona — so an experienced user meeting a new character would
-   * be handed the stripped first-run layout and lose their technique card and
-   * their memory line. The question this screen is asking is "has anybody ever
-   * explained this to you", and that is answered once per account.
-   */
-  const { data: lifetime } = useLifetimeStats()
-  const firstEver = !interview && (lifetime?.totalReps ?? 0) === 0
+  // Her record and her memory used to ride on this screen; they live on her
+  // profile now (the About link), so the brief fetches neither.
   const online = useOnlineStatus()
   const interviewer = interviewers.find((item) => item.id === personaId)
   const subject = interview ? interviewer : persona
@@ -195,7 +177,7 @@ export function RepBriefScreen({
   const loading = userLoading || (interview ? interviewersLoading : personaLoading)
   // The skeleton is the reveal's shape — her, her name, the goal, the tiles —
   // so the screen does not jump when she arrives (§02).
-  if (loading) return <main className="brief-page"><div className="start-reveal brief-reveal"><Skeleton width={168} height={168} style={{ borderRadius: '50%' }} /><Skeleton width={180} height={52} style={{ marginTop: 24 }} /><Skeleton width={260} height={20} style={{ marginTop: 14 }} /><Skeleton height={56} style={{ marginTop: 20 }} /><Skeleton height={132} style={{ marginTop: 20 }} /></div></main>
+  if (loading) return <main className="brief-page brief-page--reveal"><div className="start-reveal brief-reveal brief-reveal--one"><Skeleton width={132} height={132} style={{ borderRadius: '50%' }} /><Skeleton width={180} height={52} style={{ marginTop: 14 }} /><Skeleton width={220} height={14} style={{ marginTop: 10 }} /><Skeleton width={280} height={44} style={{ marginTop: 14 }} /><Skeleton height={56} style={{ marginTop: 20 }} /><Skeleton height={64} style={{ marginTop: 20 }} /><Skeleton height={56} style={{ marginTop: 20 }} /></div></main>
   if (!subject) return <BriefGate title="Rep not found" description="That training partner is not available." href={interview ? '/interview/interviewers' : '/roster'} />
   if (subject.locked) return <BriefGate title={`${subject.name} is locked`} description={interview ? 'Reach level 4 to unlock this interviewer.' : persona?.unlockRequirement ?? 'Keep training to unlock this rep.'} href={interview ? '/interview/interviewers' : '/roster'} locked />
   // §4.4. The shape, and — on a round that probes — how hard the questions are.
@@ -213,6 +195,14 @@ export function RepBriefScreen({
     ].join(' · ')
     : persona?.setting ?? ''
   const hook = interview ? interviewer?.blurb ?? '' : persona?.hook ?? ''
+  // One line under an interviewer's name: the round, and how hard the questions
+  // are on a round that probes (otherwise its shape). Their style was the same
+  // word as the round for Marcus — "Technical · Technical" — and the whole
+  // `setting` wrapped to two lines on a phone.
+  const interviewWhere = [
+    roundType(round).label,
+    probeLadderEnabled({ round, field }) ? `${difficultySpec(difficulty).label} questions` : ROUND_SHAPE_LABEL[roundType(round).shape],
+  ].join(' · ')
   // The script, read once and unhurried, BEFORE the microphone opens. §05's
   // objection is to interruption, and this is the surface where coaching has
   // always been allowed — it is also where a screen-reader user meets it, since
@@ -228,8 +218,6 @@ export function RepBriefScreen({
   // so going "back" into her profile would be going somewhere never visited.
   const back = interview ? '/interview/interviewers' : '/roster'
   const minutes = Math.round(interviewDurationMs(round) / 60_000)
-  const hasHistory = !firstEver && !interview && Boolean(progress && progress.attempts > 0)
-  const hasMemory = !firstEver && !interview && Boolean(memory.data)
   /**
    * ── THE BRIEF, RESTRUCTURED (D23) ─────────────────────────────────────
    *
@@ -282,49 +270,35 @@ export function RepBriefScreen({
    */
   return <main className={`brief-page brief-page--reveal${curtain ? ' brief-page--curtain' : ''}`}>
     <Link className="rep-back" href={back} aria-label="Back"><ChevronLeft size={24} strokeWidth={1.5} /></Link>
-    <section className="start-reveal brief-reveal">
-      <div className="start-build__persona"><FluidPersona name={subject.name} personaId={subject.id} warmth={SHOWCASE_WARMTH} size={168} /></div>
-      <span className="label start-reveal__kicker">{interview ? interviewer?.styleLabel ?? 'Interviewer' : `Level ${String(level).padStart(2, '0')}`}</span>
+    {/*
+      ONE SCREEN, SIX THINGS (30 September 2026, owner review: "information
+      overload"). Her, where she is, her world in a line, the goal, what this
+      rep is for, Start. Everything else moved rather than vanished: the
+      setting joined her name, the Time tile was the goal saying "three
+      minutes" twice, "last time" and her memory live on her profile (the
+      About link), and the library card under Start was a second objective.
+    */}
+    <section className="start-reveal brief-reveal brief-reveal--one">
+      <div className="start-build__persona"><FluidPersona name={subject.name} personaId={subject.id} warmth={SHOWCASE_WARMTH} size={132} /></div>
       <h1 className="display-xl start-reveal__name">{subject.name}</h1>
+      {/* The short setting, so the line under her name is one line. The full
+          one is in her hook's world already, and on her profile. */}
+      <span className="label brief-reveal__where">{interview ? interviewWhere : `Level ${String(level).padStart(2, '0')} · ${persona?.settingShort ?? setting}`}</span>
       <p className="start-reveal__hook">{hook}</p>
       <p className="brief-reveal__goal">{repGoal(interview, minutes)}</p>
       <button type="button" className="brief-how brief-reveal__how" onClick={() => setHow(true)}>How does this work?</button>
-      <div className="start-reveal__facts">
-        <div className="start-reveal__fact start-reveal__fact--wide">
-          <MapPin size={16} strokeWidth={1.6} aria-hidden="true" />
-          <span className="label">{interview ? 'The round' : 'Where'}</span>
-          <strong>{setting}</strong>
-        </div>
-        <div className="start-reveal__fact">
-          <Timer size={16} strokeWidth={1.6} aria-hidden="true" />
-          <span className="label">Time</span>
-          <strong className="data">{interview ? `${minutes}:00` : '3:00'}</strong>
-          <small className="brief-reveal__ends">{interview ? 'then it ends' : 'then she leaves'}</small>
-        </div>
-        {!interview && !briefScript ? <MissionTile mission={mission} /> : null}
-      </div>
+      {!interview && !briefScript ? <div className="brief-reveal__focus"><MissionNote mission={mission} /></div> : null}
       {briefScript ? <div className="brief-reveal__guided"><GuidedBrief script={briefScript} /></div> : null}
-      {hasHistory || hasMemory ? (
-        <div className="brief-reveal__last">
-          <span className="label">Last time</span>
-          {hasHistory && progress
-            ? <p className="brief-reveal__best">Your best: warmth <span className="data">{progress.bestWarmth}</span>{progress.wins > 0 ? `, ${progress.wins} number${progress.wins === 1 ? '' : 's'}` : ', no number'}</p>
-            : null}
-          {hasMemory ? <MemoryLine personaId={personaId} name={subject.name} memory={memory.data} onForgotten={memory.reload} /> : null}
-        </div>
-      ) : null}
-      {firstEver ? <p className="start-reveal__after">Afterwards: a score on how you talked, and one small thing to try for real.</p> : null}
       {!online ? <p className="brief-offline"><WifiOff size={15} strokeWidth={1.5} /> Reconnect to start a rep.</p> : null}
       <div className="brief-reveal__actions">
         <Button size="lg" fullWidth onClick={enter} disabled={!online}>{online ? 'Start' : 'Offline'}</Button>
         {/* The way out of the microphone, offered at the exact moment somebody is
-            deciding whether to grant it (P1). Same character, no permission, no
-            quota — a link rather than a button, because a person hesitating
-            here should not be handed a second thing that looks like the action. */}
-        {!interview ? <Link className="brief-alt" href="/texting">Not ready to talk? Try texting</Link> : null}
-        {!interview ? <Link className="brief-alt brief-alt--quiet" href={`/roster/${personaId}`}>About {subject.name}: her record, what she responds to</Link> : null}
+            deciding whether to grant it (P1) — a link, not a second button. And
+            her profile, which is where her record and memory live now. */}
+        {!interview
+          ? <div className="brief-reveal__links"><Link href="/texting">Try texting instead</Link><span aria-hidden="true">·</span><Link href={`/roster/${personaId}`}>About {subject.name}</Link></div>
+          : null}
       </div>
-      {!interview && !firstEver ? <TechniqueOfTheSession focus={user?.focusArea ?? null} /> : null}
     </section>
     <HowItWorksSheet open={how} onClose={() => setHow(false)} interview={interview} minutes={minutes} />
     <PaywallSheet open={paywall} onClose={() => setPaywall(false)} locked={user?.voiceLocked ?? false} personaId={interview ? null : personaId} interview={interview} packsOpen={packsOpen} credits={credits} cost={cost} roundLabel={roundType(round).label} reason={interview ? creditNote : undefined} />
@@ -713,23 +687,6 @@ function bandAnnouncement(band: Band, interview: boolean) { if (interview) retur
  *
  * Silent when there is neither. Advice invented out of nothing is not advice.
  */
-function TechniqueOfTheSession({ focus }: { focus: 'opening' | 'sustaining' | 'flirting' | 'rejection' | null }) {
-  const { data: graded, loading } = useLatestFocus()
-  const weakest = graded[0]
-  const fromGrade = weakest ? techniqueForSubScore(weakest) : null
-  const plan = focusPlan(focus)
-  const card = fromGrade ?? (plan ? techniqueBySlug(plan.cardSlug) : null)
-  if (loading || !card) return null
-  return (
-    <Link href={`/library/${card.slug}`} className="brief-technique">
-      {/* "From the library", not "Work on": the mission tile above Start is
-          what this rep is for, and a second card with the same verb read as a
-          second objective for the same three minutes (D23). */}
-      <span className="label">{fromGrade ? 'From the library' : 'You said the hard part is'} · {fromGrade ? card.title : plan?.label}</span>
-      <p>{fromGrade ? card.summary : `${card.title}. ${card.summary}`}</p>
-    </Link>
-  )
-}
 
 /**
  * Whether this browser has already been shown the primer.

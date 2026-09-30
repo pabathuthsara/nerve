@@ -348,3 +348,15 @@ brief. The app is installable (`app/manifest.ts`, `public/pwa/` from
 safe-area insets apply) and the page no longer rubber-bands
 (`overscroll-behavior: none`, `overflow-x: clip` on the root). No service worker:
 a cached build or balance in an installed app is worse than a network request.
+
+**The brief, cut to one screen (30 September 2026, owner review: "information
+overload").** Six things now: her, one line of where (level and the short
+setting, or an interview's round and question level), her world in a line, the
+goal (still the headline, D23), what the rep is for (the mission as one compact
+note, or Cass's guided card with a one-line lead), and Start — with "Try texting
+instead · About her" as one quiet row. What left moved rather than vanished: the
+Time tile repeated the goal's "three minutes", "last time" and her memory live on
+her profile (the About link, which already had *What she remembers* and *Start
+fresh*), and the library card under Start was a second objective. Measured with
+no scroll at 375×812 and at 375×667 — the worst case, Cass's guided card on an
+iPhone SE, has Start at 613px and the links at 640.

@@ -180,10 +180,10 @@ export function GuidedBrief({ script }: { script: readonly GuidedStep[] }) {
           {script.map((step) => <Mark key={step.key} name={stepMark(step)} size={13} />)}
         </span>
       </div>
-      <p className="guided-note__lead">
-        A prompt appears under her, one at a time, for each of the six things you are scored on. Read it or say
-        it your way — Cass is the only rep that gives you the words.
-      </p>
+      {/* One line (30 September 2026): the brief fits one screen now, and this
+          card is the tallest thing on it. The six prompts themselves are one tap
+          away below, and in the DOM for a screen reader either way. */}
+      <p className="guided-note__lead">A prompt appears under her as you talk. Say it, or say it your way.</p>
       {firstLine ? (
         <p className="guided-note__first">
           <span className="label">Start with</span>

@@ -3794,6 +3794,19 @@ a.texting-list__row:focus-visible { outline: 1px solid var(--volt); outline-offs
 .brief-reveal .brief-offline { margin-top: 16px; }
 .brief-reveal__actions { width: 100%; display: grid; justify-items: center; gap: 12px; margin-top: 24px; }
 .brief-reveal .brief-technique { width: 100%; margin-top: 20px; text-align: left; }
+/* ONE SCREEN (30 Sep, owner review). The brief is six things now: her, where
+   she is, her world, the goal, what the rep is for, Start. The page fills the
+   viewport and never scrolls on a phone; Start sits at the foot of it. */
+.brief-page--reveal { min-height: 100dvh; padding-top: 56px; padding-bottom: 24px; }
+.brief-reveal--one .start-build__persona { margin-bottom: 10px; }
+.brief-reveal--one .start-reveal__name { margin-top: 0; }
+.brief-reveal__where { margin-top: 8px; color: var(--text-mute); text-align: center; }
+.brief-reveal--one .start-reveal__hook { margin-top: 12px; }
+.brief-reveal__focus { width: 100%; margin-top: 16px; }
+.brief-reveal__focus .mission-note { margin: 0; border: 1px solid var(--line); border-radius: 2px; padding: 10px 12px; text-align: left; }
+.brief-reveal__links { display: flex; gap: 10px; align-items: center; justify-content: center; color: var(--text-mute); font-size: 13px; }
+.brief-reveal__links a { color: var(--text-mute); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-bright); }
+.brief-reveal__links a:hover { color: var(--text-dim); }
 /* On a phone, Start has to be on the first screen even for somebody with a
    "last time" block — a returning user was scrolling to find the one button.
    The same tightening the reveal does on short screens, applied by width. */
@@ -3809,6 +3822,27 @@ a.texting-list__row:focus-visible { outline: 1px solid var(--volt); outline-offs
   .brief-reveal .start-reveal__fact { padding: 9px 12px; }
   .brief-reveal__last { margin-top: 12px; gap: 6px; }
   .brief-reveal__actions { margin-top: 16px; }
+  /* The one-screen brief is already sized for this; only the ready step, at
+     168px, is scaled down. */
+  .brief-reveal--one .start-build__persona { margin: 0 0 6px; }
+  .brief-reveal--one .fluid-persona { transform: none; }
+}
+/* The smallest phones (iPhone SE, 667px): Cass's guided card is the tallest
+   block on the brief, so the avatar and the goal give up a little. */
+@media (max-height: 700px) {
+  .brief-page--reveal { padding-top: 34px; padding-bottom: 14px; }
+  .brief-reveal--one .start-build__persona { margin: -22px 0 -14px; }
+  .brief-reveal--one .fluid-persona { transform: scale(.7); }
+  .brief-reveal--one .start-reveal__name { font-size: 2.3rem; }
+  .brief-reveal--one .brief-reveal__where { margin-top: 4px; }
+  .brief-reveal--one .start-reveal__hook { margin-top: 6px; font-size: 15px; line-height: 1.4; }
+  .brief-reveal--one .brief-reveal__goal { margin-top: 10px; font-size: 16.5px; }
+  .brief-reveal--one .brief-reveal__how { margin-top: 4px; }
+  .brief-reveal--one .brief-reveal__guided, .brief-reveal--one .brief-reveal__focus { margin-top: 10px; }
+  .brief-reveal--one .guided-note { gap: 7px; padding: 10px 12px; }
+  .brief-reveal--one .guided-note__first strong { font-size: 14.5px; }
+  .brief-reveal--one .guided-note__all { padding-top: 7px; }
+  .brief-reveal--one .brief-reveal__actions { margin-top: 12px; gap: 8px; }
 }
 @media (max-height: 700px) {
   .start-reveal .start-build__persona { margin-bottom: 8px; }
