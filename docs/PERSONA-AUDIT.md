@@ -1623,3 +1623,26 @@ source and `presentation.test.ts` pins it against `Persona.name`.
 **The pattern in all three is one sentence:** a fact about a character that
 lives in two places will be wrong in one of them. The name, the room and the
 copy each had a second home, and each was stale in a different direction.
+
+## 16. Reactions to forward lines are dial-driven, not authored per persona (4 October)
+
+`REP-FIXES-PLAN-2026-10-03.md` Part A gave every dating character a reaction to
+a remark about her body — and deliberately did **not** author one per persona.
+The reaction is a one-shot clause in `lib/warmth/forward.ts`, chosen by two
+things she already has: the zone (her warmth when he said it, against the
+owner's 65 / 45) and her own `gated.flirtiness` dial, read and never edited.
+Every clause ends "in your own way", so her contract supplies the voice.
+
+This is the same lesson as §14 from the other side: a second copy of a
+character's behaviour, written somewhere other than her file, is the copy that
+goes stale. One authored table of seven clauses, indexed by her own dial, means
+a retune of Maya's flirtiness moves her reaction with it.
+
+What the audition found (the plan's §7): the too-fast reactions landed from
+the first run; the creepy ones read as evasive ("That's not really something I
+talk about") until the clause named the reaction and forbade changing the
+subject; and the welcome reaction did not land at all until a rule-5 cause was
+removed — the clause arrived beside her standing orders ("Ask about him, tease
+him, swap names") and she swapped names. A turn that carries a forward reaction
+now ships the band line without the standing orders.
+

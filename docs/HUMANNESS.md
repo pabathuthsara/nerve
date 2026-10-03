@@ -870,10 +870,12 @@ The argument, the measurements and the transcripts behind all of these are in
 | Judgement | File | When | Sees a model? |
 |---|---|---|---|
 | Is he still speaking? | `lib/voice/elevenlabs/vad.ts` | continuously | no |
+| Was that onset under her line a barge-in or a backchannel? | `lib/voice/barge.ts` → the ElevenLabs adapter | while she is audible | no |
 | What did he say? | `lib/voice/elevenlabs/stt.ts` | per turn | yes (transcription) |
 | What is this turn worth, mechanically? | `lib/warmth/fast.ts` | per turn, synchronous | no |
 | What did he mean, and how intimate was it? | `lib/warmth/slow.ts` + `/api/warmth/score` | on trigger, async | yes |
 | Is this turn overreaching? | `classifyOverreach` in `lib/warmth/slow.ts` | with each slow score | no |
+| Is this a forward remark, and how does it land? | `lib/warmth/forward.ts` → `session.ts` | per turn, synchronous, dating only | no |
 | Where does the meter move to? | `lib/warmth/engine.ts` | per turn | no |
 | What is she told this turn? | `lib/warmth/steering.ts` + `session.ts` | per turn | no |
 | Has he earned a reply at all? | `lib/warmth/reciprocity.ts` | per turn | no |
@@ -887,6 +889,23 @@ The argument, the measurements and the transcripts behind all of these are in
 | What does she remember? | `lib/grade/memory.ts` | after the rep | filtered |
 
 ---
+
+### Forward remarks — 4 October 2026
+
+A remark about her body ("I'm more interested in your ass") is read by its own
+judgement, `lib/warmth/forward.ts` (`REP-FIXES-PLAN-2026-10-03.md` Part A),
+because neither existing layer could: the fast scorer paid it as a callback
+when "interested" echoed her line, and the slow judge never saw it because
+`PERSONAL_MARKERS` had `body` and not `ass`. The owner's thresholds decide the
+zone from her warmth when he said it — **65+ welcome, 45–64.99 too fast, below
+45 creepy** — a repeat inside his last four turns lands a zone lower, two
+priors are creepy, and the second creepy remark commits her exit. Those two
+numbers are the owner's for this class of line and are used nowhere else (rule
+16). The fast scorer's positive reasons are withheld on that turn, the verdict
+(+2 / −4 / −12 raw) is added, the overreach rule stands down so the line is not
+priced twice, and her reaction is a one-shot clause chosen by the zone and her
+own `gated.flirtiness` dial, sent with the band line but WITHOUT her standing
+orders, for the rule-5 reason recorded in the plan's §7.
 
 ## 9. The rules that constrain any change here
 

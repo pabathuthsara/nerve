@@ -839,3 +839,102 @@ The number on the win card was a random Sri Lankan mobile: wrong for a US
 product, and a random real-format number can belong to a real person.
 `inventNumber` now returns a US number in 555-0100–0199, the block reserved for
 fiction, behind a real area code.
+
+## Rep fixes, Part B — timing, warm-up, barge-in confirmation (4 October 2026)
+
+`REP-FIXES-PLAN-2026-10-03.md` Part B, built on branch `rep-fixes`, **not
+deployed**. The evidence is `REP-LATENCY-AUDIT-2026-10-03.md`; what landed and
+what is still owed is the plan's §B7.
+
+### B1 · Per-reply timing
+
+`summary.pipeline` gains two optional fields beside the aggregates above, which
+keep their shape: `turns` (first forty replies) and `backchannels`. One entry
+per reply, the first marked `first: true`:
+
+```json
+{ "index": 0, "first": true, "atS": 4.4, "clauses": 2, "emptyClauses": 1,
+  "sttMs": 1300, "orderWaitMs": 0, "heldMs": 50, "heldBy": 0,
+  "requestToFirstByteMs": 2000, "firstByteToSoundMs": 50, "onsetBeatMs": 0,
+  "server": { "llmFirstTokenMs": 1800, "llmCompleteMs": 2100, "ttsFirstByteMs": 120 },
+  "inputTokens": 2700, "cachedInputTokens": 0, "outcome": "heard" }
+```
+
+`clauses`/`emptyClauses` count his transcribed clauses since the previous reply,
+so "he had to speak twice" reads as a first reply with two clauses, one empty.
+`orderWaitMs` is how long a finished clause sat behind an EARLIER unfinished one;
+`heldMs`/`heldBy` is how long the reply waited after the last final, and on how
+many later clauses — the two numbers that decide B4. `outcome` is one of
+`heard | barged | superseded | unheard | silent | failed | ended`. No transcript
+text. Measurement only: `TurnTimeline` in `lib/voice/elevenlabs/telemetry.ts` is
+pure and the adapter only writes down when things happened.
+
+### B2 · The countdown warm-up
+
+Right after the mint, the adapter fires one fire-and-forget `{ warm: true }`
+request (`WarmRequest`, `turn-protocol.ts`) at the turn route itself, in
+parallel with the transcriber connecting and the 3·2·1. The route authenticates,
+checks the session is this user's live one for this character
+(`voice_session_get`), passes `maySpend` on the turn bucket, and then
+`warmSession` (`lib/voice/elevenlabs/warm.ts`) runs, in parallel:
+
+- the contract through `handleLlmRequest` exactly as turn one sends it — same
+  overlay from the server-owned session context, same mood seed (the session
+  id), same calibration — with one throwaway user line and a **one-token** cap
+  (`handleLlmRequest`'s new server-side `options.maxTokens`; absent on every
+  real turn);
+- three characters (`Mm.`) on the turn's TTS model, format and
+  `stream/with-timestamps` path.
+
+Output and audio are discarded; the route answers 204. It is not a turn. A test
+pins that the warm-up's two leading system messages equal turn one's.
+
+**Where its cost goes, and why not `voice_operations`.** The plan asked for a
+reservation. `voice_session_refund_empty` and `voice_session_close` refuse a
+refund once ANY non-`stt` operation exists on the session, so a warm-up booked
+there would make every rep that dies in setup — or never hears him —
+non-refundable. It is a standalone `usage_ledger` row instead (kind `warm`,
+`recordStandaloneUsage`), priced from the providers' receipts or, when a receipt
+is missing, from `warmBound` (rule 18). It counts against the daily cap and not
+the session's $0.20 envelope; measured ~$0.0012, bound under a cent. The mint
+advertises it (`turn.warm`); `NERVE_WARM_UP=off` stops that without a code
+change.
+
+### B3 · Barge-in confirmation
+
+While she is **audible** (the same `playedText` test the truncation uses), an
+onset no longer cuts her at ~90 ms. `lib/voice/barge.ts` (`BargeGate`, pure):
+
+1. she is ducked at once — `agentBus` gain to −10 dB over 40 ms;
+2. once `BARGE_CONFIRM_MS` (350) has passed since the onset, a **loud frame**
+   confirms: today's path runs unchanged (`startUserTurn` → `displaceCurrentReply`
+   → `bargeIn`, truncation by `playedText`), and her level is restored for the
+   next reply;
+3. quiet past the deadline that outlasts `BARGE_TAIL_MS` (150, a word gap) is a
+   **backchannel**: she is restored and finishes her line, and when the VAD
+   concedes, the sound's audio is discarded uncommitted
+   (`RealtimeTranscriber.discardSpeech`, which keeps every clause already
+   committed) — no turn, no reply, no dead-end price — and counted in
+   `backchannels`.
+
+The slowest verdict is ~500 ms. The gate reads frame energy rather than the
+VAD's own stop, because the VAD concedes only after the calibrated ~600 ms
+silence window. The first draft ("loud within 150 ms of the deadline") was
+caught by its own test: the 3 October "Mm." (240 ms) ended 110 ms before the
+deadline and would still have cut her. When she is NOT audible nothing changed —
+his onset is his turn at once and an unheard reply is still superseded, never
+interrupted (rule 17). The adapter test helper for an interruption now holds
+speech for 600 ms; a 150 ms burst under an audible line is, by design, no longer
+one.
+
+**The realtime arm (rule 1).** It never cuts her client-side on
+`input_audio_buffer.speech_started`; the server decides through
+`turn_detection.interrupt_response` and the client only truncates her memory
+afterwards (`truncateHerMemory` on `output_audio_buffer.cleared`). There is no
+client-side cut to confirm, so the gate does not apply there; the equivalent
+lever would be the server VAD's own thresholds, which is out of scope.
+
+### B4 · Not built
+
+Only if B1's per-turn data shows replies waiting on another pending clause. No
+rep has run with B1 yet, so there is no data; see the plan's §B7.

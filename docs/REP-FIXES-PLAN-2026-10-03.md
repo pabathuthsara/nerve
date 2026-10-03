@@ -1,6 +1,9 @@
 # Rep fixes — forward remarks, latency and cut-offs (3 October 2026)
 
-> **Status: plan, signed off by the owner on 3 October 2026. Nothing built yet.**
+> **Status: BUILT on branch `rep-fixes`, 4 October 2026 — not pushed, not
+> deployed, waiting on the owner's OK.** §7 is what landed for Part A (with the
+> audition), §B7 for Part B. Owed by hand: one real rep on the branch (§B7), and
+> B4, which waits on that rep's data. Signed off by the owner on 3 October 2026.
 > Two pieces of work in one plan, built in the order of §C:
 >
 > - **Part A — forward remarks.** Warmth decides whether a line like "I'm more
@@ -301,7 +304,98 @@ stayed PG-13), `docs/README.md` (a row for this plan), and §7 below.
 
 ## 7 · What landed (Part A)
 
-*(To be filled in by whoever builds it.)*
+Built 4 October 2026 on branch `rep-fixes` (commits `33b3063`, then `6c7dcd0`
+from the audition). **Not pushed, not deployed.** `LAUNCH-GAP.md` D33 is the
+decision record.
+
+**As written.** `lib/warmth/forward.ts` (new): the detector, `forwardZone` with
+the owner's 65 / 45 as named constants used nowhere else, the 4-turn repeat
+window, the raw deltas (+2 / −4 / −12, kept after the audition), seven authored
+clauses chosen by zone and `gated.flirtiness`, and `assertForwardClause` (run at
+module load and in the suite). `session.ts`: positive fast reasons withheld on a
+forward turn, the verdict added, one-shot reaction queued, silence refused on
+welcome / too-fast, second creepy commits `wrapping`. `engine.ts`: the verdict
+folds into the turn's one event (`source: 'forward'`), and `applySlow` skips
+`classifyOverreach` for a forward turn while keeping the model's intent.
+`triggers.ts`: body words in `PERSONAL_MARKERS`. `lib/safety/`, `fast.ts`,
+`steering.ts`, `bands.ts`, the persona files and `lib/grade/` untouched.
+**`dating-arm.test.ts` passed unchanged on every commit.** 68 new assertions in
+`forward.test.ts`, covering every item in §5.1.
+
+**Deviations, each with its reason.**
+1. **The flirt-back column starts at a ceiling of 61, not 60.** §3.3's table
+   says `ceiling >= 60` and its own worked example says Maya (60/60) is
+   "pleased-and-a-little-flirty". Her contract lists "compliments about how you
+   look" under what LOSES her warmth, so the example was followed
+   (`FLIRT_BACK_CEILING`).
+2. **A turn carrying a reaction ships without her standing orders.** Not in the
+   plan; found by the audition. Sent beside "Ask about him, tease him, swap
+   names", the welcome reaction was answered with a name swap ("Well, that's a
+   twist. What's your name?" — Cass at 67). Rule 5's failure exactly. The band
+   line (length, questions, colour) still ships.
+3. **Every clause asks for one sentence, no trailing dots.** "That's...
+   forward." was cut to "That's..." because an ellipsis ends a sentence for
+   `capToBudget`. The cap itself is untouched (rule 4).
+4. **Moderation precedence is best-effort.** `lib/data/rep.ts` withdraws a
+   pending reaction when a decline, correction or end is issued; moderation
+   arrives a beat after the turn, so a decline that lands after her reply was
+   bought goes to the next reply, as every moderation direction always has.
+5. **The realtime arm** gets the reaction through `directiveIfChanged`, which
+   that arm sends at the NEXT speech onset — one turn late, like every
+   direction on that arm. ElevenLabs, the shipping arm, gets it on the reply to
+   the line.
+6. **The "four forward lines from the 3 Oct rep"** are three: both "your ass"
+   lines and "I could grab you if you want" (which matches). The fourth line of
+   interest that rep, "…if you know what I mean", is innuendo with no object
+   and is deliberately left to the slow judge — precision first, as §3.1 asks.
+
+**The audition (§5.3)** — `npm run rep:audition`, gpt-4.1-mini for both sides,
+four rounds (r1 was lost to the rate limit below; r2 before deviations 2–3,
+r3 before the final clause wording, r4 after everything). Each cell is the
+latest round that reached that zone, marked. Lines are hers, verbatim. Warmth is
+before → after the line. Rows marked * started at warmth 76
+with `AUDITION_START` (artificial, labelled in the transcript), because a
+three-minute rep never warms Maya or Robin past 65 — which is their rung, not a
+defect.
+
+| | Low (creepy, line at turn 2) | Mid (too fast) | High (welcome) | Repeat |
+|---|---|---|---|---|
+| **Cass** (32/100) | *(rung 1 starts near 50, so turn 2 lands too-fast)* "That's fast for a gallery chat." 50→49 (r2) | "You're jumping in a bit fast there, aren't you?" 63→61 (r4) | "Is that your way of trying to impress me or should I clap?" 66→67 (r4) · *"Well, that's the most honest critique I've had all day." 82→82 (r4) | too-fast → "That's not something you say to someone you just met." 61→58 → "I'm not here for that kind of talk. Goodbye." 58→54, **she leaves** (r4) |
+| **Nadia** (45/100) | "Not really the conversation I was up for." 32→25 (r4) | "Ha. That's a bit fast, don't you think?" 55→53 (r3) | *"Funny you say that, I thought we were chatting about diaries, not derrieres." 79→79 (r4) | "That's not appropriate to say here." 41→35 → "That's a strange thing to say out of nowhere." 35→29, **she leaves** (r4) |
+| **Maya** (60/60) | "That's a weird thing to say." 26→17 (r4) | "That's a quick jump. Slow down, please." 47→44 (r3) | *"Well, that's one way to break the ice without pulling any punches." 79→79 (r4) | "That's not an appropriate thing to say." 38→29 → "That's not a conversation I'm having." 29→20, **she leaves** (r2) |
+| **Robin** (72/40) | "That's quite forward." 19→8 (r4) | *(a three-minute rep never warmed her to 45)* | *"That's a forward way to catch attention but here we are." 76→76 (r4) | "That's an unexpected thing to say." 19→8 → "I'm here waiting for my car." 8→−3, **she leaves** (r4) |
+
+Read against §5.3:
+- **Below 45 she is put off, warmth drops, a repeat ends it** — yes on all four.
+  The drop is the character's own: Robin −11, Maya −9, Nadia −7, Cass −3,
+  because Cass is rung 1 with `decay: 0.3`. Whether rung 1 should feel a creepy
+  line harder than that is a question for the owner, and the answer would be a
+  bigger `creepy` delta or a decay exemption, not something to tune unasked.
+- **45–65: a little smile, a little flirt, "slow down"** — yes ("Ha. That's a bit
+  fast, don't you think?").
+- **65+: flirty, not flat** — yes after deviation 2; before it, no. Cass and
+  Nadia tease; Maya and Robin are amused and dry, which is their dials.
+- **The four do not say the same thing** — yes in the welcome and too-fast
+  zones. In the creepy zone the lines are recognisably theirs but share a shape
+  ("That's …"); Robin says "That's quite forward." almost every time, which is
+  her understatement and also a little repetitive. Robin's exit line, "I'm here
+  waiting for my car.", is a brush-off that changes the subject, which the
+  creepy clause forbids — in character for her, but it is the clause not being
+  followed. One of Robin's r2 runs never reached the line: it ended at turn 6
+  on "…what would it be to get lost in", which is the known `isDismissal` false
+  positive (`TEXTING-PLAN.md` §18, still live on the dating arm, not fixed here).
+- **Nothing describes her body or turns sexual** — none in ~25 forward replies.
+  "derrieres" (Nadia) is the boldest word, and it is his subject named back,
+  which PG-13 allows.
+
+**Owed by hand.** Hearing it out loud on a real rep (the harness runs the
+prompt, not the voice). The owner's read of the table above, especially the
+rung-1 drop and Robin's repetition. And one note about how the audition was run:
+**the first attempt ran all twelve reps in parallel and hit the organisation's
+OpenAI tokens-per-minute limit (429) for a minute or two — the same key serves
+live reps**, so it is possible a live turn was refused in that window. Every
+later round ran one rep at a time. Run auditions sequentially.
+
 
 ---
 
@@ -431,7 +525,89 @@ reply. If B1 does not show it, **do not build this**; record that in §B7.
 
 ## B7 · What landed (Part B)
 
-*(To be filled in by whoever builds it.)*
+Built 4 October 2026 on branch `rep-fixes` (commits `fd9d6f8` B1, `2e0fc59` B2,
+`01b01c6` B3). **Not pushed, not deployed.** `PIPELINE.md` § "Rep fixes, Part B"
+is the technical record.
+
+**B1 — per-turn timing. Landed as written.** `TurnTimeline` in
+`lib/voice/elevenlabs/telemetry.ts`, first forty replies, in
+`sessions.pipeline_telemetry.turns` (jsonb, optional, no migration); the
+aggregates keep their shape. Each entry: VAD stop → STT final (`sttMs`), the part
+of it a final sat behind an earlier clause (`orderWaitMs`), final → request
+(`heldMs`) and how many later clauses it waited on (`heldBy`), request → first
+byte, first byte → first sound, the onset beat, the server's own stage timings,
+prompt and cached tokens, and the outcome (`heard | barged | superseded |
+unheard | silent | failed | ended`). Clauses since the previous reply, empty ones
+counted separately, fold into the next entry — which is how "he had to speak
+twice" will read. No transcript text.
+
+**B2 — the countdown warm-up. Landed, with one deviation.**
+`lib/voice/elevenlabs/warm.ts`, a `{ warm: true }` request to the turn route
+fired right after the mint, never awaited, every failure swallowed. Same
+contract by the same code path (`handleLlmRequest`, same overlay, mood seed and
+calibration — a test pins the two leading system messages equal to turn one's),
+a one-token cap, three characters of TTS on the turn's model and endpoint, 204.
+`requireUser`, then the session is checked as this user's live one for this
+character, then `maySpend` on the turn bucket. Priced at ~$0.0012 for a
+2,700-token contract (not yet measured on a real rep); the bound is under a
+cent. Advertised by the mint (`turn.warm`),
+switched off by `NERVE_WARM_UP=off`.
+- **Deviation: no `voice_operations` reservation.** The plan said "maySpend with
+  its own small reservation". `voice_session_refund_empty` and
+  `voice_session_close` refuse a refund once any non-`stt` operation exists, so a
+  reserved warm-up would make every rep that dies in setup, or never hears him,
+  non-refundable — the user paying for our cold start. It is written as a
+  standalone `usage_ledger` row (kind `warm`) from the providers' receipts, or
+  from `warmBound` when a receipt is missing (rule 18). It counts against the
+  daily cap, not the session's envelope. If the owner wants it inside the
+  envelope, the clean route is a migration adding a `warm` kind that the two
+  refund checks ignore — production SQL, so not done without sign-off.
+
+**B3 — barge-in confirmation. Landed as written, with one design change found
+by its own test.** `lib/voice/barge.ts` (`BargeGate`, pure, clock-free), wired
+into the ElevenLabs adapter. While she is audible (the `playedText` test the
+truncation uses): duck −10 dB over 40 ms; past `BARGE_CONFIRM_MS` (350) a loud
+frame confirms and today's path runs unchanged; quiet that outlasts a word gap
+(`BARGE_TAIL_MS`, 150) is a backchannel — she is restored and finishes, and the
+sound's audio is discarded uncommitted (`discardSpeech`, which keeps every
+clause already committed), so it is not a turn, buys no reply and is never
+priced as a dead end. Counted in `pipeline_telemetry.backchannels`. The slowest
+verdict is ~500 ms.
+- **The design change.** The first draft confirmed when there had been a loud
+  frame within 150 ms of the deadline. The unit test for the 3 October "Mm."
+  (240 ms) failed against it — that sound ends 110 ms before the deadline and
+  would still have cut her. Past the deadline it is now a loud frame that
+  confirms, and quiet longer than a word gap that releases.
+- **"An onset that transcribes empty → no truncation"** holds for a short onset
+  (it is never committed, so never transcribed). A phantom that holds speech
+  energy past 350 ms is still a barge-in, decided on energy — waiting for the
+  transcriber to say "empty" would put STT latency on every real interruption.
+- **Rule 1, the realtime arm.** It never cuts her client-side on
+  `speech_started`; the server decides (`turn_detection.interrupt_response`)
+  and the client only truncates her memory afterwards. There is no client cut to
+  confirm, so the gate does not apply there.
+- `lib/audio/` was not touched; the duck uses the adapter's own `agentBus`.
+  The adapter test helper for an interruption now holds speech for 600 ms,
+  because a 150 ms burst under an audible line is, by design, no longer one.
+
+**B4 — not built.** It is conditional on B1's data showing replies held by
+another pending clause, and no rep has run with B1 yet. When one has, read
+`turns[].heldMs`, `heldBy` and `orderWaitMs` on the slow replies: a large
+`heldMs` with `heldBy > 0`, or a large `orderWaitMs`, is the case B4 fixes;
+nothing there means the 8.4 s silence of 3 October was something else (the B3
+cut that preceded it is the other candidate, and B3 has now removed it).
+
+**Owed by hand — one real rep, on the branch, by the owner.**
+`npm run dev` in the worktree (`.claude/worktrees/rep-fixes`), one rep on
+`localhost:3000`. Then read back, for that session:
+`pipeline_telemetry->'turns'->0` against the audit's table (target: turn one
+within ~1 s of the later ones; `cachedInputTokens > 0` on turn one — if it is 0
+the prefix does not match, and that must be found before anything else), the
+`voice_operations.metadata` of turn one (`llmFirstTokenMs`, `ttsFirstByteMs`
+near 100 ms), the `usage_ledger` row of kind `warm`, and — saying "Mm." under
+one of her lines — `backchannels: 1` with her line intact in the transcript.
+**Before/after first-reply timing: the "after" does not exist yet**; it is this
+rep.
 
 ---
 
