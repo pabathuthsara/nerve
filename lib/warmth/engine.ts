@@ -33,7 +33,7 @@ import {
 } from './affect'
 import { temperamentOf, type Temperament } from './temperament'
 
-export type WarmthEventSource = 'start' | 'fast' | 'slow' | 'overreach' | 'repair'
+export type WarmthEventSource = 'start' | 'fast' | 'slow' | 'overreach' | 'repair' | 'forward'
 
 /**
  * How each fast reason moves comfort and liking, relative to how it moves
@@ -605,7 +605,17 @@ export class WarmthEngine {
     score: FastScore,
     at: number,
     userText: string,
-    options: { repairable?: boolean } = {},
+    options: {
+      repairable?: boolean
+      /**
+       * A forward remark's verdict (`./forward.ts`), folded into this turn's
+       * one event. Raw, never tapered — it is not lexical form that can be
+       * farmed — and an EASE event before a liking one, weighted like
+       * overreach, because that is what a remark about her body is. Absent on
+       * every other turn, which therefore reaches the arithmetic it always did.
+       */
+      forward?: { zone: string; rawDelta: number; match: string }
+    } = {},
   ): WarmthEvent {
     this.turnIndex += 1
 
@@ -624,6 +634,28 @@ export class WarmthEngine {
     // gains taper — a late dead end is not cheaper than an early one.
     const authority = fastAuthority(this.turnIndex)
     const taper = (raw: number) => (raw > 0 ? raw * authority : raw)
+    const forward = options.forward
+    if (forward) {
+      comfortRaw = taper(comfortRaw) + forward.rawDelta * OVERREACH_COMFORT
+      likingRaw = taper(likingRaw) + forward.rawDelta * OVERREACH_LIKING
+      return this.apply({
+        at,
+        turnIndex: this.turnIndex,
+        naturalDecay: this.config.decayPerTurn,
+        rawDelta: taper(score.raw) + forward.rawDelta,
+        comfortRaw,
+        likingRaw,
+        ...(options.repairable !== undefined ? { repairable: options.repairable } : {}),
+        source: 'forward',
+        reason: `forward · ${forward.zone}`,
+        userText,
+        intimacy: null,
+        detail: [
+          `forward remark ("${forward.match}") ${signed(forward.rawDelta)}`,
+          ...score.reasons.map((r) => `${r.code} ${signed(r.points)} (${r.detail})`),
+        ],
+      })
+    }
 
     // Natural decay applies whether or not the turn scored anything, so an
     // event is always produced. A turn that moves nothing still costs ground.
@@ -668,9 +700,19 @@ export class WarmthEngine {
      * to transcript turns — the scorecard included — silently mis-attributes.
      */
     turnIndex: number,
+    /**
+     * The turn was a forward remark, and `./forward.ts` has already priced it
+     * against the owner's thresholds. The overreach rule would price it a
+     * second time against different ones (~70 / ~55 for an 85-intimacy line,
+     * against the owner's 65 / 45), so for this class of line it stands down
+     * and the model's own read of his intent is kept.
+     */
+    options: { forward?: boolean } = {},
   ): WarmthEvent {
     this.slowLatencies.push(latencyMs)
-    const overreach = classifyOverreach(score.intimacy, warmthAtTurn)
+    const overreach = options.forward
+      ? { verdict: 'none', overreach: 0, delta: null } satisfies ReturnType<typeof classifyOverreach>
+      : classifyOverreach(score.intimacy, warmthAtTurn)
 
     // An overreach verdict replaces the model's own delta rather than stacking
     // with it. The model judged the turn in isolation; the gap is the better

@@ -1009,6 +1009,9 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
         // interview reads as a different genre of refusal entirely.
         if (action === 'decline' || action === 'correct') {
           const line = safetyDirectiveFor(action, track)
+          // Moderation WINS over her reaction to a forward line
+          // (`lib/warmth/forward.ts`): if it has not been sent yet, it is not.
+          if (line) warmthRef.current?.withdrawForwardReaction()
           if (line) live.reinforce(line)
           return
         }
@@ -1029,6 +1032,7 @@ export function useRepSession(personaId: string, options: RepSessionOptions = {}
           safetyEndedRef.current = true
           safetyCloseAtRef.current = performance.now()
           setSafety({ ended: true, distress: false })
+          warmthRef.current?.withdrawForwardReaction()
           // She closes the scene herself, bounded — see `safetyCloseAtRef`.
           live.reinforce(safetyDirectiveFor('end', track) ?? CLOSE_DIRECTIVE)
         }

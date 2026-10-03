@@ -29,9 +29,14 @@ export type SlowTriggerReason =
  * Tuned for recall, not precision. "a number of books", "the release date" and
  * "it's hot in here" all trip this, and that is the correct trade: they cost a
  * scoring call, whereas missing "get down my number" costs the mechanic.
+ *
+ * The body words after `naked` were added on 3 October 2026 (REP-FIXES-PLAN
+ * §3.4): "I'm more interested in your ass." never reached the judge because
+ * the list had `body` and not `ass`. Recall-tuned like the rest — "kick ass"
+ * buys a call — and precision for these lines lives in `./forward.ts`.
  */
 const PERSONAL_MARKERS =
-  /\b(number|phone|date|drink|drinks|coffee|dinner|lunch|boyfriend|girlfriend|partner|single|married|meet\s?up|meeting up|your place|my place|tonight|later tonight|beautiful|gorgeous|pretty|hot|sexy|body|kiss|alone|nude|naked)\b/i
+  /\b(number|phone|date|drink|drinks|coffee|dinner|lunch|boyfriend|girlfriend|partner|single|married|meet\s?up|meeting up|your place|my place|tonight|later tonight|beautiful|gorgeous|pretty|hot|sexy|body|kiss|alone|nude|naked|ass|butt|booty|boobs|tits|breasts|chest|legs|thighs|lips|figure|curves|bed)\b/i
 
 /**
  * Contempt, read WITHOUT consulting the fast score.

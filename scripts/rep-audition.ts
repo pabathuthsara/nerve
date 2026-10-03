@@ -6,6 +6,7 @@
  *   npm run rep:audition -- nadia median 2
  *   npm run rep:audition -- marcus-vance confidently_wrong 1 technical 4
  *   npm run rep:audition -- aisha-rahman plain_speaker 1 deep_technical 3
+ *   npm run rep:audition -- nadia forward_late 1     # REP-FIXES §5.3
  *
  * The fourth and fifth arguments are INTERVIEW ONLY and are the round and the
  * difficulty (INTERVIEW-TECHNICAL-PLAN §9, T11). They default to the reference
@@ -72,6 +73,7 @@ import { StabilityMeter, DEFAULT_VERBOSITY_MEDIAN } from '../lib/metrics/stabili
 import { dueSceneBeat, DATING_DURATION_MS, ARM_THRESHOLD, INTERVIEW_THRESHOLD } from '../lib/data/rep-rules'
 import type { Persona, TranscriptTurn } from '../lib/voice/types'
 import { INTERVIEW_PLAYERS } from './interview-players'
+import { FORWARD_PLAYERS, type ForwardPlayer } from './forward-players'
 import { dueInterviewBeat, isGrounded } from '../lib/data/interview-agenda'
 import { REFERENCE_ROUND } from '../lib/warmth/interview/trajectory'
 import { isRoundTypeId, roundType, type RoundTypeId } from '../lib/data/interview-credits'
@@ -219,6 +221,8 @@ async function runRep(
   index: number,
   key: string,
   options: AuditionOptions,
+  /** A scripted player (`forward-players.ts`): his line verbatim on the turns it names. */
+  script?: ForwardPlayer['script'],
 ): Promise<RepResult | null> {
   // THE BRIEF THE TOKEN ROUTE WOULD HAVE COMPILED, on the interview arm.
   //
@@ -294,6 +298,8 @@ async function runRep(
   let capped = 0
   /** Turns she said nothing at all. */
   let silent = 0
+  /** Scripted lines said so far. */
+  let scripted = 0
 
   const maxTurns = persona.track === 'interview' ? INTERVIEW_MAX_TURNS : MAX_TURNS
   const secondsPerExchange = persona.track === 'interview'
@@ -324,7 +330,9 @@ async function runRep(
         content: message.content,
       })),
     ]
-    const userText = await say(PLAYER_MODEL, playerMessages, 0.9, key)
+    const line = script?.({ turn, warmth: session.engine.warmth, spoken: scripted }) ?? null
+    if (line) scripted += 1
+    const userText = line ?? await say(PLAYER_MODEL, playerMessages, 0.9, key)
     if (!userText) return null
 
     clock += secondsPerExchange
@@ -342,6 +350,11 @@ async function runRep(
     const warmth = session.engine.warmth
     peak = Math.max(peak, warmth)
     bands.push(bandFor(warmth))
+    // What the forward rule decided, when it decided anything (`lib/warmth/forward.ts`).
+    const lastEvent = session.engine.events[session.engine.events.length - 1]
+    const verdict = lastEvent?.source === 'forward'
+      ? `  [${lastEvent.reason}, from ${lastEvent.warmthBefore.toFixed(0)}]`
+      : ''
 
     // ── what she is told, on the shipping cadence ───────────────────────
     //
@@ -359,7 +372,7 @@ async function runRep(
     if (saysNothing) {
       silent += 1
       process.stdout.write(
-        `\n  ${String(turn + 1).padStart(2)}  warmth ${warmth.toFixed(0)} ${bandFor(warmth)}\n`
+        `\n  ${String(turn + 1).padStart(2)}  warmth ${warmth.toFixed(0)} ${bandFor(warmth)}${verdict}\n`
           + `      HIM  ${userText}\n`
           + '      HER  (nothing)\n',
       )
@@ -456,12 +469,18 @@ async function runRep(
     // Full turns, not truncated. The whole reason this harness exists is that
     // a summary statistic cannot tell you whether somebody is good company.
     process.stdout.write(
-      `\n  ${String(turn + 1).padStart(2)}  warmth ${warmth.toFixed(0)} ${bandFor(warmth)}\n`
+      `\n  ${String(turn + 1).padStart(2)}  warmth ${warmth.toFixed(0)} ${bandFor(warmth)}${verdict}\n`
         + `      HIM  ${userText}\n`
         + `      HER  ${agentText}   [${words(agentText)}w`
         + `${agentText === generated ? '' : `, capped from ${words(generated)}w`}]\n`,
     )
     for (const line of steer) process.stdout.write(`      →    ${line.content}\n`)
+    // A committed exit has had its one line. The live adapter ends the rep
+    // here; so does the audition, or it reports turns no customer would hear.
+    if (session.shouldEndScene) {
+      process.stdout.write('      ·    she has left — the rep ends here\n')
+      break
+    }
   }
 
   const stats = meter.stats(clock)
@@ -519,8 +538,9 @@ async function main(): Promise<void> {
   // other's fixtures.
   const roster = persona.track === 'interview'
     ? { ...INTERVIEW_PLAYERS }
-    : { ...PLAYERS }
+    : { ...PLAYERS, ...Object.fromEntries(Object.entries(FORWARD_PLAYERS).map(([name, p]) => [name, p.brief])) }
   const brief = roster[player]
+  const script = persona.track === 'interview' ? undefined : FORWARD_PLAYERS[player]?.script
   if (!brief) {
     console.error(`No player "${player}" for the ${persona.track} track. One of: ${Object.keys(roster).join(', ')}`)
     process.exit(1)
@@ -546,7 +566,7 @@ async function main(): Promise<void> {
   const results: RepResult[] = []
   for (let i = 1; i <= reps; i += 1) {
     console.log(`── rep ${i} ─────────────────────────────────────────────────────`)
-    const result = await runRep(persona, brief, i, key.key, { round, difficulty })
+    const result = await runRep(persona, brief, i, key.key, { round, difficulty }, script)
     if (!result) {
       console.error('  rep aborted.')
       continue

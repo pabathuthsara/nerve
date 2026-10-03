@@ -26,6 +26,16 @@ import type { SteeringContext } from './steering'
 // branch that reaches exactly the code it reached yesterday. Nothing in
 // `bands.ts`, `reciprocity.ts` or `steering.ts` is opened to make this work.
 import { judgementFor } from './track'
+// Part A of REP-FIXES-PLAN-2026-10-03: a new file beside the judgement layer,
+// read here and nowhere else. See `./forward.ts`.
+import {
+  FORWARD_DELTA,
+  FORWARD_REPEAT_WINDOW,
+  detectForwardRemark,
+  forwardClause,
+  forwardZone,
+  type ForwardZone,
+} from './forward'
 import type { InterviewTurnKind } from './interview/bands'
 import type { InterviewSteeringContext } from './interview/steering'
 
@@ -103,6 +113,8 @@ interface AwaitingReply {
   warmthAtTurn: number
   trigger: SlowTriggerReason[]
   agentPrior: string | null
+  /** Priced by `./forward.ts`; the overreach rule must not price it again. */
+  forward?: boolean
 }
 
 interface PendingSlow {
@@ -115,6 +127,7 @@ interface PendingSlow {
   turnIndex: number
   /** Why this turn was selected for scoring. Recorded for the harness. */
   trigger: SlowTriggerReason[]
+  forward?: boolean
 }
 
 export class WarmthSession {
@@ -220,6 +233,19 @@ export class WarmthSession {
    * stays byte-identical.
    */
   private lastUserKind: UserTurnKind = 'silence'
+  /**
+   * Was each of his turns a forward remark, most recent last. Only the last
+   * `FORWARD_REPEAT_WINDOW` are read: "repeats charm her less".
+   */
+  private readonly forwardHistory: boolean[] = []
+  /** Creepy forward remarks this rep. The second one ends the scene. */
+  private creepyForwardRemarks = 0
+  /**
+   * Her reaction to his last line, for her NEXT reply only (rule 5). Taken by
+   * whichever directive is read next and then gone; a closing hand-over or a
+   * moderation decline wins over it. See `./forward.ts`.
+   */
+  private forwardDirection: { clause: string; zone: ForwardZone } | null = null
 
   constructor(options: WarmthSessionOptions) {
     this.options = options
@@ -301,7 +327,22 @@ export class WarmthSession {
    * the last.
    */
   directiveIfChanged(): string | null {
-    if (this.consumeClosingHandover()) return null
+    const line = this.changedDirective()
+    const forward = this.takeForwardClause()
+    if (!forward) return line
+    // A pending reaction forces a send on an arm that only hears from us when
+    // something changed — the band line plus the one-shot, never the one-shot
+    // without the band that owns her length.
+    return `${line ?? this.directive()} ${forward}`
+  }
+
+  private changedDirective(): string | null {
+    if (this.consumeClosingHandover()) {
+      // THE DECISION ARRIVES ALONE (rule 3). A reaction to a forward line
+      // queued on the same turn is dropped, never carried into the next one.
+      this.forwardDirection = null
+      return null
+    }
     const next = this.judgement.steer(this.steeringContext())
     this.turnsSinceSteer += 1
     // Hers if she has one. See `Persona.steerHeartbeatTurns` — a wider band
@@ -337,10 +378,30 @@ export class WarmthSession {
    * has to be done on purpose. See `SteeringContext.includeStanding`.
    */
   statelessDirective(): string {
-    if (this.consumeClosingHandover()) return ''
-    const fresh = this.directiveIfChanged()
-    if (fresh !== null) return fresh
-    return this.judgement.steer({ ...this.steeringContext(), includeStanding: false })
+    if (this.consumeClosingHandover()) {
+      this.forwardDirection = null
+      return ''
+    }
+    const line = this.changedDirective()
+      ?? this.judgement.steer({ ...this.steeringContext(), includeStanding: false })
+    const forward = this.takeForwardClause()
+    return forward ? `${line} ${forward}` : line
+  }
+
+  /** One-shot: read once, then gone (rule 5). */
+  private takeForwardClause(): string | null {
+    const direction = this.forwardDirection
+    this.forwardDirection = null
+    return direction?.clause ?? null
+  }
+
+  /**
+   * A moderation decline or correction for this turn has been issued, and it
+   * WINS (`REP-FIXES-PLAN` §3.6): her reaction to the line is not sent on top
+   * of it. A no-op when nothing is pending, which is every turn but this one.
+   */
+  withdrawForwardReaction(): void {
+    this.forwardDirection = null
   }
 
   /**
@@ -545,6 +606,9 @@ export class WarmthSession {
     // must not be able to swallow it — the goodbye is the whole point of having
     // made leaving a state rather than a request.
     if (this.exit !== 'present') return false
+    // A forward line she is meant to take with a smile or flirt back is not a
+    // line she may ignore. A creepy one may still be met with nothing.
+    if (this.forwardDirection && this.forwardDirection.zone !== 'creepy') return false
     return this.judgement.maySayNothing(this.engine.warmth, this.lastUserShape, {
       silentLastTurn: this.silentLastTurn,
       // How long since she last did it. The dating arm does not read this —
@@ -612,7 +676,23 @@ export class WarmthSession {
       herLastTurnAsked: lastAgent?.text.trim().endsWith('?') ?? false,
     })
 
-    this.engine.applyFast(score, turn.t_end, turn.text, {
+    // A FORWARD REMARK IS PRICED BY ITS OWN RULE (`./forward.ts`), not by
+    // the mechanics. Its positive reasons are withheld — "interested" echoing
+    // her last line is not a callback when the noun is "your ass" — the way
+    // hostility already withholds them, and the owner's verdict for the zone
+    // is added in their place. Dating only: interview and texting are out of
+    // scope, and every other turn reaches the arithmetic it always did.
+    const forward = this.readForward(turn.text)
+    if (forward) {
+      const kept = score.reasons.filter((reason) => reason.points < 0)
+      const repricedRaw = Math.round(kept.reduce((sum, reason) => sum + reason.points, 0) * 10) / 10
+      this.engine.applyFast({ ...score, reasons: kept, raw: repricedRaw }, turn.t_end, turn.text, {
+        // An apology for a creepy line should not earn the repair bonus.
+        repairable: forward.zone !== 'creepy'
+          && !score.reasons.some((reason) => reason.code === 'contempt'),
+        forward: { zone: forward.zone, rawDelta: FORWARD_DELTA[forward.zone], match: forward.match },
+      })
+    } else this.engine.applyFast(score, turn.t_end, turn.text, {
       // CONTEMPT MUST NOT ARM THE REPAIR BONUS.
       //
       // A fall opens a two-turn window in which his next positive turn is worth
@@ -633,6 +713,15 @@ export class WarmthSession {
     if ((score.kind === 'dismissal' && isDismissal(turn.text)) || isUserFarewell(turn.text)) {
       this.exitByUser = true
       this.commitExit('wrapping')
+    }
+    // THE SECOND CREEPY REMARK ENDS IT, and that is a state too: "it becomes
+    // too weird". She gets one line to go out on, exactly as a dismissal does.
+    if (forward?.zone === 'creepy') {
+      this.creepyForwardRemarks += 1
+      if (this.creepyForwardRemarks >= 2) {
+        this.exitByUser = true
+        this.commitExit('wrapping')
+      }
     }
 
     // What he gave, for the reciprocity gates. Everything here is already
@@ -679,10 +768,28 @@ export class WarmthSession {
         warmthAtTurn: this.engine.warmth,
         trigger: triggers,
         agentPrior: lastAgent?.text ?? null,
+        ...(forward ? { forward: true } : {}),
       }
     }
 
     return score
+  }
+
+  /**
+   * Is this a forward remark, and how does it land? Records the turn in the
+   * repeat window either way, and queues her one-shot reaction. Warmth is read
+   * BEFORE this turn's own delta — the zone is where she was when he said it.
+   */
+  private readForward(text: string): { zone: ForwardZone; match: string } | null {
+    const remark = this.persona.track === 'dating' ? detectForwardRemark(text) : null
+    const prior = this.forwardHistory.slice(-FORWARD_REPEAT_WINDOW).filter(Boolean).length
+    this.forwardHistory.push(remark !== null)
+    while (this.forwardHistory.length > FORWARD_REPEAT_WINDOW + 1) this.forwardHistory.shift()
+    if (!remark) return null
+    const warmth = this.engine.warmth
+    const zone = forwardZone(warmth, prior)
+    this.forwardDirection = { zone, clause: forwardClause(zone, this.persona, warmth, prior > 0) }
+    return { zone, match: remark.match }
   }
 
   /**
@@ -713,6 +820,7 @@ export class WarmthSession {
       startedMs: nowMs(),
       turnIndex: awaiting.turnIndex,
       trigger: awaiting.trigger,
+      ...(awaiting.forward ? { forward: true } : {}),
     }
     this.pending = pending
 
@@ -767,6 +875,7 @@ export class WarmthSession {
         pending.userText,
         Math.round(nowMs() - pending.startedMs),
         pending.turnIndex,
+        pending.forward ? { forward: true } : {},
       )
     })
   }
