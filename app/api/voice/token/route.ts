@@ -276,7 +276,10 @@ export async function POST(request: Request): Promise<Response> {
     // actually ran. See `settleTranscriptionEnvelope`.
     return NextResponse.json(owned ? {
       ...minted, sessionId: owned.sessionId, startupAttemptId: sttOperationId,
-      turn: { endpoint: '/api/voice/turn' },
+      // `warm` advertises the countdown warm-up (REP-FIXES B2). Off with
+      // `NERVE_WARM_UP=off`, a switch that needs no code change; an old client
+      // ignores the field and a new client without it never sends one.
+      turn: { endpoint: '/api/voice/turn', warm: process.env.NERVE_WARM_UP?.trim().toLowerCase() !== 'off' },
     } : minted)
   } catch (cause) {
     if (owned && sttOperationId) {

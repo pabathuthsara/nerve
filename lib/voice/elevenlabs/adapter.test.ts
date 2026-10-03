@@ -467,6 +467,37 @@ describe('ElevenLabs combined adapter', () => {
     expect(turns[1]).toMatchObject({ index: 1, first: false, clauses: 1, outcome: 'heard' })
   })
 
+  it('fires the countdown warm-up once after the mint, never awaits it, and never fails on it (B2)', async () => {
+    const calls: { url: string; body: Record<string, unknown> }[] = []
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).includes('/token')) return Response.json({ ...token(), turn: { endpoint: '/api/voice/turn', warm: true } })
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      calls.push({ url: String(url), body })
+      // The warm-up never answers and then fails: connect must not care.
+      if (body['warm'] === true) return new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('cold')), 5))
+      return fullReply('Hello there.')
+    })
+    const provider = new ElevenLabsVoiceProvider({ fetchImpl })
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ url: '/api/voice/turn', body: { warm: true, sessionId: 'reserved-session', personaId: 'tess' } })
+    final('Hi.')
+    await vi.waitFor(() => expect(hardware.players).toHaveLength(1))
+    const summary = await provider.end()
+    // Not a turn: one reply timed, one agent line, nothing from the warm-up.
+    expect(summary.pipeline!.turns).toHaveLength(1)
+    expect(summary.turns.filter((t) => t.speaker === 'agent').map((t) => t.text)).toEqual(['Hello there.'])
+  })
+
+  it('sends no warm-up when the mint does not advertise one', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => String(url).includes('/token')
+      ? Response.json(token()) : fullReply('Hi.'))
+    const provider = new ElevenLabsVoiceProvider({ fetchImpl })
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    expect(fetchImpl).toHaveBeenCalledOnce()
+    await provider.end()
+  })
+
   it('does not revive an unanswered clause when paused before the transcription drain', async () => {
     const fetchImpl = vi.fn(async () => Response.json(token()))
     const provider = new ElevenLabsVoiceProvider({ fetchImpl })

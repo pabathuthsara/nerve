@@ -217,6 +217,9 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
         creditsPerChar: minted.pipeline.tts.creditsPerChar,
       })
       this.meter.setVendorCredits(minted.credits.used, minted.credits.limit)
+      // Started here, before the transcriber, the audio graph or the countdown
+      // have finished, and never awaited: it runs in parallel with all three.
+      this.warmUp(persona, minted)
 
       if (this.ended) throw new VoiceError('session_failed', PROVIDER, 'This voice session has ended.')
 
@@ -298,6 +301,30 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       clearTimeout(timer)
       if (this.connectAbort === abort) this.connectAbort = null
     }
+  }
+
+  /**
+   * The countdown warm-up (REP-FIXES-PLAN B2; `warm.ts` is the server half).
+   *
+   * One request to the turn route, so the instance that will serve turn one
+   * has authenticated, the model has read her contract once and the voice has
+   * spoken three characters before he finishes his first line. Fire and
+   * forget, in the strictest sense: nothing awaits it, every failure is
+   * swallowed, and the rep's own abort does not wait on it either — a warm-up
+   * that never landed costs a slower first reply, which is what every rep had
+   * before it existed.
+   */
+  private warmUp(persona: Persona, minted: MintedPipelineSession): void {
+    if (!minted.turn?.warm || !minted.sessionId) return
+    try {
+      void this.fetchImpl(this.options.turnEndpoint ?? minted.turn.endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          warm: true, sessionId: minted.sessionId, operationId: crypto.randomUUID(), personaId: persona.slug,
+        }),
+      }).then((response) => response.body?.cancel().catch(() => undefined), () => undefined)
+    } catch { /* A warm-up must never be able to fail a rep. */ }
   }
 
   private async openMicrophone(): Promise<MediaStream> {

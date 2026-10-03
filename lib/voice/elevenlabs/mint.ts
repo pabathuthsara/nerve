@@ -55,7 +55,11 @@ export interface MintedPipelineSession {
   sessionId?: string
   startupAttemptId?: string
   /** Capability advertisement permits old clients/mints during a deployment. */
-  turn?: { endpoint: string }
+  turn?: {
+    endpoint: string
+    /** The route accepts the countdown warm-up (`WarmRequest`). */
+    warm?: boolean
+  }
   credits: {
     budget: number
     warnAt: number

@@ -108,6 +108,13 @@ export interface PersonaOverlay {
 export async function handleLlmRequest(
   request: Request,
   overlay: PersonaOverlay = {},
+  /**
+   * Server-side overrides, never read off the request body. One today: the
+   * countdown warm-up (`warm.ts`) asks for a single output token, because the
+   * point of it is the prompt the model reads and not anything it says.
+   * Absent on every real turn, which therefore sends exactly what it did.
+   */
+  options: { maxTokens?: number } = {},
 ): Promise<Response> {
   const key = chatApiKey()
   if (!key.ok) return json({ error: key.error.message }, 500)
@@ -158,7 +165,7 @@ export async function handleLlmRequest(
     model: compiled.llm.model,
     messages,
     temperature: compiled.llm.temperature,
-    maxTokens: compiled.llm.maxTokens,
+    maxTokens: options.maxTokens ?? compiled.llm.maxTokens,
     signal: request.signal,
   })
 

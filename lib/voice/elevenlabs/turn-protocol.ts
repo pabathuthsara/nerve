@@ -33,6 +33,24 @@ export interface TurnRequest {
   sentenceCap?: number
 }
 
+/**
+ * The countdown warm-up (`REP-FIXES-PLAN-2026-10-03.md` B2).
+ *
+ * Sent once, fire-and-forget, the moment a rep is minted — while the
+ * transcriber connects and the 3·2·1 runs — to the SAME route a turn uses, so
+ * the function instance, its auth cache, the model's prompt cache and the
+ * voice are all warm by the time he finishes his first line. It is not a turn:
+ * no transcript, no warmth, no reply, and the route answers 204. A request
+ * without `warm` is a turn exactly as before.
+ */
+export interface WarmRequest {
+  warm: true
+  sessionId: string
+  /** Fresh per request; the ledger row's key. */
+  operationId: string
+  personaId: string
+}
+
 export type TurnTimingStage = 'llmFirstTokenMs' | 'llmCompleteMs' | 'ttsFirstByteMs'
 
 export type TurnEvent =

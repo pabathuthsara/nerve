@@ -32,7 +32,7 @@ import { handleLlmRequest, handleTtsRequest, type PersonaOverlay } from './serve
 import { parseAlignment } from './tts'
 import { capToBudget, sanitiseForSpeech, spokenWordCount } from './truncate'
 import { sentenceCapFor, wordCapFor } from '@/lib/warmth/bands'
-import { MAX_REQUESTED_SENTENCE_CAP, MAX_REQUESTED_WORD_CAP, MAX_TURN_TTS_CHARACTERS, type TurnEvent, type TurnRequest } from './turn-protocol'
+import { MAX_REQUESTED_SENTENCE_CAP, MAX_REQUESTED_WORD_CAP, MAX_TURN_TTS_CHARACTERS, type TurnEvent, type TurnRequest, type WarmRequest } from './turn-protocol'
 import { proxiedRequestId } from '../request-id'
 import { seededRandom } from '../seed'
 
@@ -61,8 +61,10 @@ export interface CombinedDependencies {
   onComplete?: (accounting: TurnAccounting) => Promise<void>
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 /** Reject oversized requests before allocating vendor work. Never trust Content-Length alone. */
-export async function parseTurnRequest(request: Request): Promise<TurnRequest | null> {
+async function readBoundedJson(request: Request): Promise<Record<string, unknown> | null> {
   if (!request.body) return null
   const reader = request.body.getReader()
   let bytes = 0
@@ -76,8 +78,40 @@ export async function parseTurnRequest(request: Request): Promise<TurnRequest | 
       if (bytes > MAX_BODY_BYTES) { await reader.cancel(); return null }
       text += decoder.decode(chunk.value, { stream: true })
     }
-    const body = JSON.parse(text + decoder.decode()) as Record<string, unknown>
-    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    const body: unknown = JSON.parse(text + decoder.decode())
+    return body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : null
+  } catch { return null } finally { reader.releaseLock() }
+}
+
+export async function parseTurnRequest(request: Request): Promise<TurnRequest | null> {
+  const body = await readBoundedJson(request)
+  return body ? turnRequestFrom(body) : null
+}
+
+/**
+ * A turn, or the countdown warm-up (`WarmRequest`), from one read of the body.
+ * Anything without `warm: true` is judged as a turn by the same rules as
+ * before, so a turn request cannot become a warm-up by accident or the reverse.
+ */
+export async function parseVoiceRequest(request: Request): Promise<
+  { kind: 'turn'; input: TurnRequest } | { kind: 'warm'; input: WarmRequest } | null
+> {
+  const body = await readBoundedJson(request)
+  if (!body) return null
+  if (body.warm === true) {
+    return typeof body.sessionId === 'string' && UUID.test(body.sessionId)
+      && typeof body.operationId === 'string' && UUID.test(body.operationId)
+      && typeof body.personaId === 'string' && getPersona(body.personaId)
+      ? { kind: 'warm', input: { warm: true, sessionId: body.sessionId, operationId: body.operationId, personaId: body.personaId } }
+      : null
+  }
+  const input = turnRequestFrom(body)
+  return input ? { kind: 'turn', input } : null
+}
+
+function turnRequestFrom(body: Record<string, unknown>): TurnRequest | null {
+  try {
+    const uuid = UUID
     if (typeof body.sessionId !== 'string' || !uuid.test(body.sessionId)
       || typeof body.turnId !== 'string' || !uuid.test(body.turnId)
       || typeof body.personaId !== 'string' || !getPersona(body.personaId)
@@ -110,7 +144,7 @@ export async function parseTurnRequest(request: Request): Promise<TurnRequest | 
         ? { sentenceCap: Math.round(Math.max(1, Math.min(MAX_REQUESTED_SENTENCE_CAP, body.sentenceCap))) }
         : {}),
     }
-  } catch { return null } finally { reader.releaseLock() }
+  } catch { return null }
 }
 
 /** UTF-8 bytes safely overestimate BPE input tokens, including message framing. */
