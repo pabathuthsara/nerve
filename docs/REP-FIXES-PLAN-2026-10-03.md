@@ -1,9 +1,22 @@
-# Forward remarks — warmth decides whether it was flirting or creepy
+# Rep fixes — forward remarks, latency and cut-offs (3 October 2026)
 
 > **Status: plan, signed off by the owner on 3 October 2026. Nothing built yet.**
-> This is a deliberate change to the dating arm (`CLAUDE.md` rule 19). It is
-> allowed to change how she reacts and how warmth moves on one class of line;
-> it is not allowed to change anything else she does.
+> Two pieces of work in one plan, built in the order of §C:
+>
+> - **Part A — forward remarks.** Warmth decides whether a line like "I'm more
+>   interested in your ass" is flirting or creepy, and each character reacts in
+>   her own way. A deliberate change to the dating arm (`CLAUDE.md` rule 19).
+> - **Part B — latency and cut-offs.** Her first reply takes 4–17 s and a
+>   one-syllable "Mm." can cut her off mid-word. The evidence is
+>   `REP-LATENCY-AUDIT-2026-10-03.md`; this is the fix.
+>
+> Neither part may change her persona, the band table, the grader or the
+> scoring rules beyond what is written here. §D is the prompt for the agent
+> that builds it, and the `/goal` line for it.
+
+---
+
+# Part A — forward remarks
 
 ## 0 · What the owner asked for, in his terms
 
@@ -286,6 +299,218 @@ reactions to forward lines are dial-driven, not authored per persona),
 `LAUNCH-GAP.md` (a new D-entry: what moved, why, the owner's thresholds, what
 stayed PG-13), `docs/README.md` (a row for this plan), and §7 below.
 
-## 7 · What landed
+## 7 · What landed (Part A)
 
 *(To be filled in by whoever builds it.)*
+
+---
+
+# Part B — latency and cut-offs
+
+Read `REP-LATENCY-AUDIT-2026-10-03.md` first; the numbers below are from it.
+
+## B0 · What is wrong, in one table
+
+| Problem | Measured | Cause |
+|---|---|---|
+| First reply slow on every rep | 4–17 s (median ~6 s) vs ~3.4 s later | Server: prompt cache cold on turn one (`cachedInput` 0; first token 1.0–3.0 s vs ~0.7 s), voice cold (first byte 0.15–2.5 s vs ~0.1 s), auth cache miss (~0.35 s). Client: ~1.4 s extra, **not yet attributable** |
+| Sometimes he must speak twice | 4 of 18 reps | Unknown; see B1 |
+| A "Mm." cuts her off | 3 Oct rep: "Yeah" cut by a 240 ms "Mm." | While she is audible, 90 ms of speech energy is a barge-in (`onsetMs: 90`, `lib/voice/elevenlabs/vad.ts`), and the "Mm." then became a turn priced as a dead end and answered in 2 words (mirror cap) |
+| A sound with no words cuts her off | 3 Oct rep: "I'm" cut at 22.3 s, no transcript | Same 90 ms rule; an echo of her voice or the room |
+| Long silences after a cut | 8.4 s after "Sorry, I didn't hear you." | Probably a reply waiting on a slow or empty transcriber clause (`respondWhenReady` needs `pendingCount === 0`; one clause may hold up to 15 s). Unproven; see B1 |
+
+## B1 · Per-turn timing — measurement only, build first
+
+The rep record today stores only a median and p90 per stage
+(`sessions.pipeline_telemetry.stages`), so the first turn's client-side 1.4 s,
+the "spoke twice" reps and the 8 s silences cannot be explained.
+
+- In `lib/voice/elevenlabs/telemetry.ts` (`PipelineMeter`), keep a **bounded
+  per-turn list** (first 40 turns): turn index; VAD stop → STT final (ms);
+  STT final → reply request sent; time spent waiting on other pending
+  transcriber clauses, and how many there were; request sent → first byte;
+  first byte → first sound; onset beat applied; whether the reply was
+  superseded, barged, or never heard. Mark the **first turn** explicitly.
+- Persist it in `sessions.pipeline_telemetry` (jsonb; **no migration**) beside
+  the existing aggregates, which must keep their shape.
+- Pure, tested, and no behaviour change. No transcript text in it (it is
+  telemetry, and `safeProps`' rule is the right instinct here too).
+
+## B2 · Warm everything during the 3·2·1 — build second
+
+**What:** right after `mint()` in `connect()` (`lib/voice/elevenlabs/index.ts`),
+fire one warm-up request, fire-and-forget, in parallel with the transcriber
+connecting and the countdown. It must never delay or fail the rep.
+
+**Where it goes:** the **turn route itself** (`app/api/voice/turn/route.ts`), as
+a `warm: true` request in `turn-protocol.ts` (absent = today's behaviour), so
+the same edge function instance, its auth cache, the OpenAI prefix cache and
+ElevenLabs are all warm for turn one.
+
+**What it does on the server:**
+1. `requireUser`, then **`maySpend`** with its own small reservation (rule 11:
+   every route that spends money goes through it; rule 18: an uncertain cost is
+   bounded, never unknown). Settle from the provider's usage like a turn.
+2. Compile the **identical** persona contract the first real turn will send, by
+   the same code path and with the same session context (name, memory), so the
+   cached prefix matches byte for byte. Send it with a minimal user message and
+   a **one-token** output cap; discard the output.
+3. In parallel, synthesise **two or three characters** in her voice and model;
+   discard the audio.
+4. Return 204. It is not a turn: no transcript, no agent turn, no warmth, no
+   telemetry turn, no `agent.unheard`, nothing the grader reads.
+
+**Cost:** ~2,700 input tokens of gpt-4.1-mini plus a few TTS characters, about
+$0.001 a rep. Check it fits inside the session's reservation math.
+
+**Verify:** on a real rep, turn one should show `cachedInput > 0` and a TTS
+first byte near ~100 ms in `voice_operations.metadata`. If `cachedInput` is
+still 0, the prefix does not match. Find out why before going on.
+
+## B3 · Barge-in confirmation — build after Part A
+
+**What:** while she is audible, an onset no longer cuts her at once.
+
+1. On onset while she is audible: **duck her voice immediately** (her output
+   bus gain, about −10 dB over ~40 ms) so the user is heard at once.
+2. If he is **still speaking after `BARGE_CONFIRM_MS` (~350 ms)**, it is a
+   barge-in: run today's path unchanged (`displaceCurrentReply` → `bargeIn`,
+   truncation by `playedText`, rule 17).
+3. If he stops before that, it was a **backchannel or a noise**: restore her
+   level and let her finish her line. The short clause is **not a turn**: it
+   buys no reply, is not added to `turns`, and is counted in telemetry as a
+   backchannel. A clause that transcribes to nothing is simply dropped.
+4. When she is **not** audible, nothing changes: an onset starts his turn as
+   it does today, and the supersede path (rule 17: a reply nobody heard is not
+   an interruption) is untouched.
+
+**Where:** put the policy in a **shared pure module** (e.g.
+`lib/voice/barge.ts`, timers injected so it is testable) and wire it into the
+ElevenLabs adapter. **Rule 1:** check the realtime arm (`lib/voice/openai/`,
+`echo.ts`, `response-gate.ts`): apply the same policy if that arm truncates on
+`speech_started` client-side, or record in §B7 why it does not apply. Do not
+touch `lib/audio/` (Tier 0). Duck with the adapter's own `agentBus` gain.
+
+**Note what this changes:** a mid-line "Mm." stops being a user turn, so the
+fast scorer no longer prices a backchannel as a dead end. That is a correction,
+not a scoring change, and it is the only effect on scoring this part may have.
+Check `lib/characterization/dating-arm.test.ts` still passes.
+
+**Tests:** a 240 ms onset during her line → no truncation, no reply, her level
+restored; a 600 ms onset → truncation exactly as today; an onset that
+transcribes empty → no truncation; an onset while she is silent → his turn
+immediately, as today; `incidents` and `agent.unheard` still report correctly.
+
+## B4 · An empty or slow clause must not hold her reply — only if B1 shows it
+
+If B1's per-turn data (or a reproduced test) shows replies waiting on another
+pending transcriber clause: release the reply when every newer clause has
+settled and the older one is empty, or has been pending longer than a bounded
+cutoff (about 2× the rep's median STT time, minimum 1.5 s). A late transcript
+from the stale clause is still saved in spoken order but does not buy a second
+reply. If B1 does not show it, **do not build this**; record that in §B7.
+
+## B5 · Not now
+
+- **Admission** (the `maySpend` database hop, ~0.4–0.6 s a turn in `sin1`): every
+  rep on record is the owner's from Sri Lanka. Measure it on the first US rep
+  via B1 before touching it, and rule 11 still holds whatever is decided.
+- **Streaming her reply sentence by sentence** would save ~0.5–0.8 s but undoes
+  the buffered turn (`HUMANNESS-PLAN` item 1, `capToBudget`). Not proposed.
+
+## B6 · Verifying Part B
+
+- Unit tests for B1–B4 as listed; the whole suite; `dating-arm.test.ts`
+  unchanged.
+- **A real rep is needed** for B2 and B3. The agent cannot speak, so ask
+  Pabath to run one rep on the local build (`npm run dev`, `localhost:3000`) or
+  a preview, then compare B1's per-turn timing for turn one against the audit
+  table: target is a first reply within ~1 s of the later ones, and no cut on a
+  short "Mm.". Do not push to `elevenlabs-pipeline` to get a test environment:
+  that is production.
+
+## B7 · What landed (Part B)
+
+*(To be filled in by whoever builds it.)*
+
+---
+
+# C · Order of work
+
+Each step is its own commit, with the suite green, on one branch.
+
+1. **B1** per-turn timing (no behaviour change).
+2. **B2** warm-up (no change to what she says).
+3. **Part A** forward remarks, including its audition (§5.3).
+4. **B3** barge-in confirmation.
+5. **B4**, only if B1's data calls for it.
+6. Docs (§6 of Part A, plus `PIPELINE.md` for B1–B4 and the status line at the
+   top of `REP-LATENCY-AUDIT-2026-10-03.md`), then report and wait for the owner.
+
+---
+
+# D · The prompt for the implementing agent
+
+Paste this into a fresh session in `~/Documents/nerve`:
+
+```
+You're working in the Nerve repo at ~/Documents/nerve (Next.js 15 + Supabase,
+deployed on Vercel from the `elevenlabs-pipeline` branch — a push to that branch
+IS a production deploy, and live Meta ads are running).
+
+Start by reading CLAUDE.md in full (especially rules 1, 2, 3, 5, 10, 11, 12,
+13, 16, 17, 18 and 19), then docs/README.md, then
+docs/REP-FIXES-PLAN-2026-10-03.md and docs/REP-LATENCY-AUDIT-2026-10-03.md.
+The plan is your task and your spec. It was signed off by the product owner
+(Pabath) on 3 October 2026. Build it exactly as written, in the order of its
+section C; where you must deviate, record why in §7 (Part A) or §B7 (Part B).
+
+Part A, in one line: a forward remark like "I'm more interested in your ass" is
+flirting when her warmth is 65+ (she flirts back — a comeback, a tease, or
+takes it as a compliment), a little too fast at 45–65 (a small smile, a little
+flirty, "slow down"), and creepy below 45 (warmth drops hard). Repeats land one
+zone lower; a second creepy remark makes her leave. Every character reacts in
+her own way through her own flirtiness dial. PG-13 still holds.
+
+Part B, in one line: per-turn timing first, then warm the prompt cache, the
+voice and the turn route during the 3·2·1 countdown, then stop short sounds
+("Mm.", echoes) from cutting her off by confirming a barge-in only after
+~350 ms of continued speech — and fix replies waiting on an empty transcriber
+clause only if the new timing data shows it.
+
+Hard rules:
+- Part A's logic goes in a NEW file, lib/warmth/forward.ts, wired in with the
+  smallest edits to lib/warmth/session.ts, engine.ts and triggers.ts. Do NOT
+  edit fast.ts, steering.ts, bands.ts, the persona files, lib/grade/,
+  lib/safety/ or lib/audio/.
+- lib/characterization/dating-arm.test.ts must pass unchanged. If a digest
+  moves, stop and find out why; only re-baseline if it is this change, with
+  the reason written inline.
+- Every line of direction she is given is authored in the repo and tested
+  (rule 10), and her reaction is a one-shot direction (rule 5).
+- The warm-up goes through maySpend (rule 11), is bounded (rule 18), never
+  delays or fails a rep, and is never a turn.
+- The barge-in policy is shared and considered for both voice adapters (rule 1),
+  and a reply nobody heard is still never an interruption (rule 17).
+- Interview and texting are out of scope.
+
+Verify before saying done: npm run typecheck, npm run lint, npm test,
+npm run build:check (the owner has an untracked higgsfield-lab/ folder that
+breaks typecheck/build — it is not in git; check your branch in a clean
+worktree). Run Part A's audition (§5.3; it spends a few cents — approved) for
+tess, nadia, maya and robin. For Part B, ask Pabath to run one real rep on your
+local build and read the per-turn timing from sessions.pipeline_telemetry.
+Update the docs listed in section C.
+
+Work on a new branch (e.g. `rep-fixes`), one commit per step. Do NOT push,
+merge or deploy. When done, report to Pabath: what changed, test results, the
+audition table (what each character said at low / mid / high warmth and on a
+repeat), the before/after first-reply timing, anything you deviated on — and
+wait for his OK.
+```
+
+**The `/goal` line:**
+
+```
+/goal Implement docs/REP-FIXES-PLAN-2026-10-03.md on a new branch `rep-fixes` in the order of its section C — per-turn timing, the countdown warm-up, forward remarks (flirt 65+, too fast 45–65, creepy below 45, repeats one zone lower, each character through her own flirtiness dial, PG-13 kept), barge-in confirmation (~350 ms, backchannels are not turns), and the stalled-clause fix only if the timing data shows it — with every CLAUDE.md rule respected, dating-arm.test.ts passing unchanged, typecheck/lint/tests/build:check green in a clean worktree, the four-character audition recorded in §7, the docs in section C updated, nothing pushed or deployed, and a report to Pabath that ends by waiting for his OK.
+```

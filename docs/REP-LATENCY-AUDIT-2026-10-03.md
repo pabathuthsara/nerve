@@ -1,6 +1,6 @@
 # Rep latency and cut-off audit — 3 October 2026
 
-> **Status: findings and a fix plan. Nothing here is built yet.** Written from
+> **Status: findings. The fix is planned in `REP-FIXES-PLAN-2026-10-03.md` Part B (signed off 3 Oct); nothing is built yet.** Written from
 > the production database (`sessions`, `transcripts`, `voice_operations`,
 > `safety_events`) and the code at `358ddab`. Every number below is measured,
 > and §5 says what the fixes must not touch.
