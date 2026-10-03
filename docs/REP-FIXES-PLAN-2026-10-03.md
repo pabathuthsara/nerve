@@ -630,7 +630,11 @@ median of 3.28 s for the other eleven** (3.05–4.70). The audit's "before" was
 
 - **The warm-up ran and cost what it should**: ledger row `warm`, 0.063¢,
   LLM 2,638 in / 1 out, 3 TTS characters, `ttsFirstByteMs` 556 in
-  `asia-southeast1`, 1,057 ms, five seconds before turn one.
+  `asia-southeast1`, 1,057 ms, five seconds before turn one. The dev server's
+  log has the whole request at 3,274 ms (`POST /api/voice/turn 204`): ~2.2 s of
+  auth, the session check, `maySpend` and — dev only — the route's first
+  compile (317 ms), which the warm-up absorbed instead of turn one. It still
+  finished in time.
 - **The voice was still cold on turn one** (1,860 ms first byte), five seconds
   after the warm-up had been answered in 556 ms. Turn six spiked to 1,422 ms
   mid-rep too, so part of this is ElevenLabs variance rather than coldness —
