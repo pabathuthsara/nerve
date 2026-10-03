@@ -21,7 +21,7 @@ import { DEFAULT_CALIBRATION, resolveSilenceMs } from '../types'
 import { ElevenLabsPersonaCompiler, compileDeliveryTags, EXPRESSION_TAG } from './persona'
 import { ReplyBudget, SpokenTurn, budgetedWordCount, capToBudget, proportionalPrefix, sanitiseForSpeech, snapToWordBoundary, spokenWordCount } from './truncate'
 import { VadDetector, frameRms } from './vad'
-import { PipelineMeter, CreditGuard } from './telemetry'
+import { PipelineMeter, CreditGuard, MAX_TIMED_TURNS, TurnTimeline } from './telemetry'
 import { parseAlignment } from './tts'
 import { seededRandom } from '../seed'
 import { stripSentinel, EXIT_SENTINEL, historyFrom } from './llm'
@@ -322,6 +322,79 @@ describe('per-stage telemetry', () => {
     expect(telemetry.ttsModel).toBe('eleven_flash_v2_5')
     expect(telemetry.sttModel).toBe('gpt-4o-mini-transcribe')
     expect(telemetry.llmModel).toBe('gpt-4.1-mini')
+  })
+})
+
+/**
+ * Per-reply timing (REP-FIXES-PLAN B1). Measurement only: these tests pin what
+ * is WRITTEN DOWN, and the adapter tests pin that writing it changes nothing.
+ */
+describe('per-reply timing', () => {
+  it('times the first reply from his clause to her first sound, and marks it first', () => {
+    const timeline = new TurnTimeline()
+    timeline.clauseFinal({
+      stoppedAtMs: 1000, committedAtMs: 1600, latencyMs: 700, nowMs: 2300,
+      atS: 1, empty: false, pendingAfter: 0,
+    })
+    const turn = timeline.open(2350)!
+    turn.server('llmFirstTokenMs', 1800.4)
+    turn.tokens(2700, 0)
+    turn.firstByte(4350)
+    turn.firstSound(4400, 0)
+    turn.settle('heard')
+    expect(timeline.list()).toEqual([{
+      index: 0, first: true, atS: 1, clauses: 1, emptyClauses: 0,
+      sttMs: 1300, orderWaitMs: 0, heldMs: 50, heldBy: 0,
+      requestToFirstByteMs: 2000, firstByteToSoundMs: 50, onsetBeatMs: 0,
+      server: { llmFirstTokenMs: 1800 },
+      inputTokens: 2700, cachedInputTokens: 0, outcome: 'heard',
+    }])
+  })
+
+  it('makes "he had to speak twice" readable: an empty clause folds into the next reply', () => {
+    const timeline = new TurnTimeline()
+    timeline.clauseFinal({ stoppedAtMs: 1000, committedAtMs: 1600, latencyMs: 400, nowMs: 2000, atS: 1, empty: true, pendingAfter: 0 })
+    timeline.clauseFinal({ stoppedAtMs: 5000, committedAtMs: 5600, latencyMs: 400, nowMs: 6000, atS: 5, empty: false, pendingAfter: 0 })
+    const turn = timeline.open(6000)!
+    expect(turn.timing).toMatchObject({ first: true, clauses: 2, emptyClauses: 1, atS: 5, sttMs: 1000 })
+  })
+
+  it('separates a final held behind an earlier clause from one held by a later one', () => {
+    const timeline = new TurnTimeline()
+    // Finished 400ms after its commit, released 3s later: an earlier clause
+    // was still out. Then the reply waited 2s more on one clause after it.
+    timeline.clauseFinal({ stoppedAtMs: 1000, committedAtMs: 1600, latencyMs: 400, nowMs: 5000, atS: 1, empty: false, pendingAfter: 1 })
+    timeline.held(1)
+    const turn = timeline.open(7000)!
+    expect(turn.timing).toMatchObject({ orderWaitMs: 3000, heldMs: 2000, heldBy: 1 })
+  })
+
+  it('keeps the first verdict, and stops at the cap without failing', () => {
+    const timeline = new TurnTimeline()
+    const turn = timeline.open(0)!
+    turn.settle('failed')
+    turn.settle('ended')
+    expect(turn.timing.outcome).toBe('failed')
+    for (let i = 1; i < MAX_TIMED_TURNS; i += 1) timeline.open(i)
+    expect(timeline.open(99)).toBeNull()
+    expect(timeline.list()).toHaveLength(MAX_TIMED_TURNS)
+    expect(timeline.list().filter((t) => t.first)).toHaveLength(1)
+  })
+
+  it('reaches the stored telemetry beside the aggregates, which keep their shape', () => {
+    const m = new PipelineMeter({
+      models: { ttsModel: 'eleven_flash_v2_5', sttModel: 'gpt-4o-mini-transcribe', llmModel: 'gpt-4.1-mini' },
+      credits: { budget: 10_000, warnAt: 8_000 },
+    })
+    m.timeline.open(0)?.settle('silent')
+    const telemetry = m.telemetry(60)
+    expect(Object.keys(telemetry.stages)).toEqual([
+      'vadSilenceMs', 'sttMs', 'llmFirstTokenMs', 'llmCompleteMs', 'ttsFirstByteMs', 'totalPerceivedMs',
+    ])
+    expect(telemetry.turns).toHaveLength(1)
+    expect(telemetry.turns![0]!.outcome).toBe('silent')
+    // No transcript text in a telemetry row, ever.
+    expect(JSON.stringify(telemetry.turns)).not.toMatch(/text/i)
   })
 })
 

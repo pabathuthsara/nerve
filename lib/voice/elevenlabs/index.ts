@@ -76,7 +76,7 @@ import { TtsClient } from './tts'
 import { TurnClient } from './turn'
 import { PcmPlayer } from './player'
 import { SpokenTurn, capToBudget, sanitiseForSpeech } from './truncate'
-import { PipelineMeter } from './telemetry'
+import { PipelineMeter, type TimedTurn } from './telemetry'
 import { SAMPLE_INTERVAL_MS, TurnAudibility, analyserRms } from '../audibility'
 import { PIPELINE_MODEL_ID, type MintedPipelineSession } from './mint'
 
@@ -100,6 +100,8 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   private readonly emitter = new VoiceEmitter()
   private readonly turns: TranscriptTurn[] = []
   private readonly committedTurns = new WeakSet<SpokenTurn>()
+  /** Each reply's timing record, by the turn it belongs to. Measurement only. */
+  private readonly timedTurns = new WeakMap<SpokenTurn, TimedTurn>()
   private readonly options: ElevenLabsAdapterOptions
   private readonly fetchImpl: typeof fetch
   private readonly clock: () => number
@@ -469,6 +471,15 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     if (this.ended || this.muted) return
     this.meter?.record('sttMs', latencyMs)
     const body = text.trim()
+    this.meter?.timeline.clauseFinal({
+      stoppedAtMs: timing.stoppedAtMs,
+      committedAtMs: timing.committedAtMs,
+      latencyMs,
+      nowMs: this.clock(),
+      atS: this.secondsAt(timing.stoppedAtMs),
+      empty: !body,
+      pendingAfter: this.stt?.pendingCount ?? 0,
+    })
     if (!body) return
 
     const stopAt = this.secondsAt(timing.stoppedAtMs)
@@ -483,7 +494,11 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     // ASR can finish an earlier clause after the user has resumed speaking.
     // Keep its transcript, but do not buy a reply that the next final would
     // immediately cancel. The transcriber releases finals in commit order.
-    if (!this.replyPending || this.ended || this.muted || this.userSpeaking || this.stt?.pendingCount) return
+    if (!this.replyPending || this.ended || this.muted) return
+    if (this.userSpeaking || this.stt?.pendingCount) {
+      this.meter?.timeline.held(this.stt?.pendingCount ?? 0)
+      return
+    }
     this.replyPending = false
     void this.respond()
   }
@@ -527,6 +542,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     // exit condition can still fire on the next one.
     if (state?.silent) {
       this.responding = false
+      this.meter?.timeline.open(this.clock())?.settle('silent')
       return
     }
 
@@ -540,6 +556,8 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     const spoken = new SpokenTurn()
     this.spoken = spoken
     this.agentStartedAt = null
+    const timed = this.meter?.timeline.open(this.clock())
+    if (timed) this.timedTurns.set(spoken, timed)
 
     const direction = state?.steering ?? composeSteering({ persona, warmth: this.warmth })
     // An empty direction is the closing hand-over: the band has stood down for
@@ -577,6 +595,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       if (result.exit) this.emitter.emit('character.exit', { at: this.now() })
     } catch (cause) {
       if (!this.isCurrentResponse(spoken, llmAbort)) return
+      this.timedTurns.get(spoken)?.settle('failed')
       // Keep only words that reached the ear when a provider stream fails.
       // Unplayed queued audio and a half-generated turn must not survive it.
       const played = this.player?.stopNow() ?? 0
@@ -636,6 +655,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
         if (!this.isCurrentResponse(spoken, abort)) return
         const clip = clips.get(clipId)
         if (!clip) throw new Error('Audio arrived without its transcript clip.')
+        this.timedTurns.get(spoken)?.firstByte(this.clock())
         const continuation = !clip.appended && audibleClipCount > 0
         if (!clip.appended) audibleClipCount += 1
         const seconds = samples.length / PCM_RATES[minted.pipeline.tts.outputFormat]
@@ -658,10 +678,13 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
         this.ensurePlayer().enqueue(samples)
       },
       onTiming: (stage, ms) => {
-        if (this.isCurrentResponse(spoken, abort)) this.meter?.record(stage, ms)
+        if (!this.isCurrentResponse(spoken, abort)) return
+        this.meter?.record(stage, ms)
+        this.timedTurns.get(spoken)?.server(stage, ms)
       },
       onUsage: (usage) => {
         if (!this.isCurrentResponse(spoken, abort)) return
+        this.timedTurns.get(spoken)?.tokens(usage.llm.input, usage.llm.cachedInput)
         this.meter?.addLlmTokens({
           input: Math.max(0, usage.llm.input - counted.input),
           output: Math.max(0, usage.llm.output - counted.output),
@@ -759,7 +782,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
             timestamps: minted.pipeline.tts.timestamps,
           },
           {
-            onFirstByte: () => meter?.record('ttsFirstByteMs', this.clock() - startedMs),
+            onFirstByte: () => {
+              meter?.record('ttsFirstByteMs', this.clock() - startedMs)
+              this.timedTurns.get(spoken)?.firstByte(this.clock())
+            },
             onChunk: (samples, alignment) => {
               if (this.spoken !== spoken) return
               if (alignment) {
@@ -827,6 +853,9 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     const minted = this.minted
     if (!context || !minted) throw new VoiceError('session_failed', PROVIDER, 'No audio context.')
 
+    const timed = this.spoken ? this.timedTurns.get(this.spoken) : undefined
+    const beatMs = remainingResponseDelayMs(this.replyOnsetMs(),
+      this.userStoppedAtMs === null ? 0 : this.clock() - this.userStoppedAtMs)
     const player = new PcmPlayer({
       context,
       sampleRate: PCM_RATES[minted.pipeline.tts.outputFormat],
@@ -837,9 +866,9 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       // The target is drawn once per turn, not per player: re-rolling it here
       // would make the beat depend on how many times a player happened to be
       // built, and a distribution sampled twice is not the distribution.
-      notBefore: context.currentTime + remainingResponseDelayMs(this.replyOnsetMs(),
-        this.userStoppedAtMs === null ? 0 : this.clock() - this.userStoppedAtMs) / 1000,
+      notBefore: context.currentTime + beatMs / 1000,
       onFirstAudio: () => {
+        timed?.firstSound(this.clock(), beatMs)
         const at = this.now()
         this.agentStartedAt = at
         // `onFirstAudio` fires when a sample actually leaves the speaker,
@@ -905,6 +934,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
    * happened: a reply was generated, was paid for, and reached nobody.
    */
   private supersedeResponse(at: number): void {
+    if (this.spoken) this.timedTurns.get(this.spoken)?.settle('superseded')
     const wasSpeaking = this.agentStartedAt !== null
     const audioMs = Math.round((this.player?.scheduledSeconds ?? 0) * 1000)
     const verdict = this.audibility.verdict()
@@ -997,6 +1027,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     const verdict = this.audibility.verdict()
 
     if (truncated && spoken.wasTruncated(playedSeconds)) this.meter?.truncated()
+    this.timedTurns.get(spoken)?.settle(!text ? 'unheard' : truncated ? 'barged' : 'heard')
 
     // Commit before notifying application listeners: a deadline listener can
     // synchronously call end() from speech.stop or agent.transcript. Re-entry
@@ -1171,6 +1202,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       if (flush) this.stt?.clear()
       const spoken = this.spoken
       if (spoken) {
+        this.timedTurns.get(spoken)?.settle('ended')
         this.cancelResponse()
         const played = this.player?.stopNow() ?? 0
         this.commitAgentTurn(spoken, played, true)

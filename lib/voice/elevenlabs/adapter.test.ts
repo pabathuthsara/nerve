@@ -434,6 +434,39 @@ describe('ElevenLabs combined adapter', () => {
     expect((await provider.end()).turns.filter((turn) => turn.speaker === 'user')).toHaveLength(1)
   })
 
+  it('times every reply without changing what happens (B1)', async () => {
+    let now = 1000
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => String(url).includes('/token')
+      ? Response.json(token())
+      : new Response(encoded([
+        { type: 'timing', stage: 'llmFirstTokenMs', ms: 900 },
+        { type: 'usage', llm: { input: 2700, output: 9, cachedInput: 0 }, tts: { characters: 20, costUsd: 0.001 } },
+        { type: 'clip', id: 'clip', text: 'Hi there.' },
+        { type: 'audio', clipId: 'clip', audio_base64: 'AAA=', alignment: null },
+        { type: 'done', exit: false },
+      ])))
+    const provider = new ElevenLabsVoiceProvider({ fetchImpl, clock: () => now })
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    hardware.commits.push(
+      { startedAtMs: 1000, stoppedAtMs: 2000, committedAtMs: 2600 },
+      { startedAtMs: 3000, stoppedAtMs: 4000, committedAtMs: 4600 },
+    )
+    now = 3000
+    final('')
+    now = 5000
+    final('Hello?')
+    await vi.waitFor(() => expect(hardware.players).toHaveLength(1))
+    final('And you?')
+    await vi.waitFor(() => expect(hardware.players).toHaveLength(2))
+    const turns = (await provider.end()).pipeline!.turns!
+    expect(turns).toHaveLength(2)
+    expect(turns[0]).toMatchObject({
+      index: 0, first: true, clauses: 2, emptyClauses: 1, sttMs: 1000,
+      server: { llmFirstTokenMs: 900 }, inputTokens: 2700, cachedInputTokens: 0, outcome: 'heard',
+    })
+    expect(turns[1]).toMatchObject({ index: 1, first: false, clauses: 1, outcome: 'heard' })
+  })
+
   it('does not revive an unanswered clause when paused before the transcription drain', async () => {
     const fetchImpl = vi.fn(async () => Response.json(token()))
     const provider = new ElevenLabsVoiceProvider({ fetchImpl })

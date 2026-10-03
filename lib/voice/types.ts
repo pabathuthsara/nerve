@@ -881,6 +881,81 @@ export interface PipelineTelemetry {
   /** Turns whose stored text was shortened to what actually reached the ear. */
   truncatedTurns: number
   usage: PipelineUsage
+  /**
+   * Where each reply's milliseconds went, one entry per reply, first forty.
+   *
+   * The aggregates above are a median and a p90 across the rep, and they could
+   * not say why turn one takes 4–17 seconds, why he sometimes has to speak
+   * twice, or what an eight-second silence after a cut was waiting on
+   * (`REP-LATENCY-AUDIT-2026-10-03.md`). Optional, so every row written before
+   * it existed still reads. Never carries transcript text.
+   */
+  turns?: TurnTiming[]
+  /**
+   * Short sounds while she was audible that did NOT become a barge-in — a
+   * "mm", a laugh, an echo — and were let go rather than cutting her off.
+   * See `lib/voice/barge.ts`. Optional for the same reason as `turns`.
+   */
+  backchannels?: number
+}
+
+/** How a reply ended, from the ear's side. See `TurnTiming`. */
+export type TurnTimingOutcome =
+  /** Played to the end. */
+  | 'heard'
+  /** He spoke over her and she was cut at what had played. */
+  | 'barged'
+  /** He spoke before a word of it was audible. Rule 17: not an interruption. */
+  | 'superseded'
+  /** Generated, and no audible word reached him. */
+  | 'unheard'
+  /** She chose to say nothing (`mayStaySilentFor`). No request was made. */
+  | 'silent'
+  /** The stream failed. */
+  | 'failed'
+  /** The rep ended while it was in flight. */
+  | 'ended'
+
+/**
+ * One reply, from the end of his line to the first sound of hers.
+ *
+ * Every field is milliseconds on the client's monotonic clock except `atS`,
+ * which is rep seconds so a row joins to the transcript's `t_end` without the
+ * transcript itself being copied here. Null means the stage never happened —
+ * a superseded reply has no first sound, a silent one no request.
+ */
+export interface TurnTiming {
+  /** Reply number in this rep, from zero. */
+  index: number
+  /** The cold one. Kept explicit so a query never has to infer it. */
+  first: boolean
+  /** Rep seconds at which the clause that released this reply stopped. */
+  atS: number | null
+  /** User clauses transcribed since the previous reply, this one included. */
+  clauses: number
+  /** Of those, how many transcribed to nothing — a phantom onset, a breath. */
+  emptyClauses: number
+  /** VAD stop -> final transcript, for the clause that released the reply. */
+  sttMs: number | null
+  /** Of that, how long a finished clause sat behind an EARLIER unfinished one
+   *  (the transcriber releases finals in commit order). */
+  orderWaitMs: number | null
+  /** Final transcript -> request sent: waiting on later clauses, or on him. */
+  heldMs: number | null
+  /** The most transcriber clauses still pending while the reply was held. */
+  heldBy: number
+  /** Request sent -> first audio byte back. */
+  requestToFirstByteMs: number | null
+  /** First audio byte -> first sound out of the speaker. */
+  firstByteToSoundMs: number | null
+  /** The personality beat still owed when her first audio was scheduled. */
+  onsetBeatMs: number | null
+  /** The server's own stage timings for this request, as reported. */
+  server: { llmFirstTokenMs?: number; llmCompleteMs?: number; ttsFirstByteMs?: number }
+  /** Prompt tokens and how many of them were a cache hit. Turn one's tell. */
+  inputTokens: number | null
+  cachedInputTokens: number | null
+  outcome: TurnTimingOutcome | null
 }
 
 export interface Rate {

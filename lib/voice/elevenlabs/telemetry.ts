@@ -18,7 +18,14 @@
 
 import { percentile } from '@/lib/metrics/latency'
 import { priceTokens } from '../rates'
-import type { PipelineStages, PipelineTelemetry, PipelineUsage, StageStat } from '../types'
+import type {
+  PipelineStages,
+  PipelineTelemetry,
+  PipelineUsage,
+  StageStat,
+  TurnTiming,
+  TurnTimingOutcome,
+} from '../types'
 import { ttsModelSpec } from './config'
 
 type StageName = keyof PipelineStages
@@ -96,6 +103,150 @@ export class CreditGuard {
   }
 }
 
+/**
+ * How many replies are timed one by one. Three minutes of rep is ~15–25
+ * replies; forty keeps the row small and still covers a rep that ran long.
+ */
+export const MAX_TIMED_TURNS = 40
+
+/** One reply being timed. The clock values stay in here; `snapshot` is what
+ *  is stored. */
+export class TimedTurn {
+  readonly timing: TurnTiming
+  private requestAtMs: number
+  private firstByteAtMs: number | null = null
+
+  constructor(timing: TurnTiming, requestAtMs: number) {
+    this.timing = timing
+    this.requestAtMs = requestAtMs
+  }
+
+  firstByte(nowMs: number): void {
+    if (this.firstByteAtMs !== null) return
+    this.firstByteAtMs = nowMs
+    this.timing.requestToFirstByteMs = ms(nowMs - this.requestAtMs)
+  }
+
+  firstSound(nowMs: number, onsetBeatMs: number): void {
+    if (this.timing.firstByteToSoundMs !== null) return
+    // A legacy-path reply can be heard before the turn reported a byte; the
+    // first sound is then also the first byte.
+    if (this.firstByteAtMs === null) this.firstByte(nowMs)
+    this.timing.firstByteToSoundMs = ms(nowMs - this.firstByteAtMs!)
+    this.timing.onsetBeatMs = ms(onsetBeatMs)
+  }
+
+  server(stage: keyof TurnTiming['server'], value: number): void {
+    if (Number.isFinite(value) && value >= 0) this.timing.server[stage] = Math.round(value)
+  }
+
+  /** Cumulative for the request, so it is SET rather than added. */
+  tokens(input: number, cachedInput: number): void {
+    this.timing.inputTokens = input
+    this.timing.cachedInputTokens = Math.min(input, cachedInput)
+  }
+
+  /** The first verdict stands: a reply that failed and was then swept up by
+   *  the end of the rep failed. */
+  settle(outcome: TurnTimingOutcome): void {
+    if (this.timing.outcome === null) this.timing.outcome = outcome
+  }
+}
+
+/**
+ * Per-reply timing (`REP-FIXES-PLAN-2026-10-03.md` B1).
+ *
+ * Pure: every method takes the time it is told, so the whole thing is
+ * testable without a clock, and it changes nothing about what the adapter
+ * does — it only writes down when things happened. Clauses accumulate into a
+ * draft until a reply is opened; that is what makes "he had to speak twice"
+ * readable afterwards, as a first reply with two clauses and one of them empty.
+ */
+export class TurnTimeline {
+  private readonly entries: TimedTurn[] = []
+  private draft = emptyDraft()
+
+  /** A clause's final transcript was released to the adapter. */
+  clauseFinal(clause: {
+    stoppedAtMs: number
+    committedAtMs: number
+    /** Committed -> this clause's own final, as the transcriber measured it. */
+    latencyMs: number
+    nowMs: number
+    atS: number
+    empty: boolean
+    /** Clauses still unfinished behind this one. */
+    pendingAfter: number
+  }): void {
+    const draft = this.draft
+    draft.clauses += 1
+    if (clause.empty) {
+      draft.emptyClauses += 1
+      return
+    }
+    draft.sttMs = ms(clause.nowMs - clause.stoppedAtMs)
+    draft.orderWaitMs = ms(clause.nowMs - clause.committedAtMs - clause.latencyMs)
+    draft.finalAtMs = clause.nowMs
+    draft.atS = clause.atS
+    draft.heldBy = Math.max(draft.heldBy, clause.pendingAfter)
+  }
+
+  /** A reply was ready and did not go: clauses pending, or he is speaking. */
+  held(pending: number): void {
+    this.draft.heldBy = Math.max(this.draft.heldBy, pending)
+  }
+
+  /** A reply is being requested now. Null past the cap; callers ignore it. */
+  open(nowMs: number): TimedTurn | null {
+    const draft = this.draft
+    this.draft = emptyDraft()
+    if (this.entries.length >= MAX_TIMED_TURNS) return null
+    const index = this.entries.length
+    const turn = new TimedTurn({
+      index,
+      first: index === 0,
+      atS: draft.atS === null ? null : Math.round(draft.atS * 1000) / 1000,
+      clauses: draft.clauses,
+      emptyClauses: draft.emptyClauses,
+      sttMs: draft.sttMs,
+      orderWaitMs: draft.orderWaitMs,
+      heldMs: draft.finalAtMs === null ? null : ms(nowMs - draft.finalAtMs),
+      heldBy: draft.heldBy,
+      requestToFirstByteMs: null,
+      firstByteToSoundMs: null,
+      onsetBeatMs: null,
+      server: {},
+      inputTokens: null,
+      cachedInputTokens: null,
+      outcome: null,
+    }, nowMs)
+    this.entries.push(turn)
+    return turn
+  }
+
+  /** Clauses spoken and never answered are dropped with the draft; the rep is
+   *  over and they bought nothing. */
+  list(): TurnTiming[] {
+    return this.entries.map((entry) => ({ ...entry.timing, server: { ...entry.timing.server } }))
+  }
+}
+
+function emptyDraft() {
+  return {
+    clauses: 0,
+    emptyClauses: 0,
+    sttMs: null as number | null,
+    orderWaitMs: null as number | null,
+    finalAtMs: null as number | null,
+    atS: null as number | null,
+    heldBy: 0,
+  }
+}
+
+function ms(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0
+}
+
 export interface PipelineMeterOptions {
   models: PipelineModels
   credits: { budget: number; warnAt: number }
@@ -118,7 +269,11 @@ export class PipelineMeter {
   private readonly guard: CreditGuard
   private readonly creditsPerChar: number
 
+  /** Per-reply timing. Measurement only; see `TurnTimeline`. */
+  readonly timeline = new TurnTimeline()
+
   private bargeIns = 0
+  private backchannels = 0
   private truncatedTurns = 0
   private characters = 0
   private sttAudioTokens = 0
@@ -150,6 +305,12 @@ export class PipelineMeter {
 
   bargeIn(): void {
     this.bargeIns += 1
+  }
+
+  /** A short sound while she was audible that was let go rather than
+   *  cutting her off. See `lib/voice/barge.ts`. */
+  backchannel(): void {
+    this.backchannels += 1
   }
 
   truncated(): void {
@@ -244,6 +405,8 @@ export class PipelineMeter {
       bargeIns: this.bargeIns,
       truncatedTurns: this.truncatedTurns,
       usage: this.usage(sessionSeconds),
+      turns: this.timeline.list(),
+      backchannels: this.backchannels,
     }
   }
 
