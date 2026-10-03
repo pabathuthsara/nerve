@@ -435,10 +435,13 @@ catches all of them will only show on the next ad edit.
 
 ### 7.4 · Still owed
 
-- Deploy after the owner's OK; then open both live ad links at phone size and
-  confirm they land on *What's the hard part?* and log `utm_source=meta`.
-- `npm run legal:pdf` and re-upload — privacy clause 01 now names the time
-  zone and the setup screens.
+- ~~Deploy, then check both live ad links.~~ Deployed 3 Oct 13:53 UTC
+  (`dpl_8qLnhB9gnQHHAHoZnxhdEM5FTsSo`); both ad links, bare `/start` and
+  `?track=interview` checked at 390×844, and the ad links log
+  `utm_source=meta`.
+- Re-upload the three policy PDFs to Whop (`npm run legal:pdf`, run against
+  production) — privacy clause 01 now names the time zone, the setup screens
+  and that the mic check is not recorded.
 - Flagged, not changed: a focused email field's volt border beside the volt
   Google button; volt in the signed-in rail and meter. (Resolved the same day:
   `guided.ts`'s on-screen "apologising" → "apologizing", owner-directed; the
