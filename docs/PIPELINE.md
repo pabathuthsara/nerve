@@ -842,8 +842,8 @@ fiction, behind a real area code.
 
 ## Rep fixes, Part B — timing, warm-up, barge-in confirmation (4 October 2026)
 
-`REP-FIXES-PLAN-2026-10-03.md` Part B, built on branch `rep-fixes`, **not
-deployed**. The evidence is `REP-LATENCY-AUDIT-2026-10-03.md`; what landed and
+`REP-FIXES-PLAN-2026-10-03.md` Part B, **shipped 4 October 2026** (rollback
+target `dpl_8qLnhB9gnQHHAHoZnxhdEM5FTsSo`). The evidence is `REP-LATENCY-AUDIT-2026-10-03.md`; what landed and
 what is still owed is the plan's §B7.
 
 ### B1 · Per-reply timing

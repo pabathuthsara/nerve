@@ -1,9 +1,13 @@
 # Rep fixes — forward remarks, latency and cut-offs (3 October 2026)
 
-> **Status: BUILT on branch `rep-fixes`, 4 October 2026 — not pushed, not
-> deployed, waiting on the owner's OK.** §7 is what landed for Part A (with the
-> audition), §B7 for Part B. Owed by hand: one real rep on the branch (§B7), and
-> B4, which waits on that rep's data. Signed off by the owner on 3 October 2026.
+> **Status: SHIPPED 4 October 2026 — merged into `elevenlabs-pipeline` on the
+> owner's instruction and deployed by the push. The rollback target is
+> `dpl_8qLnhB9gnQHHAHoZnxhdEM5FTsSo` (commit `358ddab`).** §7 is what landed for
+> Part A (with the audition), §B7 for Part B, §B7.1 the first real rep. Still
+> owed by hand: a "Mm." while she is audible (B3 has not been heard live), and
+> more reps before the warm-up is judged (§B7.1: the first reply was still
+> 6.1 s). B4 stays unbuilt on that rep's data. Signed off by the owner on
+> 3 October 2026.
 > Two pieces of work in one plan, built in the order of §C:
 >
 > - **Part A — forward remarks.** Warmth decides whether a line like "I'm more
