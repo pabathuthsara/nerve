@@ -150,6 +150,11 @@ function countPageView(pathname: string, step?: string): void {
   // A dev server talks to the production project, so a local walk-through
   // would otherwise be counted as a visitor from Sri Lanka on a desktop.
   if (LOCAL_HOST.test(window.location.hostname)) return
+  // An automated browser — the ad platforms' review crawlers run JavaScript
+  // with ordinary-looking user agents, and about 28 of them were counted as
+  // `utm_source=meta` visitors in the three minutes after the ads were
+  // created (3 October 2026). No person's browser sets this.
+  if (navigator.webdriver) return
   try {
     const { source, content } = campaignTag()
     const body = JSON.stringify({
@@ -187,7 +192,7 @@ const TAG_KEY = 'nerve:utm'
  * cookie, and this is not one. It never leaves the tab except inside the
  * beacon, and the server allow-lists it again (`normaliseTag`).
  */
-function campaignTag(): { source: string | null; content: string | null } {
+export function campaignTag(): { source: string | null; content: string | null } {
   try {
     const params = new URLSearchParams(window.location.search)
     const source = params.get('utm_source')
@@ -221,6 +226,20 @@ function campaignTag(): { source: string | null; content: string | null } {
  */
 export function countStartStep(step: string): void {
   countPageView('/start', step)
+}
+
+/**
+ * A beat in the run AFTER the account exists (3 October 2026): the
+ * microphone prompt, the permission, the level, the brief and the Start
+ * press — `ONBOARDING_STEP_NAMES` in `lib/analytics/pageview.ts`.
+ *
+ * Nothing could say where a new account stopped before its first rep; the
+ * funnel ended at the form. Same beacon, path `/onboarding`, and the row
+ * carries the signed-in user, so the admin funnel can read
+ * `signup → mic_intro → … → rep_started` straight after `/start`'s rows.
+ */
+export function countOnboardingStep(step: 'mic_intro' | 'mic_granted' | 'mic_good' | 'brief' | 'rep_started'): void {
+  countPageView('/onboarding', step)
 }
 
 

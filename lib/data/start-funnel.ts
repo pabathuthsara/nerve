@@ -61,62 +61,41 @@ import type { Level, Track } from './types'
 /**
  * The screens, in order.
  *
- * Four are questions, two are claims, one is a demo and one is the form. They
- * are placed deliberately: never two claims in a row, and never a claim
- * before the first question. A stranger's first interaction has to be cheap
- * and it has to be *theirs*; three claims in a row before they have touched
- * anything is an advertisement, which is the thing they just clicked out of.
+ * ── THE 3 OCTOBER REBUILD: THE FIRST SCREEN IS THE FIRST QUESTION ───────
  *
- * ── THE 18 SEPTEMBER REORDER (SIGNUP-FIXES §2.2, §3.1, §3.2) ─────────────
+ * Live Meta ads started on 3 October 2026 and did their job: 7 link clicks
+ * at ~$0.14 in six hours. Of the 8 real visitors they sent, 6 saw the hook
+ * and **0** tapped its button; organic traffic since 27 September read the
+ * same (28 served → 18 hook → 6 track → 3 account → 0 accounts). Somebody
+ * who has just tapped an ad has already been sold — the hook was a second
+ * pitch, and they left on it.
  *
- * The run was hook → track → claim → question → claim → name → CASS → form:
- * three arguments and *then* the demo. Two changes, and the second is the one
- * with the number behind it.
+ * So there is no hook. The first screen is a question about them, answered
+ * in one tap, and every answer on it is a real link (see `startQueryWith`),
+ * because ad traffic lands in Instagram's in-app browser and a tap before
+ * hydration must never be lost (START-AUDIT §1.1, again).
  *
- * **`age` is now screen two.** It was the first field of the account form,
- * where a birthday asked at the point of purchase reads as a data grab. Asked
- * on screen two with a sentence explaining it, the same question reads as the
- * product being careful — and it is the only screen on the whole run that
- * demonstrates the §16 safety position out loud. §16.4 is untouched: the gate
- * is still checked on the server before `auth.signUp`, and moving it *earlier*
- * makes it earlier, not weaker. It also lets the Google door satisfy the gate
- * before the account exists, which is the one thing that door could not do.
+ * `build` — the Cass reveal — is gone too. She was introduced on it and then
+ * again, in the same words, on the brief after the microphone check: the
+ * brief is the rep's own (§05) and stays the one full introduction; the
+ * account screen names her and says one authored line about the focus answer
+ * (`FOCUS_ACCOUNT_LINE`).
  *
- * **`build` moved to position four and `reframe` is gone.** `build` is the
- * only screen in the run that stops being an argument and becomes a thing —
- * the character, her room, her hook — and it used to arrive after every
- * abstract screen had taken its cut. `reframe`'s argument ("reading about it
- * doesn't transfer") is made better by meeting Cass than by reading a
- * paragraph about meeting Cass, so it was cut rather than moved.
+ * The run is the track question (only when the link did not answer it),
+ * question two, the name and the account. A link with `?track=` opens on
+ * question two, which is then the first screen.
  *
- * ── THE 27 SEPTEMBER REORDER (START-AUDIT-2026-09-27 §1.2, §1.5) ─────────
+ * ── THE ORDER BEFORE THIS ────────────────────────────────────────────────
  *
- * The first per-step read of this run (`page_views.step`, nine days of it)
- * put every recorded drop on the first two screens, and screen two was the
- * age gate. The 18 September argument — a birthday on screen two "reads as
- * care" — is an argument about tone, and it was paid for in completion: the
- * first thing a stranger off a dating video was asked to state about
- * themselves was their birth year, before anything had been asked that was
- * worth answering.
- *
- * **`age` is no longer a screen.** The year is the first field of the
- * account screen, above both doors, so §16.4 is exactly where it was in the
- * sense that matters: checked by `checkAge` before `auth.signUp`, and — for
- * the Google door — before the redirect, because the year still crosses in
- * the same answers the button posts. The gate did not move later than the
- * account; it moved later than the questions.
- *
- * **`mechanism` is gone.** It was the last claim screen and it repeated the
- * hook. Its one unique fact, the field challenge, is one line on `build`.
- *
- * Six screens and the form is five: hook, track, build, question two, name,
- * account. A link that already names the track (`?track=`) skips the track
- * question on the way forward — see `startAdvance`.
+ * 18 September moved the age gate to screen two; 27 September moved it back
+ * onto the account screen as its first field (START-AUDIT §1.2) and cut
+ * `mechanism`. Both are history now and §16.4 is exactly where 27 September
+ * left it: the year is the first field of the account screen, above both
+ * doors, checked by `checkAge` before `auth.signUp` and before the Google
+ * redirect.
  */
 export type StartStep =
-  | 'hook'
   | 'track'
-  | 'build'
   | 'focus'
   | 'role'
   | 'name'
@@ -125,38 +104,22 @@ export type StartStep =
 /**
  * ── TWO ARMS, ONE SHAPE ──────────────────────────────────────────────────
  *
- * The track question is the third thing that happens and it is answered by
- * somebody who came for one of two different products. Until 16 September the
- * run carried on regardless: an interview answer was followed by the dating
- * focus question ("Making it flirty without being weird"), the dating
- * mechanism screen ("she can get bored... one small thing to do in the real
- * world") and a name step asking what *she* should call you. Every screen
- * worked and the whole run said the product had not listened.
- *
- * So there are two lists. They are the same length and they differ at exactly
- * one index — question two, which is the focus area on the dating arm and the
- * role on the interview one — and that is a property rather than a
- * coincidence: the run holds the step as an INDEX, and somebody who changes
- * their track answer with the back arrow has to stay on the screen they were
- * on rather than being teleported. `start-funnel.test.ts` asserts it.
- *
- * The one interstitial that survives — `build` — is a shared position that
- * branches on its own copy, which is the right split: it introduces two
- * different rooms, and a third list of screens would drift.
+ * Two lists, the same length, differing at exactly one index — question two,
+ * which is the focus area on the dating arm and the role on the interview one.
+ * That is a property rather than a coincidence: the run holds the step as an
+ * INDEX, and somebody who changes their track answer with the back arrow has
+ * to stay on the screen they were on rather than being teleported.
+ * `start-funnel.test.ts` asserts it.
  */
 const DATING_STEPS: readonly StartStep[] = [
-  'hook',
   'track',
-  'build',
   'focus',
   'name',
   'account',
 ]
 
 const INTERVIEW_STEPS: readonly StartStep[] = [
-  'hook',
   'track',
-  'build',
   'role',
   'name',
   'account',
@@ -165,9 +128,9 @@ const INTERVIEW_STEPS: readonly StartStep[] = [
 /**
  * The steps, for the track as it stands right now.
  *
- * `null` is the dating list deliberately, because the screens before the track
- * question are identical on both and the answer arrives before the first one
- * that is not.
+ * `null` is the dating list deliberately, because the screen before the track
+ * question is answered is identical on both and the answer arrives before the
+ * first one that is not.
  */
 export function startSteps(track: Track | null): readonly StartStep[] {
   return track === 'interview' ? INTERVIEW_STEPS : DATING_STEPS
@@ -241,6 +204,27 @@ export interface StartAnswers {
    * keeps and `waitlist:track:english` means one thing.
    */
   english: boolean
+  /**
+   * Three things the browser knows that are not answers, carried by the same
+   * three carriers because two of them have to cross the Google redirect too.
+   *
+   * `timezone` is `Intl`'s zone, written onto the profile in the crossing
+   * (3 October 2026). Every one of the first 36 profiles read `Asia/Colombo`,
+   * which is the column default: `rememberTimezone` runs on the user's own
+   * session straight after `auth.signUp`, and that write never landed, so day
+   * boundaries (the daily rep quota, the streak) were Colombo's for everybody
+   * and nobody could tell where a real user was.
+   *
+   * `source`/`content` are the link's campaign tag, so the server-written
+   * `signup` row in `page_views` says which post the account came from — the
+   * row `served → … → account → signup` ends on.
+   *
+   * None of the three is an answer: `hasStartAnswers` ignores them, so a run
+   * that carries a timezone and nothing else is still a run nobody started.
+   */
+  timezone: string | null
+  source: string | null
+  content: string | null
 }
 
 export const EMPTY_START_ANSWERS: StartAnswers = {
@@ -253,6 +237,9 @@ export const EMPTY_START_ANSWERS: StartAnswers = {
   displayName: null,
   named: false,
   english: false,
+  timezone: null,
+  source: null,
+  content: null,
 }
 
 /**
@@ -306,6 +293,27 @@ const ROLE_MAX = 120
 function text(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null
   return value.trim().slice(0, max) || null
+}
+
+/**
+ * An IANA zone as `Intl` reports it, or nothing. The same shape
+ * `rememberTimezone` accepts, and capped at the column's sensible length —
+ * this arrives from a browser that can post anything.
+ */
+function zone(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 64) return null
+  return /^[A-Za-z]+\/[A-Za-z0-9_+\-/]+$/.test(value) ? value : null
+}
+
+/**
+ * A campaign tag, or nothing — the same allow-list `normaliseTag` applies to
+ * the beacon (`lib/analytics/pageview.ts`), repeated rather than imported so
+ * this module stays free of the analytics boundary.
+ */
+function tag(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim().toLowerCase()
+  return /^[a-z0-9._-]{1,40}$/.test(trimmed) ? trimmed : null
 }
 
 /**
@@ -366,6 +374,9 @@ export function decodeStartAnswers(raw: string | null | undefined): StartAnswers
     displayName: text(record['displayName'], NAME_MAX),
     named: record['named'] === true,
     english: record['english'] === true,
+    timezone: zone(record['timezone']),
+    source: tag(record['source']),
+    content: tag(record['content']),
   }
 }
 
@@ -375,21 +386,20 @@ export function hasStartAnswers(answers: StartAnswers): boolean {
 }
 
 /**
- * Where a reload lands.
+ * Where a reload lands: the first unanswered question.
  *
- * The three interstitials are deliberately not resumable: they are read once
- * and re-reading them is a cost, not a service. So the resume goes to the
- * first *unanswered question*, or to the build screen once all three are in.
- * A run with nothing in it opens on the hook, which is the only screen that
- * explains what any of this is.
+ * There are no interstitials left to skip (3 Oct): every screen before the
+ * account is a question, so the resume is simply the first one without an
+ * answer, and a run with nothing in it opens on the track question — which
+ * a link carrying `?track=` has already answered, so that run opens on
+ * question two.
  */
 export function startResumeIndex(answers: StartAnswers): number {
   const steps = startSteps(answers.track)
   const at = (step: StartStep) => steps.indexOf(step)
-  if (!hasStartAnswers(answers)) return at('hook')
-  // No age branch any more (27 Sep): the year is a field on the account
-  // screen, so a resume can never skip it — every run ends on that screen,
-  // and neither door on it proceeds without the year.
+  // No age branch (27 Sep): the year is a field on the account screen, so a
+  // resume can never skip it — every run ends on that screen, and neither
+  // door on it proceeds without the year.
   if (!answers.track) return at('track')
   // Question two, which is a different question on each arm. The interview arm
   // reads the FLAG rather than the title, because "I'm not sure yet" is an
@@ -463,7 +473,7 @@ export function firstRepPreview(focusArea: FocusArea | null): FirstRepCandidate 
  * legitimately empty because the name step is skippable.
  */
 export interface StartProfileWrite {
-  patch: { active_track?: Track; focus_area?: FocusArea; display_name?: string }
+  patch: { active_track?: Track; focus_area?: FocusArea; display_name?: string; timezone?: string }
   /** Flag names to stamp. The timestamp belongs to the caller that writes them. */
   flags: string[]
 }
@@ -498,6 +508,14 @@ export function startProfileWrite(answers: StartAnswers): StartProfileWrite {
    * count `waitlist:track:english` answers stays one count.
    */
   if (answers.english) flags.push(trackWaitlistFlag('english'))
+  /**
+   * The browser's zone (3 Oct), so a new account's day boundaries are its
+   * own rather than the `Asia/Colombo` column default every profile had.
+   * Not an answer and not an entitlement — the owner's own session may write
+   * the same column (`rememberTimezone`) — so it rides the one crossing write
+   * rather than a second one racing `handle_new_user`.
+   */
+  if (answers.timezone) patch.timezone = answers.timezone
 
   return { patch, flags }
 }
@@ -529,68 +547,55 @@ export function startInterviewSetup(answers: StartAnswers): StartInterviewWrite 
 /**
  * Opening the run: what is on the screen, and what it opens on.
  *
- * Two sources disagree here and the tie has to be broken deliberately —
- * `INTERVIEW-PLAN.md` E2 is the same problem one layer up, where a shared
- * route inherited the `dating` default because a late answer overruled an
- * early one.
+ * Three sources now, and the tie is broken deliberately:
  *
- *   `asked`   an explicit `?track=` — the page they just clicked. `/interviews`
- *             sends `interview`, and it is a statement of intent made seconds
- *             ago.
- *   `stored`  a run already open in this tab, from `sessionStorage`.
+ *   `asked`    an explicit `?track=` — the link they just tapped. Every ad and
+ *              post says `?track=dating`; `/interviews` says `interview`.
+ *   `fromUrl`  answers given by TAPPING A LINK on this run before the page
+ *              hydrated (`startQueryWith`). The newest thing they did, so it
+ *              is laid over whatever is stored.
+ *   `stored`   a run already open in this tab, from `sessionStorage`.
  *
- * A session that agrees wins outright: it knows more, because it has answers
- * in it. A session that *disagrees* loses the track and keeps everything else.
- * Somebody who started a dating run, went back to read `/interviews` and came
- * in through its button has said something newer than their first tap, and
- * answering it with the dating build screen would be the run ignoring them —
- * while throwing away the focus and the name they had already given would be
- * making them pay for changing their mind.
- *
- * Only the track moves. The name is a name, and the two question-twos are
- * kept rather than cleared: somebody who answered the focus question and then
- * switched to interviews has still told us something true about the dating
- * reps their account also has, and clearing it would be charging them for
- * changing their mind. `startResumeIndex` then asks whichever question two the
- * new track has and has not had an answer.
+ * A stored run that disagrees with `asked` loses the track and keeps
+ * everything else — somebody who started a dating run and came back in
+ * through `/interviews` has said something newer than their first tap, and
+ * throwing away the focus and the name they had given would be making them
+ * pay for changing their mind. `startResumeIndex` then asks whichever
+ * question two the track has not had an answer to.
  */
 export function startOpening(
   stored: StartAnswers,
   asked: Track | null,
-  begun = false,
+  fromUrl: Partial<StartAnswers> = {},
 ): { answers: StartAnswers; index: number } {
-  if (!hasStartAnswers(stored)) {
-    const answers = asked ? { ...EMPTY_START_ANSWERS, track: asked } : EMPTY_START_ANSWERS
-    const steps = startSteps(asked)
-    /**
-     * A named track OPENS on the hook now (27 Sep), and the hook speaks for
-     * that track alone. It used to skip the hook, which was right for the
-     * one caller it was written for — `/interviews`, a page that has just
-     * said everything the hook says — and wrong for every social post, which
-     * is where nearly all of this page's traffic comes from and which had
-     * said nothing at all. One tap on a screen that matches the ad is cheaper
-     * than a first screen that does not.
-     *
-     * `begun` is the hook's button arriving as a plain navigation
-     * (`?s=1`), which is what it does when it is tapped before the page has
-     * hydrated — see `HookStep`. It opens on the screen that tap was for.
-     */
-    if (!begun) return { answers, index: steps.indexOf('hook') }
-    return { answers, index: startAdvance(steps, steps.indexOf('hook'), asked !== null) }
+  const base = hasStartAnswers(stored) ? stored : EMPTY_START_ANSWERS
+  let answers: StartAnswers = { ...base }
+  for (const [key, value] of Object.entries(fromUrl) as [keyof StartAnswers, unknown][]) {
+    if (value === null || value === undefined || value === false) continue
+    answers = { ...answers, [key]: value }
   }
-  const answers = asked && stored.track !== asked ? { ...stored, track: asked } : stored
+  if (asked && answers.track !== asked) answers = { ...answers, track: asked }
   return { answers, index: startResumeIndex(answers) }
+}
+
+/**
+ * The first screen the run will show, which is the one with no back arrow.
+ *
+ * The track question when the link did not answer it; question two when it
+ * did. There is nothing behind the first screen — the hook that used to be
+ * there was the second pitch the 3 October numbers say people left on.
+ */
+export function startFirstIndex(trackGiven: boolean): number {
+  return trackGiven ? 1 : 0
 }
 
 /**
  * The next screen, and the one skip the run allows.
  *
- * A link that already named the track (`?track=dating` under every social
- * post) has answered the track question before the run began, so the
- * forward step jumps it. Only forward: the back arrow still reaches it, so
- * somebody who came in on a dating post and wanted interviews can still say
- * so. Pure, because it is the difference between a five-screen run and a
- * six-screen one and that is worth a test rather than a comment.
+ * A link that already named the track (`?track=dating` under every ad) has
+ * answered the track question before the run began, so the forward step
+ * jumps it. Pure, because it is the difference between a three-screen run
+ * and a four-screen one and that is worth a test rather than a comment.
  */
 export function startAdvance(steps: readonly StartStep[], from: number, trackGiven: boolean): number {
   const next = from + 1
@@ -599,10 +604,137 @@ export function startAdvance(steps: readonly StartStep[], from: number, trackGiv
 }
 
 /**
- * The screens the progress rail counts: everything after the hook, minus the
- * track question when the link answered it. A rail that counted a screen the
- * run is going to skip would open on "2 of 5".
+ * The screens the progress rail counts: question two, the name and the
+ * account — `1 of 3`, `2 of 3`, `3 of 3` on both arms whichever way they
+ * arrived. The track question is not counted, the way the hook was not: it
+ * is the screen that decides which run this is, not a step in one, and a
+ * rail that read `1 of 4` for a bare link and `1 of 3` for a tagged one would
+ * be two runs pretending to be one.
  */
-export function startRail(steps: readonly StartStep[], trackGiven: boolean): StartStep[] {
-  return steps.slice(1).filter((step) => !(trackGiven && step === 'track'))
+export function startRail(steps: readonly StartStep[]): StartStep[] {
+  return steps.filter((step) => step !== 'track')
 }
+
+/* ------------------------------------------------------------------ *
+ * The run in the address bar — for the tap that lands before hydration
+ * ------------------------------------------------------------------ */
+
+/**
+ * The query parameters an answer is written into when it is a link.
+ *
+ * `t` is the track ANSWERED on the track screen, deliberately not `track`:
+ * `?track=` is the link saying which product this is, which skips the track
+ * question and takes the back arrow off question two. Answering the question
+ * is not the same act — somebody who chose on screen one can go back to it.
+ */
+export const START_ANSWER_PARAMS = ['t', 'focus', 'role', 'company', 'role_asked'] as const
+
+type Query = Record<string, string | string[] | undefined>
+
+function one(query: Query, key: string): string | undefined {
+  const value = query[key]
+  return Array.isArray(value) ? value[0] : value
+}
+
+/**
+ * The answers a link carried, parsed through the same whitelist every other
+ * carrier goes through (`decodeStartAnswers`), because the address bar is the
+ * most editable of the four.
+ *
+ * Only what is present comes back, so `startOpening` can lay it over a stored
+ * run without blanking anything.
+ */
+export function startAnswersFromQuery(query: Query): Partial<StartAnswers> {
+  const role = one(query, 'role')
+  const parsed = decodeStartAnswers(JSON.stringify({
+    track: one(query, 't'),
+    focusArea: one(query, 'focus'),
+    roleTitle: role,
+    company: one(query, 'company'),
+    roleAsked: one(query, 'role_asked') === '1' || !!role?.trim(),
+  }))
+  const out: Partial<StartAnswers> = {}
+  if (parsed.track) out.track = parsed.track
+  if (parsed.focusArea) out.focusArea = parsed.focusArea
+  if (parsed.roleAsked) {
+    out.roleAsked = true
+    if (parsed.roleTitle) out.roleTitle = parsed.roleTitle
+    if (parsed.company) out.company = parsed.company
+  }
+  return out
+}
+
+/**
+ * The link an answer is, before the JavaScript has arrived.
+ *
+ * Everything the page was opened with is carried — `?track=`, every `utm_*`,
+ * and any answer an earlier link already put there — so the campaign tag is
+ * on every server render of the run, not only the first, and a run walked
+ * entirely without JavaScript still arrives at the account screen with every
+ * answer it gave. The legacy `s` (the 27 September hook's "begun" flag) is
+ * dropped. A first name never goes in here: the name step is a form that
+ * runs after hydration, and a name in a URL is a name in somebody's logs.
+ */
+export function startQueryWith(query: Query, add: Record<string, string>): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) {
+    if (key === 's' || key in add) continue
+    const first = Array.isArray(value) ? value[0] : value
+    if (typeof first === 'string') params.set(key, first)
+  }
+  for (const [key, value] of Object.entries(add)) params.set(key, value)
+  const text = params.toString()
+  return text ? `/start?${text}` : '/start'
+}
+
+/* ------------------------------------------------------------------ *
+ * The account screen's one line about them
+ * ------------------------------------------------------------------ */
+
+/**
+ * The account screen's second line, between "Cass is ready." and the line
+ * about their answer (3 October 2026, owner's wording).
+ *
+ * With the hook gone, nothing before the account said the word "AI" — not the
+ * first screen, not the heading, not the focus line — and somebody off an ad
+ * could reasonably wonder whether there was a person on the other end. That
+ * is bad for trust and it is the kind of ambiguity a payment reviewer reads as
+ * a companion-app framing (§14). So it is said plainly, and it says only what
+ * is true of the product: an AI, no real person, out loud, three minutes. It
+ * makes no privacy claim ("nobody hears you", "nothing is recorded") — the
+ * account screen's own sub-line already says recordings are deleted after 30
+ * days, and a second sentence about recording would be a second place for
+ * that promise to drift.
+ */
+export const AI_ACCOUNT_LINE = {
+  dating: 'She\u2019s an AI. No real person on the other end \u2014 just you, out loud, for 3 minutes.',
+  interview: 'They\u2019re an AI. No real person on the other end \u2014 just you, out loud, for 5 minutes.',
+} as const
+
+/**
+ * What the focus answer bought, said on the account screen after the AI line.
+ *
+ * The reveal screen that used to say who they would meet is gone — she was
+ * introduced there and again on the brief — so this is the one place before
+ * the account that answers "what did my answer do". Authored, reviewed and
+ * seeded like every other line about a character (rule 10): nothing here is
+ * generated, and nothing is a promise the rep does not keep.
+ *
+ * **Every line is about rung 1**, and is drawn from her own authored file
+ * (`PRESENTATION.tess`: she responds to a small opinion and to being told
+ * what you think of something, she is warm and straight with you, and she
+ * shuts down on being lectured). Her room is left to the brief, which is her
+ * full introduction. The focus answer does not change how she behaves — it
+ * changes what the brief and the scorecard point at — so no line claims it
+ * does. `start-funnel.test.ts` asserts every focus still resolves to her, so
+ * a new rung 1 cannot inherit sentences written about somebody else.
+ */
+export const FOCUS_ACCOUNT_LINE: Record<FocusArea, string> = {
+  opening: 'You picked saying the first thing. With her, a small opinion is enough to start.',
+  sustaining: 'You picked keeping it going. Tell her what you actually think of something \u2014 she answers that.',
+  flirting: 'You picked flirting without being weird. She\u2019s warm and completely straight with you, so you\u2019ll know when something lands.',
+  rejection: 'You picked when she\u2019s losing interest. She can lose it \u2014 explaining things at her is the quickest way.',
+}
+
+/** The slug every line above was written about. */
+export const FOCUS_ACCOUNT_LINE_PERSONA = 'tess'

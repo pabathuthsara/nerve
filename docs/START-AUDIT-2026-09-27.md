@@ -6,6 +6,9 @@
 > **Owed by hand:** apply `supabase/migrations/20260927090000_page_views_campaign_tag.sql`
 > BEFORE the deploy; tag every post link (§5.4); key the pixels only after
 > privacy clause 07 is rewritten.
+>
+> **Superseded in part, 3 October 2026 — §7.** The hook and the Cass reveal
+> are gone; the first screen is the first question. `LAUNCH-GAP.md` D32.
 
 A second pass on the door, nine days after `SIGNUP-AUDIT-2026-09-18.md` and
 `SIGNUP-FIXES-2026-09-18.md` shipped almost everything they asked for. This one
@@ -358,3 +361,86 @@ throwaway account with fixture scores at 360, 390 and 1280 wide, then the
 account was deleted. `lib/data/result-view.test.ts` pins the rail sentence,
 the parts arithmetic, the miss/held split, the "previous rep" rule and the
 note copy.
+
+---
+
+## 7 · Follow-up, 3 October 2026 — the first screen is the first question
+
+Branch `start-first-question`. `LAUNCH-GAP.md` D32 is the record; this is the
+shape.
+
+**Why.** The first Meta ads (live 3 Oct, US men 18–30, $5/day) bought 7 link
+clicks at ~$0.14 in six hours. Of 8 real visitors, 6 saw the hook and **0**
+tapped *Set mine up*. Organic since 27 Sep: 28 served → 18 hook → 6 track →
+3 account → 0 accounts. An ad click has already been sold; the hook was a
+second pitch.
+
+### 7.1 · The run, before and after
+
+| | Before (D31) | After (D32) |
+|---|---|---|
+| `?track=dating` | hook → Cass reveal → focus → name → account | **focus (1 of 3)** → name (2 of 3) → account (3 of 3) |
+| bare `/start` | hook → track → Cass reveal → focus → name → account | **track** (no rail) → focus → name → account |
+| `?track=interview` | hook → screener reveal → role → name → account | **role (1 of 3)** → name → account |
+| after the account | mic intro → level → *We can hear you* + CONTINUE → brief → rep | mic intro → level, which confirms in place and moves on after ~1.1s → brief → rep |
+
+Cass is introduced once, on the brief. The account screen says who they are
+meeting in three authored lines: *Cass is ready.* / *She's an AI. No real
+person on the other end — just you, out loud, for 3 minutes.* / the line for
+their focus answer (`FOCUS_ACCOUNT_LINE`). The brief and the live caption
+read *Cass · AI*.
+
+### 7.2 · The first screen
+
+Wordmark and LOG IN on top, the kicker *Practice out loud with an AI*, the
+question, one sub-line, the answers, *Free · no card · your first rep is
+included*. No back arrow. On tall phones (≥ 701px, ≤ 640px wide) the question
+sits mid-screen and the answers in the lower half; on short phones the stack
+is top-aligned so everything is above the fold. Measured at 390×844,
+375×667 and 360×640 with an iPhone agent: every answer above the fold, no
+horizontal scroll, volt at most once per screen, no console errors, Back from
+the name and from the account never loses an answer.
+
+**Every answer is a link.** `Option` takes an `href`; the run builds it with
+`startQueryWith`, carrying `?track=`, every UTM and any earlier answer —
+`/start?track=dating&utm_source=meta&utm_content=gaming&focus=sustaining`.
+The server reads it back (`startAnswersFromQuery`) and `startOpening` opens
+on the next screen. Hydrated, the click is intercepted as before, and once
+the answer is in `sessionStorage` it is taken out of the address bar so a
+reload cannot replay it. The role is a GET form (`RoleStep`'s `fallback`),
+and a first name never goes in a URL. Tested with the JavaScript bundle
+aborted outright (the tap advances, answer kept) and held 5s with the tap
+landing first (the tap navigates, the answer survives hydration, the URL is
+cleaned back to the ad link). With JavaScript *fully* off, every route on the
+site shows only `app/loading.tsx`'s skeleton — it did before this too, because
+the page streams behind that boundary — so that is not a case ad traffic hits.
+
+### 7.3 · The funnel, step by step
+
+`page_views.step` on `/start`: **`served`** (server) → `track` (bare links
+only) → `focus` | `role` → `name` → `account` → **`signup`** (server, both
+doors, only for an account `/start` created). Then on `/onboarding`, signed
+in: `mic_intro` → `mic_granted` → `mic_good` → `brief` → `rep_started` (Start
+pressed). The UTM tag rides every row in the tab; the server rows read it from
+the URL and from the answers the form carries. Verified on a real sign-up
+through the ad link: every row above landed with `utm_source=meta`,
+`utm_content=gaming`, on one visitor.
+
+Refused as not a person: `facebookexternalhit`, `facebookcatalog`,
+`meta-externalagent`/`-fetcher`, `Facebot`, AdsBot, preview/prefetch headers,
+and any browser reporting `navigator.webdriver`. The ~28 `utm_source=meta`
+rows logged in three minutes when the ads were created had ordinary agents
+and ran JavaScript, which is what the `webdriver` check is for; whether it
+catches all of them will only show on the next ad edit.
+
+### 7.4 · Still owed
+
+- Deploy after the owner's OK; then open both live ad links at phone size and
+  confirm they land on *What's the hard part?* and log `utm_source=meta`.
+- `npm run legal:pdf` and re-upload — privacy clause 01 now names the time
+  zone and the setup screens.
+- Flagged, not changed: a focused email field's volt border beside the volt
+  Google button; volt in the signed-in rail and meter. (Resolved the same day:
+  `guided.ts`'s on-screen "apologising" → "apologizing", owner-directed; the
+  mic intro's "not recorded" line checked against the code, kept, and privacy
+  clause 01 now says the same.)

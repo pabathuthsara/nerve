@@ -103,3 +103,21 @@ export function repGoal(interview: boolean, minutes?: number): string {
 export function repGoalShort(interview: boolean): string {
   return interview ? 'They are deciding as you go.' : 'Keep her interested. She can leave.'
 }
+
+/**
+ * "· AI", beside a character's name on the brief and the live screen
+ * (3 October 2026, owner's call).
+ *
+ * The `/start` run now says "Practice out loud with an AI" and "She's an AI.
+ * No real person on the other end" before the account; the two screens after
+ * it that name her — the brief and the rep — said nothing, so somebody could
+ * still arrive at a name in display caps and wonder. One small tag, in the
+ * mono label face at Ink-2, never volt: it is a fact about her, not an
+ * action. Read as part of the name ("Cass · AI") by a screen reader.
+ *
+ * Not coaching (§05, rule 8): it does not change during the rep and tells the
+ * user nothing about how to talk to her.
+ */
+export function AiTag() {
+  return <span className="ai-tag"><span aria-hidden="true"> · </span>AI</span>
+}

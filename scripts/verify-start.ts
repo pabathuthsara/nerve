@@ -26,6 +26,8 @@
  *   and refuses a second crossing onto an account that has already answered
  *   a carried birth year is stamped as 31 December, and an under-age one is
  *   never stamped at all however it arrived
+ *   the browser's timezone lands on the row in the same write (3 Oct), and a
+ *   sign-up that carried none keeps the column default
  *
  * The last one is the regression check: `/signup` is still a door, people
  * still arrive at it directly, and an account created that way must resume
@@ -125,6 +127,10 @@ async function main(): Promise<void> {
       focusArea: 'rejection',
       displayName: 'Sam',
       named: true,
+      // 3 Oct: the browser's zone and the link's tag ride the same carrier.
+      timezone: 'America/Chicago',
+      source: 'meta',
+      content: 'gaming',
     }))
     const full = await newAccount('full')
 
@@ -139,7 +145,7 @@ async function main(): Promise<void> {
 
     const { data: row } = await admin
       .from('profiles')
-      .select('active_track, focus_area, display_name, ui_flags, age_confirmed_at, onboarding_complete')
+      .select('active_track, focus_area, display_name, ui_flags, age_confirmed_at, onboarding_complete, timezone')
       .eq('id', full)
       .maybeSingle()
 
@@ -148,6 +154,7 @@ async function main(): Promise<void> {
     check(row?.display_name === 'Sam', 'the name answer is on the row')
     check(!!row?.age_confirmed_at, 'the §16.4 date is stamped, so the age gate does not divert')
     check(row?.onboarding_complete === false, 'the run is not claimed to be finished — the mic check has not happened')
+    check(row?.timezone === 'America/Chicago', "the browser's timezone is on the row, not the Asia/Colombo default")
 
     const stamped = flagsOf(row?.ui_flags)
     check(!!stamped[ONBOARDING_TRACK_FLAG], 'the track step is flagged as answered')
@@ -376,8 +383,9 @@ async function main(): Promise<void> {
     const plain = await newAccount('plain')
     await crossOAuthAccount(plain, EMPTY_START_ANSWERS)
     const { data: plainRow } = await admin
-      .from('profiles').select('active_track, focus_area, display_name, ui_flags, age_confirmed_at').eq('id', plain).maybeSingle()
+      .from('profiles').select('active_track, focus_area, display_name, ui_flags, age_confirmed_at, timezone').eq('id', plain).maybeSingle()
     check(!!plainRow, 'the row survives a crossing with nothing in it')
+    check(plainRow?.timezone === 'Asia/Colombo', 'and keeps the timezone default — nothing carried, nothing written')
     check(!plainRow?.focus_area && !plainRow?.display_name, 'nothing was invented for a run that never happened')
     check(Object.keys(flagsOf(plainRow?.ui_flags)).length === 0, 'no onboarding step is flagged')
     check(!plainRow?.age_confirmed_at, 'and the §16.4 gate is still in front of them')

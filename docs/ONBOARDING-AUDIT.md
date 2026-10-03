@@ -16,6 +16,19 @@ user would meet it, then measured against the rules in `CLAUDE.md` and §02.
 > the run still exists, still resumes, and is still what an account created any
 > other way walks — but §1's "seven screens between create account and the
 > first word spoken" is now four for most new accounts.
+>
+> **3 October 2026 (`LAUNCH-GAP.md` D32).** The mic check is one screen
+> shorter: once the level settles, *We can hear you* shows in place and the run
+> moves on to the brief after ~1.1s (`AUTO_ADVANCE_MS`), with CONTINUE kept as
+> a fallback and the device picker holding the screen. ALLOW MICROPHONE is
+> still a tap — iOS only prompts on a gesture — and nothing under `lib/audio/`
+> or the pause measurement moved. The run also reports five beats to
+> `page_views` (`mic_intro`, `mic_granted`, `mic_good`, `brief`, `rep_started`),
+> the brief's heading reads *Cass · AI*, and `[data-step-heading]`'s focus ring
+> is neutral rather than volt. The mic intro's "This check is not recorded at
+> all" was checked against the code the same day and is true — the stream
+> feeds only a local analyser, and one integer (`vad_offset_ms`) leaves the
+> browser — so it stays, and privacy clause 01 says the same.
 
 Everything below is a finding against the code as it stands on
 `elevenlabs-pipeline`. Line references are to the files as read, not to a

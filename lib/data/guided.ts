@@ -221,7 +221,7 @@ export const TESS_SCRIPT: readonly GuidedStep[] = [
     // legitimate out loud rather than something to be rescued from. Without it
     // this step — which holds the last third of the rep — never changed at all.
     says: [null, 'Let me think about that for a second.'],
-    why: 'Three seconds of silence feels like thirty. Not filling it, and then picking it back up without apologising, is the thing being trained here.',
+    why: 'Three seconds of silence feels like thirty. Not filling it, and then picking it back up without apologizing, is the thing being trained here.',
   },
   {
     key: 'close',

@@ -3,7 +3,9 @@ import {
   countryCode,
   deviceFor,
   isBot,
+  isPreviewFetch,
   MAX_PATH,
+  ONBOARDING_STEP_NAMES,
   normalisePath,
   normaliseStep,
   referrerHost,
@@ -127,8 +129,24 @@ describe('isBot', () => {
       'facebookexternalhit/1.1',
       'curl/8.4.0',
       'Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/120.0.0.0',
+      // Meta's other agents (3 Oct): the catalogue crawler, the AI/link
+      // fetchers and the ad-review bot.
+      'facebookcatalog/1.0',
+      'meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)',
+      'meta-externalfetcher/1.1',
+      'Mozilla/5.0 (compatible; Facebot)',
     ]) {
       expect(isBot(ua)).toBe(true)
+    }
+  })
+
+  it("lets Meta's own in-app browsers through — that is where the ads land", () => {
+    for (const ua of [
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/22A3354 Instagram 349.0.0.29.104 (iPhone15,2; iOS 18_0; en_US; en; scale=3.00; 1179x2556; 646234591)',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/22A3354 [FBAN/FBIOS;FBAV/478.0.0.40.109;FBBV/650432155;FBDV/iPhone15,2;FBMD/iPhone;FBSN/iOS;FBSV/18.0;FBSS/3;FBCR/;FBID/phone;FBLC/en_US;FBOP/80]',
+      'Mozilla/5.0 (Linux; Android 14; Pixel 7 Build/AP2A.240805.005; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/128.0.6613.127 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/478.0.0.43.110;]',
+    ]) {
+      expect(isBot(ua)).toBe(false)
     }
   })
 
@@ -188,6 +206,45 @@ describe('the /start step, on the way into the traffic table', () => {
   })
 
   it('trims, because a beacon body is not hand-written', () => {
-    expect(normaliseStep('/start', '  build  ')).toBe('build')
+    expect(normaliseStep('/start', '  focus  ')).toBe('focus')
+  })
+
+  it('stops accepting the screens cut on 3 October', () => {
+    expect(normaliseStep('/start', 'hook')).toBeNull()
+    expect(normaliseStep('/start', 'build')).toBeNull()
+    // Nor the server's own rows, from a browser.
+    expect(normaliseStep('/start', 'signup')).toBeNull()
+  })
+})
+
+describe('the run after the account, on the way into the traffic table', () => {
+  it('accepts its own five beats on /onboarding, and only there', () => {
+    for (const step of ONBOARDING_STEP_NAMES) {
+      expect(normaliseStep('/onboarding', step)).toBe(step)
+      expect(normaliseStep('/start', step)).toBeNull()
+    }
+    expect(normaliseStep('/onboarding', 'focus')).toBeNull()
+    expect(normaliseStep('/onboarding/mic', 'mic_intro')).toBeNull()
+  })
+
+  it('fits the column', () => {
+    // `page_views_step_len`: 24 characters.
+    for (const step of ONBOARDING_STEP_NAMES) expect(step.length).toBeLessThanOrEqual(24)
+  })
+})
+
+describe('isPreviewFetch', () => {
+  const ask = (headers: Record<string, string>) => isPreviewFetch((name) => headers[name] ?? null)
+
+  it('refuses a prefetch, a preview and an RSC navigation', () => {
+    expect(ask({ purpose: 'prefetch' })).toBe(true)
+    expect(ask({ 'sec-purpose': 'prefetch;prerender' })).toBe(true)
+    expect(ask({ 'x-purpose': 'preview' })).toBe(true)
+    expect(ask({ rsc: '1' })).toBe(true)
+    expect(ask({ 'next-router-prefetch': '1' })).toBe(true)
+  })
+
+  it('lets an ordinary document load through', () => {
+    expect(ask({ 'sec-fetch-dest': 'document', 'user-agent': 'Mozilla/5.0' })).toBe(false)
   })
 })

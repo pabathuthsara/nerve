@@ -1,11 +1,9 @@
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { after } from 'next/server'
 import { currentUser } from '@/lib/db/server'
-import { usageProof } from '@/lib/db/founding'
-import { isBot, normaliseTag, START_SERVED_STEP } from '@/lib/analytics/pageview'
-import { insertView, visitorDigest } from '@/lib/analytics/record'
+import { START_SERVED_STEP } from '@/lib/analytics/pageview'
+import { recordServerStep } from '@/lib/analytics/record'
+import { startAnswersFromQuery } from '@/lib/data/start-funnel'
 import { StartScreen } from '@/components/screens/start-screens'
 
 /**
@@ -73,70 +71,34 @@ export default async function StartPage({ searchParams }: {
    * rather than guessing a second time.
    */
   if (await currentUser()) redirect('/')
-  const raw = await searchParams
+  const query = await searchParams
   const first = (key: string) => {
-    const value = raw[key]
+    const value = query[key]
     return Array.isArray(value) ? value[0] : value
   }
   const asked = TRACKS.find((track) => track === first('track')) ?? null
 
   /**
-   * The hook's button as a plain link (START-AUDIT §1.1). Everything the
-   * visitor arrived with is carried — `?track=` and the UTMs — plus `s=1`,
-   * which opens the run on the screen that tap was for. Built here because
-   * this is where the query string is known on the first render, which is
-   * the only render the link exists for.
+   * The run's state in the address bar (3 Oct). Every answer on the first
+   * screen is a link to this page with the answer added — see
+   * `startQueryWith` — so a tap that lands before hydration is a navigation
+   * rather than a lost tap, and this render opens on the screen after it.
+   * The query is passed down whole so each link carries everything the
+   * visitor arrived with, `?track=` and the UTMs included.
    */
-  const carried = new URLSearchParams()
-  for (const [key, value] of Object.entries(raw)) {
-    if (key === 's') continue
-    const one = Array.isArray(value) ? value[0] : value
-    if (typeof one === 'string') carried.set(key, one)
-  }
-  carried.set('s', '1')
+  const fromUrl = startAnswersFromQuery(query)
 
-  await countServed(first('utm_source'), first('utm_content'))
+  await recordServerStep(START_SERVED_STEP, { source: first('utm_source') ?? null, content: first('utm_content') ?? null })
 
-  return (
-    <StartScreen
-      initialTrack={asked}
-      begun={first('s') === '1'}
-      continueHref={`/start?${carried.toString()}`}
-      proof={await usageProof()}
-    />
-  )
+  return <StartScreen initialTrack={asked} fromUrl={fromUrl} query={flatQuery(query)} />
 }
 
-/**
- * The render, counted server-side (START-AUDIT §1.6).
- *
- * Every other funnel row is a beacon that fires after hydration, so the
- * visitor who left in the first two seconds — the one the audit was about —
- * was never recorded. `served` is written here, after the response, with the
- * same digest the beacon computes, so `served → hook` is that loss.
- *
- * Only for a real document load: a router prefetch is not a visit, and a
- * client-side navigation (`RSC: 1`) arrives from a page that is already
- * hydrated, so its beacon will count it. Bots and Do Not Track are refused
- * the same way the beacon refuses them, and a local dev server is refused
- * because it talks to the production table.
- */
-async function countServed(source: string | undefined, content: string | undefined): Promise<void> {
-  const bag = await headers()
-  const userAgent = bag.get('user-agent') ?? ''
-  const host = bag.get('host') ?? ''
-  if (bag.get('rsc') || bag.get('next-router-prefetch') || /prefetch/i.test(bag.get('purpose') ?? bag.get('sec-purpose') ?? '')) return
-  if (bag.get('dnt') === '1' || isBot(userAgent)) return
-  if (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host)) return
-  const snapshot = new Map([...bag.entries()])
-  const view = { get: (name: string) => snapshot.get(name.toLowerCase()) ?? null }
-  after(() => insertView(view, userAgent, visitorDigest(view, userAgent), {
-    path: '/start',
-    step: START_SERVED_STEP,
-    ref: view.get('referer'),
-    selfHost: host.split(':')[0] ?? null,
-    source: normaliseTag(source),
-    content: normaliseTag(content),
-    userId: null,
-  }))
+/** The query as plain strings, for the links the client builds from it. */
+function flatQuery(query: Record<string, string | string[] | undefined>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(query)) {
+    const one = Array.isArray(value) ? value[0] : value
+    if (typeof one === 'string' && key !== 's') out[key] = one
+  }
+  return out
 }

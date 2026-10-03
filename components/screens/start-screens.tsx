@@ -11,9 +11,10 @@
  * address — the first thing said to somebody four seconds off a video, with
  * nothing yet at stake and nothing yet given.
  *
- * This is the same three questions the signed-in run asks, in front of the
- * form instead of behind it, with three screens between them that say what the
- * product is. Nothing is spent by walking it: no session, no database read, no
+ * This is the same questions the signed-in run asks, in front of the form
+ * instead of behind it — and since 3 October 2026 nothing else: the first
+ * screen is the first question, answered in one tap, and every answer on it
+ * is a real link. Nothing is spent by walking it: no session, no database read, no
  * voice, no cost. The account is created on the last screen and the answers
  * ride into it on a hidden field (`lib/data/start-funnel.ts` owns the shape and
  * `signUpWithPassword` owns the write).
@@ -40,53 +41,51 @@
  * and `mechanism`, cut on 27 September — are both gone; the rule outlives
  * them and binds anything added later.)
  *
- * ── ONE MORE THING, ABOUT THE BUILD SCREEN ───────────────────────────────
+ * ── WHAT WAS CUT ON 3 OCTOBER, AND WHY ───────────────────────────────────
  *
- * It reveals; it does not pretend to compute. The genre convention is an
- * animated "building your plan" — and there is nothing being built here, so a
- * progress bar over a local lookup would be theatre on the screen that has to
- * be believed. The rows are already known and they arrive staggered, which is
- * presentation. §02's objection is to a spinner standing in for work; there is
- * no work, so there is no spinner.
+ * The hook (a chat preview, a headline and *Set mine up*) and the Cass reveal.
+ * Paid traffic from the first Meta ads tapped through at ~7–20% and then 0 of
+ * 6 real visitors tapped the hook: somebody who has just tapped an ad has
+ * been sold, and the hook was a second pitch. Cass was introduced on the
+ * reveal and again, word for word, on the brief after the microphone check;
+ * the brief is the rep's own and stays. `LAUNCH-GAP.md` D32.
  */
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
-import { Check, ChevronLeft, Crosshair, Eye, EyeOff, MapPin, Timer } from 'lucide-react'
+import { Check, ChevronLeft, Eye, EyeOff } from 'lucide-react'
 import { signUpWithPassword, type AuthResult } from '@/app/auth/actions'
-import { capture, countStartStep } from '@/components/analytics'
+import { campaignTag, capture, countStartStep } from '@/components/analytics'
 import { metaTrack } from '@/components/meta-pixel'
 import { tiktokTrack } from '@/components/tiktok-pixel'
-import { FluidPersona } from '@/components/fluid-persona'
-import { Mark } from '@/components/marks'
 import { Button, Input } from '@/components/ui'
 import { FocusStep, NameStep, RoleStep, TrackStep } from './onboarding-questions'
 import { GoogleButton } from './google-button'
-import { RuleBlock, repGoal } from './rep-format'
 import { tap } from '@/lib/haptics'
 import { MIN_AGE, checkAge } from '@/lib/safety/age'
-import { SIGNUP_REVIEW } from '@/lib/site/reviews'
-import { CAPTURED_REP } from '@/lib/site/captured-rep'
-import { SHOWCASE_WARMTH, PERSONA_VISUAL } from '@/lib/personas/visual'
 import {
+  AI_ACCOUNT_LINE,
   EMPTY_START_ANSWERS,
+  FOCUS_ACCOUNT_LINE,
+  FOCUS_ACCOUNT_LINE_PERSONA,
+  START_ANSWER_PARAMS,
   START_FIELD,
   birthDateFromYear,
   START_STORAGE_KEY,
   decodeStartAnswers,
   encodeStartAnswers,
   firstRepPreview,
-  hasStartAnswers,
   startAdvance,
+  startFirstIndex,
   startOpening,
+  startQueryWith,
   startRail,
   startSteps,
   type StartAnswers,
   type StartStep,
 } from '@/lib/data/start-funnel'
 import type { Track } from '@/lib/data/types'
-import type { UsageProof } from '@/lib/db/founding'
 
 const EMPTY_RESULT: AuthResult = { ok: false, message: null }
 
@@ -95,31 +94,31 @@ const EMPTY_RESULT: AuthResult = { ok: false, message: null }
  * ------------------------------------------------------------------ */
 
 /**
- * `initialTrack` is the `?track=` the link carried — every social post says
- * `?track=dating`, `/interviews` says `interview`. It does two things since
- * 27 September (START-AUDIT §1.3): the hook speaks for that track alone, and
- * the track question is skipped on the way forward (`startAdvance`), because
- * a question the link already answered is a screen somebody can leave from.
+ * `initialTrack` is the `?track=` the link carried — every ad and post says
+ * `?track=dating`, `/interviews` says `interview`. A named track skips the
+ * track question, so the run OPENS on question two and that screen has no
+ * back arrow (there is nothing behind it).
  *
- * `begun` is the hook's button arriving as a plain navigation — see
- * `HookStep` for why that path exists at all.
+ * `fromUrl` is answers a link carried — a tap on this run that landed before
+ * hydration and arrived as a navigation (`startQueryWith`). `query` is the
+ * address bar as the server saw it, which every answer link is built from so
+ * the UTMs ride every server render of the run.
  */
-export function StartScreen({ initialTrack = null, begun = false, continueHref = '/start?s=1', proof = null }: {
+export function StartScreen({ initialTrack = null, fromUrl = {}, query = {} }: {
   initialTrack?: Track | null
-  begun?: boolean
-  continueHref?: string
-  proof?: UsageProof | null
+  fromUrl?: Partial<StartAnswers>
+  query?: Record<string, string>
 }) {
   const trackGiven = initialTrack !== null
-  const opening = startOpening(EMPTY_START_ANSWERS, initialTrack, begun)
+  const firstIndex = startFirstIndex(trackGiven)
+  const opening = startOpening(EMPTY_START_ANSWERS, initialTrack, fromUrl)
   const [step, setStep] = useState(opening.index)
   const [answers, setAnswers] = useState<StartAnswers>(opening.answers)
   const shell = useRef<HTMLDivElement | null>(null)
   const entered = useRef(false)
   /**
    * Which way the run is moving, so a screen slides in from the side it came
-   * from — forward from the right, back from the left. It is the difference
-   * between a stack of pages and a place you are moving through.
+   * from — forward from the right, back from the left.
    */
   const [dir, setDir] = useState<'fwd' | 'back'>('fwd')
   /** One pending advance at a time, so a double tap cannot skip a screen. */
@@ -145,8 +144,11 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
    * for a frame; the alternative is a hydration mismatch on the coldest page
    * in the product.
    *
-   * Session-scoped rather than local: these answers are worth keeping across a
-   * reload and worth nothing next week.
+   * It also takes the answers OUT of the address bar once they are in
+   * storage. A link-carried answer is the newest thing somebody did, so it is
+   * laid over the stored run — and left in the URL it would go on being "the
+   * newest thing" on every reload, undoing a change made with the back arrow
+   * since. `?track=` and the UTMs stay; they describe the link, not an answer.
    */
   useEffect(() => {
     let stored = EMPTY_START_ANSWERS
@@ -155,13 +157,22 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
     } catch {
       // See above.
     }
-    if (!hasStartAnswers(stored)) return
-    const resumed = startOpening(stored, initialTrack)
-    // A `?track=` that overruled the stored one has to be written back, or the
-    // next reload reads the old answer and undoes it.
-    if (resumed.answers !== stored) remember(resumed.answers)
+    const resumed = startOpening(stored, initialTrack, fromUrl)
+    if (encodeStartAnswers(resumed.answers) !== encodeStartAnswers(stored)) remember(resumed.answers)
     else setAnswers(stored)
     setStep(resumed.index)
+    try {
+      const url = new URL(window.location.href)
+      const keys = [...START_ANSWER_PARAMS, 's'].filter((key) => url.searchParams.has(key))
+      if (keys.length > 0) {
+        for (const key of keys) url.searchParams.delete(key)
+        window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`)
+      }
+    } catch {
+      // The address bar is cosmetic here; the answers are already stored.
+    }
+    // `fromUrl` is the server's first-render value and never changes after it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTrack, remember])
 
   /**
@@ -174,8 +185,8 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
 
   const goTo = useCallback((next: number) => {
     setDir(next < step ? 'back' : 'fwd')
-    setStep(Math.min(Math.max(next, 0), steps.length - 1))
-  }, [steps.length, step])
+    setStep(Math.min(Math.max(next, firstIndex), steps.length - 1))
+  }, [firstIndex, steps.length, step])
 
   /** Forward, through the one skip the run allows. */
   const forward = useCallback((from: number, track: Track | null) => {
@@ -208,6 +219,7 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
   }, [forward, remember])
 
   const stepName = steps[step] as StartStep
+  const first = step === firstIndex
 
   /**
    * Every screen, as it is reached, counted twice on purpose: `capture` is
@@ -232,50 +244,62 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
   }, [step])
 
   const answered = (step: StartStep, answer: string) => capture('start_answered', { step, answer })
-  const firstRep = firstRepPreview(answers.focusArea)
 
-  // The rail skips the track question only while the run is not ON it — the
-  // back arrow can still reach it, and a rail with no "you are here" would be
-  // the one screen in the run that did not know where it was.
-  const rail = startRail(steps, trackGiven && stepName !== 'track')
+  /**
+   * The links the answers are. Built from the address bar the server saw plus
+   * whatever this run has answered since, so a modifier-click (a new tab)
+   * still carries the run — and unhydrated, they are the run.
+   */
+  const trackAnswer: Record<string, string> = answers.track && !trackGiven ? { t: answers.track } : {}
+  const linkWith = (add: Record<string, string>) => startQueryWith(query, { ...trackAnswer, ...add })
+  const carried: Record<string, string> = {}
+  for (const [key, value] of Object.entries(query)) {
+    if (!(START_ANSWER_PARAMS as readonly string[]).includes(key)) carried[key] = value
+  }
+  if (answers.track && !trackGiven) carried['t'] = answers.track
+
+  const rail = startRail(steps)
+  const arm = (answers.track ?? initialTrack) === 'interview' ? 'interview' : answers.track ? 'dating' : 'both'
 
   return (
-    <main className="onboarding-page start-page" data-step={stepName}>
-      {stepName === 'hook' ? null : <StartProgress current={stepName} rail={rail} />}
-      {step > 0
+    <main className="onboarding-page start-page" data-step={stepName} data-first={first || undefined}>
+      {stepName === 'track' ? null : <StartProgress current={stepName} rail={rail} />}
+      {!first
         ? <button type="button" className="onboarding-back" aria-label="Back to the previous screen" onClick={() => goTo(step - 1)}><ChevronLeft size={24} strokeWidth={1.5} /></button>
         : null}
       <div className="onboarding-shell" ref={shell}>
         <div className="onboarding-step" key={step} data-dir={dir}>
-          {stepName === 'hook'
-            ? <HookStep track={initialTrack} href={continueHref} proof={proof} onStart={() => { tap(); forward(step, answers.track) }} />
-            : null}
+          {first ? <StartTop /> : null}
 
           {stepName === 'track'
             ? <TrackStep
-                eyebrow="To start"
+                eyebrow={FIRST_KICKER}
                 value={answers.track}
+                hrefFor={(value) => linkWith({ t: value })}
                 onChoose={(value) => { answered('track', value); choose({ ...answers, track: value }, step) }}
               />
             : null}
 
           {stepName === 'focus'
             ? <FocusStep
-                eyebrow="Your focus"
+                eyebrow={FIRST_KICKER}
                 value={answers.focusArea}
-                firstRep={firstRep}
+                firstRep={null}
+                hrefFor={(value) => linkWith({ focus: value })}
                 onChoose={(value) => { answered('focus', value); choose({ ...answers, focusArea: value }, step) }}
               />
             : null}
 
           {/* The interview arm's question two. One field decides whether the
               account lands on its free screener or on a setup wizard — see
-              `startInterviewSetup`. */}
+              `startInterviewSetup`. A form, so its no-JavaScript path is a GET
+              to this page rather than a link. */}
           {stepName === 'role'
             ? <RoleStep
-                eyebrow="Your role"
+                eyebrow={FIRST_KICKER}
                 roleTitle={answers.roleTitle}
                 company={answers.company}
+                fallback={{ hidden: carried, skipHref: linkWith({ role_asked: '1' }) }}
                 onSubmit={(value) => {
                   answered('role', value.roleTitle ? 'given' : 'skipped')
                   advance({ ...answers, ...value, roleAsked: true }, step)
@@ -295,13 +319,11 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
               />
             : null}
 
-          {stepName === 'build'
-            ? <BuildStep answers={answers} firstRep={firstRep} onNext={() => { tap(); forward(step, answers.track) }} />
-            : null}
-
           {stepName === 'account'
             ? <AccountStep answers={answers} onYear={(birthYear) => remember({ ...answers, birthYear })} />
             : null}
+
+          {first ? <p className="start-foot start-trust">{TRUST_LINE[arm]}</p> : null}
         </div>
       </div>
     </main>
@@ -309,11 +331,42 @@ export function StartScreen({ initialTrack = null, begun = false, continueHref =
 }
 
 /**
- * The rail, over the screens after the hook.
- *
- * The hook is excluded: it is not a step in a run, it is the screen that says
- * what the run is. The count is derived from the list rather than written
- * down, so adding or cutting a screen can never leave a number lying.
+ * The kicker over every question before the account (3 Oct, owner's wording,
+ * US spelling because the ads run in the US). It is the one place on the
+ * first screen that says what the reps are with — an AI — so nobody answers
+ * the first question wondering whether a person is about to pick up.
+ */
+const FIRST_KICKER = 'Practice out loud with an AI'
+
+/**
+ * The first screen's one line of reassurance, under the answers. Where it
+ * says "free", it is: the free rep and the free screener are granted at
+ * sign-up, and no card is asked for anywhere on this run.
+ */
+const TRUST_LINE: Record<'dating' | 'interview' | 'both', string> = {
+  dating: 'Free \u00b7 no card \u00b7 your first rep is included',
+  interview: 'Free \u00b7 no card \u00b7 a five-minute screener is included',
+  both: 'Free \u00b7 no card \u00b7 your first rep is included',
+}
+
+/**
+ * The first screen's top bar: the wordmark, and the way in for somebody who
+ * already has an account, in the corner where people look for it.
+ */
+function StartTop() {
+  return (
+    <div className="start-top">
+      <span className="start-wordmark" aria-label="Nerve">Nerve</span>
+      <Link href="/login" className="start-top__login">Log in</Link>
+    </div>
+  )
+}
+
+/**
+ * The rail, over question two, the name and the account — `1 of 3` to
+ * `3 of 3` on both arms (`startRail`). The count is derived from the list
+ * rather than written down, so adding or cutting a screen can never leave a
+ * number lying.
  */
 function StartProgress({ current, rail }: { current: StartStep; rail: readonly StartStep[] }) {
   const index = rail.indexOf(current)
@@ -329,271 +382,6 @@ function StartProgress({ current, rail }: { current: StartStep; rail: readonly S
       <span className="onboarding-progress__count" aria-hidden="true">{index + 1} of {rail.length}</span>
     </div>
   )
-}
-
-/* ------------------------------------------------------------------ *
- * The two screens that are not questions
- * ------------------------------------------------------------------ */
-
-/**
- * What the hook says, per room (START-AUDIT §1.3).
- *
- * Nearly all of this page's traffic arrives under a short video about ONE of
- * the two products, and the hook used to pitch both — "a stranger you want
- * to talk to, or an interviewer you want to impress" — so the first two
- * seconds were spent reconciling the ad with the page. A link that names the
- * track now gets a hook about that track. A bare `/start` keeps the sentence
- * that is true of both.
- */
-const HOOK_COPY: Record<'dating' | 'interview' | 'both', { head: string; sub: string; free: string }> = {
-  dating: {
-    head: 'The conversation you keep not having.',
-    sub: 'Three minutes, out loud, with an AI character who can walk away. Scored on how you handled it — never on whether it worked.',
-    free: 'Free · no card · your first rep is included',
-  },
-  interview: {
-    head: 'The interview you keep rehearsing in your head.',
-    sub: 'Five minutes, out loud, with an interviewer who follows up on what you skip. Scored on how you answered — never on whether you got the job.',
-    free: 'Free · no card · a five-minute screener is included',
-  },
-  both: {
-    head: 'The conversation you keep not having.',
-    sub: 'Out loud, under time, to someone who is deciding — a stranger or an interviewer. Scored on how you talked, never on whether it worked.',
-    free: 'Free · no card · your first rep is included',
-  },
-}
-
-/**
- * Screen one, and the only one a stranger judges the product on.
- *
- * ── THE BUTTON IS A LINK, AND THAT IS THE FIX (START-AUDIT §1.1) ─────────
- *
- * It was an `onClick` on a `<button>`, and this page is server-rendered: the
- * button was on screen at ~0.4s and did nothing until the JavaScript had
- * arrived and hydrated, ~1.9s on a fast phone and ~2.9s on a throttled one.
- * A tap in that window was not queued, it was LOST — three of three on a
- * throttled Pixel profile — and the visitor this page is for is exactly the
- * one who taps first: a mid-range Android, in an in-app browser, thumb
- * already moving because the video said "link in bio".
- *
- * So it is an `<a href="?s=1">`. Hydrated, the click is intercepted and the
- * run advances in place exactly as before. Not hydrated, it is an ordinary
- * navigation to a page that opens on the next screen (`startOpening`'s
- * `begun`), and the tap that would have been swallowed is the tap that
- * moves them. The query string is carried, so `?track=` and the UTMs survive
- * the reload.
- */
-function HookStep({ track, href, proof, onStart }: {
-  track: Track | null
-  href: string
-  proof: UsageProof | null
-  onStart: () => void
-}) {
-  const copy = HOOK_COPY[track === 'dating' || track === 'interview' ? track : 'both']
-  const quote = track === 'interview' ? null : SIGNUP_REVIEW
-  const interview = track === 'interview'
-  return (
-    <section className="onboarding-question start-hook">
-      {/*
-        THE FIRST SCREEN, REBUILT (owner review, 27 Sep).
-
-        It was a paragraph of claims between two bands of empty black: no
-        picture of the product, nothing that moved but the words, and the one
-        exit most people do not need sitting beside the one they do. Now it
-        opens on the product itself — the first four lines of a real rep,
-        captured, arriving the way they arrived — and the claim follows the
-        evidence instead of standing in for it. Sign-in moved to the corner
-        where people look for it.
-      */}
-      <div className="start-top">
-        <span className="start-wordmark" aria-label="Nerve">Nerve</span>
-        <Link href="/login" className="start-top__login">Log in</Link>
-      </div>
-      {interview ? <span className="label start-hook__kicker">Interview practice</span> : <RepPreview />}
-      <h1 className="display-lg start-hook__head" tabIndex={-1} data-step-heading>
-        {copy.head.split(' ').flatMap((word, index) => [
-          index > 0 ? ' ' : null,
-          <span key={`${word}-${index}`} className="start-word" style={{ ['--w' as string]: index }}>{word}</span>,
-        ])}
-      </h1>
-      <p className="onboarding-sub">{copy.sub}</p>
-      <div className="start-actions">
-        <a
-          href={href}
-          className="arena-button arena-button--primary arena-button--lg arena-button--full start-hook__go"
-          onClick={(event) => {
-            if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
-            event.preventDefault()
-            onStart()
-          }}
-        >
-          <span className="arena-button__content">Set mine up — 30 seconds</span>
-        </a>
-        <p className="start-foot">{copy.free}</p>
-      </div>
-      {quote ? (
-        <figure className="start-voice">
-          <blockquote>{quote.quote}</blockquote>
-          <figcaption>
-            {quote.name}
-            {proof && proof.people > 0 ? <> · <span>one of {proof.people.toLocaleString('en-GB')} people training</span></> : null}
-          </figcaption>
-        </figure>
-      ) : proof && proof.reps > 0 ? (
-        <p className="start-count"><strong>{proof.reps.toLocaleString('en-GB')}</strong> reps run · <strong>{proof.people.toLocaleString('en-GB')}</strong> people training</p>
-      ) : null}
-      <nav className="start-exits" aria-label="More about Nerve">
-        <Link href="/how-it-works">What is this?</Link>
-      </nav>
-    </section>
-  )
-}
-
-/**
- * The product, before the claim about it: the opening of a real rep.
- *
- * Her lines come from `CAPTURED_REP`, which reads the recorded manifest and
- * cannot be edited here (rule 10). They arrive in the order and roughly the
- * rhythm they were said, with a typing beat before each of hers, and then the
- * card stays still. Pure CSS: it is on the page before the JavaScript is, so
- * the first thing a cold phone paints is the product rather than a gap
- * waiting to hydrate. No numbers are drawn — the recording has no meter
- * readings, and a warmth figure invented for decoration would be a claim.
- */
-function RepPreview() {
-  const rep = CAPTURED_REP
-  const colours = PERSONA_VISUAL[rep.personaId]
-  return (
-    <figure
-      className="rep-preview"
-      aria-label={`The opening of a real rep with ${rep.name}`}
-      style={colours ? { ['--orb-core' as string]: colours.core, ['--orb-deep' as string]: colours.deep, ['--orb-sheen' as string]: colours.sheen } : undefined}
-    >
-      <figcaption className="rep-preview__head">
-        <span className="rep-preview__orb" aria-hidden="true"><i /><i /><b>{rep.name.charAt(0)}</b></span>
-        <span className="rep-preview__who">
-          <strong>{rep.name}</strong>
-          <span className="label">{rep.setting} · a real rep</span>
-        </span>
-        <span className="rep-preview__rec label" aria-hidden="true"><i />Rec</span>
-      </figcaption>
-      <ol className="rep-preview__lines">
-        {rep.lines.map((line, index) => (
-          <li key={index} className={`rep-line rep-line--${line.who}`} style={{ ['--i' as string]: index }}>
-            <span className="label rep-line__who">{line.who === 'you' ? 'You' : rep.name}</span>
-            <span className="rep-line__bubble">
-              {line.who === 'her' ? <span className="rep-line__typing" aria-hidden="true"><i /><i /><i /></span> : null}
-              <span className="rep-line__text">{line.text}</span>
-            </span>
-          </li>
-        ))}
-      </ol>
-    </figure>
-  )
-}
-
-/**
- * Screen three. Their answers, spent — and since 27 September the only
- * screen on the run that is not a question.
- *
- * Every question on this run is echoed here, which is the standard
- * `/onboarding/experience` failed: it asked something, wrote a column nothing
- * read, and was deleted.
- */
-function BuildStep({ answers, firstRep, onNext }: {
-  answers: StartAnswers
-  firstRep: ReturnType<typeof firstRepPreview>
-  onNext: () => void
-}) {
-  /**
-   * The upper-funnel signal. At ~15% of clicks this is dense enough for a
-   * conversion campaign to learn from, where `CompleteRegistration` at 3% is
-   * a handful of events a week. Same moment, both ad platforms.
-   */
-  useEffect(() => { metaTrack('Lead'); tiktokTrack('ViewContent', { content_name: answers.track ?? 'dating' }) }, [answers.track])
-
-  const focusLabel = answers.focusArea ? FOCUS_LINE[answers.focusArea] : null
-
-  if (answers.track === 'interview') {
-    return (
-      <section className="brief-shell start-build">
-        <Mark name="kind-technique" size={44} />
-        <span className="label">Your first round</span>
-        <h1 className="display-lg" tabIndex={-1} data-step-heading>The screener.</h1>
-        <p className="brief-hook">
-          {answers.roleTitle
-            ? `Five minutes with a recruiter, on ${answers.roleTitle}${answers.company ? ` at ${answers.company}` : ''}. Free on every account — no card.`
-            : 'Five minutes with a recruiter, free on every account. No card. Name the role next and the questions get sharper.'}
-        </p>
-        <p className="brief-goal">{repGoal(true, 5)}</p>
-        <RuleBlock interview minutes={5} />
-        <p className="start-note">Afterwards: a score on how you answered — seven dimensions, never on whether you got the job.</p>
-        <Button size="lg" fullWidth onClick={onNext}>Continue</Button>
-      </section>
-    )
-  }
-
-  if (!firstRep) {
-    return (
-      <section className="brief-shell start-build">
-        <h1 className="display-lg" tabIndex={-1} data-step-heading>You&apos;re set.</h1>
-        <p className="brief-hook">Your first rep is waiting a few screens from here.</p>
-        <Button size="lg" fullWidth onClick={onNext}>Continue</Button>
-      </section>
-    )
-  }
-
-  /*
-   * THE REVEAL, WITH A HIERARCHY (owner review, 27 Sep).
-   *
-   * Every line on this screen was the same size and weight — a 112px orb, a
-   * small label, a small name, a grey paragraph, a hairline table and another
-   * grey paragraph — so the one screen where the product becomes a person read
-   * like a form. Now it has four clear levels: her (a larger orb and her name
-   * at full display size), her world (the hook, in Ink, at reading size), the
-   * facts (two tiles you can take in at a glance), and the rules (one line,
-   * set apart). The button is the only thing in volt.
-   */
-  return (
-    <section className="start-build start-reveal">
-      <div className="start-build__persona"><FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={SHOWCASE_WARMTH} size={168} /></div>
-      <span className="label start-reveal__kicker">Your first rep</span>
-      <h1 className="display-xl start-reveal__name" tabIndex={-1} data-step-heading>{firstRep.name}</h1>
-      <p className="start-reveal__hook">{firstRep.hook}</p>
-      <div className="start-reveal__facts">
-        <div className="start-reveal__fact start-reveal__fact--wide">
-          <MapPin size={16} strokeWidth={1.6} aria-hidden="true" />
-          <span className="label">Where</span>
-          <strong>{firstRep.setting}</strong>
-        </div>
-        <div className="start-reveal__fact">
-          <Timer size={16} strokeWidth={1.6} aria-hidden="true" />
-          <span className="label">Time</span>
-          <strong className="data">3:00</strong>
-        </div>
-        {focusLabel ? (
-          <div className="start-reveal__fact start-reveal__fact--full">
-            <Crosshair size={16} strokeWidth={1.6} aria-hidden="true" />
-            <span className="label">Watching for</span>
-            <strong>{focusLabel}</strong>
-          </div>
-        ) : null}
-      </div>
-      <p className="start-reveal__rule">She doesn&apos;t know you&apos;re practising, and she can lose interest.</p>
-      <p className="start-reveal__after">Afterwards: a score on how you talked, and one small thing to try for real.</p>
-      <Button size="lg" fullWidth onClick={onNext}>Continue</Button>
-    </section>
-  )
-}
-
-/**
- * The focus answer in the register the brief uses.
- */
-const FOCUS_LINE: Record<string, string> = {
-  opening: 'How you open',
-  sustaining: 'How you keep it going',
-  flirting: 'How you show interest',
-  rejection: 'How you take a no',
 }
 
 /* ------------------------------------------------------------------ *
@@ -659,7 +447,28 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
   useEffect(() => { if (state.ok) router.push(`/verify-email?email=${encodeURIComponent(email)}`) }, [email, router, state.ok])
   useEffect(() => { if (state.message) capture('start_account_failed', { reason: 'server' }) }, [state.message])
 
-  const zone = typeof Intl === 'undefined' ? '' : Intl.DateTimeFormat().resolvedOptions().timeZone
+  /**
+   * The upper-funnel signal, moved here from the reveal screen it used to
+   * fire on (3 Oct): reaching the account screen is the same moment — every
+   * question answered — and it is still the event a conversion campaign can
+   * learn from at this volume. Both pixels are unkeyed until privacy clause
+   * 07 is rewritten, so today this sends nothing.
+   */
+  useEffect(() => { metaTrack('Lead'); tiktokTrack('ViewContent', { content_name: answers.track ?? 'dating' }) }, [answers.track])
+
+  /**
+   * What the browser knows that the account should: its zone, and the link's
+   * campaign tag. Read after mount, because neither exists on the server and
+   * a hidden field that disagreed with the server render would be a hydration
+   * mismatch on the one screen that creates something.
+   */
+  const [context, setContext] = useState<{ timezone: string | null; source: string | null; content: string | null }>({ timezone: null, source: null, content: null })
+  useEffect(() => {
+    let timezone: string | null = null
+    try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null } catch { timezone = null }
+    setContext({ timezone, ...campaignTag() })
+  }, [])
+  const zone = context.timezone ?? ''
   const validYear = /^\d{4}$/.test(year) ? Number(year) : null
   // A year that passes the gate: the field shows it, and the button below it
   // brightens once — the screen saying "that is all we needed".
@@ -699,6 +508,20 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
 
   const error = message ?? state.message
 
+  /**
+   * The line under the heading. Dating: the authored sentence for their focus
+   * answer, and only when the character it was written about is the one they
+   * are meeting. Interview: the round, named the way the reveal screen used to.
+   */
+  const meeting = interview
+    ? answers.roleTitle
+      ? `A recruiter screen for ${answers.roleTitle}${answers.company ? ` at ${answers.company}` : ''}. Free on every account.`
+      : 'A recruiter screen, free on every account. You can name the role afterwards.'
+    : answers.focusArea && firstRep?.id === FOCUS_ACCOUNT_LINE_PERSONA
+      ? FOCUS_ACCOUNT_LINE[answers.focusArea]
+      : null
+  const carriedAnswers = encodeStartAnswers({ ...answers, birthYear: validYear, ...context })
+
   return (
     <section className="onboarding-question start-account" data-ready={yearReady}>
       {/*
@@ -718,6 +541,12 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
       <h1 className="display-lg" tabIndex={-1} data-step-heading>
         {interview ? 'Your interviewer is ready.' : firstRep ? `${firstRep.name} is ready.` : 'You\u2019re set.'}
       </h1>
+      {/* Who they are about to meet (3 Oct): that she is an AI, then one
+          authored line about their answer. The reveal screen that introduced
+          her is gone; the brief after the microphone check is her full
+          introduction, room and all. */}
+      <p className="start-account__meet">{interview ? AI_ACCOUNT_LINE.interview : AI_ACCOUNT_LINE.dating}</p>
+      {meeting ? <p className="start-account__meet start-account__meet--answer">{meeting}</p> : null}
       <p className="onboarding-sub">Free, no card. Recordings delete after 30 days.</p>
 
       <div className="start-account__age">
@@ -740,7 +569,7 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
       </div>
 
       <GoogleButton
-        answers={encodeStartAnswers({ ...answers, birthYear: validYear })}
+        answers={carriedAnswers}
         first
         primary
         divider={false}
@@ -791,7 +620,7 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
         >
           {error ? <div className="form-error" role="alert">{error}</div> : null}
           <input type="hidden" name="timezone" value={zone} readOnly />
-          <input type="hidden" name={START_FIELD} value={encodeStartAnswers({ ...answers, birthYear: validYear })} readOnly />
+          <input type="hidden" name={START_FIELD} value={carriedAnswers} readOnly />
           <input type="hidden" name="date_of_birth" value={dateOfBirth} readOnly />
           <Input ref={emailField} label="Email" name="email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} enterKeyHint="next" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} />
           <Input

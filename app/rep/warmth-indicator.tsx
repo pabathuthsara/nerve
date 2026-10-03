@@ -488,7 +488,7 @@ export function GraduationModal({ onDismiss }: { onDismiss: () => void }) {
           The number is off from level four onward. You have had five sessions of
           seeing what moved her and what did not; the signal was never the digits,
           it was the pause before she answered and how much she gave you back.
-          That is what you are practising now.
+          That is what you are practicing now.
         </p>
         <button
           onClick={onDismiss}

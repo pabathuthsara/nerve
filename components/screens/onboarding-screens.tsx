@@ -61,7 +61,7 @@ import {
   type SaveResult,
 } from '@/app/profile/actions'
 import { signOut } from '@/app/auth/actions'
-import { resetPerson } from '@/components/analytics'
+import { countOnboardingStep, resetPerson } from '@/components/analytics'
 import { forgetCurrentUser } from '@/lib/data/session'
 import { PauseMeter, offsetFromPause } from '@/lib/voice/calibration'
 import { DEFAULT_CALIBRATION, resolveSilenceMs } from '@/lib/voice/types'
@@ -93,7 +93,7 @@ import { FluidPersona } from '@/components/fluid-persona'
 import { HowItWorksFigure } from '@/components/modals'
 import { SHOWCASE_WARMTH } from '@/lib/personas/visual'
 import { Mark } from '@/components/marks'
-import { repGoal } from './rep-format'
+import { AiTag, repGoal } from './rep-format'
 import { chooseTodayPersona } from '@/lib/data/progression'
 import type { FirstRepCandidate } from '@/lib/data/first-rep'
 import type { FocusArea } from '@/lib/data/focus'
@@ -686,6 +686,43 @@ function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | nu
   useEffect(() => stop, [stop])
 
   /**
+   * The post-account funnel (3 Oct): this screen is where a new account first
+   * stands, so it is the first row after `signup`. Once per mount — a retry
+   * after a denial is the same visit.
+   */
+  useEffect(() => { countOnboardingStep('mic_intro') }, [])
+
+  /**
+   * The second CONTINUE, removed (3 Oct). It was the third screen of a check
+   * whose result is a word ("Good") and a number nobody acts on. Once the
+   * level settles the confirmation shows in place and the run moves on by
+   * itself after a second — long enough to read "We can hear you", short
+   * enough not to be a screen. The button stays as the fallback, and touching
+   * the device picker holds the screen, because somebody choosing a
+   * microphone is not finished with this one.
+   *
+   * ALLOW MICROPHONE is still a tap: iOS Safari only shows the permission
+   * prompt in response to a user gesture.
+   */
+  const [held, setHeld] = useState(false)
+  const leave = useRef(false)
+  const finish = useCallback(() => {
+    if (leave.current) return
+    leave.current = true
+    void persistCalibration()
+    stop()
+    onDone()
+    // `persistCalibration` reads a ref and is recreated every render; the
+    // values it closes over are refs, so the first one is as good as the last.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onDone, stop])
+  useEffect(() => {
+    if (state !== 'confirmed' || held) return
+    const timer = window.setTimeout(finish, AUTO_ADVANCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [finish, held, state])
+
+  /**
    * Write the measured turn-taking offset, once, on the way out.
    *
    * Best-effort by rule: a calibration that fails to save costs the user a
@@ -729,6 +766,7 @@ function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | nu
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId } } : true })
       window.clearTimeout(nudge)
+      countOnboardingStep('mic_granted')
       streamRef.current = stream
       const listed = await navigator.mediaDevices.enumerateDevices()
       setDevices(listed.filter((item) => item.kind === 'audioinput').map((item, index) => ({ deviceId: item.deviceId, label: item.label || `Microphone ${index + 1}` })))
@@ -752,6 +790,7 @@ function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | nu
       const settle = () => {
         setPauseMs(pauses.measuredPauseMs())
         setState('confirmed')
+        countOnboardingStep('mic_good')
         void context.close()
       }
 
@@ -845,8 +884,10 @@ function MicStep({ firstRep, track, onDone }: { firstRep: FirstRepCandidate | nu
       <Check size={52} strokeWidth={1.25} className="mic-glyph" />
       <h1 className="display-lg" tabIndex={-1} data-step-heading>We can hear you</h1>
       <CalibrationReadout pauseMs={pauseMs} interview={interview} />
-      <DevicePicker devices={devices} value={deviceId} onChange={setDeviceId} />
-      <Button size="lg" fullWidth onClick={() => { void persistCalibration(); stop(); onDone() }}>Continue</Button>
+      <div onFocusCapture={() => setHeld(true)} onPointerDownCapture={() => setHeld(true)}>
+        <DevicePicker devices={devices} value={deviceId} onChange={setDeviceId} />
+      </div>
+      <Button size="lg" fullWidth onClick={finish}>Continue</Button>
     </> : null}
   </section>
 }
@@ -885,6 +926,13 @@ function CalibrationReadout({ pauseMs, interview }: { pauseMs: number | null; in
 
 /** Kept in step with the bar count in globals.css. */
 const METER_BARS = 12
+
+/**
+ * How long "We can hear you" stays before the run moves on by itself
+ * (3 Oct). About a second: enough to read the headline, not enough to read
+ * as a screen.
+ */
+const AUTO_ADVANCE_MS = 1100
 
 /**
  * How long the check will listen before accepting what it has.
@@ -978,6 +1026,10 @@ function InterviewReadyStep({ name, roleTitle }: { name: string | null; roleTitl
    */
   const round = roundType(SCREENER_ROUND)
 
+  // The interview arm's last two funnel rows (3 Oct): this screen is its
+  // brief-before-the-round, and choosing somebody is the Start press.
+  useEffect(() => { countOnboardingStep('brief') }, [])
+
   /**
    * Awaited, not fired and forgotten — the same rule the dating brief follows.
    * The guard sends an unfinished run straight back here, so leaving before
@@ -986,6 +1038,7 @@ function InterviewReadyStep({ name, roleTitle }: { name: string | null; roleTitl
   const start = async (interviewerId: string) => {
     setStarting(interviewerId)
     setError(null)
+    countOnboardingStep('rep_started')
     setSelectedInterviewerId(interviewerId)
     const saved = await saveInterviewSetup({ interviewerSlug: interviewerId })
       .catch(() => ({ ok: false, message: 'Could not save — check your connection.' }))
@@ -1060,11 +1113,17 @@ function ReadyStep({ firstRep, name }: { firstRep: FirstRepCandidate | null; nam
   const [open, setOpen] = useState(false)
   const [starting, setStarting] = useState(false)
 
+  // The last two rows of the post-account funnel (3 Oct): the brief drawn,
+  // and Start pressed on it. "rep_started" is the press, not the connection —
+  // the live screen is shared plumbing and the press is the person's act.
+  useEffect(() => { countOnboardingStep('brief') }, [])
+
   // Awaited, not fired and forgotten: the route guard sends anyone whose
   // onboarding is unfinished straight back here, so leaving before the write
   // lands is a loop rather than a rep.
   const start = async (href: string) => {
     setStarting(true)
+    if (href.startsWith('/rep/')) countOnboardingStep('rep_started')
     await finishOnboarding()
     router.push(href)
   }
@@ -1095,7 +1154,7 @@ function ReadyStep({ firstRep, name }: { firstRep: FirstRepCandidate | null; nam
     <section className="start-reveal brief-reveal">
       <div className="start-build__persona"><FluidPersona name={firstRep.name} personaId={firstRep.id} warmth={SHOWCASE_WARMTH} size={168} /></div>
       <span className="label start-reveal__kicker">Your first rep</span>
-      <h1 className="display-xl start-reveal__name" tabIndex={-1} data-step-heading>{firstRep.name}</h1>
+      <h1 className="display-xl start-reveal__name" tabIndex={-1} data-step-heading>{firstRep.name}<AiTag /></h1>
       <p className="start-reveal__hook">{firstRep.hook}</p>
       {/* D23 · THE SCREEN A FIRST REP ACTUALLY MEETS. A brand-new account
           never reaches `RepBriefScreen`: this step goes straight to

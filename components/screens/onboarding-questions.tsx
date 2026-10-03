@@ -63,8 +63,14 @@ export interface EnglishWaitlist {
   counted: boolean
 }
 
-export function TrackStep({ value, english, onChoose, eyebrow = 'Step one' }: {
+export function TrackStep({ value, english, onChoose, hrefFor, eyebrow = 'Step one' }: {
   value: Track | null
+  /**
+   * `/start` only (3 Oct): each answer as a real link, so a tap that lands
+   * before hydration navigates instead of vanishing. Hydrated, the click is
+   * intercepted and `onChoose` runs as it always has.
+   */
+  hrefFor?: (value: Track) => string
   /**
    * The label above the question. The signed-in run counts ("Step one"); the
    * `/start` run has a numbered rail above every screen and a skippable track
@@ -137,6 +143,7 @@ export function TrackStep({ value, english, onChoose, eyebrow = 'Step one' }: {
         sub="Approach, conversation, getting the number"
         mark="state-roster"
         selected={value === 'dating'}
+        href={hrefFor?.('dating')}
         onClick={() => onChoose('dating')}
       />
       {/* D1. This answer is now honoured: the run ends on `/interview` when it
@@ -147,6 +154,7 @@ export function TrackStep({ value, english, onChoose, eyebrow = 'Step one' }: {
         sub="Behavioural, technical, panel — with one free five-minute round"
         mark="kind-technique"
         selected={value === 'interview'}
+        href={hrefFor?.('interview')}
         onClick={() => onChoose('interview')}
       />
       {english
@@ -156,11 +164,17 @@ export function TrackStep({ value, english, onChoose, eyebrow = 'Step one' }: {
   )
 }
 
+/**
+ * Tightened 3 October 2026, when this became the first screen ad traffic
+ * sees: each label is something a person would say about themselves, short
+ * enough to read in the second it takes to choose. Same four values, so
+ * nothing downstream of the answer moved.
+ */
 const FOCUS_OPTIONS: readonly { label: string; value: FocusArea }[] = [
-  { label: 'Starting the conversation', value: 'opening' },
+  { label: 'Saying the first thing', value: 'opening' },
   { label: 'Keeping it going past two lines', value: 'sustaining' },
-  { label: 'Making it flirty without being weird', value: 'flirting' },
-  { label: "Handling it when she's not interested", value: 'rejection' },
+  { label: 'Flirting without being weird', value: 'flirting' },
+  { label: "When she's losing interest", value: 'rejection' },
 ]
 
 /** Shared with `/profile/settings`, which is where this answer can be changed. */
@@ -176,7 +190,14 @@ export { FOCUS_OPTIONS }
  * care, and it costs one prop: the orb was already being rendered on the step
  * after this one.
  */
-export function FocusStep({ value, firstRep, onChoose, eyebrow = 'Step two' }: { value: FocusArea | null; firstRep: FirstRepCandidate | null; onChoose: (value: FocusArea) => void; eyebrow?: string }) {
+export function FocusStep({ value, firstRep, onChoose, hrefFor, eyebrow = 'Step two' }: {
+  value: FocusArea | null
+  firstRep: FirstRepCandidate | null
+  onChoose: (value: FocusArea) => void
+  eyebrow?: string
+  /** `/start` only: each answer as a real link. See `TrackStep`. */
+  hrefFor?: (value: FocusArea) => string
+}) {
   /**
    * ── THIS IS THE DATING ARM'S QUESTION TWO, AND ONLY ITS ─────────────────
    *
@@ -194,10 +215,10 @@ export function FocusStep({ value, firstRep, onChoose, eyebrow = 'Step two' }: {
     <Question
       eyebrow={eyebrow}
       title="What's the hard part?"
-      sub="This one earns its keep: it picks who you meet first, your first challenge out in the world, and the technique on your brief."
+      sub="Pick one. Your first rep is built around it."
     >
       {FOCUS_OPTIONS.map((option) => (
-        <Option key={option.value} label={option.label} mark={focusMark(option.value) ?? undefined} selected={value === option.value} onClick={() => onChoose(option.value)} />
+        <Option key={option.value} label={option.label} mark={focusMark(option.value) ?? undefined} selected={value === option.value} href={hrefFor?.(option.value)} onClick={() => onChoose(option.value)} />
       ))}
       {value && firstRep ? (
         <p className="focus-preview" aria-live="polite">
@@ -235,11 +256,20 @@ export function FocusStep({ value, firstRep, onChoose, eyebrow = 'Step two' }: {
  * and `onboardingResumePath` reads the flag rather than the title, so a skip
  * is a finished step rather than one somebody is returned to forever.
  */
-export function RoleStep({ roleTitle, company, onSubmit, eyebrow = 'Step two' }: {
+export function RoleStep({ roleTitle, company, onSubmit, fallback, eyebrow = 'Step two' }: {
   eyebrow?: string
   roleTitle: string | null
   company: string | null
   onSubmit: (value: { roleTitle: string | null; company: string | null }) => void
+  /**
+   * `/start` only (3 Oct), where this can be the first screen of the run.
+   *
+   * A plain GET to `/start` carrying `hidden` (the link's `?track=` and UTMs),
+   * with the fields named the way `startAnswersFromQuery` reads them — so a
+   * Continue pressed before hydration submits instead of vanishing, and the
+   * skip is a link. Hydrated, `onSubmit` intercepts both exactly as before.
+   */
+  fallback?: { hidden: Record<string, string>; skipHref: string }
 }) {
   const [role, setRole] = useState(roleTitle ?? '')
   const [where, setWhere] = useState(company ?? '')
@@ -249,19 +279,21 @@ export function RoleStep({ roleTitle, company, onSubmit, eyebrow = 'Step two' }:
       <span className="label">{eyebrow}</span>
       <h1 className="display-lg" tabIndex={-1} data-step-heading>What are you interviewing for?</h1>
       <p className="onboarding-sub">
-        This is what makes the questions yours rather than generic. The title is enough — how hard the
-        questions are follows from it, and you can change both later.
+        The title is enough. You can change it later.
       </p>
       <form
         className="option-stack"
+        action={fallback ? '/start' : undefined}
+        method={fallback ? 'get' : undefined}
         onSubmit={(event) => {
           event.preventDefault()
           onSubmit({ roleTitle: trimmedRole || null, company: where.trim() || null })
         }}
       >
+        {fallback ? Object.entries(fallback.hidden).map(([key, value]) => <input key={key} type="hidden" name={key} value={value} />) : null}
         <Input
           label="Role title"
-          name="roleTitle"
+          name={fallback ? 'role' : 'roleTitle'}
           autoComplete="organization-title"
           maxLength={120}
           placeholder="Senior Backend Engineer"
@@ -277,10 +309,27 @@ export function RoleStep({ roleTitle, company, onSubmit, eyebrow = 'Step two' }:
           value={where}
           onChange={(event) => setWhere(event.target.value)}
         />
-        <Button type="submit" size="lg" fullWidth disabled={!trimmedRole}>Continue</Button>
-        <Button type="button" variant="ghost" fullWidth onClick={() => onSubmit({ roleTitle: null, company: null })}>
-          I&apos;m not sure yet
-        </Button>
+        {/* Never disabled on the server render: a disabled submit cannot be
+            pressed before hydration, and an empty title submitted that way is
+            read as the skip it would have been. */}
+        <Button type="submit" size="lg" fullWidth disabled={!fallback && !trimmedRole}>Continue</Button>
+        {fallback ? (
+          <a
+            href={fallback.skipHref}
+            className="arena-button arena-button--ghost arena-button--lg arena-button--full start-link-button"
+            onClick={(event) => {
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+              event.preventDefault()
+              onSubmit({ roleTitle: null, company: null })
+            }}
+          >
+            <span className="arena-button__content">I&apos;m not sure yet</span>
+          </a>
+        ) : (
+          <Button type="button" variant="ghost" fullWidth onClick={() => onSubmit({ roleTitle: null, company: null })}>
+            I&apos;m not sure yet
+          </Button>
+        )}
       </form>
     </section>
   )
@@ -361,8 +410,16 @@ export function Question({ eyebrow, title, sub, children }: { eyebrow: string; t
  * `busy` is the one place on the run that waits for a write, and it is the
  * card that says so rather than a spinner (§02).
  */
-export function Option({ label, sub, mark, aside, disabled = false, selected = false, busy = false, onClick }: {
+export function Option({ label, sub, mark, aside, href, disabled = false, selected = false, busy = false, onClick }: {
   label: string
+  /**
+   * A real link behind the card (3 Oct). `/start`'s first screen is the one
+   * ad traffic lands on, in an in-app browser that can take seconds to
+   * hydrate, and an `onClick` card does nothing until it has: the tap is
+   * lost. With `href` the card is an `<a>` — unhydrated it navigates, and
+   * hydrated the click is intercepted and `onClick` runs as before.
+   */
+  href?: string
   sub?: string
   /**
    * V18. The two answers that steer the whole product rendered as a stack of
@@ -379,18 +436,41 @@ export function Option({ label, sub, mark, aside, disabled = false, selected = f
   busy?: boolean
   onClick?: () => void
 }) {
+  const className = `option-card${selected ? ' option-card--selected' : ''}${busy ? ' option-card--busy' : ''}`
+  const body = (
+    <>
+      {mark ? <Mark name={mark} size={22} current={selected} /> : null}
+      <span><strong>{label}</strong>{sub ? <small>{sub}</small> : null}</span>
+      {aside}
+    </>
+  )
+  if (href && !disabled) {
+    return (
+      <a
+        href={href}
+        className={className}
+        aria-current={selected ? 'true' : undefined}
+        aria-busy={busy || undefined}
+        onClick={(event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+          event.preventDefault()
+          if (!busy) onClick?.()
+        }}
+      >
+        {body}
+      </a>
+    )
+  }
   return (
     <button
       type="button"
-      className={`option-card${selected ? ' option-card--selected' : ''}${busy ? ' option-card--busy' : ''}`}
+      className={className}
       disabled={disabled || busy}
       aria-busy={busy}
       aria-pressed={onClick ? selected : undefined}
       onClick={onClick}
     >
-      {mark ? <Mark name={mark} size={22} current={selected} /> : null}
-      <span><strong>{label}</strong>{sub ? <small>{sub}</small> : null}</span>
-      {aside}
+      {body}
     </button>
   )
 }

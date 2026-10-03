@@ -4,8 +4,9 @@ import 'server-only'
  * Writing one `page_views` row, from either of the two places that may.
  *
  * `app/api/pageview/route.ts` is the browser's beacon and was the only writer
- * until 27 September. `app/start/page.tsx` is the second: it records the
- * RENDER of `/start` as step `served`, because every beacon row is fired after
+ * until 27 September. `recordServerStep` is the second: it records the
+ * RENDER of `/start` as step `served` (and, since 3 October, the account
+ * `/start` created as `signup`), because every beacon row is fired after
  * hydration and a visitor who left before the JavaScript arrived was never
  * counted (START-AUDIT §1.6). The two share this module so the visitor digest
  * is computed one way — a `served` row and the `hook` row the same person's
@@ -17,9 +18,11 @@ import 'server-only'
  */
 
 import { createHash } from 'node:crypto'
+import { headers } from 'next/headers'
+import { after } from 'next/server'
 import { supabaseAdmin } from '@/lib/db/admin'
 import { secretSupabaseKey } from '@/lib/db/env'
-import { countryCode, deviceFor, referrerHost } from './pageview'
+import { countryCode, deviceFor, isBot, isPreviewFetch, normaliseTag, referrerHost } from './pageview'
 
 /** The subset of `Headers` both callers have: a route's request and `next/headers`. */
 interface HeaderBag { get(name: string): string | null }
@@ -77,5 +80,45 @@ export async function insertView(headers: HeaderBag, userAgent: string, visitor:
     })
   } catch {
     // See the header.
+  }
+}
+
+/**
+ * A funnel row the SERVER writes, from inside a request — `served` when
+ * `/start` renders and `signup` when it creates an account.
+ *
+ * One function for both so the refusals are one list: a router prefetch, an
+ * RSC navigation or a link-preview fetch is not a visit (`isPreviewFetch`),
+ * a bot or a Do Not Track browser is refused the way the beacon refuses
+ * them, and a local dev server is refused because it talks to the
+ * production table. Written after the response (`after`), with the same
+ * digest the beacon computes, so the server's row and the browser's rows for
+ * one person land on one `visitor`.
+ */
+export async function recordServerStep(step: string, tagged: {
+  source: string | null
+  content: string | null
+  userId?: string | null
+}): Promise<void> {
+  try {
+    const bag = await headers()
+    const userAgent = bag.get('user-agent') ?? ''
+    const host = bag.get('host') ?? ''
+    if (isPreviewFetch((name) => bag.get(name))) return
+    if (bag.get('dnt') === '1' || isBot(userAgent)) return
+    if (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host)) return
+    const snapshot = new Map([...bag.entries()])
+    const view = { get: (name: string) => snapshot.get(name.toLowerCase()) ?? null }
+    after(() => insertView(view, userAgent, visitorDigest(view, userAgent), {
+      path: '/start',
+      step,
+      ref: view.get('referer'),
+      selfHost: host.split(':')[0] ?? null,
+      source: normaliseTag(tagged.source),
+      content: normaliseTag(tagged.content),
+      userId: tagged.userId ?? null,
+    }))
+  } catch {
+    // See the header: a counter is never the reason a request fails.
   }
 }

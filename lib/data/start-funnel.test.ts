@@ -8,9 +8,16 @@ import {
   encodeStartAnswers,
   firstRepPreview,
   hasStartAnswers,
+  AI_ACCOUNT_LINE,
+  FOCUS_ACCOUNT_LINE,
+  FOCUS_ACCOUNT_LINE_PERSONA,
+  START_ANSWER_PARAMS,
   startAdvance,
+  startAnswersFromQuery,
+  startFirstIndex,
   startProfileWrite,
   startOpening,
+  startQueryWith,
   startRail,
   startResumeIndex,
   startInterviewSetup,
@@ -34,6 +41,9 @@ const answered: StartAnswers = {
   displayName: 'Sam',
   named: true,
   english: false,
+  timezone: null,
+  source: null,
+  content: null,
 }
 
 const interviewAnswered: StartAnswers = {
@@ -46,61 +56,43 @@ const interviewAnswered: StartAnswers = {
   displayName: 'Sam',
   named: true,
   english: false,
+  timezone: null,
+  source: null,
+  content: null,
 }
 
 describe('the funnel, in order', () => {
-  it('opens on the hook, ends on the account, and never runs two claims together', () => {
+  it('opens on a question, ends on the account, and has nothing that is not a question (3 Oct)', () => {
     // The order is the funnel — PostHog reads `start_step_viewed` as a
     // sequence keyed on this — so a reorder here is a reorder of the chart.
-    expect(START_STEPS).toEqual([
-      'hook',
-      'track',
-      'build',
-      'focus',
-      'name',
-      'account',
-    ])
+    expect(START_STEPS).toEqual(['track', 'focus', 'name', 'account'])
+    // The hook and the Cass reveal are gone: 0 of 6 paid visitors tapped
+    // through the hook, and the reveal introduced her a second time.
+    for (const steps of [START_STEPS, INTERVIEW_STEPS]) {
+      expect(steps).not.toContain('hook')
+      expect(steps).not.toContain('build')
+    }
   })
 
   it('asks nothing about the person before it asks about the conversation (27 Sep)', () => {
     /**
-     * START-AUDIT §1.2. The age gate was screen two, and the first per-step
-     * read of the run put the drop there. It is a FIELD on the account screen
-     * now, so no screen before the account asks for anything but what the
-     * reps should be about. §16.4 is held by `signInWithGoogle` and
-     * `signUpWithPassword`, both of which check the year before anything is
-     * created, and by the account screen refusing either door without it.
+     * START-AUDIT §1.2. The year is a FIELD on the account screen, so no
+     * screen before the account asks for anything but what the reps should
+     * be about. §16.4 is held by `signInWithGoogle` and `signUpWithPassword`,
+     * both of which check the year before anything is created.
      */
     for (const steps of [START_STEPS, INTERVIEW_STEPS]) {
       expect(steps).not.toContain('age')
       expect(steps.at(-1)).toBe('account')
-      expect(steps[1]).toBe('track')
+      expect(steps[0]).toBe('track')
     }
   })
 
-  it('shows the character before the question that shapes her, and never argues', () => {
-    // §3.1 and START-AUDIT §1.5. `build` is the only screen that stops being
-    // an argument and becomes a thing. The two claim screens are both gone.
-    for (const steps of [START_STEPS, INTERVIEW_STEPS]) {
-      expect(steps).not.toContain('reframe')
-      expect(steps).not.toContain('mechanism')
-      expect(steps.filter((step) => step === 'build')).toHaveLength(1)
-      expect(steps.indexOf('build')).toBe(steps.indexOf('track') + 1)
-    }
-  })
-
-  it('never puts two non-questions back to back before the first answer', () => {
-    // A stranger's first interaction has to be cheap and theirs. Three claims
-    // in a row before they have touched anything is the advertisement they
-    // just clicked out of.
-    const claims = new Set(['hook', 'build'])
-    const runs = START_STEPS.reduce<number>((longest, step, index) => {
-      if (!claims.has(step)) return longest
-      let run = 1
-      for (let back = index - 1; back >= 0 && claims.has(START_STEPS[back] as string); back -= 1) run += 1
-      return Math.max(longest, run)
-    }, 0)
-    expect(runs).toBe(1)
+  it('opens a tagged link on question two, with nothing behind it', () => {
+    expect(startFirstIndex(true)).toBe(1)
+    expect(startFirstIndex(false)).toBe(0)
+    expect(START_STEPS[startFirstIndex(true)]).toBe('focus')
+    expect(INTERVIEW_STEPS[startFirstIndex(true)]).toBe('role')
   })
 })
 
@@ -129,20 +121,6 @@ describe('the two arms', () => {
     // question is the same on both and the answer arrives before the first one
     // that is not.
     expect(startSteps(null)).toEqual(START_STEPS)
-  })
-
-  it('never runs two claims together on either arm', () => {
-    // The same rule as below, asserted on the arm that was added later.
-    const claims = new Set(['hook', 'build'])
-    for (const steps of [START_STEPS, INTERVIEW_STEPS]) {
-      const runs = steps.reduce<number>((longest, step, index) => {
-        if (!claims.has(step)) return longest
-        let run = 1
-        for (let back = index - 1; back >= 0 && claims.has(steps[back] as string); back -= 1) run += 1
-        return Math.max(longest, run)
-      }, 0)
-      expect(runs).toBe(1)
-    }
   })
 })
 
@@ -264,8 +242,8 @@ describe('the birth year, and the direction it is allowed to be wrong in', () =>
 })
 
 describe('where a reload lands', () => {
-  it('opens on the hook with nothing on file', () => {
-    expect(START_STEPS[startResumeIndex(EMPTY_START_ANSWERS)]).toBe('hook')
+  it('opens on the track question with nothing on file', () => {
+    expect(START_STEPS[startResumeIndex(EMPTY_START_ANSWERS)]).toBe('track')
   })
 
   it('returns to the first unanswered question, never to an interstitial', () => {
@@ -314,41 +292,43 @@ describe('where a reload lands', () => {
 })
 
 describe('opening the run', () => {
-  const open = (stored: Partial<StartAnswers>, asked: 'dating' | 'interview' | null) =>
-    startOpening({ ...EMPTY_START_ANSWERS, ...stored }, asked)
+  const open = (stored: Partial<StartAnswers>, asked: 'dating' | 'interview' | null, fromUrl: Partial<StartAnswers> = {}) =>
+    startOpening({ ...EMPTY_START_ANSWERS, ...stored }, asked, fromUrl)
 
-  it('opens on the hook with nothing asked and nothing stored', () => {
+  it('opens a bare link on the track question', () => {
     const { answers, index } = open({}, null)
-    expect(START_STEPS[index]).toBe('hook')
+    expect(START_STEPS[index]).toBe('track')
     expect(answers.track).toBeNull()
   })
 
-  it('opens a named track on its own hook, with the answer already given', () => {
-    /**
-     * START-AUDIT §1.3. Every social post links `?track=dating`; the hook
-     * then speaks for that track alone instead of pitching both products to
-     * somebody who clicked a video about one. The hook used to be skipped
-     * for a named track, which suited `/interviews` and nobody else.
-     */
-    const { answers, index } = open({}, 'interview')
-    expect(START_STEPS[index]).toBe('hook')
-    expect(answers.track).toBe('interview')
+  it('opens a tagged link straight on its question two (3 Oct)', () => {
+    // Every ad says `?track=dating`. The first screen is the first question
+    // about them — not a pitch, and not the product question the link has
+    // already answered.
+    const dating = open({}, 'dating')
+    expect(START_STEPS[dating.index]).toBe('focus')
+    expect(dating.answers.track).toBe('dating')
+    const interview = open({}, 'interview')
+    expect(INTERVIEW_STEPS[interview.index]).toBe('role')
   })
 
-  it('opens past the hook when its button arrived as a plain navigation', () => {
-    // START-AUDIT §1.1: a tap before hydration is a link to `?s=1`, and the
-    // page it loads has to open on the screen the tap was for — skipping the
-    // track question when the link already answered it.
-    const named = startOpening(EMPTY_START_ANSWERS, 'dating', true)
-    expect(START_STEPS[named.index]).toBe('build')
-    const bare = startOpening(EMPTY_START_ANSWERS, null, true)
-    expect(START_STEPS[bare.index]).toBe('track')
+  it('opens on the screen after an answer that arrived as a link', () => {
+    // START-AUDIT §1.1, again: a tap before hydration is a navigation that
+    // carries the answer, and the page it loads opens on the next question.
+    const tapped = open({}, 'dating', { focusArea: 'sustaining' })
+    expect(tapped.answers.focusArea).toBe('sustaining')
+    expect(START_STEPS[tapped.index]).toBe('name')
+    const chose = open({}, null, { track: 'interview' })
+    expect(INTERVIEW_STEPS[chose.index]).toBe('role')
+    const skipped = open({}, 'interview', { roleAsked: true })
+    expect(INTERVIEW_STEPS[skipped.index]).toBe('name')
   })
 
-  it('lets a stored run win over the plain-navigation flag', () => {
-    const stored = { track: 'dating' as const, focusArea: 'opening' as const }
-    const { index } = startOpening({ ...EMPTY_START_ANSWERS, ...stored }, null, true)
-    expect(START_STEPS[index]).toBe('name')
+  it('lays a link-carried answer over a stored run, and keeps the rest', () => {
+    const { answers, index } = open({ track: 'dating', focusArea: 'opening', displayName: 'Sam', named: true }, 'dating', { focusArea: 'rejection' })
+    expect(answers.focusArea).toBe('rejection')
+    expect(answers.displayName).toBe('Sam')
+    expect(START_STEPS[index]).toBe('account')
   })
 
   it('lets an open session win when it agrees', () => {
@@ -370,8 +350,6 @@ describe('opening the run', () => {
     expect(answers.track).toBe('interview')
     expect(answers.focusArea).toBe('rejection')
     expect(answers.displayName).toBe('Sam')
-    // The one question the other arm never asked. Everything they gave is
-    // kept; what they are returned to is the answer the new arm does not have.
     expect(INTERVIEW_STEPS[index]).toBe('role')
   })
 
@@ -382,8 +360,6 @@ describe('opening the run', () => {
     )
     expect(answers.track).toBe('dating')
     expect(answers.roleTitle).toBe('SRE')
-    // `build` used to be the last screen and is now the fourth, so a run with
-    // every question answered resumes at the form rather than at the demo.
     expect(START_STEPS[index]).toBe('account')
   })
 
@@ -396,12 +372,11 @@ describe('opening the run', () => {
 
 describe('the one skip the run allows', () => {
   it('jumps the track question forward when the link answered it, and only then', () => {
-    const hook = START_STEPS.indexOf('hook')
-    expect(START_STEPS[startAdvance(START_STEPS, hook, true)]).toBe('build')
-    expect(START_STEPS[startAdvance(START_STEPS, hook, false)]).toBe('track')
+    expect(START_STEPS[startAdvance(START_STEPS, 0, false)]).toBe('focus')
     // Every other step is a plain +1 whatever the link said.
-    const build = START_STEPS.indexOf('build')
-    expect(START_STEPS[startAdvance(START_STEPS, build, true)]).toBe('focus')
+    const focus = START_STEPS.indexOf('focus')
+    expect(START_STEPS[startAdvance(START_STEPS, focus, true)]).toBe('name')
+    expect(START_STEPS[startAdvance(START_STEPS, focus, false)]).toBe('name')
   })
 
   it('never runs past the account', () => {
@@ -409,10 +384,57 @@ describe('the one skip the run allows', () => {
     expect(startAdvance(START_STEPS, last, true)).toBe(last)
   })
 
-  it('counts only the screens the run will show', () => {
-    expect(startRail(START_STEPS, false)).toEqual(['track', 'build', 'focus', 'name', 'account'])
-    expect(startRail(START_STEPS, true)).toEqual(['build', 'focus', 'name', 'account'])
-    expect(startRail(INTERVIEW_STEPS, true)).toEqual(['build', 'role', 'name', 'account'])
+  it('counts three screens on both arms, whichever way they arrived', () => {
+    expect(startRail(START_STEPS)).toEqual(['focus', 'name', 'account'])
+    expect(startRail(INTERVIEW_STEPS)).toEqual(['role', 'name', 'account'])
+  })
+})
+
+describe('the run in the address bar', () => {
+  it('reads answers off a link through the same whitelist as every carrier', () => {
+    expect(startAnswersFromQuery({ t: 'dating', focus: 'opening' })).toEqual({ track: 'dating', focusArea: 'opening' })
+    expect(startAnswersFromQuery({ focus: 'everything', t: 'admin' })).toEqual({})
+    expect(startAnswersFromQuery({ role: '  Staff Engineer ', company: 'Acme' })).toEqual({ roleAsked: true, roleTitle: 'Staff Engineer', company: 'Acme' })
+    expect(startAnswersFromQuery({ role_asked: '1' })).toEqual({ roleAsked: true })
+    // A submitted empty title is the skip it would have been.
+    expect(startAnswersFromQuery({ role: '', role_asked: '1' })).toEqual({ roleAsked: true })
+    // The link's `?track=` is not an answer.
+    expect(startAnswersFromQuery({ track: 'dating' })).toEqual({})
+  })
+
+  it('carries the live ad link byte for byte into every answer', () => {
+    // The two running Meta ads (3 Oct). An answer adds to the link; nothing
+    // the ad put there is lost, so the UTMs ride every server render.
+    const ad = { track: 'dating', utm_source: 'meta', utm_content: 'gaming' }
+    expect(startQueryWith(ad, { focus: 'opening' })).toBe('/start?track=dating&utm_source=meta&utm_content=gaming&focus=opening')
+    // The 27 September hook's `s` is dropped; a later answer replaces, never repeats.
+    expect(startQueryWith({ ...ad, s: '1', focus: 'opening' }, { focus: 'flirting' })).toBe('/start?track=dating&utm_source=meta&utm_content=gaming&focus=flirting')
+    expect(startQueryWith({}, { t: 'interview' })).toBe('/start?t=interview')
+  })
+
+  it('never names a first name as a link parameter', () => {
+    expect(START_ANSWER_PARAMS).not.toContain('name' as never)
+    expect(START_ANSWER_PARAMS).not.toContain('displayName' as never)
+  })
+})
+
+describe('the context a sign-up carries that is not an answer', () => {
+  it('round-trips a timezone and a campaign tag, and refuses anything else', () => {
+    const carried = decodeStartAnswers(JSON.stringify({ timezone: 'America/New_York', source: 'Meta', content: 'gaming' }))
+    expect(carried.timezone).toBe('America/New_York')
+    expect(carried.source).toBe('meta')
+    expect(carried.content).toBe('gaming')
+    const forged = decodeStartAnswers(JSON.stringify({ timezone: 'DROP TABLE', source: 'a b', content: 'x'.repeat(41) }))
+    expect([forged.timezone, forged.source, forged.content]).toEqual([null, null, null])
+  })
+
+  it('is not an answer: a run that carries only context was never started', () => {
+    expect(hasStartAnswers({ ...EMPTY_START_ANSWERS, timezone: 'Europe/London', source: 'meta' })).toBe(false)
+  })
+
+  it('writes the zone onto the profile in the one crossing write', () => {
+    expect(startProfileWrite({ ...answered, timezone: 'America/Chicago' }).patch.timezone).toBe('America/Chicago')
+    expect(startProfileWrite(answered).patch.timezone).toBeUndefined()
   })
 })
 
@@ -518,5 +540,45 @@ describe('the character named before the account exists', () => {
     expect(first?.name).toBeTruthy()
     expect(first?.setting).toBeTruthy()
     expect(first?.hook).toBeTruthy()
+  })
+})
+
+describe('the account screen\'s line about her (3 Oct)', () => {
+  it('is authored for every focus answer, about the character every focus answer meets', () => {
+    /**
+     * The lines are drawn from rung 1's own file (`PRESENTATION.tess`). If
+     * the first rep for any focus stops being her, these sentences would be
+     * describing somebody the account is not about to meet — so the screen
+     * refuses to show them (`AccountStep`) and this fails to say so.
+     */
+    for (const focus of Object.keys(FOCUS_PLANS) as (keyof typeof FOCUS_PLANS)[]) {
+      expect(FOCUS_ACCOUNT_LINE[focus]).toBeTruthy()
+      expect(firstRepPreview(focus)?.id).toBe(FOCUS_ACCOUNT_LINE_PERSONA)
+    }
+  })
+
+  it('makes no number claim and no clinical one', () => {
+    for (const line of Object.values(FOCUS_ACCOUNT_LINE)) {
+      expect(line).not.toMatch(/\d/)
+      expect(line).not.toMatch(/anxiety|therapy|treat|cure|disorder/i)
+    }
+  })
+})
+
+describe('the account screen says she is an AI (3 Oct)', () => {
+  it('says so in words, on both arms, and makes no privacy claim', () => {
+    // Owner's call: "AI" and "no real person", and nothing about who hears
+    // or what is recorded — the sub-line under it already carries the 30-day
+    // deletion promise, and a second sentence would be a second place for it
+    // to drift.
+    for (const line of Object.values(AI_ACCOUNT_LINE)) {
+      expect(line).toMatch(/\bAI\b/)
+      expect(line).toMatch(/no real person/i)
+      expect(line).not.toMatch(/record|nobody hears|no one hears|private|secret|stored|delete/i)
+    }
+  })
+
+  it('leaves her room to the brief', () => {
+    for (const line of Object.values(FOCUS_ACCOUNT_LINE)) expect(line).not.toMatch(/galler|painting|\bart\b/i)
   })
 })

@@ -38,7 +38,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { currentUser } from '@/lib/db/server'
-import { isBot, normalisePath, normaliseStep, normaliseTag } from '@/lib/analytics/pageview'
+import { isBot, isPreviewFetch, normalisePath, normaliseStep, normaliseTag } from '@/lib/analytics/pageview'
 import { insertView, visitorDigest } from '@/lib/analytics/record'
 
 export const dynamic = 'force-dynamic'
@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
   // the one privacy signal a browser sends that we are in a position to obey.
   if (request.headers.get('dnt') === '1') return done()
   if (isBot(userAgent)) return done()
+  if (isPreviewFetch((name) => request.headers.get(name))) return done()
 
   let body: unknown
   try {

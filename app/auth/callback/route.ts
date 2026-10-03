@@ -26,6 +26,8 @@ import { supabaseServer } from '@/lib/db/server'
 import { crossOAuthAccount } from '@/lib/db/start-crossing'
 import { START_COOKIE, decodeStartAnswers, hasStartAnswers } from '@/lib/data/start-funnel'
 import { safeNextPath } from '@/lib/site/next-path'
+import { START_SIGNUP_STEP } from '@/lib/analytics/pageview'
+import { recordServerStep } from '@/lib/analytics/record'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -51,7 +53,11 @@ export async function GET(request: NextRequest) {
   const carried = request.cookies.get(START_COOKIE)?.value
   if (carried && data.user) {
     const answers = decodeStartAnswers(carried)
-    if (hasStartAnswers(answers)) await crossOAuthAccount(data.user.id, answers)
+    if (hasStartAnswers(answers) && await crossOAuthAccount(data.user.id, answers)) {
+      // The funnel's `signup` row, for the Google door — only when this was
+      // the account's first crossing, never on a returning sign-in.
+      await recordServerStep(START_SIGNUP_STEP, { source: answers.source, content: answers.content, userId: data.user.id })
+    }
   }
 
   const response = NextResponse.redirect(new URL(next, request.url))

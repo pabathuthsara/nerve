@@ -68,7 +68,7 @@ export const DISTRESS_RESOURCES: readonly SafetyResource[] = [
  */
 export const DISTRESS_COPY = {
   title: 'We stopped the rep',
-  body: 'That is not something to practise on a character, and carrying on as though it were would be the wrong thing to do. Nothing was scored and nothing counted against you.',
+  body: 'That is not something to practice on a character, and carrying on as though it were would be the wrong thing to do. Nothing was scored and nothing counted against you.',
   offer: 'If you want to talk to a person, these are free and confidential:',
   close: 'Back to training',
 } as const

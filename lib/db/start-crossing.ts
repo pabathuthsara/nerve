@@ -175,8 +175,12 @@ export async function stampNewAccount(
  * Best-effort throughout, for the reason `stampNewAccount` is: a sign-in must
  * not fail because a preference did not stick. Losing this write costs three
  * questions, which is exactly what `/start` cost before it existed.
+ *
+ * Answers whether this was the account's crossing — a new account that
+ * `/start` made — so the callback can count it as the funnel's `signup`
+ * row and never count the four-hundredth sign-in.
  */
-export async function crossOAuthAccount(userId: string, answers: StartAnswers): Promise<void> {
+export async function crossOAuthAccount(userId: string, answers: StartAnswers): Promise<boolean> {
   try {
     const { data: profile } = await supabaseAdmin()
       .from('profiles')
@@ -186,8 +190,8 @@ export async function crossOAuthAccount(userId: string, answers: StartAnswers): 
 
     // No row yet means the trigger is still in flight, which is the race
     // `stampNewAccount` retries through. Treat it as new and let it try.
-    if (profile?.onboarding_complete) return
-    if (profile && Object.keys(readFlags(profile.ui_flags)).length > 0) return
+    if (profile?.onboarding_complete) return false
+    if (profile && Object.keys(readFlags(profile.ui_flags)).length > 0) return false
 
     /**
      * The date, re-derived and re-checked here rather than trusted.
@@ -203,7 +207,9 @@ export async function crossOAuthAccount(userId: string, answers: StartAnswers): 
      */
     const dated = checkAge(birthDateFromYear(answers.birthYear), new Date())
     await stampNewAccount(userId, dated.ok ? dated.dob : null, answers)
+    return true
   } catch {
     // The backstop is `onboardingResumePath`, which asks the questions again.
+    return false
   }
 }

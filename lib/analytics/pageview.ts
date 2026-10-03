@@ -43,7 +43,29 @@
  * build time instead of being possible.
  */
 export const START_STEP_NAMES = [
-  'hook', 'track', 'build', 'focus', 'role', 'name', 'account',
+  'track', 'focus', 'role', 'name', 'account',
+] as const
+
+/**
+ * The run after the account exists, as the beacon is allowed to report it
+ * (3 October 2026).
+ *
+ * Until now nothing in `page_views` could say where a new account stopped:
+ * the funnel ended at `account`, and everything between the form and the
+ * first spoken word — the microphone prompt, the level check, the brief —
+ * was dark. These are posted with path `/onboarding` by
+ * `countOnboardingStep` and carry the signed-in `user_id` like any other
+ * beacon. Same rule as above: a literal list, so a renamed beat stops being
+ * accepted on purpose.
+ *
+ *   mic_intro    "Let's check your microphone" was drawn
+ *   mic_granted  the browser handed over a stream
+ *   mic_good     the level read good (the check settled)
+ *   brief        the rep's brief — the last screen before the rep — was drawn
+ *   rep_started  Start was pressed on it
+ */
+export const ONBOARDING_STEP_NAMES = [
+  'mic_intro', 'mic_granted', 'mic_good', 'brief', 'rep_started',
 ] as const
 
 /**
@@ -56,6 +78,15 @@ export const START_STEP_NAMES = [
  * counted at all. `served → hook` is that loss, made visible.
  */
 export const START_SERVED_STEP = 'served'
+
+/**
+ * The row the SERVER writes when `/start` creates an account (3 October 2026),
+ * from `signUpWithPassword` and from the Google callback. Server-only for the
+ * reason `served` is: a browser must not be able to claim it. It is the
+ * number between `account` and `mic_intro` — the form submitted and an
+ * account actually made.
+ */
+export const START_SIGNUP_STEP = 'signup'
 
 /** The database CHECK. Repeated here so a refusal happens before the insert. */
 export const MAX_PATH = 128
@@ -72,7 +103,7 @@ const MAX_SEGMENTS = 6
  * (`MARKETING-PLAN.md`). A traffic figure that is quietly 30% preview-scrapers
  * is worse than no traffic figure.
  */
-const BOTS = /bot|crawl|spider|slurp|search|fetch|monitor|scan|check|preview|render|headless|lighthouse|pagespeed|curl|wget|python-|axios|okhttp|node-fetch|postman|insomnia|scrapy|facebookexternalhit|whatsapp|telegram|discord|slack|linkedin|embedly/i
+const BOTS = /bot|crawl|spider|slurp|search|fetch|monitor|scan|check|preview|render|headless|lighthouse|pagespeed|curl|wget|python-|axios|okhttp|node-fetch|postman|insomnia|scrapy|facebookexternalhit|facebookcatalog|meta-external|facebot|adsbot|google-inspectiontool|whatsapp|telegram|discord|slack|linkedin|embedly/i
 
 /** Phones and tablets, for the one split worth having on the overview. */
 const MOBILE = /iphone|ipod|android|ipad|mobile|silk|kindle|opera mini|windows phone/i
@@ -204,6 +235,28 @@ export function isBot(userAgent: string | null | undefined): boolean {
 }
 
 /**
+ * A request that is a link preview or a speculative fetch rather than a
+ * person opening the page.
+ *
+ * Meta's crawlers mostly announce themselves in the user agent (`BOTS`), but
+ * a preview fetch can also be marked only in a header — `Purpose`,
+ * `Sec-Purpose` or `X-Purpose: preview`/`prefetch` — or be an RSC request a
+ * hydrated page made. None of those is somebody arriving. Takes a getter so
+ * both a route's `Headers` and `next/headers` can be asked.
+ *
+ * What this cannot catch, and the 3 October data shows it: about 28
+ * `utm_source=meta` rows in three minutes when the ads were created, with
+ * ordinary-looking browser agents from `facebook.com`, some desktop, some in
+ * Ireland. Those ran JavaScript, so the beacon's `navigator.webdriver` check
+ * (`components/analytics.tsx`) is the other half of this filter.
+ */
+export function isPreviewFetch(get: (name: string) => string | null | undefined): boolean {
+  if (get('rsc') || get('next-router-prefetch')) return true
+  const purpose = `${get('purpose') ?? ''} ${get('sec-purpose') ?? ''} ${get('x-purpose') ?? ''} ${get('x-moz') ?? ''}`
+  return /prefetch|preview/i.test(purpose)
+}
+
+/**
  * A two-letter country code, or null.
  *
  * Vercel puts one on every request. `XX` is what it sends when it does not
@@ -225,14 +278,18 @@ export function countryCode(raw: string | null | undefined): string | null {
  * in it is a log of whatever somebody sends. An unknown value is dropped and
  * the view is still counted — the path is the thing that must not be lost.
  *
- * Only `/start` may carry one. A step on any other path is a caller doing
- * something this was not built for, and it is discarded silently.
+ * Only `/start` (the run before the account) and `/onboarding` (the run
+ * after it) may carry one, each from its own list. A step on any other path
+ * is a caller doing something this was not built for, and it is discarded
+ * silently.
  */
 export function normaliseStep(path: string, value: unknown): string | null {
-  if (path !== '/start') return null
-  if (typeof value !== 'string') return null
+  const allowed: readonly string[] | null = path === '/start'
+    ? START_STEP_NAMES
+    : path === '/onboarding' ? ONBOARDING_STEP_NAMES : null
+  if (!allowed || typeof value !== 'string') return null
   const step = value.trim()
-  return (START_STEP_NAMES as readonly string[]).includes(step) ? step : null
+  return allowed.includes(step) ? step : null
 }
 
 /**

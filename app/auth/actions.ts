@@ -32,7 +32,10 @@ import {
   START_FIELD,
   birthDateFromYear,
   decodeStartAnswers,
+  hasStartAnswers,
 } from '@/lib/data/start-funnel'
+import { START_SIGNUP_STEP } from '@/lib/analytics/pageview'
+import { recordServerStep } from '@/lib/analytics/record'
 
 export interface AuthResult {
   ok: boolean
@@ -185,7 +188,14 @@ export async function signUpWithPassword(_prev: AuthResult, form: FormData): Pro
   if (error) return { ok: false, message: error.message }
 
   if (data.user && isNewAccount(data.user)) {
-    await stampNewAccount(data.user.id, age.dob, decodeStartAnswers(String(form.get(START_FIELD) ?? '')))
+    const answers = decodeStartAnswers(String(form.get(START_FIELD) ?? ''))
+    await stampNewAccount(data.user.id, age.dob, answers)
+    // The funnel's `signup` row (3 Oct), server-written so a browser cannot
+    // claim it: `/start`'s run ends here, and `/signup` with no run behind it
+    // is not this funnel and is not counted in it.
+    if (hasStartAnswers(answers)) {
+      await recordServerStep(START_SIGNUP_STEP, { source: answers.source, content: answers.content, userId: data.user.id })
+    }
   }
 
   // Confirmation off (or already confirmed): there is a session, so go

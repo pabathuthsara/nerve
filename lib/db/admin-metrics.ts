@@ -17,7 +17,7 @@ import 'server-only'
 
 import { supabaseAdmin } from './admin'
 import { startSteps } from '@/lib/data/start-funnel'
-import { START_SERVED_STEP } from '@/lib/analytics/pageview'
+import { ONBOARDING_STEP_NAMES, START_SERVED_STEP, START_SIGNUP_STEP } from '@/lib/analytics/pageview'
 
 export interface Overview {
   accounts: number
@@ -172,10 +172,20 @@ export async function adminStartFunnel(days = 7): Promise<FunnelRow[]> {
 
     const counts = new Map(data.map((row) => [String(row.step), { views: num(row.views), visitors: num(row.visitors) }]))
     // `served` first (START-AUDIT §1.6): the render, counted by the server,
-    // so the row under it — `hook`, counted after hydration — shows how many
-    // left before the page could answer a tap.
-    const order = [START_SERVED_STEP, ...startSteps('dating'), ...startSteps('interview')]
-      .filter((step, index, all) => all.indexOf(step) === index)
+    // so the row under it — the first question, counted after hydration —
+    // shows how many left before the page could answer a tap. (A tap that
+    // landed before hydration is a navigation now, and counts as a second
+    // `served` plus the screen it opened.)
+    // Then the account itself (`signup`, server-written) and the run after
+    // it (3 Oct) — the microphone, the level, the brief and the Start press —
+    // so the table reads one funnel from the render to the first rep.
+    const order = [
+      START_SERVED_STEP,
+      ...startSteps('dating'),
+      ...startSteps('interview'),
+      START_SIGNUP_STEP,
+      ...ONBOARDING_STEP_NAMES,
+    ].filter((step, index, all) => all.indexOf(step) === index)
 
     // Everything is a share of the TOP of the run, not of the previous row.
     // The top is the largest row rather than the first, because `served`
