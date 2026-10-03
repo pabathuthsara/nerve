@@ -1,6 +1,6 @@
 # Rep latency and cut-off audit — 3 October 2026
 
-> **Status: findings, and the fix is BUILT on branch `rep-fixes` (4 October 2026), not deployed.** `REP-FIXES-PLAN-2026-10-03.md` §B7 says what landed: per-turn timing (§5 #1), the countdown warm-up (#2), barge-in confirmation (#3); #4 waits on the per-turn data from a real rep, and #5 on a US rep. §4.1 (the crude remark that won the number) is fixed by the same plan's Part A. **Owed by hand: one real rep on the branch, read back from `sessions.pipeline_telemetry.turns`.** Written from
+> **Status: findings, and the fix is BUILT on branch `rep-fixes` (4 October 2026), not deployed.** `REP-FIXES-PLAN-2026-10-03.md` §B7 says what landed: per-turn timing (§5 #1), the countdown warm-up (#2), barge-in confirmation (#3); #4 waits on the per-turn data from a real rep, and #5 on a US rep. §4.1 (the crude remark that won the number) is fixed by the same plan's Part A. **The first real rep on the branch (3 Oct 19:12 UTC, local dev server) still took 6.1 s for the first reply against 3.3 s for the rest — mostly a cold voice (TTS first byte 1.9 s) — and showed no reply waiting on a pending clause; see the plan's §B7.1.** Written from
 > the production database (`sessions`, `transcripts`, `voice_operations`,
 > `safety_events`) and the code at `358ddab`. Every number below is measured,
 > and §5 says what the fixes must not touch.

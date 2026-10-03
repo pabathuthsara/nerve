@@ -609,6 +609,63 @@ one of her lines — `backchannels: 1` with her line intact in the transcript.
 **Before/after first-reply timing: the "after" does not exist yet**; it is this
 rep.
 
+### B7.1 · The first real rep on the branch — `b0b7736e…`, Cass, 3 Oct 19:12 UTC
+
+Run by the owner on the local dev server (`functionRegion: local`, Sri Lanka),
+twelve replies, won at 75.8. One rep: read it as a measurement, not a verdict.
+
+**First reply: 6.09 s from the end of his line to her first sound, against a
+median of 3.28 s for the other eleven** (3.05–4.70). The audit's "before" was
+4–17 s, median ~6 s, so this one rep sits inside the old range and the target
+(within ~1 s of the later replies) was **not met**. B1 attributes the 2.8 s:
+
+| | Turn one | Later (typical) | Extra |
+|---|---|---|---|
+| VAD stop → STT final | 1,573 ms | ~1,390 | +0.2 s |
+| TTS first byte (server) | **1,860 ms** | ~350 | **+1.5 s** |
+| LLM first token (server) | 1,233 ms | ~710 | +0.5 s |
+| Client/network (request → first byte, minus the server's request → first audio) | 606 ms | ~100 | +0.5 s |
+| Auth (`authMs`) | 318 ms | 0–1 | +0.3 s |
+| Held on other clauses, onset beat | 5 ms, 0 | 1–3 ms, 0 | — |
+
+- **The warm-up ran and cost what it should**: ledger row `warm`, 0.063¢,
+  LLM 2,638 in / 1 out, 3 TTS characters, `ttsFirstByteMs` 556 in
+  `asia-southeast1`, 1,057 ms, five seconds before turn one.
+- **The voice was still cold on turn one** (1,860 ms first byte), five seconds
+  after the warm-up had been answered in 556 ms. Turn six spiked to 1,422 ms
+  mid-rep too, so part of this is ElevenLabs variance rather than coldness —
+  one rep cannot separate the two.
+- **The prompt cache is confounded.** Turn one had 1,920 of 2,706 tokens cached,
+  where the audit saw 0 on every first turn — but the warm-up's own request
+  already found 1,920 cached, and the audition runs for Part A were driving
+  Cass's prompt (which shares that prefix) between ~18:50 and 19:30 UTC. So the
+  hit cannot be credited to the warm-up, and the warm-up did not extend it to
+  the full contract (turn one got no more than the warm-up did).
+- **Auth was not saved either**: turn one paid 318 ms although the warm-up had
+  authenticated on the same server 5 s earlier, and turns four and eleven
+  missed inside the 60 s TTL. Something rotates the cache key or the instance on
+  the dev server; on production every edge instance has its own map anyway.
+
+**B3 was not exercised.** His "Hmm." (56.9–57.3 s) came 1.1 s after her line had
+ended (55.8 s), so it was correctly his turn — answered "Yeah." and priced as a
+dead end, as any turn of his is. `bargeIns: 0`, `backchannels: 0`, no line of
+hers was cut. Still owed: a "Mm." while she is audible.
+
+**B4: the data says no.** On all twelve replies `heldMs` was 1–5 ms, `heldBy` 0,
+`orderWaitMs` 0 and `emptyClauses` 0 — no reply waited on another clause, and
+he never had to speak twice. B4 stays unbuilt; one rep is thin evidence, and the
+3 October stall came after a cut that B3 now removes.
+
+**Part A, live.** "I get what you mean, you have a great ass, by the way." at
+71.1 → `forward · welcome` (+0.94), slow judge +1.51 with the overreach rule
+standing down; she said "Well, Pabath, you've got sharp eyes for something
+other than paintings." — a flirt-back, in the top zone, as specified.
+
+**Seen, not from this branch:** "Cass. You're Pabath, right?" — she used his
+name before he gave it (the account name reaches her through the persona
+overlay); and "Yeah, I remembered because I'm still trying to get through these
+last rooms" is a non sequitur.
+
 ---
 
 # C · Order of work
