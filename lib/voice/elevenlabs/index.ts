@@ -78,6 +78,7 @@ import { PcmPlayer } from './player'
 import { SpokenTurn, capToBudget, sanitiseForSpeech } from './truncate'
 import { PipelineMeter, type TimedTurn } from './telemetry'
 import { SAMPLE_INTERVAL_MS, TurnAudibility, analyserRms } from '../audibility'
+import { BARGE_DUCK_DB, BARGE_DUCK_RAMP_MS, BargeGate } from '../barge'
 import { PIPELINE_MODEL_ID, type MintedPipelineSession } from './mint'
 
 const PROVIDER: ProviderId = 'elevenlabs'
@@ -131,6 +132,8 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   private readonly audibility = new TurnAudibility()
   private audibilityTimer: ReturnType<typeof setInterval> | null = null
   private readonly audibilityBuffer = new Float32Array(2048)
+  /** Is an onset under her line a barge-in or a backchannel? `../barge.ts`. */
+  private readonly barge = new BargeGate()
   private llmAbort: AbortController | null = null
   private ttsAbort: AbortController | null = null
   private connectAbort: AbortController | null = null
@@ -411,15 +414,82 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     vad.setDucked(this.player?.isPlaying ?? false)
 
     const nowMs = this.clock()
-    const event = vad.push(frameRms(frame), nowMs)
+    const rms = frameRms(frame)
+    const event = vad.push(rms, nowMs)
     this.stt?.pushFrame(frame, vad.isSpeaking)
 
-    if (!event) return
-    if (event.type === 'speech.start') this.onUserSpeechStart(event.atMs)
+    if (!event) {
+      this.weighBargeIn(nowMs, rms >= vad.threshold)
+      return
+    }
+    if (event.type === 'speech.start') this.onUserSpeechStart(event.atMs, nowMs)
     else this.onUserSpeechStop(event.atMs, event.silenceMs ?? 0)
   }
 
-  private onUserSpeechStart(atMs: number): void {
+  /**
+   * An onset while she is AUDIBLE is a question, not a verdict (REP-FIXES
+   * B3, `../barge.ts`): she is ducked at once and the barge-in waits until he
+   * has kept talking for `BARGE_CONFIRM_MS`. Everything else — an onset while
+   * she is generating, silent or finished — is his turn exactly as before,
+   * which is what keeps rule 17's supersede path untouched.
+   */
+  private onUserSpeechStart(atMs: number, nowMs: number = atMs): void {
+    if (this.herWordsAudible()) {
+      this.barge.open(atMs)
+      this.duckHer(true)
+      // The VAD fires ~90ms after the onset; that frame counts as speech.
+      this.weighBargeIn(nowMs, true)
+      return
+    }
+    this.startUserTurn(atMs)
+  }
+
+  /** Has any word of her current reply reached the ear? The barge-in test,
+   *  asked of the same function that would do the truncating (rule 17). */
+  private herWordsAudible(): boolean {
+    return Boolean(this.spoken?.playedText(this.player?.playedSeconds ?? 0).trim())
+  }
+
+  private weighBargeIn(nowMs: number, loud: boolean): void {
+    if (!this.barge.pending && !this.barge.released) return
+    const onset = this.barge.onsetAt
+    // She finished her line while the question was open: nothing left to
+    // interrupt, so it is simply his turn, from when he actually began.
+    if (onset !== null && !this.herWordsAudible()) {
+      this.barge.reset()
+      this.duckHer(false)
+      this.startUserTurn(onset)
+      return
+    }
+    const verdict = this.barge.frame(nowMs, loud)
+    if (verdict === 'confirm') {
+      this.startUserTurn(onset ?? nowMs)
+      this.duckHer(false)
+    } else if (verdict === 'backchannel') {
+      // She carries on at full level. What he said is thrown away when the VAD
+      // concedes — see `onUserSpeechStop`.
+      this.duckHer(false)
+    } else if (verdict === 'reopened') {
+      if (this.herWordsAudible()) this.duckHer(true)
+      else {
+        this.barge.reset()
+        this.startUserTurn(nowMs)
+      }
+    }
+  }
+
+  /** Her level: down while a barge-in is in question, back after. */
+  private duckHer(down: boolean): void {
+    const gain = this.agentBus?.gain
+    const context = this.context
+    if (!gain || !context || typeof gain.linearRampToValueAtTime !== 'function') return
+    const now = context.currentTime
+    gain.cancelScheduledValues(now)
+    gain.setValueAtTime(gain.value, now)
+    gain.linearRampToValueAtTime(down ? dbToGain(BARGE_DUCK_DB) : 1, now + BARGE_DUCK_RAMP_MS / 1000)
+  }
+
+  private startUserTurn(atMs: number): void {
     this.userStartedAtMs = atMs
     this.userSpeaking = true
     const at = this.secondsAt(atMs)
@@ -471,6 +541,15 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
   }
 
   private onUserSpeechStop(atMs: number, silenceMs: number): void {
+    // A SHORT SOUND UNDER HER LINE IS NOT A TURN. It buys no reply, it is not
+    // added to the transcript and the fast scorer never prices it as a dead
+    // end — which it did on 3 October, answering "Mm." in two words. Its audio
+    // is never committed, so it is never transcribed either.
+    if (this.barge.stopped()) {
+      this.stt?.discardSpeech()
+      this.meter?.backchannel()
+      return
+    }
     const timing: TranscriptionTiming = {
       startedAtMs: this.userStartedAtMs ?? atMs,
       stoppedAtMs: atMs,
@@ -1183,6 +1262,8 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
     this.muted = muted
     for (const track of this.micStream?.getAudioTracks() ?? []) track.enabled = !muted
     if (muted) {
+      this.barge.reset()
+      this.duckHer(false)
       this.vad?.reset()
       this.stt?.clear()
       this.userSpeaking = false
@@ -1222,6 +1303,7 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
 
     if (!this.ended) {
       this.ended = true
+      this.barge.reset()
       this.connectAbort?.abort()
       this.cancelResponse()
       // Seal anything still open so a rep that ends mid-sentence still scores.

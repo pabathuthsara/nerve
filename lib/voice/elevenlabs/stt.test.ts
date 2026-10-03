@@ -182,3 +182,19 @@ describe('transcription session', () => {
     expect(transcription(h.sent)).toEqual({ model: 'gpt-4o-mini-transcribe', language: 'es' })
   })
 })
+
+describe('a backchannel is never committed (REP-FIXES B3)', () => {
+  it('drops the speech in progress and keeps every clause already committed', async () => {
+    const h = await harness()
+    h.commit(first)
+    h.stt.pushFrame(new Float32Array(480), true)
+    h.stt.discardSpeech()
+    expect(h.sent.at(-1)).toEqual({ type: 'input_audio_buffer.clear' })
+    expect(h.stt.pendingCount).toBe(1)
+    h.ack('a')
+    h.final('a', 'The earlier clause.')
+    expect(h.onFinal).toHaveBeenCalledWith('The earlier clause.', first, expect.any(Number))
+    // Nothing captured, so nothing to commit afterwards.
+    expect(h.stt.commit(second)).toBe(false)
+  })
+})

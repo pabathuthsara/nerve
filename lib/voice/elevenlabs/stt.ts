@@ -217,6 +217,22 @@ export class RealtimeTranscriber {
     return true
   }
 
+  /**
+   * Throw away the speech being captured RIGHT NOW, and nothing else.
+   *
+   * A backchannel under her line ("Mm.") is not a turn (`lib/voice/barge.ts`):
+   * its audio is never committed, so it is never transcribed, never billed as
+   * a clause and never answered. Unlike `clear`, every clause already
+   * committed keeps its place in the queue — an earlier sentence of his must
+   * not be lost because he hummed during her reply to it.
+   */
+  discardSpeech(): void {
+    if (!this.sending) return
+    this.sending = false
+    this.preroll.length = 0
+    this.send({ type: 'input_audio_buffer.clear' })
+  }
+
   /** Throw away audio that should never become a turn — a false onset, or a
    *  rep that ended mid-sentence. */
   clear(): void {

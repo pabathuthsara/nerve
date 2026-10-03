@@ -12,7 +12,7 @@ import { tess } from '@/lib/personas/tess'
 const hardware = vi.hoisted(() => ({
   stt: null as TranscriberOptions | null,
   stopMic: vi.fn(), closeContext: vi.fn(), stopCapture: vi.fn(), closeStt: vi.fn(),
-  clearStt: vi.fn(), connectStt: vi.fn(async () => undefined),
+  clearStt: vi.fn(), discardSpeech: vi.fn(), connectStt: vi.fn(async () => undefined),
   capture: null as MicCaptureOptions | null,
   commits: [] as TranscriptionTiming[],
   track: { enabled: true, stop: vi.fn() },
@@ -27,6 +27,7 @@ vi.mock('./stt', () => ({
     get pendingCount() { return hardware.commits.length }
     commit(timing: TranscriptionTiming) { hardware.commits.push(timing); return true }
     clear() { hardware.commits.length = 0; hardware.clearStt() }
+    discardSpeech() { hardware.discardSpeech() }
     close() { hardware.closeStt() }
   },
 }))
@@ -536,12 +537,16 @@ describe('she is only interruptible once he has heard words', () => {
       ready: () => vi.waitFor(() => expect(controller).toBeDefined()) }
   }
 
-  /** A real VAD onset: loud frames either side of the 90ms onset window. */
+  /**
+   * A real interruption: speech that starts and KEEPS GOING for 600ms. Past
+   * the 90ms VAD onset and past the 350ms barge-in confirmation (REP-FIXES
+   * B3), so while she is audible it truncates exactly as it always did.
+   */
   function interrupt(at: (ms: number) => void, from: number) {
-    at(from)
-    hardware.capture!.onFrame(new Float32Array(480).fill(0.2))
-    at(from + 150)
-    hardware.capture!.onFrame(new Float32Array(480).fill(0.2))
+    for (const offset of [0, 150, 300, 450, 600]) {
+      at(from + offset)
+      hardware.capture!.onFrame(new Float32Array(480).fill(0.2))
+    }
   }
 
   it('does not count a barge-in against a reply the user cannot have heard', async () => {
@@ -655,5 +660,146 @@ describe('she is only interruptible once he has heard words', () => {
     await vi.waitFor(() => expect(unheard).toHaveBeenCalledOnce())
     expect(unheard.mock.calls[0]![0]).toMatchObject({ audioMs: 0 })
     expect((await provider.end('cap')).turns.filter((turn) => turn.speaker === 'agent')).toEqual([])
+  })
+})
+
+/**
+ * BARGE-IN CONFIRMATION (REP-FIXES-PLAN B3) — the rep of 3 October.
+ *
+ * Her first line ("Yeah") was cut by a 240ms "Mm." that then became a turn,
+ * and her second ("I'm") by a sound with no words in it. While she is audible
+ * an onset now ducks her and waits ~350ms for him to keep talking.
+ */
+describe('a short sound under her line is not a barge-in', () => {
+  function speaking(clock: () => number) {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const provider = new ElevenLabsVoiceProvider({
+      clock,
+      fetchImpl: vi.fn(async (url: string | URL | Request) => {
+        if (String(url).includes('/token')) return Response.json(token())
+        return new Response(new ReadableStream({ start(value) { controller = value } }))
+      }),
+    })
+    return { provider, speak: (events: TurnEvent[]) => controller.enqueue(encoded(events)),
+      ready: () => vi.waitFor(() => expect(controller).toBeDefined()) }
+  }
+  const loud = () => hardware.capture!.onFrame(new Float32Array(480).fill(0.2))
+  const quiet = () => hardware.capture!.onFrame(new Float32Array(480).fill(0))
+
+  async function audible(now: { ms: number }) {
+    const { provider, speak, ready } = speaking(() => now.ms)
+    const events = { start: vi.fn(), truncated: vi.fn(), unheard: vi.fn(), stop: vi.fn() }
+    provider.on('user.speech.start', events.start)
+    provider.on('agent.truncated', events.truncated)
+    provider.on('agent.unheard', events.unheard)
+    provider.on('agent.speech.stop', events.stop)
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    final('Have you been here long?')
+    await ready()
+    speak([
+      { type: 'clip', id: 'c', text: 'Yeah, since about noon.' },
+      { type: 'audio', clipId: 'c', audio_base64: 'AAA=', alignment: null },
+    ])
+    await vi.waitFor(() => expect(hardware.players).toHaveLength(1))
+    // Words have reached the ear: this is the barge-in case.
+    hardware.players[0]!.playedSeconds = hardware.players[0]!.scheduledSeconds / 2
+    return { provider, events, speak }
+  }
+
+  /** "Mm.": 200ms of speech, then he listens. Frames until the VAD concedes. */
+  function backchannel(now: { ms: number }, from: number) {
+    for (const offset of [0, 100, 200]) { now.ms = from + offset; loud() }
+    for (let offset = 300; offset <= 1200; offset += 100) { now.ms = from + offset; quiet() }
+  }
+
+  it('lets her finish over a 240ms "Mm.": no truncation, no turn, no reply', async () => {
+    const now = { ms: 1000 }
+    const { provider, events, speak } = await audible(now)
+    const before = hardware.commits.length
+    backchannel(now, 5000)
+    expect(hardware.players[0]!.stopped).toBe(false)
+    expect(events.truncated).not.toHaveBeenCalled()
+    expect(events.start).not.toHaveBeenCalled()
+    // Its audio is thrown away rather than committed, so it is never a turn.
+    expect(hardware.commits.length).toBe(before)
+    expect(hardware.discardSpeech).toHaveBeenCalledOnce()
+    const finished = vi.fn()
+    provider.on('agent.transcript', finished)
+    speak([{ type: 'done', exit: false }])
+    await vi.waitFor(() => expect(finished).toHaveBeenCalledOnce())
+    const summary = await provider.end('cap')
+    // She finished the whole line.
+    expect(summary.turns.filter((t) => t.speaker === 'agent').map((t) => t.text)).toEqual(['Yeah, since about noon.'])
+    expect(summary.turns.filter((t) => t.speaker === 'user')).toHaveLength(1)
+    expect(summary.pipeline?.bargeIns ?? 0).toBe(0)
+    expect(summary.pipeline?.backchannels).toBe(1)
+  })
+
+  it('treats a phantom onset with no words the same way', async () => {
+    const now = { ms: 1000 }
+    const { provider, events } = await audible(now)
+    // A burst of echo, 120ms, then nothing.
+    for (const offset of [0, 120]) { now.ms = 8000 + offset; loud() }
+    for (let offset = 200; offset <= 1100; offset += 100) { now.ms = 8000 + offset; quiet() }
+    expect(events.truncated).not.toHaveBeenCalled()
+    expect(hardware.players[0]!.stopped).toBe(false)
+    await provider.end('cap')
+  })
+
+  it('still cuts her at what played when he keeps talking for 600ms, exactly as before', async () => {
+    const now = { ms: 1000 }
+    const { provider, events } = await audible(now)
+    for (const offset of [0, 100, 200, 300, 400, 500, 600]) { now.ms = 5000 + offset; loud() }
+    expect(hardware.players[0]!.stopped).toBe(true)
+    expect(events.start).toHaveBeenCalledOnce()
+    // Timestamped when he actually began, not when the gate decided.
+    expect(events.start.mock.calls[0]![0].at).toBeCloseTo(4, 1)
+    expect(events.unheard).not.toHaveBeenCalled()
+    const summary = await provider.end('cap')
+    expect(summary.pipeline?.bargeIns).toBe(1)
+    // Truncated to what had played, by `playedText` (rule 17).
+    expect(summary.turns.filter((t) => t.speaker === 'agent').map((t) => t.text)).toEqual(['Yeah, since'])
+  })
+
+  it('ducks her while the question is open and restores her after a backchannel', async () => {
+    const ramps: number[] = []
+    vi.stubGlobal('AudioContext', class {
+      state = 'running'
+      currentTime = 0
+      destination = {}
+      createGain() {
+        return { connect() {}, gain: { value: 1, cancelScheduledValues() {}, setValueAtTime() {},
+          linearRampToValueAtTime: (value: number) => { ramps.push(value) } } }
+      }
+      createAnalyser() { return {} }
+      createMediaStreamSource() { return { connect() {} } }
+      async close() { hardware.closeContext() }
+    })
+    const now = { ms: 1000 }
+    const { provider } = await audible(now)
+    backchannel(now, 5000)
+    expect(ramps).toHaveLength(2)
+    expect(ramps[0]).toBeCloseTo(10 ** (-10 / 20), 3)
+    expect(ramps[1]).toBe(1)
+    await provider.end('cap')
+  })
+
+  it('starts his turn at once when she is not audible, as it always has', async () => {
+    let now = 1000
+    const provider = new ElevenLabsVoiceProvider({ clock: () => now,
+      fetchImpl: vi.fn(async (url: string | URL | Request) => String(url).includes('/token')
+        ? Response.json(token()) : fullReply('Hi.')) })
+    const starts = vi.fn()
+    provider.on('user.speech.start', starts)
+    await provider.connect(tess, DEFAULT_CALIBRATION)
+    now = 2000; loud()
+    now = 2100; loud()
+    expect(starts).toHaveBeenCalledOnce()
+    now = 2200; loud()
+    for (let t = 2300; t <= 3000; t += 100) { now = t; quiet() }
+    // A short line with nobody talking over is still a turn, however short.
+    expect(hardware.commits).toHaveLength(1)
+    expect(hardware.discardSpeech).not.toHaveBeenCalled()
+    await provider.end('cap')
   })
 })
