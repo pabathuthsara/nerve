@@ -57,6 +57,16 @@ export const FORWARD_PLAYERS: Record<string, ForwardPlayer> = {
     script: ({ turn, warmth, spoken }) => (spoken === 0 && (warmth >= 66 || turn === 11) ? LINES[0]! : null),
   },
   /**
+   * The welcome zone on every dial: the line at his fourth turn or later, once
+   * she is at 66+. Run with `AUDITION_START=76` to hear it on a character a
+   * three-minute rep never warms that far (Robin, Maya); without it, most reps
+   * of the harder rungs never say the line at all.
+   */
+  forward_warm: {
+    brief: COMPETENT,
+    script: ({ turn, warmth, spoken }) => (spoken === 0 && turn >= 3 && warmth >= 66 ? LINES[0]! : null),
+  },
+  /**
    * Warm up a little, then four in a row: the second lands a zone lower, the
    * third and fourth are creepy whatever the meter says, and the fourth ends
    * the scene.

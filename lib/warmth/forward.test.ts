@@ -321,3 +321,18 @@ describe('a forward remark in a live session', () => {
     expect(session.statelessDirective()).not.toMatch(/bold comment/)
   })
 })
+
+describe('a reaction arrives without her standing orders (rule 5)', () => {
+  it('ships the band line and the reaction, and none of the orders that tell her to act', () => {
+    const session = sessionAt(75, 'tess')
+    session.onAgentTurn(agent(HER, 0))
+    session.onUserTurn(user(LINE, 5))
+    const line = session.statelessDirective()
+    expect(line).toContain(FORWARD_CLAUSES.welcome.flirt)
+    expect(line).toMatch(/bracketed line still decides how long/)
+    // Tess's standing orders at this band, as the first audition met them.
+    expect(line).not.toMatch(/swap names|Bring him into it|You may flirt/)
+    // And the band's length rule is still there.
+    expect(line).toMatch(/at the very most/)
+  })
+})

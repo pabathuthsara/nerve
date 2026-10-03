@@ -177,6 +177,14 @@ export function flirtColumn(persona: Persona, warmth: number): FlirtColumn {
 }
 
 const NEVER = 'Never describe your body and never make it sexual.'
+/**
+ * The bracketed band line still owns her length (rule 4); this owns the
+ * content. "One sentence" because the ceiling keeps whole sentences: the third
+ * audition had "That's... forward." cut from eight words to "That's...",
+ * because an ellipsis is a sentence end to `capToBudget`, and the reaction was
+ * the part that was cut.
+ */
+const DECIDES = 'One sentence, no trailing dots. This decides what you say; the bracketed line still decides how long.'
 const LIGHT = 'Keep it light.'
 
 /**
@@ -186,7 +194,7 @@ const LIGHT = 'Keep it light.'
  */
 export const FORWARD_CLAUSES: Record<ForwardZone, Record<FlirtColumn, string>> = {
   welcome: {
-    flirt: `He just made a bold comment about you, and from him it lands. Answer the remark itself, don't change the subject. Take it as a compliment and flirt back, in your own way: a tease, a comeback, or a thank-you with a grin. Playful, not flat, not a lecture. ${LIGHT} ${NEVER}`,
+    flirt: `He just made a bold comment about you, and from him it lands: you're amused and a bit pleased. Answer the remark itself and flirt back, in your own way: tease him, throw a comeback, or take the compliment with a grin. Playful and warm, not flat, not wry, not a lecture. ${LIGHT} ${NEVER}`,
     light: `He just made a bold comment about you, and from him you don't mind it. Answer the remark itself: pleased, a little flirty, mostly amused, in your own way. ${LIGHT} ${NEVER}`,
     closed: `He just made a bold comment about you. You like him enough not to mind, but you don't flirt back. Answer the remark itself, in your own way: amused, dry, an eyebrow raised. ${LIGHT} ${NEVER}`,
   },
@@ -221,7 +229,7 @@ const REPEAT = 'This is not the first time he has gone there.'
  */
 export function forwardClause(zone: ForwardZone, persona: Persona, warmth: number, repeat: boolean): string {
   const body = FORWARD_CLAUSES[zone][flirtColumn(persona, warmth)]
-  return `(${repeat ? `${REPEAT} ` : ''}${body})`
+  return `(${repeat ? `${REPEAT} ` : ''}${body} ${DECIDES})`
 }
 
 /* ------------------------------------------------------------------ *

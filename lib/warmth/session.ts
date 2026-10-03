@@ -327,13 +327,29 @@ export class WarmthSession {
    * the last.
    */
   directiveIfChanged(): string | null {
+    if (this.forwardDirection && !this.closingHandover) return this.forwardDirective()
     const line = this.changedDirective()
-    const forward = this.takeForwardClause()
-    if (!forward) return line
-    // A pending reaction forces a send on an arm that only hears from us when
-    // something changed — the band line plus the one-shot, never the one-shot
-    // without the band that owns her length.
-    return `${line ?? this.directive()} ${forward}`
+    // A closing hand-over consumed above drops any reaction with it.
+    this.takeForwardClause()
+    return line
+  }
+
+  /**
+   * The band line WITHOUT her standing orders, and her reaction to his line.
+   *
+   * The first audition put the reaction beside "Ask about him, tease him, swap
+   * names", and she swapped names: "Well, that's a twist. What's your name?"
+   * at warmth 67, to a line she had been told to flirt back at. That is rule
+   * 5's failure exactly — orders restated together compose, and she performs
+   * all of them — so this turn gets the band (length, questions, colour) and
+   * the reaction, and nothing else that tells her to act. Not recorded as the
+   * last directive, so the next turn's change detection runs as if this one
+   * had not happened.
+   */
+  private forwardDirective(): string {
+    const band = this.judgement.steer({ ...this.steeringContext(), includeStanding: false })
+    this.steeringSent += 1
+    return `${band} ${this.takeForwardClause()}`
   }
 
   private changedDirective(): string | null {
@@ -382,10 +398,10 @@ export class WarmthSession {
       this.forwardDirection = null
       return ''
     }
-    const line = this.changedDirective()
-      ?? this.judgement.steer({ ...this.steeringContext(), includeStanding: false })
-    const forward = this.takeForwardClause()
-    return forward ? `${line} ${forward}` : line
+    if (this.forwardDirection) return this.forwardDirective()
+    const fresh = this.changedDirective()
+    if (fresh !== null) return fresh
+    return this.judgement.steer({ ...this.steeringContext(), includeStanding: false })
   }
 
   /** One-shot: read once, then gone (rule 5). */

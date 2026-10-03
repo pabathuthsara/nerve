@@ -256,9 +256,16 @@ async function runRep(
   const posesBrief = probes && opensOnDesignBrief({ round: options.round, field: AUDITION_FIELD })
 
   let clock = 0
+  // AUDITION_START=70 opens the rep at that warmth, with no jitter. ARTIFICIAL:
+  // it exists so a reaction that only happens high on the meter can be heard on
+  // a character a three-minute rep never warms that far (Robin, Maya), and any
+  // transcript made with it says so in its header.
+  const forcedStart = Number(process.env.AUDITION_START)
   const session = new WarmthSession({
     persona: briefed,
-    trajectory: persona.trajectory,
+    trajectory: Number.isFinite(forcedStart) && forcedStart > 0
+      ? { ...persona.trajectory, start: forcedStart, startJitter: 0, sessionCeiling: Math.max(persona.trajectory.sessionCeiling, forcedStart + 15) }
+      : persona.trajectory,
     scorer: null,
     nowSeconds: () => clock,
     // §6.7. Her first turn on a design round poses a sixty-word problem and
@@ -560,6 +567,7 @@ async function main(): Promise<void> {
         ? `\nRound: ${roundType(round).label} · ${roundType(round).shape} · difficulty ${difficulty}`
           + ` · field ${AUDITION_FIELD}`
         : '')
+      + (process.env.AUDITION_START ? `\nARTIFICIAL START: warmth ${process.env.AUDITION_START}, no jitter.` : '')
       + `\nThis is the prompt, not the voice — see the note at the top of this file.\n`,
   )
 
