@@ -1,6 +1,6 @@
 # The first screen: why 0 of 55 tapped, and the plan (5 October 2026)
 
-**Status: PLAN. A0 (device check) DONE 5 Oct. Parts A and B are to be built together (owner, 5 Oct); nothing else built yet.** Day 32 of the launch block; Gate 3 is Thursday 8 October.
+**Status: Parts A and B BUILT 5 October 2026 on branch `start-measure-and-page` (commit `bb84646`) and verified on preview `https://nerve-7cku9j4rr-pabathuthsaras-projects.vercel.app` (`dpl_3bVKWeyzavwGpkB5MGWG2v4xNz9T`). NOT in production — waiting for the owner's OK. §11 is what landed and what is owed by hand. A0 DONE 5 Oct. A3's reorder was NOT built: Google sign-in works inside Instagram (owner's test, 5 Oct). Parts C and D not started.** Day 32 of the launch block; Gate 3 is Thursday 8 October. `LAUNCH-GAP.md` D34.
 
 The short version: paid traffic reaches the first question of `/start` and nobody answers it. Before changing the page again, we need to know *why*: do people not read it, read it and decline, or is it broken on a device we have not tested? Today the data only records that they arrived. So Part A measures, Part B fixes the page, Part C fixes the ad, Part D tests the idea itself. Which of B or C ships depends on what A shows (§6).
 
@@ -215,3 +215,114 @@ group by 1;
 ## 10. When a part ships, update
 
 `LAUNCH-GAP.md` (a new D-row; D33 is the latest), the `/start` row in `docs/README.md`, `MARKETING-PLAN.md` §9 (the numbers and what Gate 3 decided), and the status line at the top of this file.
+
+---
+
+## 11. What shipped (5 October 2026), and what is still owed
+
+Built on branch `start-measure-and-page`, commit `bb84646`, one migration
+(`20261005120000_page_views_dwell.sql`, applied through the Supabase MCP). **Not
+promoted.** The rollback target, if it is promoted, is whatever production is at
+that moment — `dpl_4iR2MtsCw29PWMnSt2SAFNpgd2py` when this was written.
+
+### A1. Dwell and touch: shipped as specified
+
+- `page_views.dwell_s smallint check (dwell_s in (3,10,30))` and
+  `page_views.touched boolean check (touched is null or touched)`.
+- `START_DWELL_SECONDS`, `normaliseDwell`, `normaliseTouch` and `startSignal` in
+  `lib/analytics/pageview.ts`. **One decision beyond the plan:** a beacon
+  carrying a malformed dwell or touch — wrong value, no known screen, an action
+  instead of a screen, a path other than `/start`, or both signals at once — is
+  refused **whole** rather than stored as a plain view, because a plain `focus`
+  row is exactly what §6 counts as "saw the question".
+- `countStartDwell` / `countStartTouch` in `components/analytics.tsx`, on the same
+  `countPageView` pipe (no `/admin`, no localhost, no `navigator.webdriver`).
+- The effect in `start-screens.tsx` runs only while `first` is true. The clock
+  counts visible time only and lives in a ref for the whole render, so the back
+  arrow onto the first screen resumes the count rather than restarting it: at
+  most three heartbeats and one touch per render.
+
+### A2. The render id: shipped
+
+`mintRenderId()` (16 hex characters off `crypto.randomUUID()`) in
+`app/start/page.tsx`, written on the `served` row by `recordServerStep` and
+passed to `StartScreen` as a prop; every `/start` beacon from that render carries
+it (`page_views.render_id`, CHECK `^[0-9a-f]{16}$`, `normaliseRenderId` drops it
+on any other path). Never in a cookie or in storage. **Not carried:** the one
+generic path view `Analytics` sends for every route (`step` null) — it is the
+site-wide pageview and knows nothing about the run; join on `step is not null`.
+
+### A3. The account screen: beacons shipped, reorder NOT built
+
+`START_ACTION_NAMES = ['account_email', 'account_google']`, stored in `step` and
+accepted on `/start` only; `START_STEP_NAMES` still equals the screen list (the
+existing assertion passes, and a new one checks no action is a screen).
+`account_email` fires on the first focus of the email field (opening "Use email
+instead" focuses it, so the open counts); `account_google` fires on the tap,
+**before** the year check, so a tap the age gate turns back still counts as a try.
+
+**The owner ran the Instagram check on 5 October: Google sign-in works inside
+Instagram's browser.** So the in-app-browser reorder and the hint line were not
+built, and the account screen is unchanged. If a later device shows
+`disallowed_useragent`, the plan's A3 fix is still the one to build.
+
+### Privacy clause 01
+
+It lists what the beacon collects, so it now names the 3/10/30-second check on
+the first setup screen, whether it was touched, which sign-up option was started,
+and the per-load random code (not stored on the device, never reused). The
+effective date was not moved, following the 3 October precedent.
+`npm run legal:pdf` was run against the local server on this branch.
+
+### B1–B3: shipped; B3 needed no move
+
+- **B1.** `lib/data/start-scenes.ts`: `START_SCENES` (`library`, `gaming`, the
+  plan's lines) and `startScene()`, looked up on the server and passed as a prop.
+  The scene replaces the kicker **only when the first screen is the dating
+  question** (`?track=dating`, which every ad link carries). A bare `/start` opens
+  on the track question and `?track=interview` on the role, and "she just sat
+  down" is not a sentence for either. Unknown, missing and inherited keys
+  (`constructor`, `__proto__`) keep *Practice out loud with an AI*.
+- **B2.** `FocusStep` has an optional `sub`; `/start` passes `START_FOCUS_SUB`, and
+  the signed-in run renders its old line unchanged (the default).
+- **B3.** Measured in the browser pane before and after. The trust line's top edge
+  sits at 532 px of 664 (390×664) and 540 px of 640 (360×640) on the new page,
+  so it is **above the fold on both and did not move**. Before/after captures are
+  in `.shots/start-first-screen/` (not committed).
+
+### Verified
+
+`typecheck`, `lint`, `test` (2,630 passed), `build:check` and `db:funnel` all
+passed in a clean worktree of `bb84646`; `dating-arm.test.ts` passed unchanged
+(56); no Tier 0 file and not `/` in the diff. On the preview:
+`?track=dating&utm_source=claude_test&utm_content=library` and `…=gaming` each
+showed their own scene line, and the link with no `utm_content` showed the old
+kicker. One render (`4ab9306719534e6d`) read `served → focus → dwell 3 → 10 → 30
+→ touched → name → account → account_email → account_google`, every row carrying
+the same `render_id`. Two side observations: a render loaded while the pane was
+hidden sent no heartbeat for 19 minutes, so the visible-time pause works; and one
+render's rows landed on two different visitor digests after the viewport (and
+so the user agent) changed, which `render_id` joined, which is A2's whole case.
+All 32 test rows were deleted.
+
+### Owed by hand
+
+1. **The owner's OK, then production.** Promote by merging into
+   `elevenlabs-pipeline` and pushing (a pushed commit, never a CLI deploy of a
+   dirty tree).
+2. **Previews have no environment variables.** Every Vercel env var is
+   Production-only, so the git-built preview of this branch
+   (`nerve-q0zw9one0`) renders "Something broke". The working preview was a CLI
+   deploy of the clean commit with the three Supabase values passed for that one
+   deployment (`--build-env` / `--env`); nothing in the project's settings changed.
+   Decide whether previews should get their own scoped variables.
+3. **The plan's §9 tap-through inside Instagram** with a `pabath_test` link, after
+   production, checking `dwell_s`, `touched` and `render_id` on its rows.
+4. **Re-upload the privacy PDF to Whop** once this is in production (`npm run
+   legal:pdf -- --url https://www.hellonerve.com`).
+5. **Collect 40+ first-screen visitors and read §6 at Gate 3** (Thursday 8
+   October), then record the numbers and the decision in `MARKETING-PLAN.md` §9.
+   §6's query reads `dwell_s` and `touched` as written; `/admin`'s per-step
+   `views` column now includes heartbeat rows (its `visitors` column does not
+   move), and the action rows are not drawn there.
+6. Parts C and D are untouched.
