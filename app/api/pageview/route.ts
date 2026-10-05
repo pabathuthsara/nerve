@@ -38,7 +38,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { currentUser } from '@/lib/db/server'
-import { isBot, isPreviewFetch, normalisePath, normaliseStep, normaliseTag } from '@/lib/analytics/pageview'
+import { isBot, isPreviewFetch, normalisePath, normaliseRenderId, normaliseStep, normaliseTag, startSignal } from '@/lib/analytics/pageview'
 import { insertView, visitorDigest } from '@/lib/analytics/record'
 
 export const dynamic = 'force-dynamic'
@@ -108,13 +108,18 @@ export async function POST(request: NextRequest) {
   }
   if (!body || typeof body !== 'object') return done()
 
-  const { path: rawPath, ref, step: rawStep, source: rawSource, content: rawContent } =
-    body as { path?: unknown; ref?: unknown; step?: unknown; source?: unknown; content?: unknown }
+  const { path: rawPath, ref, step: rawStep, source: rawSource, content: rawContent, dwell, touch, render } =
+    body as { path?: unknown; ref?: unknown; step?: unknown; source?: unknown; content?: unknown; dwell?: unknown; touch?: unknown; render?: unknown }
   const path = normalisePath(rawPath)
   if (!path) return done()
   // Only ever set for `/start`, and only ever an authored screen name. A
   // value this does not recognise is dropped and the view still counts.
   const step = normaliseStep(path, rawStep)
+  // START-FIRST-SCREEN-PLAN A1: a heartbeat or the first touch. Unlike the
+  // step, a malformed one refuses the whole beacon — written as a plain view
+  // it would count one more person who "saw" the first question.
+  const signal = startSignal(path, step, { dwell, touch })
+  if (!signal.ok) return done()
 
   const visitor = visitorDigest(request.headers, userAgent)
   if (!withinBurst(visitor, Date.now())) return done()
@@ -143,6 +148,10 @@ export async function POST(request: NextRequest) {
     source: normaliseTag(rawSource),
     content: normaliseTag(rawContent),
     userId,
+    dwellS: signal.dwellS,
+    touched: signal.touched,
+    // A2: which `/start` render this came from. Dropped on any other path.
+    renderId: normaliseRenderId(path, render),
   })
 
   return done()

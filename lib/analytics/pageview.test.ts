@@ -9,8 +9,15 @@ import {
   normalisePath,
   normaliseStep,
   referrerHost,
+  START_ACTION_NAMES,
+  START_DWELL_SECONDS,
   START_STEP_NAMES,
+  mintRenderId,
+  normaliseDwell,
+  normaliseRenderId,
+  normaliseTouch,
   scrubSegment,
+  startSignal,
 } from './pageview'
 import { startSteps } from '@/lib/data/start-funnel'
 
@@ -230,6 +237,98 @@ describe('the run after the account, on the way into the traffic table', () => {
   it('fits the column', () => {
     // `page_views_step_len`: 24 characters.
     for (const step of ONBOARDING_STEP_NAMES) expect(step.length).toBeLessThanOrEqual(24)
+  })
+})
+
+describe('the first screen\'s heartbeats and touch (START-FIRST-SCREEN-PLAN A1)', () => {
+  it('accepts exactly the three heartbeats the screen sends', () => {
+    expect([...START_DWELL_SECONDS]).toEqual([3, 10, 30])
+    for (const seconds of START_DWELL_SECONDS) expect(normaliseDwell(seconds)).toBe(seconds)
+  })
+
+  it('refuses every other dwell, a string of a valid one included', () => {
+    // The database CHECK would refuse these anyway; a beacon carrying a value
+    // the page never sends is somebody probing the endpoint.
+    for (const forged of [4, -1, 0, 3.5, 300, '10', '3', null, undefined, true, NaN, [10], { s: 10 }]) {
+      expect(normaliseDwell(forged)).toBeNull()
+    }
+  })
+
+  it('accepts a touch only as true', () => {
+    expect(normaliseTouch(true)).toBe(true)
+    for (const forged of [false, 'true', 1, 0, null, undefined, {}, [true]]) {
+      expect(normaliseTouch(forged)).toBeNull()
+    }
+  })
+
+  it('passes a plain view through untouched', () => {
+    expect(startSignal('/start', 'focus', {})).toEqual({ ok: true, dwellS: null, touched: null })
+    expect(startSignal('/pricing', null, {})).toEqual({ ok: true, dwellS: null, touched: null })
+  })
+
+  it('carries a heartbeat or a touch on a known /start screen', () => {
+    expect(startSignal('/start', 'focus', { dwell: 10 })).toEqual({ ok: true, dwellS: 10, touched: null })
+    expect(startSignal('/start', 'track', { touch: true })).toEqual({ ok: true, dwellS: null, touched: true })
+  })
+
+  it('refuses the WHOLE beacon when a heartbeat has no known screen', () => {
+    // Written as a plain view instead, a malformed heartbeat would read in
+    // the plan's §6 query as one more person who saw the question.
+    expect(startSignal('/start', null, { dwell: 3 })).toEqual({ ok: false })
+    expect(startSignal('/start', null, { touch: true })).toEqual({ ok: false })
+    // An action is not a screen and has no dwell.
+    expect(startSignal('/start', 'account_email', { dwell: 3 })).toEqual({ ok: false })
+    // Nor does any other path.
+    expect(startSignal('/', null, { dwell: 3 })).toEqual({ ok: false })
+    expect(startSignal('/onboarding', 'brief', { touch: true })).toEqual({ ok: false })
+  })
+
+  it('refuses the whole beacon for a bad value, or for two signals at once', () => {
+    expect(startSignal('/start', 'focus', { dwell: 4 })).toEqual({ ok: false })
+    expect(startSignal('/start', 'focus', { dwell: '10' })).toEqual({ ok: false })
+    expect(startSignal('/start', 'focus', { dwell: null })).toEqual({ ok: false })
+    expect(startSignal('/start', 'focus', { touch: false })).toEqual({ ok: false })
+    expect(startSignal('/start', 'focus', { dwell: 3, touch: true })).toEqual({ ok: false })
+  })
+})
+
+describe('the per-render id (START-FIRST-SCREEN-PLAN A2)', () => {
+  it('mints sixteen lower-case hex characters, fresh every time', () => {
+    const ids = new Set(Array.from({ length: 200 }, () => mintRenderId()))
+    expect(ids.size).toBe(200)
+    for (const id of ids) expect(id).toMatch(/^[0-9a-f]{16}$/)
+  })
+
+  it('accepts its own shape on /start and nothing else anywhere', () => {
+    const id = mintRenderId()
+    expect(normaliseRenderId('/start', id)).toBe(id)
+    expect(normaliseRenderId('/', id)).toBeNull()
+    expect(normaliseRenderId('/onboarding', id)).toBeNull()
+    for (const forged of [id.toUpperCase(), id.slice(0, 15), `${id}0`, 'zzzzzzzzzzzzzzzz', 42, null, undefined, { id }]) {
+      expect(normaliseRenderId('/start', forged)).toBeNull()
+    }
+  })
+})
+
+describe('the account screen\'s actions (START-FIRST-SCREEN-PLAN A3)', () => {
+  it('are their own list, so the screen list still equals the screens', () => {
+    for (const action of START_ACTION_NAMES) {
+      expect(START_STEP_NAMES as readonly string[]).not.toContain(action)
+    }
+  })
+
+  it('are accepted on /start, and only there', () => {
+    for (const action of START_ACTION_NAMES) {
+      expect(normaliseStep('/start', action)).toBe(action)
+      expect(normaliseStep('/onboarding', action)).toBeNull()
+      expect(normaliseStep('/', action)).toBeNull()
+    }
+    expect(normaliseStep('/start', 'account_apple')).toBeNull()
+  })
+
+  it('fit the column', () => {
+    // `page_views_step_len`: 24 characters.
+    for (const action of START_ACTION_NAMES) expect(action.length).toBeLessThanOrEqual(24)
   })
 })
 

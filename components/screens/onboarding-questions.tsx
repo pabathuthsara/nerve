@@ -190,13 +190,19 @@ export { FOCUS_OPTIONS }
  * care, and it costs one prop: the orb was already being rendered on the step
  * after this one.
  */
-export function FocusStep({ value, firstRep, onChoose, hrefFor, eyebrow = 'Step two' }: {
+export function FocusStep({ value, firstRep, onChoose, hrefFor, eyebrow = 'Step two', sub = 'Pick one. Your first rep is built around it.' }: {
   value: FocusArea | null
   firstRep: FirstRepCandidate | null
   onChoose: (value: FocusArea) => void
   eyebrow?: string
   /** `/start` only: each answer as a real link. See `TrackStep`. */
   hrefFor?: (value: FocusArea) => string
+  /**
+   * `/start` only (START-FIRST-SCREEN-PLAN B2): the line under the question,
+   * in plain words for somebody who does not yet know what a rep is. Absent,
+   * it is the signed-in run's line, unchanged.
+   */
+  sub?: string
 }) {
   /**
    * ── THIS IS THE DATING ARM'S QUESTION TWO, AND ONLY ITS ─────────────────
@@ -215,7 +221,7 @@ export function FocusStep({ value, firstRep, onChoose, hrefFor, eyebrow = 'Step 
     <Question
       eyebrow={eyebrow}
       title="What's the hard part?"
-      sub="Pick one. Your first rep is built around it."
+      sub={sub}
     >
       {FOCUS_OPTIONS.map((option) => (
         <Option key={option.value} label={option.label} mark={focusMark(option.value) ?? undefined} selected={value === option.value} href={hrefFor?.(option.value)} onClick={() => onChoose(option.value)} />

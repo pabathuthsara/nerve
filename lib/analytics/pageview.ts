@@ -47,6 +47,36 @@ export const START_STEP_NAMES = [
 ] as const
 
 /**
+ * What somebody DID on a `/start` screen, as opposed to which screen it was
+ * (START-FIRST-SCREEN-PLAN A3, 5 October 2026).
+ *
+ * The account screen has two doors and nothing could say which one people
+ * tried, or whether they tried either: the funnel saw `account` and then
+ * either `signup` or nothing. These are stored in the same `step` column
+ * (24 characters is enough) but kept OUT of `START_STEP_NAMES` on purpose,
+ * because that list is asserted equal to the screens the run can show, and
+ * an action is not a screen.
+ *
+ *   account_email   the email field took focus for the first time
+ *   account_google  Continue with Google was tapped (before the year check,
+ *                   so a tap the age gate refused still counts as a try)
+ */
+export const START_ACTION_NAMES = [
+  'account_email', 'account_google',
+] as const
+
+/**
+ * The heartbeats the first `/start` screen sends, in seconds of VISIBLE time
+ * (START-FIRST-SCREEN-PLAN A1). The database CHECK is the same three numbers.
+ *
+ * Heartbeats rather than an exit beacon because Instagram's and TikTok's
+ * in-app browsers do not reliably fire `pagehide` when the webview is swiped
+ * away: a heartbeat that arrived proves somebody was still there, and an exit
+ * beacon that never arrived proves nothing.
+ */
+export const START_DWELL_SECONDS = [3, 10, 30] as const
+
+/**
  * The run after the account exists, as the beacon is allowed to report it
  * (3 October 2026).
  *
@@ -279,13 +309,14 @@ export function countryCode(raw: string | null | undefined): string | null {
  * the view is still counted — the path is the thing that must not be lost.
  *
  * Only `/start` (the run before the account) and `/onboarding` (the run
- * after it) may carry one, each from its own list. A step on any other path
+ * after it) may carry one, each from its own list. `/start` also accepts the
+ * two account-screen actions (`START_ACTION_NAMES`), which share the column. A step on any other path
  * is a caller doing something this was not built for, and it is discarded
  * silently.
  */
 export function normaliseStep(path: string, value: unknown): string | null {
   const allowed: readonly string[] | null = path === '/start'
-    ? START_STEP_NAMES
+    ? [...START_STEP_NAMES, ...START_ACTION_NAMES]
     : path === '/onboarding' ? ONBOARDING_STEP_NAMES : null
   if (!allowed || typeof value !== 'string') return null
   const step = value.trim()
@@ -312,4 +343,68 @@ export function normaliseTag(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const tag = value.trim().toLowerCase()
   return /^[a-z0-9._-]{1,40}$/.test(tag) ? tag : null
+}
+
+/**
+ * A dwell heartbeat's seconds: exactly 3, 10 or 30, or null.
+ *
+ * A number and nothing else — `'10'` is refused, not parsed — for the reason
+ * `normaliseStep` refuses rather than trims: the database CHECK would refuse
+ * anything else anyway, and a beacon carrying a value we never send is
+ * somebody probing the endpoint, not a visitor to count.
+ */
+export function normaliseDwell(value: unknown): number | null {
+  if (typeof value !== 'number') return null
+  return (START_DWELL_SECONDS as readonly number[]).includes(value) ? value : null
+}
+
+/** The touch beacon's flag: `true` or null. There is no "false" row. */
+export function normaliseTouch(value: unknown): true | null {
+  return value === true ? true : null
+}
+
+/**
+ * The per-render id `app/start/page.tsx` mints (A2): sixteen lower-case hex
+ * characters on a `/start` row, or null. The database CHECK is the same
+ * pattern; anything else, or the same field on another path, is dropped.
+ */
+export function normaliseRenderId(path: string, value: unknown): string | null {
+  if (path !== '/start' || typeof value !== 'string') return null
+  return /^[0-9a-f]{16}$/.test(value) ? value : null
+}
+
+/**
+ * A fresh render id (A2). `crypto.randomUUID()` with the dashes taken out,
+ * first sixteen hex characters: 64 random-ish bits, unique enough to join
+ * one render's rows inside a day and meaningless outside it.
+ */
+export function mintRenderId(): string {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+}
+
+/**
+ * What a `/start` beacon's dwell and touch fields may become, or a refusal
+ * of the WHOLE beacon (A1).
+ *
+ * A beacon that carries neither is an ordinary view and passes through with
+ * nulls. A beacon that carries either must be on `/start`, on a known SCREEN
+ * (an action is not a screen and has no dwell), with a value from the allow
+ * list, and carry one signal, not both. Anything short of that is refused
+ * outright rather than stored as a plain view: a malformed heartbeat written
+ * as `focus` with no dwell would read in §6 as one more person who saw the
+ * question, which is the exact number this exists to get right.
+ */
+export function startSignal(path: string, step: string | null, raw: { dwell?: unknown; touch?: unknown }):
+  | { ok: true; dwellS: number | null; touched: true | null }
+  | { ok: false } {
+  const hasDwell = raw.dwell !== undefined
+  const hasTouch = raw.touch !== undefined
+  if (!hasDwell && !hasTouch) return { ok: true, dwellS: null, touched: null }
+  if (hasDwell && hasTouch) return { ok: false }
+  if (path !== '/start' || step === null || !(START_STEP_NAMES as readonly string[]).includes(step)) return { ok: false }
+  const dwellS = hasDwell ? normaliseDwell(raw.dwell) : null
+  const touched = hasTouch ? normaliseTouch(raw.touch) : null
+  if (hasDwell && dwellS === null) return { ok: false }
+  if (hasTouch && touched === null) return { ok: false }
+  return { ok: true, dwellS, touched }
 }

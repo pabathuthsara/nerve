@@ -145,7 +145,7 @@ export function resetPerson(): void {
  * that have no beacon. Neither path is awaited and neither can throw into a
  * render — §05's rule about vendors, applied to our own endpoint.
  */
-function countPageView(pathname: string, step?: string): void {
+function countPageView(pathname: string, step?: string, extra?: BeaconExtra): void {
   if (pathname.startsWith('/admin')) return
   // A dev server talks to the production project, so a local walk-through
   // would otherwise be counted as a visitor from Sri Lanka on a desktop.
@@ -163,6 +163,9 @@ function countPageView(pathname: string, step?: string): void {
       ...(step ? { step } : {}),
       ...(source ? { source } : {}),
       ...(content ? { content } : {}),
+      ...(extra?.render ? { render: extra.render } : {}),
+      ...(extra?.dwell !== undefined ? { dwell: extra.dwell } : {}),
+      ...(extra?.touch ? { touch: true } : {}),
     })
     if (navigator.sendBeacon?.(POST_PATH, new Blob([body], { type: 'application/json' }))) return
     void fetch(POST_PATH, {
@@ -174,6 +177,18 @@ function countPageView(pathname: string, step?: string): void {
   } catch {
     // As everywhere else in this file: instrumentation never reaches the user.
   }
+}
+
+/**
+ * What a `/start` beacon may carry beyond the screen (START-FIRST-SCREEN-PLAN
+ * A1/A2). `render` is the id the server minted for this render — held in a
+ * prop, never in storage, so it dies with the page. The server allow-lists
+ * all three again (`startSignal`, `normaliseRenderId`).
+ */
+interface BeaconExtra {
+  render?: string | null
+  dwell?: 3 | 10 | 30
+  touch?: true
 }
 
 const POST_PATH = '/api/pageview'
@@ -224,8 +239,35 @@ export function campaignTag(): { source: string | null; content: string | null }
  * the run knows a step has changed. It is the same beacon, with one more
  * field, and it fails silent exactly as the rest of this file does.
  */
-export function countStartStep(step: string): void {
-  countPageView('/start', step)
+export function countStartStep(step: string, render?: string | null): void {
+  countPageView('/start', step, { render })
+}
+
+/**
+ * A heartbeat from the first `/start` screen (START-FIRST-SCREEN-PLAN A1):
+ * it has been open and VISIBLE for `seconds`. Three a visitor at most, so
+ * "left within 3 s" and "read it for 30 s and declined" stop looking alike.
+ */
+export function countStartDwell(step: string, seconds: 3 | 10 | 30, render?: string | null): void {
+  countPageView('/start', step, { render, dwell: seconds })
+}
+
+/**
+ * The first touch anywhere on the first `/start` screen (A1), answer or not.
+ * One a render. Many stays with touches and no answer is what a broken tap
+ * would look like (H3); no touches is somebody who never engaged (H1).
+ */
+export function countStartTouch(step: string, render?: string | null): void {
+  countPageView('/start', step, { render, touch: true })
+}
+
+/**
+ * Which door the account screen's visitor tried (A3): `START_ACTION_NAMES`
+ * in `lib/analytics/pageview.ts`. Sent in the `step` field, kept out of the
+ * screen list on purpose.
+ */
+export function countStartAction(action: 'account_email' | 'account_google', render?: string | null): void {
+  countPageView('/start', action, { render })
 }
 
 /**

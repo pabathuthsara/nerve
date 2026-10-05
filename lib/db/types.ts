@@ -1321,12 +1321,15 @@ export type Database = {
           at: string
           country: string | null
           device: string
+          dwell_s: number | null
           id: number
           path: string
           content: string | null
           referrer_host: string | null
+          render_id: string | null
           source: string | null
           step: string | null
+          touched: boolean | null
           user_id: string | null
           visitor: string
         }
@@ -1334,12 +1337,15 @@ export type Database = {
           at?: string
           country?: string | null
           device?: string
+          dwell_s?: number | null
           id?: never
           path: string
           content?: string | null
           referrer_host?: string | null
+          render_id?: string | null
           source?: string | null
           step?: string | null
+          touched?: boolean | null
           user_id?: string | null
           visitor: string
         }
@@ -1347,12 +1353,15 @@ export type Database = {
           at?: string
           country?: string | null
           device?: string
+          dwell_s?: number | null
           id?: never
           path?: string
           content?: string | null
           referrer_host?: string | null
+          render_id?: string | null
           source?: string | null
           step?: string | null
+          touched?: boolean | null
           user_id?: string | null
           visitor?: string
         }

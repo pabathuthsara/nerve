@@ -56,7 +56,7 @@ import { useRouter } from 'next/navigation'
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import { Check, ChevronLeft, Eye, EyeOff } from 'lucide-react'
 import { signUpWithPassword, type AuthResult } from '@/app/auth/actions'
-import { campaignTag, capture, countStartStep } from '@/components/analytics'
+import { campaignTag, capture, countStartAction, countStartDwell, countStartStep, countStartTouch } from '@/components/analytics'
 import { metaTrack } from '@/components/meta-pixel'
 import { tiktokTrack } from '@/components/tiktok-pixel'
 import { Button, Input } from '@/components/ui'
@@ -64,6 +64,8 @@ import { FocusStep, NameStep, RoleStep, TrackStep } from './onboarding-questions
 import { GoogleButton } from './google-button'
 import { tap } from '@/lib/haptics'
 import { MIN_AGE, checkAge } from '@/lib/safety/age'
+import { START_DWELL_SECONDS } from '@/lib/analytics/pageview'
+import { START_FOCUS_SUB, START_KICKER } from '@/lib/data/start-scenes'
 import {
   AI_ACCOUNT_LINE,
   EMPTY_START_ANSWERS,
@@ -104,10 +106,23 @@ const EMPTY_RESULT: AuthResult = { ok: false, message: null }
  * address bar as the server saw it, which every answer link is built from so
  * the UTMs ride every server render of the run.
  */
-export function StartScreen({ initialTrack = null, fromUrl = {}, query = {} }: {
+export function StartScreen({ initialTrack = null, fromUrl = {}, query = {}, renderId = null, scene = null }: {
   initialTrack?: Track | null
   fromUrl?: Partial<StartAnswers>
   query?: Record<string, string>
+  /**
+   * START-FIRST-SCREEN-PLAN A2: the id the server minted for this render and
+   * wrote on its `served` row. Every beacon from this page carries it, so
+   * `served` joins what happened next without leaning on the IP-and-agent
+   * digest. A prop and nothing else: never written to storage, gone on reload.
+   */
+  renderId?: string | null
+  /**
+   * B1: the authored scene line for the link's `utm_content`
+   * (`lib/data/start-scenes.ts`), looked up on the server so the first paint
+   * already carries it. Null keeps the kicker.
+   */
+  scene?: string | null
 }) {
   const trackGiven = initialTrack !== null
   const firstIndex = startFirstIndex(trackGiven)
@@ -228,8 +243,72 @@ export function StartScreen({ initialTrack = null, fromUrl = {}, query = {} }: {
    */
   useEffect(() => {
     capture('start_step_viewed', { step: stepName, index: step })
-    countStartStep(stepName)
-  }, [step, stepName])
+    countStartStep(stepName, renderId)
+  }, [step, stepName, renderId])
+
+  /**
+   * START-FIRST-SCREEN-PLAN A1: how long the FIRST screen stays open, and
+   * whether anybody touches it.
+   *
+   * A heartbeat at 3, 10 and 30 seconds of VISIBLE time — the clock stops
+   * while the tab is hidden, so a phone locked on the page is not a reader —
+   * and one beacon on the first `pointerdown` anywhere, answer or not.
+   * Heartbeats rather than an exit beacon because in-app browsers drop
+   * `pagehide`: a heartbeat that arrived proves somebody was there.
+   *
+   * The clock and what has been sent live in a ref for the whole render, so
+   * coming back to the first screen with the back arrow resumes the count
+   * rather than restarting it: each heartbeat and the touch go out at most
+   * once a render, four rows a visitor at most.
+   */
+  const dwell = useRef({ ms: 0, sent: new Set<number>(), touched: false })
+  useEffect(() => {
+    if (!first) return
+    const screen = stepName
+    const clock = dwell.current
+    let since: number | null = document.visibilityState === 'visible' ? performance.now() : null
+    let timer: number | undefined
+    const elapsed = () => clock.ms + (since === null ? 0 : performance.now() - since)
+    const due = () => START_DWELL_SECONDS.filter((seconds) => !clock.sent.has(seconds))
+    const schedule = () => {
+      window.clearTimeout(timer)
+      const next = due()[0]
+      if (since === null || next === undefined) return
+      timer = window.setTimeout(tick, Math.max(0, next * 1000 - elapsed()))
+    }
+    function tick() {
+      for (const seconds of due()) {
+        // A timer can fire a few milliseconds early; 50ms is not a reader.
+        if (elapsed() < seconds * 1000 - 50) break
+        clock.sent.add(seconds)
+        countStartDwell(screen, seconds, renderId)
+      }
+      schedule()
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        if (since === null) since = performance.now()
+      } else if (since !== null) {
+        clock.ms += performance.now() - since
+        since = null
+      }
+      schedule()
+    }
+    const onTouch = () => {
+      if (clock.touched) return
+      clock.touched = true
+      countStartTouch(screen, renderId)
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    if (!clock.touched) window.addEventListener('pointerdown', onTouch, { capture: true, once: true })
+    schedule()
+    return () => {
+      window.clearTimeout(timer)
+      if (since !== null) clock.ms += performance.now() - since
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pointerdown', onTouch, { capture: true })
+    }
+  }, [first, stepName, renderId])
 
   /**
    * The same focus rule the signed-in run follows (§02's keyboard rule),
@@ -282,7 +361,8 @@ export function StartScreen({ initialTrack = null, fromUrl = {}, query = {} }: {
 
           {stepName === 'focus'
             ? <FocusStep
-                eyebrow={FIRST_KICKER}
+                eyebrow={first && scene ? scene : FIRST_KICKER}
+                sub={START_FOCUS_SUB}
                 value={answers.focusArea}
                 firstRep={null}
                 hrefFor={(value) => linkWith({ focus: value })}
@@ -320,7 +400,7 @@ export function StartScreen({ initialTrack = null, fromUrl = {}, query = {} }: {
             : null}
 
           {stepName === 'account'
-            ? <AccountStep answers={answers} onYear={(birthYear) => remember({ ...answers, birthYear })} />
+            ? <AccountStep answers={answers} renderId={renderId} onYear={(birthYear) => remember({ ...answers, birthYear })} />
             : null}
 
           {first ? <p className="start-foot start-trust">{TRUST_LINE[arm]}</p> : null}
@@ -336,7 +416,7 @@ export function StartScreen({ initialTrack = null, fromUrl = {}, query = {} }: {
  * first screen that says what the reps are with — an AI — so nobody answers
  * the first question wondering whether a person is about to pick up.
  */
-const FIRST_KICKER = 'Practice out loud with an AI'
+const FIRST_KICKER = START_KICKER
 
 /**
  * The first screen's one line of reassurance, under the answers. Where it
@@ -421,7 +501,7 @@ function yearProblem(text: string): string | null {
  * is two fields and a password rule. The screen's one volt goes to the
  * shorter path; the email form is the alternative and says so.
  */
-function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year: number | null) => void }) {
+function AccountStep({ answers, renderId, onYear }: { answers: StartAnswers; renderId: string | null; onYear: (year: number | null) => void }) {
   const interview = answers.track === 'interview'
   const firstRep = firstRepPreview(answers.focusArea)
   const router = useRouter()
@@ -435,6 +515,24 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
   const yearField = useRef<HTMLInputElement | null>(null)
   const emailField = useRef<HTMLInputElement | null>(null)
   const [emailOpen, setEmailOpen] = useState(false)
+  /**
+   * START-FIRST-SCREEN-PLAN A3: which door was tried, once each per mount.
+   * `account_email` on the first focus of the email field (the toggle
+   * focuses it, so opening the form counts), `account_google` on the tap
+   * itself — before the year check, so a tap the age gate turns back is
+   * still a try. Neither changes what either door does.
+   */
+  const tried = useRef({ email: false, google: false })
+  const triedEmail = () => {
+    if (tried.current.email) return
+    tried.current.email = true
+    countStartAction('account_email', renderId)
+  }
+  const triedGoogle = () => {
+    if (tried.current.google) return
+    tried.current.google = true
+    countStartAction('account_google', renderId)
+  }
   // A server refusal (an address that already has an account, say) must be
   // readable, so the form is open whenever there is something to say in it.
   const withEmail = emailOpen || !!state.message
@@ -574,6 +672,7 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
         primary
         divider={false}
         beforeSubmit={() => {
+          triedGoogle()
           if (!yearOk()) return false
           conversion()
           capture('start_account_submitted', { track: answers.track ?? 'dating', door: 'google' })
@@ -622,7 +721,7 @@ function AccountStep({ answers, onYear }: { answers: StartAnswers; onYear: (year
           <input type="hidden" name="timezone" value={zone} readOnly />
           <input type="hidden" name={START_FIELD} value={carriedAnswers} readOnly />
           <input type="hidden" name="date_of_birth" value={dateOfBirth} readOnly />
-          <Input ref={emailField} label="Email" name="email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} enterKeyHint="next" placeholder="you@example.com" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          <Input ref={emailField} label="Email" name="email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} enterKeyHint="next" placeholder="you@example.com" required value={email} onFocus={triedEmail} onChange={(event) => setEmail(event.target.value)} />
           <Input
             label="Password · 8+ characters"
             name="password"

@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { currentUser } from '@/lib/db/server'
-import { START_SERVED_STEP } from '@/lib/analytics/pageview'
+import { START_SERVED_STEP, mintRenderId } from '@/lib/analytics/pageview'
 import { recordServerStep } from '@/lib/analytics/record'
 import { startAnswersFromQuery } from '@/lib/data/start-funnel'
+import { startScene } from '@/lib/data/start-scenes'
 import { StartScreen } from '@/components/screens/start-screens'
 
 /**
@@ -88,9 +89,19 @@ export default async function StartPage({ searchParams }: {
    */
   const fromUrl = startAnswersFromQuery(query)
 
-  await recordServerStep(START_SERVED_STEP, { source: first('utm_source') ?? null, content: first('utm_content') ?? null })
+  /**
+   * START-FIRST-SCREEN-PLAN A2: one random id per render, on the `served`
+   * row and on every beacon this page sends. The visitor digest joined only
+   * 77 of 136 served visitors to their browser rows (1–5 Oct); this joins
+   * every one. Minted fresh on every render and held only in a prop — not a
+   * cookie, not in storage — so it cannot follow anybody past the page.
+   */
+  const renderId = mintRenderId()
+  const content = first('utm_content') ?? null
+  await recordServerStep(START_SERVED_STEP, { source: first('utm_source') ?? null, content, renderId })
 
-  return <StartScreen initialTrack={asked} fromUrl={fromUrl} query={flatQuery(query)} />
+  // B1: the ad's scene, when the link names one (`lib/data/start-scenes.ts`).
+  return <StartScreen initialTrack={asked} fromUrl={fromUrl} query={flatQuery(query)} renderId={renderId} scene={startScene(content)} />
 }
 
 /** The query as plain strings, for the links the client builds from it. */

@@ -22,7 +22,7 @@ import { headers } from 'next/headers'
 import { after } from 'next/server'
 import { supabaseAdmin } from '@/lib/db/admin'
 import { secretSupabaseKey } from '@/lib/db/env'
-import { countryCode, deviceFor, isBot, isPreviewFetch, normaliseTag, referrerHost } from './pageview'
+import { countryCode, deviceFor, isBot, isPreviewFetch, normaliseRenderId, normaliseTag, referrerHost } from './pageview'
 
 /** The subset of `Headers` both callers have: a route's request and `next/headers`. */
 interface HeaderBag { get(name: string): string | null }
@@ -63,6 +63,12 @@ export interface ViewRow {
   source: string | null
   content: string | null
   userId: string | null
+  /** START-FIRST-SCREEN-PLAN A1: a heartbeat's seconds (3/10/30), else null. */
+  dwellS?: number | null
+  /** A1: true on the first-touch row, else null. */
+  touched?: true | null
+  /** A2: the `/start` render this row belongs to, else null. */
+  renderId?: string | null
 }
 
 export async function insertView(headers: HeaderBag, userAgent: string, visitor: string, row: ViewRow): Promise<void> {
@@ -77,6 +83,9 @@ export async function insertView(headers: HeaderBag, userAgent: string, visitor:
       step: row.step,
       source: row.source,
       content: row.content,
+      dwell_s: row.dwellS ?? null,
+      touched: row.touched ?? null,
+      render_id: row.renderId ?? null,
     })
   } catch {
     // See the header.
@@ -99,6 +108,8 @@ export async function recordServerStep(step: string, tagged: {
   source: string | null
   content: string | null
   userId?: string | null
+  /** A2: the id `/start` minted for this render, so its beacons join it. */
+  renderId?: string | null
 }): Promise<void> {
   try {
     const bag = await headers()
@@ -117,6 +128,7 @@ export async function recordServerStep(step: string, tagged: {
       source: normaliseTag(tagged.source),
       content: normaliseTag(tagged.content),
       userId: tagged.userId ?? null,
+      renderId: normaliseRenderId('/start', tagged.renderId),
     }))
   } catch {
     // See the header: a counter is never the reason a request fails.
